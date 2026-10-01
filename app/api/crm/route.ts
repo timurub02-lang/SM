@@ -188,14 +188,14 @@ async function handlePOST(request:Request){
   if(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)){delete next.manualDeliveryCost;delete next.packingWaybillAt;}
   const deliveryChanged=next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts);
   if(deliveryChanged&&(o.cdekTariff||o.manualDeliveryCost!==undefined||o.packingWaybillAt)){
-   next.deliveryReset={at:now,calculation:!!o.cdekTariff||o.manualDeliveryCost!==undefined||!!o.deliveryReset?.calculation,waybill:!!o.packingWaybillAt||!!o.deliveryReset?.waybill};
+   next.deliveryReset={at:now,calculation:!next.cdekTariff&&next.manualDeliveryCost===undefined&&(!!o.cdekTariff||o.manualDeliveryCost!==undefined||!!o.deliveryReset?.calculation),waybill:!!o.packingWaybillAt||!!o.deliveryReset?.waybill};
    text+=" · прежний расчёт доставки или накладная на сборку сброшены: требуется обновление";
   }else if(o.deliveryReset){
    next.deliveryReset={...o.deliveryReset};
    if(["selectCdekTariff","saveManualDeliveryCost"].includes(p.action))next.deliveryReset.calculation=false;
    if(p.action==="markPackingWaybill")next.deliveryReset.waybill=false;
-   if(!next.deliveryReset.calculation&&!next.deliveryReset.waybill)delete next.deliveryReset;
   }
+  if(next.deliveryReset&&!next.deliveryReset.calculation&&!next.deliveryReset.waybill)delete next.deliveryReset;
   const proposedAddress=p.action==="updateOrder"||p.action==="transition"&&["confirm","extra"].includes(next.status)?clientAddressFromOrder(next):null;
   const addressPatch=proposedAddress&&(c.address!==proposedAddress.address||JSON.stringify(c.addressParts??null)!==JSON.stringify(proposedAddress.addressParts)||c.city!==proposedAddress.city||c.addressReview)?proposedAddress:null;
   if(addressPatch)text+=" · адрес клиента обновлён из заказа";
