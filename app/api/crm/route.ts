@@ -1,3 +1,7 @@
+import {ensureAuth,personalAuth} from '@/lib/auth';
+import {hashPassword} from '@/lib/auth-crypto';
+import {visibleState,authorizeCrm} from '@/lib/permissions';
+import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
 import {canManageDelivery} from "@/lib/cdek-calculator";
 import {cleanImportedAddress} from "@/lib/dadata";
@@ -55,15 +59,25 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  ...s.events.map(e=>d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e))),
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
-export async function GET(){try{await identity();await initialize();return Response.json(await readState(),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
-export async function POST(request:Request){
+async function responseState(user:Awaited<ReturnType<typeof identity>>){
+ const state=await readState();if(!user.employee)return state;
+ const visible=visibleState(state,user.employee);
+ if(['admin','department_head'].includes(user.employee.role)){
+  const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
+  visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,hasPassword:!!account,accessEnabled:!!account?.enabled};});
+ }
+ return {...visible,currentEmployeeId:user.employee.id,personalAuth:true};
+}
+async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
+async function handlePOST(request:Request){
  try{
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
  const raw=await request.text();if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
  const p=JSON.parse(raw);const d=db();const s=await readState();const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
- // Owner-private review version: selected employee is workflow context, never authentication.
+ // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
+ if(user.employee)authorizeCrm(user.employee,p,s);
  const ev=(clientId:string,orderId:string,text:string):Event=>({id:id("EV-"),clientId,orderId,at:now,actor,actorId:employee?.id,text});
  const eventSQL=(e:Event)=>d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e));
  const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
@@ -88,7 +102,7 @@ export async function POST(request:Request){
    await d.batch([d.prepare("INSERT INTO clients(id,phone,data) VALUES(?,?,?)").bind(c.id,c.phone,json(c)),eventSQL(ev(c.id,"","Клиент добавлен в базу"))]);message="Клиент добавлен";
   }
  }else if(p.action==="updateClient"){
-  const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(p.client);if(employee?.role==="operator")data.owner=c.owner;ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
+  const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(user.employee&&["operator","department_head"].includes(employee!.role)?{...p.client,phone:c.phone}:p.client);if(employee?.role==="operator")data.owner=c.owner;ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
   const next={...c,...data,addressReview:data.address===c.address?c.addressReview:false,assignedUntil:data.owner===c.owner?c.assignedUntil:data.owner?assignedUntil():"",_mutation:mutation};
   const e=ev(c.id,"","Обновлена карточка клиента"+(c.owner!==data.owner?" · изменено закрепление":""));
   const result=await d.batch([d.prepare("UPDATE clients SET phone=?,data=?,version=version+1 WHERE id=? AND version=?").bind(next.phone,json(next),c.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),c.id,mutation)]);
@@ -177,9 +191,32 @@ export async function POST(request:Request){
   const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?"+(["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[])]);
   if(!result[0].meta.changes)throw new Error("Заказ уже изменён. Обновите страницу и повторите");
  }else if(p.action==="saveEmployee"){
-  const data=employeeForManager(employee,p.employee,s.employees.find(e=>e.id===p.id));if(s.employees.some(e=>e.login===data.login&&e.id!==p.id))throw new Error("Такой логин уже существует");
-  if(p.id){const r=await d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?").bind(json({...data,id:p.id}),p.id,p.version).run();if(!r.meta.changes)throw new Error("Карточка сотрудника уже изменена");}
-  else{const eid=id("E-");await d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,json({...data,id:eid,version:1})).run();}
+  const existing=s.employees.find(e=>e.id===p.id);
+  const data=employeeForManager(employee,p.employee,existing);
+  data.login=data.login.trim();
+  if(s.employees.some(e=>e.login.toLowerCase()===data.login.toLowerCase()&&e.id!==p.id))throw Error("Такой логин уже существует");
+  if(p.id&&(!existing||existing.version!==p.version))throw Error("Карточка сотрудника уже изменена");
+  const eid=p.id||id("E-");
+  const enabled=p.employee.accessEnabled!==false;
+  if(user.employee&&eid===user.employee.id&&(data.role!==user.employee.role||!enabled))throw Error("Нельзя отключить собственный вход или изменить собственную роль");
+  let passwordHash:string|undefined;
+  if(personalAuth()){
+   await ensureAuth();
+   const account=await d.prepare('SELECT enabled FROM auth_accounts WHERE employee_id=?').bind(eid).first();
+   if(p.employee.password)passwordHash=await hashPassword(p.employee.password);
+   if(enabled&&!account&&!passwordHash)throw Error("Задайте пароль для включения входа сотрудника");
+  }
+  const saved=json({...data,id:eid,...(!p.id?{version:1}:{})});
+  const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?").bind(saved,eid,p.version):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
+  const guard="EXISTS(SELECT 1 FROM employees WHERE id=? AND data=? AND version=?)";
+  const args=[eid,saved,p.id?p.version+1:1];
+  if(personalAuth()){
+   if(passwordHash)statements.push(d.prepare(`INSERT INTO auth_accounts(employee_id,password_hash,enabled) SELECT ?,?,? WHERE ${guard} ON CONFLICT(employee_id) DO UPDATE SET password_hash=excluded.password_hash,enabled=excluded.enabled`).bind(eid,passwordHash,enabled?1:0,...args));
+   else statements.push(d.prepare(`UPDATE auth_accounts SET enabled=? WHERE employee_id=? AND ${guard}`).bind(enabled?1:0,eid,...args));
+   if(passwordHash||!enabled||existing&&(existing.login!==data.login||existing.role!==data.role||existing.department!==data.department))statements.push(d.prepare(`DELETE FROM auth_sessions WHERE employee_id=? AND ${guard}`).bind(eid,...args));
+  }
+  const results=await d.batch(statements);if(!results[0].meta.changes)throw Error("Карточка сотрудника уже изменена");
+  message="Сотрудник сохранён";
  }else if(p.action==="settings"){
   const retentionDays=z.number().int().min(1).max(365).parse(p.retentionDays);await d.prepare("UPDATE settings SET data=? WHERE id='main'").bind(json({retentionDays})).run();message="Срок применяется к новым закреплениям и заказам";
  }else if(p.action==="releaseExpired"){
@@ -202,6 +239,9 @@ export async function POST(request:Request){
   // ponytail: bounded imports; background chunked jobs when files exceed 1000 clients.
   let actual=0;for(let i=0;i<statements.length;i+=50){const results=await d.batch(statements.slice(i,i+50));actual+=results.filter((_,j)=>j%2===0).reduce((n,r)=>n+r.meta.changes,0);}message=`Добавлено: ${actual}. Дубли: ${duplicates+added-actual}. Адресов требуют проверки: ${review}. Ошибки ДаДата: ${errors}`;
  }else throw new Error("Неизвестное действие");
- return Response.json({state:await readState(),message});
+ return Response.json({state:await responseState(user),message});
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);

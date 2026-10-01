@@ -1,10 +1,11 @@
+import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {cdekToken} from '@/lib/cdek';
 import {calculationError,calculationSchema,calculationPayload,tariffMode,canManageDelivery} from '@/lib/cdek-calculator';
 import type {Order} from '@/lib/crm';
 import {z} from 'zod';
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -27,3 +28,5 @@ export async function POST(req:Request){
   return Response.json({tariffs,account:quote.account,calculatedAt:quote.calculatedAt,quoteId:quote.id},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте индекс, вес и размеры посылки':e instanceof Error&&e.message==='Заполните индекс получателя в адресе заказа'?e.message:e instanceof Error&&e.message.startsWith('СДЭК')?e.message:'Не удалось рассчитать доставку. Попробуйте ещё раз.'},{status:400});}
 }
+
+export const POST=authenticated(handlePOST);

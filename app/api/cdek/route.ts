@@ -1,14 +1,15 @@
+import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {authorizeCdek} from '@/lib/cdek';
 import {z} from 'zod';
 const input=z.object({actorId:z.string(),slot:z.number().int().min(1).max(4),name:z.string().trim().min(1).max(80),clientId:z.string().trim().max(200).default(''),clientSecret:z.string().trim().max(200).default('')});
-export async function GET(){
+async function handleGET(){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  const rows=await db().prepare("SELECT id,data FROM settings WHERE id IN ('cdek-1','cdek-2','cdek-3','cdek-4')").all<{id:string;data:string}>();
  return Response.json({accounts:rows.results.map(r=>{const c=JSON.parse(r.data);return {slot:Number(r.id.split('-')[1]),name:c.name,configured:!!(c.clientId&&c.clientSecret),checkedAt:c.checkedAt};})},{headers:{'Cache-Control':'no-store'}});
 }
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -24,3 +25,6 @@ export async function POST(req:Request){
   return Response.json({slot:p.slot,name:c.name,configured:true,checkedAt:c.checkedAt});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте заполнение полей':e instanceof Error&&e.name==='TimeoutError'?'СДЭК не ответил вовремя':e instanceof Error&&e.message.startsWith('СДЭК')?e.message:'Не удалось сохранить аккаунт. Проверьте ключ и пароль.'},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);

@@ -1,14 +1,15 @@
+import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {suggestAddress} from '@/lib/dadata';
 import {z} from 'zod';
 const key=z.string().trim().regex(/^[a-zA-Z0-9_-]{20,200}$/,'Проверьте формат ключа');
 async function config(){const r=await db().prepare("SELECT data FROM settings WHERE id='dadata'").first<{data:string}>();return r?JSON.parse(r.data):{};}
-export async function GET(){
+async function handleGET(){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  const c=await config();return Response.json({configured:!!c.token,secretConfigured:!!c.secret},{headers:{'Cache-Control':'no-store'}});
 }
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -28,3 +29,6 @@ export async function POST(req:Request){
   return Response.json({suggestions:await suggestAddress(c.token,query)});
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(i=>i.message).join('; '):e instanceof Error&&e.name==='TimeoutError'?'ДаДата не ответила вовремя. Попробуйте ещё раз.':e instanceof Error?e.message:'Ошибка ДаДата'},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);

@@ -1,3 +1,4 @@
+import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -13,7 +14,7 @@ async function offices(query:URLSearchParams){
 }
 async function init(){await initInventory();await db().prepare('CREATE TABLE IF NOT EXISTS products(id TEXT PRIMARY KEY,name_key TEXT UNIQUE NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)').run();await db().prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('warehouse-address',?)").bind(JSON.stringify({address:'127422',postalCode:'127422'})).run();}
 async function permitted(actorId:string){const r=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();return r&&['admin','logistic'].includes(JSON.parse(r.data).role);}
-export async function GET(req:Request){
+async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(new URL(req.url).searchParams.has('catalog')){await init();const rows=await db().prepare('SELECT id,data FROM products ORDER BY name_key').all<{id:string;data:string}>();return Response.json({products:rows.results.map(r=>{const p=JSON.parse(r.data);return {id:r.id,name:p.name,tag:p.tag||''};})},{headers:{'Cache-Control':'no-store'}});}
  if(!await permitted(new URL(req.url).searchParams.get('actorId')||''))return Response.json({error:'Склад доступен администратору и логисту'},{status:403});
@@ -23,7 +24,7 @@ export async function GET(req:Request){
  const addressRow=await db().prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
  return Response.json({warehouseAddress:JSON.parse(addressRow!.data),products:r.results.map(x=>({...JSON.parse(x.data),id:x.id,version:x.version,nameLocked:!!x.nameLocked,stock:{available:x.available,reserved:x.reserved,sold:x.sold,supplied:x.supplied}}))},{headers:{'Cache-Control':'no-store'}});
 }
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -42,3 +43,6 @@ export async function POST(req:Request){
   return Response.json({ok:true});
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(i=>i.message).join('; '):e instanceof Error&&/ПВЗ|СДЭК|остатк|склад|Товар|товар|Операция/.test(e.message)?e.message:'Не удалось сохранить данные склада. Возможно, товар с таким названием уже существует.'},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);

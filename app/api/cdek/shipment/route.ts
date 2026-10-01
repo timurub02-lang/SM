@@ -1,3 +1,4 @@
+import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
 import {cdekStatusPatch} from '@/lib/cdek-sync';
 import {statuses} from '@/lib/crm';
@@ -13,7 +14,7 @@ const uuidSchema=z.string().uuid();
 async function context(actorId:string,orderId:string){
  await initInventory();
  const actor=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();
- if(!actor||JSON.parse(actor.data).role!=='logistic')throw Error('Отправления доступны только логисту');
+ if(!actor||!['logistic','admin'].includes(JSON.parse(actor.data).role))throw Error('Отправления доступны только логисту');
  const row=await db().prepare('SELECT data,version FROM orders WHERE id=?').bind(orderId).first<{data:string;version:number}>();
  if(!row)throw Error('Заказ не найден');
  const order={...JSON.parse(row.data),version:row.version} as Order;
@@ -30,7 +31,7 @@ async function apiFor(slot:number){
 }
 async function json(response:Response){const data=await response.json();if(!response.ok)throw Error(cdekErrors(data)||`СДЭК: ошибка ${response.status}`);return data as any;}
 const reply=(data:unknown)=>Response.json(data,{headers:{'Cache-Control':'no-store'}});
-export async function GET(req:Request){
+async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  try{
   const q=new URL(req.url).searchParams;const c=await context(q.get('actorId')||'',q.get('orderId')||'');
@@ -50,7 +51,7 @@ export async function GET(req:Request){
   return reply({shipment:c.shipment,phone:client?JSON.parse(client.data).phone:'',warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:p?.payment};})});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -129,3 +130,6 @@ export async function POST(req:Request){
   return new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="cdek-waybill.pdf"','Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(x=>x.message).join('; '):e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);

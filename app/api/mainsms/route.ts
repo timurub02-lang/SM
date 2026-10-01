@@ -1,3 +1,4 @@
+import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {smsConfig,smsText,mainSmsCall} from '@/lib/mainsms';
@@ -5,11 +6,11 @@ import {hideClientPhone,type Order,type Employee,type Client} from '@/lib/crm';
 import {z} from 'zod';
 async function read(id:string){const row=await db().prepare('SELECT data FROM settings WHERE id=?').bind(id).first<{data:string}>();return row?JSON.parse(row.data):null;}
 async function actor(id:string){const row=await db().prepare('SELECT data FROM employees WHERE id=?').bind(id).first<{data:string}>();if(!row)throw Error('Сотрудник не найден');return JSON.parse(row.data) as Employee;}
-export async function GET(req:Request){
+async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  try{const e=await actor(new URL(req.url).searchParams.get('actorId')||'');const c=await read('mainsms');return Response.json({configured:!!c?.apiKey,templates:c?.templates||[],...(e.role==='admin'?{project:c?.project||'',sender:c?.sender||'',revision:c?.revision||''}:{})},{headers:{'Cache-Control':'no-store'}});}catch{return Response.json({error:'Нет доступа'},{status:403});}
 }
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -42,3 +43,6 @@ export async function POST(req:Request){
  const at=new Date().toISOString(),event={id:crypto.randomUUID(),orderId:o.id,clientId:o.clientId,at,actor:e.login,actorId:e.id,text:message+' · '+ticket.text};await db().prepare('INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)').bind(event.id,o.clientId,o.id,at,JSON.stringify(event)).run();return Response.json({message},{status:success?200:409});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте заполнение полей':e instanceof Error?e.message:'Ошибка SMS'},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);

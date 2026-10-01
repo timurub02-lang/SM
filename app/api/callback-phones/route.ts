@@ -1,14 +1,15 @@
+import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {z} from 'zod';
 const phone=z.string().trim().max(30).refine(v=>!v||(/^[+\d\s()-]+$/.test(v)&&v.replace(/\D/g,'').length>=10),'Проверьте номер телефона');
 const schema=z.object({actorId:z.string().min(1),phones:z.tuple([phone,phone]),departments:z.object({'1':z.enum(['','1','2']),'2':z.enum(['','1','2']),'3':z.enum(['','1','2']),'4':z.enum(['','1','2']).default(''),'5':z.enum(['','1','2']).default('')}),revision:z.string()}).refine(p=>Object.values(p.departments).every(n=>!n||p.phones[Number(n)-1]),'Заполните назначенный отделу номер');
-export async function GET(){
+async function handleGET(){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  const row=await db().prepare("SELECT data FROM settings WHERE id='callback-phones'").first<{data:string}>();
  return Response.json(row?JSON.parse(row.data):{phones:['',''],departments:{'1':'','2':'','3':'','4':'','5':''},revision:''},{headers:{'Cache-Control':'no-store'}});
 }
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -22,3 +23,6 @@ export async function POST(req:Request){
  return Response.json(data);
  }catch{return Response.json({error:'Проверьте номера телефонов и их назначение отделам.'},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);

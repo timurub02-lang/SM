@@ -1,14 +1,15 @@
+import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {cdekMappingSchema} from '@/lib/cdek-statuses';
 import {z} from 'zod';
 const schema=z.object({actorId:z.string().min(1),mapping:cdekMappingSchema,revision:z.string()});
-export async function GET(){
+async function handleGET(){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  const row=await db().prepare("SELECT data FROM settings WHERE id='cdek-status-mapping'").first<{data:string}>();
  return Response.json(row?JSON.parse(row.data):{mapping:{},revision:''},{headers:{'Cache-Control':'no-store'}});
 }
-export async function POST(req:Request){
+async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
@@ -22,3 +23,6 @@ export async function POST(req:Request){
   return Response.json(data);
  }catch{return Response.json({error:'Не удалось сохранить соответствия статусов. Проверьте данные.'},{status:400});}
 }
+
+export const GET=authenticated(handleGET);
+export const POST=authenticated(handlePOST);
