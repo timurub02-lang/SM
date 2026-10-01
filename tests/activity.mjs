@@ -19,6 +19,12 @@ assert.equal(row(sample,Date.parse('2026-10-03T07:00:00Z')).state,'off');
 assert.equal(activityRow(e,schedule,sample,{at:'2026-10-01T06:59:00Z',count:1},now).state,'active');
 assert.equal(visibleActivityEmployee(head,{...e,department:'2'}),false);
 assert.equal(visibleActivityEmployee(head,e),true);
+const admin={...e,id:'admin',role:'admin'};
+assert.equal(visibleActivityEmployee(admin,{...e,department:'2'}),true);
+for(const role of ['admin','department_head','logistic','redemption']){
+ assert.equal(visibleActivityEmployee(admin,{...e,role}),false);
+ assert.equal(visibleActivityEmployee(head,{...e,role}),false);
+}
 assert.equal(mayCallEndpoint(e,new URL('https://crm/api/activity'),'GET',{}),false);
 assert.equal(mayCallEndpoint(head,new URL('https://crm/api/activity'),'GET',{}),true);
 assert.equal(mayCallEndpoint(head,new URL('https://crm/api/activity'),'POST',{}),false);

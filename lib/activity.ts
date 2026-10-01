@@ -2,7 +2,7 @@ import type {Employee} from './crm.ts';
 export type WorkSchedule={days:number[];start:string;end:string;breakMinutes:number};
 export type ActivitySample={employeeId:string;skId:number;locked:boolean;calls:number;lastCallAt:string;lastCallEnd:string;callSeconds:number;observedAt:string;status:string;statusAt:string;breakSeconds:number;breakObservedSince:string;lastBusyAt:string;breakEndedAt:string;day:string};
 export type ActivityRow={id:string;name:string;login:string;department:string;linked:boolean;state:string;label:string;idleMinutes:number|null;lastCrmAt:string;crmCount:number;lastCallAt:string;lastCallEnd:string;calls:number;callSeconds:number;breakMinutes:number;breakLimit:number;breakObservedSince:string;skStatus:string;statusAt:string;locked:boolean};
-export function visibleActivityEmployee(actor:Employee,e:Employee){return actor.role==='admin'||actor.role==='department_head'&&!!actor.department&&e.department===actor.department;}
+export function visibleActivityEmployee(actor:Employee,e:Employee){return e.role==='operator'&&(actor.role==='admin'||actor.role==='department_head'&&!!actor.department&&e.department===actor.department);}
 export function shiftWindow(schedule:WorkSchedule|undefined,now:number){
  if(!schedule)return null;
  const local=new Date(now+3*3600000),date=local.toISOString().slice(0,10);
