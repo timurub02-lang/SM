@@ -18,6 +18,6 @@ for(const user of [a,head]){
 }
 assert.throws(()=>authorizeCrm(a,{action:'saveEmployee'},state));
 assert.throws(()=>authorizeCrm(head,{action:'updateOrder',id:'oa'},state));
-assert.equal(seesOrder(logist,state.orders[0],state.employees),false);
+assert.equal(seesOrder(logist,state.orders[0],state.employees),true);
 assert.equal(visibleState(state,admin),state);
 console.log('Passwords, role checks, department isolation and phone filtering passed');

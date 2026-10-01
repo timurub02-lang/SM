@@ -1,10 +1,10 @@
-import {orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
+import {canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
 export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
 export function seesOrder(e:Employee,o:Order,staff:Employee[]){
  if(e.role==='admin')return true;
  if(e.role==='operator')return o.manager===e.id;
  if(e.role==='department_head')return !!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&x.department===e.department);
- if(e.role==='logistic')return !['draft','rework'].includes(o.status);
+ if(e.role==='logistic')return true;
  return e.role==='redemption'&&['shipping','pickup','redeemed','returned'].includes(o.status);
 }
 export function visibleState(s:State,e:Employee):State{
@@ -28,6 +28,13 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
+ if(e.role==='logistic'&&['updateOrder','updateDelivery','updateWaybillComment'].includes(p.action)){
+  allow(canLogisticEditOrder(order));
+  if(p.action==='updateOrder'){
+   allow(p.items===undefined||JSON.stringify(p.items)===JSON.stringify(order.items));
+   return;
+  }
+ }
  allow(!orderEditingLocked(e,order));
  if(p.action==='transition'){
   if(e.role==='operator')allow(['confirm','extra','refused'].includes(p.to));

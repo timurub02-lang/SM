@@ -176,3 +176,5 @@ export function orderLocation(order:Order){
  if(["confirm","extra","packing","phone","shipping","pickup"].includes(order.status))return "У логиста";
  return "—";
 }
+
+export const canLogisticEditOrder=(o:Pick<Order,"status"|"cdekExported">)=>!o.cdekExported&&!["redeemed","returned"].includes(o.status);

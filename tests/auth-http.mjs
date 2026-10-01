@@ -122,5 +122,23 @@ try{
  db.exec('DROP TRIGGER fail_delete');
  const logistic=await fixture('removed-logistic',undefined,'logistic');assert.equal((await remove('admin',logistic.e,'release')).status,200);
  console.log('Employee deletion passed: all statuses, same-department transfer, release routing, role restrictions, stale versions, session revocation, audit history and atomic rollback.');
+ const editor=await fixture('editing-logistic','1','logistic');records('one');
+ for(const status of statuses){
+  const id='one-o-'+status;
+  const body={action:'updateOrder',id,version:1,address:'Corrected address',delivery:'cdek_courier',comment:'Confirmed with client'};
+  const r=await call('/api/crm',{cookie:editor.cookie,body});
+  assert.equal(r.status,['redeemed','returned'].includes(status)?400:200,status+': '+r.text);
+  const saved=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);
+  assert.deepEqual(saved.items,[]);
+  if(r.status===200){assert.equal(saved.address,body.address);assert.equal(saved.comment,body.comment);assert.equal(saved.status,status);}
+ }
+ const editId='one-o-confirm';
+ assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:editId,version:2,items:[{name:'Injected',quantity:1,price:1}]}})).status,400);
+ for(const state of ['creating','ready']){
+  db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+editId,JSON.stringify({state,number:'test-number'}));
+  for(const action of ['updateOrder','updateWaybillComment'])assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action,id:editId,version:2,address:'Blocked',text:'Blocked'}})).status,400,state+' '+action);
+ }
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(editId).data).address,'Corrected address');
+ console.log('Logistic edits passed: every status, immutable basket, exported and in-flight shipment guards.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
