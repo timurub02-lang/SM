@@ -16,7 +16,7 @@ export const transitions:Record<Status,Status[]>={draft:["confirm","refused"],co
 export const departments={"1":"SKP_","2":"POD_","3":"M31_","4":"UDL_","5":"A_"} as const;
 export const departmentIds=["1","2","3","4","5"] as const;
 export const roles={operator:"Оператор",logistic:"Логист",admin:"Администратор",department_head:"Руководитель отдела",redemption:"Отдел выкупа"};
-export type Client={orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
+export type Client={importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
 export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
@@ -82,9 +82,9 @@ export const sourceSheet=(source:string)=>source.match(/\.xlsx · (.+)$/i)?.[1]|
 export const clientSheet=(c:Client)=>c.sheet??sourceSheet(c.source);
 export function clientAssignment(c:Client,owner:string,now:string,firstSheet="Т1"):Partial<Client>{
  if(c.owner===owner)return {};
- if(!owner)return {owner:"",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined};
+ if(!owner)return {importRetentionUntil:undefined,owner:"",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined};
  const until=new Date(Date.parse(now)+86400000).toISOString();
- return {owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
+ return {importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
 }
 export function applyRetention(c:Client,orders:Order[],now=Date.now()):Client{
  if(!c.owner)return c;
@@ -96,7 +96,7 @@ export function applyRetention(c:Client,orders:Order[],now=Date.now()):Client{
  const paid=own.filter(o=>o.status==="redeemed");
  // Missing historical redemption dates must not silently release a client.
  if(paid.some(o=>!o.redeemedAt||!Number.isFinite(Date.parse(o.redeemedAt))))return base;
- const until=paid.length?Math.max(...paid.map(o=>Date.parse(o.redeemedAt!)))+35*86400000:0;
+ const until=Math.max(paid.length?Math.max(...paid.map(o=>Date.parse(o.redeemedAt!)))+35*86400000:0,Date.parse(c.importRetentionUntil||"")||0);
  if(until>now)return {...base,assignedUntil:new Date(until).toISOString()};
  return {...base,owner:"",sheet:paid.length?"ТК":original,returnSheet:undefined,assignmentStartedAt:undefined};
 }
