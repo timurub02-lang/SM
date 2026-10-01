@@ -80,6 +80,12 @@ export function orderDatesForTransition(order:Order,to:Status,at:string):Partial
 
 export const sourceSheet=(source:string)=>source.match(/\.xlsx · (.+)$/i)?.[1]||"";
 export const clientSheet=(c:Client)=>c.sheet??sourceSheet(c.source);
+export function clientAssignment(c:Client,owner:string,now:string,firstSheet="Т1"):Partial<Client>{
+ if(c.owner===owner)return {};
+ if(!owner)return {owner:"",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined};
+ const until=new Date(Date.parse(now)+86400000).toISOString();
+ return {owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
+}
 export function applyRetention(c:Client,orders:Order[],now=Date.now()):Client{
  if(!c.owner)return c;
  const original=c.returnSheet??(clientSheet(c)==="К"?"ТК":clientSheet(c));
