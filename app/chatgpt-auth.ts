@@ -20,6 +20,12 @@ const CALLBACK_PATH = "/callback";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
+  if (process.env.CRM_RUNTIME === "miran") {
+    const secret = process.env.CRM_PROXY_SECRET;
+    if (!secret || requestHeaders.get("x-crm-proxy-secret") !== secret) return null;
+    const origin = requestHeaders.get("origin");
+    if (origin && origin !== process.env.CRM_ORIGIN) return null;
+  }
   const userId = requestHeaders.get(USER_ID_HEADER);
   const email = requestHeaders.get(USER_EMAIL_HEADER);
   if (!userId || !email) return null;
