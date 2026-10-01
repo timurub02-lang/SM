@@ -61,5 +61,51 @@ try{
  assert.equal((await call('/api/auth/logout',{cookie:cookies.one,body:{}})).status,200);assert.equal((await call('/api/auth/me',{cookie:cookies.one})).status,401);
  for(let i=0;i<10;i++)assert.equal((await login('missing')).status,401);assert.equal((await login('missing')).status,429);
  for(const row of db.prepare('SELECT data FROM employees').all()){assert.ok(!row.data.includes('password'));}
+ // Employee deletion: exercise the real API and transaction against every order status.
+ const statuses=['draft','confirm','rework','check','extra','packing','phone','shipping','pickup','redeemed','refused','returned'];
+ async function fixture(id,department='1',role='operator'){
+  const e={...staff[1],id,login:id,department,role};db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
+  const loginResult=await login(id);assert.equal(loginResult.status,200);return {e,cookie:loginResult.headers.get('set-cookie').split(';')[0]};
+ }
+ function records(id){
+  for(const [i,status] of [...statuses,'none'].entries()){
+   const c={id:id+'-c-'+status,name:'Client',phone:'+7'+String(8000000000+db.prepare('SELECT COUNT(*) AS n FROM clients').get().n),city:'',address:'',source:'test.xlsx · Т3',sheet:'К',returnSheet:'Т3',trialReturnSheet:'Т1',owner:id,createdAt:new Date().toISOString(),version:1};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));
+   if(status==='none')continue;
+   const o={id:id+'-o-'+status,clientId:c.id,manager:id,logistic:'',status,items:[],comment:'Original comment',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,redeemedAt:c.createdAt,...(status==='rework'?{reworkDeadline:new Date(Date.now()+86400000).toISOString()}:{}),version:1};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
+  }
+ }
+ async function remove(actor,e,mode,targetId,version=e.version){return call('/api/crm',{cookie:cookies[actor],body:{action:'deleteEmployee',id:e.id,version,mode,targetId}});}
+ const transfer=await fixture('transfer');records('transfer');
+ assert.equal((await remove('head',staff[2],'release')).status,400);
+ assert.equal((await remove('head',staff[0],'release')).status,400);
+ assert.equal((await remove('admin',staff[0],'release')).status,400);
+ assert.equal((await remove('head',transfer.e,'transfer','two')).status,400);
+ assert.equal((await remove('head',transfer.e,'transfer','one',99)).status,400);
+ assert.ok(db.prepare('SELECT id FROM employees WHERE id=?').get('transfer'));
+ let deleted=await remove('head',transfer.e,'transfer','one');assert.equal(deleted.status,200,deleted.text);
+ assert.equal((await call('/api/auth/me',{cookie:transfer.cookie})).status,401);
+ assert.equal((await login('transfer')).status,401);
+ for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'transfer-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'one');assert.equal(o.status,o.id.replace('transfer-o-',''));assert.equal(o.comment,'Original comment');}
+ assert.equal(db.prepare("SELECT COUNT(*) AS n FROM clients WHERE id LIKE 'transfer-c-%' AND json_extract(data,'$.owner')='one'").get().n,11); // Refused/returned-only clients were already freed by normal retention before deletion.
+ assert.equal((await remove('head',transfer.e,'transfer','one')).status,400);
+ const release=await fixture('release');records('release');
+ deleted=await remove('admin',release.e,'release');assert.equal(deleted.status,200,deleted.text);
+ const live=['draft','confirm','rework','check','extra','packing','phone','shipping','pickup'];
+ for(const row of db.prepare("SELECT data FROM clients WHERE id LIKE 'release-c-%'").all()){const c=JSON.parse(row.data),status=c.id.replace('release-c-','');assert.equal(c.owner,'');assert.equal(c.sheet,live.includes(status)?'К':status==='redeemed'?'ТК':'Т3');}
+ for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'release-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'');assert.equal(o.status,o.id.replace('release-o-',''));}
+ assert.equal((await call('/api/auth/me',{cookie:release.cookie})).status,401);
+ assert.ok(db.prepare("SELECT data FROM settings WHERE id='deleted-employee-release'").get());
+ assert.ok(db.prepare("SELECT data FROM events WHERE client_id='release-c-shipping'").get());
+ // The guard must roll back all writes if any statement fails, including access revocation.
+ const rollback=await fixture('rollback');records('rollback');
+ db.exec("CREATE TRIGGER fail_delete BEFORE DELETE ON employees WHEN OLD.id='rollback' BEGIN SELECT RAISE(ABORT,'test rollback'); END");
+ assert.equal((await remove('admin',rollback.e,'release')).status,400);
+ assert.ok(db.prepare("SELECT id FROM employees WHERE id='rollback'").get());
+ assert.equal(db.prepare("SELECT json_extract(data,'$.owner') AS owner FROM clients WHERE id='rollback-c-shipping'").get().owner,'rollback');
+ assert.ok(!db.prepare("SELECT id FROM settings WHERE id='deleted-employee-rollback'").get());
+ assert.equal((await call('/api/auth/me',{cookie:rollback.cookie})).status,200);
+ db.exec('DROP TRIGGER fail_delete');
+ const logistic=await fixture('removed-logistic',undefined,'logistic');assert.equal((await remove('admin',logistic.e,'release')).status,200);
+ console.log('Employee deletion passed: all statuses, same-department transfer, release routing, role restrictions, stale versions, session revocation, audit history and atomic rollback.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

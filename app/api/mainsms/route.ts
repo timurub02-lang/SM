@@ -24,8 +24,8 @@ async function handlePOST(req:Request){
  }
  if(p.action==='check'){if(e.role!=='admin'||!c?.apiKey)throw Error('Сначала сохраните подключение');const result=await mainSmsCall(c,'balance');return Response.json({message:`Подключение работает. Баланс: ${result.balance??'—'} ₽`});}
  const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(z.string().parse(p.orderId)).first<{data:string}>();if(!row)throw Error('Заказ не найден');const o=JSON.parse(row.data) as Order;
- const manager=await actor(o.manager);
- if(!(e.role==='admin'||e.role==='logistic'||e.role==='redemption'||e.role==='operator'&&o.manager===e.id||e.role==='department_head'&&e.department&&e.department===manager.department))throw Error('Нет доступа к заказу');
+ const manager=o.manager?await actor(o.manager):null;
+ if(!(e.role==='admin'||e.role==='logistic'||e.role==='redemption'||e.role==='operator'&&o.manager===e.id||e.role==='department_head'&&e.department&&e.department===manager?.department))throw Error('Нет доступа к заказу');
  if(p.action==='preview'){
  if(!c?.apiKey)throw Error('Подключите MainSMS в настройках');if(o.testOnly)throw Error('Отправка SMS тестовым клиентам отключена');
  const cr=await db().prepare('SELECT data FROM clients WHERE id=?').bind(o.clientId).first<{data:string}>();if(!cr)throw Error('Клиент не найден');const client=JSON.parse(cr.data) as Client;

@@ -1,3 +1,4 @@
+import {removalPlan} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
 import {visibleState,authorizeCrm} from '@/lib/permissions';
@@ -190,6 +191,28 @@ async function handlePOST(request:Request){
   const e=ev(c.id,o.id,text);
   const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?"+(["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[])]);
   if(!result[0].meta.changes)throw new Error("Заказ уже изменён. Обновите страницу и повторите");
+ }else if(p.action==="deleteEmployee"){
+  const plan=removalPlan(s,employee,p.id,p.version,p.mode,p.targetId);
+  if(personalAuth())await ensureAuth();
+  const key="deleted-employee-"+plan.employee.id,mutation=crypto.randomUUID();
+  // Guard the whole batch against changes since the snapshot, including newly assigned records.
+  const snapshot=(rows:{id:string;version:number}[])=>json([...rows].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0).map(x=>[x.id,x.version]));
+  const guard="EXISTS(SELECT 1 FROM settings WHERE id=? AND json_extract(data,'$.mutation')=?)";
+  const args=[key,mutation];
+  const summary=`Удалён сотрудник ${plan.employee.name} (${plan.employee.login}). `+(plan.target?`Клиенты и заказы переданы ${plan.target.name} (${plan.target.login})`:'Клиенты освобождены, заказы сохранены без оператора');
+  const statements=[d.prepare("INSERT INTO settings(id,data) SELECT ?,? WHERE (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM clients ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=?").bind(key,json({employee:plan.employee,at:now,actorId:employee!.id,mode:p.mode,targetId:plan.target?.id,mutation}),snapshot(s.employees),snapshot(s.clients),snapshot(s.orders))];
+  for(const c of plan.clients)statements.push(d.prepare(`UPDATE clients SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(c),c.id,...args));
+  for(const o of plan.orders)statements.push(d.prepare(`UPDATE orders SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(o),o.id,...args));
+  const history=[ev('','',summary),...plan.clients.map(c=>ev(c.id,'',summary)),...plan.orders.map(o=>ev(o.clientId,o.id,summary))];
+  for(const e of history)statements.push(d.prepare(`INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE ${guard}`).bind(e.id,e.clientId,e.orderId,e.at,json(e),...args));
+  if(personalAuth()){
+   statements.push(d.prepare(`DELETE FROM auth_sessions WHERE employee_id=? AND ${guard}`).bind(p.id,...args));
+   statements.push(d.prepare(`DELETE FROM auth_accounts WHERE employee_id=? AND ${guard}`).bind(p.id,...args));
+  }
+  statements.push(d.prepare(`DELETE FROM employees WHERE id=? AND ${guard}`).bind(p.id,...args));
+  const result=await d.batch(statements);
+  if(!result[0].meta.changes)throw Error('Данные изменились. Обновите страницу и повторите удаление');
+  message=summary;
  }else if(p.action==="saveEmployee"){
   const existing=s.employees.find(e=>e.id===p.id);
   const data=employeeForManager(employee,p.employee,existing);

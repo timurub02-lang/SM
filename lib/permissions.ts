@@ -22,6 +22,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
  if(['settings','import','normalizeImportedAddresses','releaseExpired'].includes(p.action))return allow(false);
+ if(p.action==='deleteEmployee')return allow(e.role==='department_head'&&!!e.department);
  if(p.action==='saveEmployee')return allow(e.role==='department_head'&&!!e.department);
  if(p.action==='createClient')return allow(e.role==='department_head');
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
