@@ -8,5 +8,5 @@ export function SkorozvonSettings({actorId}:{actorId:string}){
  <label className="field"><span>Логин Скорозвона (email)</span><input name="login" type="email" defaultValue={status.login} required disabled={busy}/></label>
  {([['apiKey','API-ключ'],['clientId','ID приложения'],['clientSecret','Ключ приложения']] as const).map(([name,label])=><label className="field" key={name}><span>{label}</span><input type="password" name={name} autoComplete="new-password" maxLength={500} required={!status.configured} disabled={busy} placeholder={status.configured?'Сохранён. Оставьте пустым, чтобы не менять':''}/></label>)}
  <button className="secondary" disabled={busy}>{busy?'Проверка…':status.configured?'Проверить подключение':'Проверить и сохранить'}</button></form></>}
- <p role="status">{message}</p><p className="notice">Обмен данными выключен. Передачу клиентов и результатов звонков в обе стороны настроим отдельно.</p></section>;
+ <p role="status">{message}</p><p className="notice">Звонки и текущие статусы сотрудников доступны в разделе «Активность». Передача клиентов и результатов звонков в обе стороны настраивается отдельно.</p></section>;
 }

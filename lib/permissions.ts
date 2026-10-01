@@ -37,6 +37,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;if(e.role==='admin')return true;
+ if(path==='/api/activity')return method==='GET'&&e.role==='department_head'&&!!e.department;
  if(path==='/api/crm')return true; // Object-level rules are applied inside the CRM handler.
  if(path==='/api/cdek'||path==='/api/cdek/status-mapping')return method==='GET'&&e.role==='logistic';
  if(path==='/api/callback-phones')return method==='GET'&&e.role==='logistic';
