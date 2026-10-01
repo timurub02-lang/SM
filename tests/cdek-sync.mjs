@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {cdekStatusPatch} from '../lib/cdek-sync.ts';
+const order={status:'packing'};
+const entity={statuses:[{code:'CREATED',date_time:'2026-09-29T21:10:22+0000'},{code:'ACCEPTED',date_time:'2026-09-29T21:10:21+0000'}]};
+const p=cdekStatusPatch(order,entity,{CREATED:'sent'},'r1');
+assert.equal(p.status,'shipping');assert.equal(p.shippedAt,'2026-09-29T21:10:22.000Z');
+assert.equal(cdekStatusPatch({...order,...p},entity,{CREATED:'sent'},'r1'),null);
+assert.equal(cdekStatusPatch(order,{...entity,is_return:true},{CREATED:'sent'},'r1'),null);
+assert.equal(cdekStatusPatch(order,entity,{},'r1').status,undefined);
+assert.equal(cdekStatusPatch({...order,cdekStatus:{at:'2026-10-01T00:00:00Z'}},entity,{CREATED:'sent'},'r1'),null);
+console.log('CDEK mapping, dates, duplicates and stale events passed');

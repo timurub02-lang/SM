@@ -1,0 +1,18 @@
+'use client';
+import {useEffect,useState} from 'react';
+import type {Product} from '@/lib/warehouse';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
+type Movement={id:string;quantity:number;reason:string;at:string;actor:string};
+export function StockDialog({product,actorId,onClose,onSaved}:{product:Product;actorId:string;onClose:()=>void;onSaved:()=>void}){
+ const [id]=useState(()=>crypto.randomUUID()),[kind,setKind]=useState('add'),[quantity,setQuantity]=useState(''),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[history,setHistory]=useState<Movement[]>([]);
+ useEffect(()=>{let cancelled=false;fetch(`/api/warehouse?actorId=${encodeURIComponent(actorId)}&movements=${encodeURIComponent(product.id)}`).then(async r=>{const d=await r.json() as {movements:Movement[];error?:string};if(!r.ok)throw Error(d.error);if(!cancelled)setHistory(d.movements);}).catch(e=>{if(!cancelled)setError(e.message);});return()=>{cancelled=true;};},[actorId,product.id]);
+ async function save(){setBusy(true);setError('');try{const r=await fetch('/api/warehouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actorId,action:'stock',movement:{id,productId:product.id,kind,quantity:Number(quantity),reason}})});const d=await r.json() as {error?:string};if(!r.ok)throw Error(d.error);onSaved();}catch(e){setError(e instanceof Error?e.message:'Не удалось изменить остатки');}finally{setBusy(false);}}
+ const stock=product.stock;
+ return <Dialog open onOpenChange={open=>{if(!open&&!busy)onClose();}}><DialogContent className="form-dialog"><DialogHeader><DialogTitle>Остатки · {product.name}</DialogTitle><DialogDescription>Пополнение и списание доступны администратору и логисту. Резерв меняется автоматически по заказам.</DialogDescription></DialogHeader><div className="stack">
+ <div className="notice">Доступно: {stock?.available??0} · Резерв: {stock?.reserved??0} · Списано по оплате: {stock?.sold??0}</div>
+ {(stock?.available??0)<0&&<p className="orange">Не хватает {-(stock?.available??0)} шт. для существующих заказов. Внесите фактический начальный остаток с учётом товаров в резерве.</p>}
+ <form className="stack" onSubmit={e=>{e.preventDefault();void save();}}><fieldset disabled={busy} className="stack order-fields"><label className="field"><span>Операция</span><select value={kind} onChange={e=>setKind(e.target.value)}><option value="add">Добавить на склад</option><option value="remove">Списать со склада</option></select></label><label className="field"><span>Количество, шт.</span><input type="number" min={1} max={1000000} step={1} required value={quantity} onChange={e=>setQuantity(e.target.value)}/></label><label className="field"><span>Основание</span><input required maxLength={500} placeholder="Начальный остаток, поставка, брак…" value={reason} onChange={e=>setReason(e.target.value)}/></label><small className="muted">Вручную можно списать только свободный остаток. Возврат заказа оформляется в его карточке кнопкой «Возврат на склад».</small><button className="primary" type="submit">{busy?'Сохранение…':kind==='add'?'Добавить товар':'Списать товар'}</button></fieldset></form>
+ {error&&<p role="alert" className="orange">{error}</p>}
+ <details><summary>Последние ручные движения</summary>{history.length?history.map(m=><div key={m.id} className="item-read"><span>{m.quantity>0?'+':''}{m.quantity} шт. · {m.reason}<small>{m.actor} · {new Date(m.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} МСК</small></span></div>):<p className="muted">Ручных движений пока нет.</p>}<small className="muted">Изменения по заказу видны в его истории.</small></details>
+ </div></DialogContent></Dialog>;
+}

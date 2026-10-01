@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {requestCdekPrint} from '../lib/cdek-print-client.ts';
+globalThis.setTimeout=fn=>{fn();return 0};
+let calls=0;
+globalThis.fetch=async()=>new Response(++calls<3?'{}':'%PDF-test',{status:calls<3?202:200});
+assert.equal(await (await requestCdekPrint({orderId:'test'})).text(),'%PDF-test');
+assert.equal(calls,3);
+calls=0;globalThis.fetch=async()=>{calls++;return new Response('{}',{status:400})};
+assert.equal((await requestCdekPrint({})).status,400);assert.equal(calls,1);
+calls=0;globalThis.fetch=async()=>{calls++;return new Response('{}',{status:202})};
+assert.equal((await requestCdekPrint({})).status,202);assert.equal(calls,10);
+console.log('PDF readiness polling passed');

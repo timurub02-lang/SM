@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {internalWaybill} from '../lib/internal-waybill.ts';
+import {waybillPdf} from '../lib/waybill-pdf.ts';
+const data=internalWaybill({id:'1172222',address:'Россия, Санкт-Петербург, Сестрорецк, ул. Токарева, д. 6, кв. 20',waybillComment:'Курьер СДЭК',items:[{name:'Курс',quantity:1,price:11250},{name:'Фури',quantity:3,price:0}]},{name:'Кутюгин Юрий Николаевич',phone:'79213030782',address:'Старый адрес'},{login:'operator-login'});
+assert.equal(data.operator,'operator-login');
+assert(!data.address.includes('Старый'));
+assert.equal(data.callbackPhone,'—');
+assert.equal(data.items.reduce((s,i)=>s+i.quantity*i.price,0),11250);
+const fonts={regular:readFileSync('public/fonts/LiberationSans-Regular.ttf').toString('base64'),bold:readFileSync('public/fonts/LiberationSans-Bold.ttf').toString('base64')};
+const doc=waybillPdf(data,fonts);
+assert.equal(doc.getNumberOfPages(),1);
+assert(doc.output().startsWith('%PDF-'));
+mkdirSync('work/waybill',{recursive:true});
+writeFileSync('work/waybill/sample.pdf',Buffer.from(doc.output('arraybuffer')));
+const long=waybillPdf({...data,comment:'Длинный комментарий заказа. '.repeat(180),items:Array.from({length:70},(_,i)=>({name:`Товар ${i+1} с длинным названием`,quantity:2,price:100}))},fonts);
+assert(long.getNumberOfPages()>1);
+writeFileSync('work/waybill/multipage.pdf',Buffer.from(long.output('arraybuffer')));
+console.log('PDF signature, data, totals and pagination checks passed');
+const batch=waybillPdf([data,{...data,id:'SECOND-ORDER'}],fonts);
+assert.equal(batch.getNumberOfPages(),2);
+assert.throws(()=>waybillPdf([],fonts),/Нет накладных/);
+writeFileSync('work/waybill/batch.pdf',Buffer.from(batch.output('arraybuffer')));
+console.log('Batch PDF checks passed');
+const callbacks={phones:['88001112233','88004445566'],departments:{'1':'1','2':'2','3':'1'}};
+for(const [department,expected] of [['1','88001112233'],['2','88004445566'],['3','88001112233'],[undefined,'—']]){
+ assert.equal(internalWaybill({id:'test',items:[]},{name:'Клиент',phone:''},{login:'operator',department},callbacks).callbackPhone,expected);
+}
+assert.equal(internalWaybill({id:'test',items:[]},{name:'Клиент',phone:''},{department:'2'},{...callbacks,departments:{'2':''}}).callbackPhone,'—');
+console.log('Department callback selection and unassigned fallback passed');

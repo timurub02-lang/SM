@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {smsText,smsSign,smsConfig,mainSmsCall} from '../lib/mainsms.ts';
+assert.equal(smsText('Здравствуйте, {client}! Заказ {order}.','Анна','42'),'Здравствуйте, Анна! Заказ 42.');
+assert.throws(()=>smsText('{unknown}','a','b'));
+assert.equal(smsSign({b:'two',a:'one'},'key'),smsSign({a:'one',b:'two'},'key'));
+assert.throws(()=>smsConfig.parse({project:'p',sender:'',apiKey:'k',templates:[{id:'1',name:'a',text:'a'},{id:'1',name:'b',text:'b'}]}));
+let calls=0;
+globalThis.fetch=async(url,options)=>{calls++;assert.equal(url,'https://mainsms.ru/api/mainsms/message/send');assert.equal(options.body.get('apikey'),null);assert.equal(options.body.get('recipients'),'+70000000000');return Response.json({status:'success',messages_id:[1]})};
+assert.deepEqual((await mainSmsCall({project:'p',apiKey:'k'},'send',{recipients:'+70000000000',message:'test'})).messages_id,[1]);assert.equal(calls,1);
+globalThis.fetch=async()=>Response.json({status:'error',error:7});await assert.rejects(mainSmsCall({project:'p',apiKey:'k'},'send',{}),/код 7/);
+console.log('MainSMS templates, signing and mocked transport passed. No real SMS sent.');

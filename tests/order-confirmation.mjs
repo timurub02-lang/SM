@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {orderGroup,validateTransition,transitions} from '../lib/crm.ts';
+assert.equal(orderGroup('draft').id,'new');
+assert.equal(orderGroup('confirm').id,'new');
+assert.equal(orderGroup('check').id,'accepted');
+const order={status:'draft',address:'Москва, Тверская 1',items:[{name:'Товар',quantity:1,price:100}]};
+assert.doesNotThrow(()=>validateTransition(order,'confirm',{address:''},''));
+assert.throws(()=>validateTransition({...order,address:''},'confirm',{address:''},''));
+assert.throws(()=>validateTransition({...order,items:[]},'confirm',{address:''},''));
+assert.throws(()=>validateTransition({...order,status:'confirm'},'confirm',{address:''},''));
+assert(transitions.confirm.includes('check'));
+console.log('Confirmation keeps New group and validates the handoff');

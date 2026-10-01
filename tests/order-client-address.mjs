@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {clientAddressFromOrder} from '../lib/crm.ts';
+import {emptyAddressParts} from '../lib/address.ts';
+const parts={...emptyAddressParts,city:'г Москва',house:'д 1',flat:'кв 2'};
+const patch=clientAddressFromOrder({address:' Новый адрес ',addressParts:parts});
+assert.equal(patch.address,'Новый адрес');assert.deepEqual(patch.addressParts,parts);assert.equal(patch.city,'г Москва');assert.equal(patch.addressReview,false);
+assert.equal(clientAddressFromOrder({address:'   '}),null);
+assert.equal(clientAddressFromOrder({}),null);
+assert.equal(clientAddressFromOrder({address:'Введён вручную'}).addressParts,null);
+assert(!('owner' in patch));assert(!('addressOriginal' in patch));
+console.log('Order-to-client address checks passed');

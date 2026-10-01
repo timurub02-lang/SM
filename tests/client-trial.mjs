@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {applyRetention} from '../lib/crm.ts';
+const start='2026-09-30T00:00:00Z',end='2026-10-01T00:00:00Z';
+const c={id:'c',owner:'op',source:'test.xlsx · ТК',sheet:'К',assignmentStartedAt:start,assignedUntil:end,trialUntil:end,trialReturnSheet:'Т1'};
+assert.equal(applyRetention(c,[],Date.parse(end)-1).owner,'op');
+const released=applyRetention(c,[],Date.parse(end));
+assert.equal(released.owner,'');assert.equal(released.sheet,'Т1');assert.equal(released.trialUntil,undefined);
+const held=applyRetention(c,[{clientId:'c',manager:'op',createdAt:start,status:'draft'}],Date.parse(end));
+assert.equal(held.owner,'op');assert.equal(held.trialUntil,undefined);
+assert.equal(applyRetention(c,[{clientId:'c',manager:'other',createdAt:start,status:'draft'}],Date.parse(end)).owner,'');
+console.log('24-hour assignment tests passed');
