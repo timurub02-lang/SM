@@ -19,3 +19,8 @@ assert.throws(()=>employeeForManager(head,base,{role:'operator',department:'1'})
 assert.throws(()=>employeeForManager(head,base,{role:'admin',department:'2'}),/своего отдела/);
 assert.equal(employeeForManager(head,base,{role:'operator',department:'2'}).department,'2');
 console.log('Department head employee restrictions passed');
+
+for(const department of ["1","2","3","4","5"]){
+ assert.equal(employeeSchema.parse({...base,role:"operator",department}).department,department);
+}
+assert.throws(()=>employeeSchema.parse({...base,role:"operator",department:"6"}));
