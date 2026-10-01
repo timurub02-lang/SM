@@ -132,6 +132,17 @@ try{
   assert.deepEqual(saved.items,[]);
   if(r.status===200){assert.equal(saved.address,body.address);assert.equal(saved.comment,body.comment);assert.equal(saved.status,status);}
  }
+ const noticeId='one-o-packing';
+ const savedOrder=()=>JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(noticeId).data);
+ assert.equal(savedOrder().deliveryReset,undefined);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...savedOrder(),manualDeliveryCost:0,packingWaybillAt:new Date().toISOString()}),noticeId);
+ async function editNotice(body){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(noticeId).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{id:noticeId,version,...body}});assert.equal(r.status,200,r.text);return savedOrder();}
+ let notice=await editNotice({action:'updateOrder',address:'New address',delivery:'moscow_courier',comment:'Correction'});
+ assert.equal(notice.deliveryReset.calculation,true);assert.equal(notice.deliveryReset.waybill,true);assert.equal(notice.manualDeliveryCost,undefined);assert.equal(notice.packingWaybillAt,undefined);
+ notice=await editNotice({action:'updateOrder',address:'New address',delivery:'moscow_courier',comment:'Another comment'});assert.equal(notice.deliveryReset.waybill,true);
+ notice=await editNotice({action:'saveManualDeliveryCost',amount:0});assert.equal(notice.deliveryReset.calculation,false);assert.equal(notice.deliveryReset.waybill,true);
+ notice=await editNotice({action:'markPackingWaybill'});assert.equal(notice.deliveryReset,undefined);
+ console.log('Delivery reset notice: absent before calculation, persists after edits, clears only after replacements.');
  const editId='one-o-confirm';
  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:editId,version:2,items:[{name:'Injected',quantity:1,price:1}]}})).status,400);
  for(const state of ['creating','ready']){
