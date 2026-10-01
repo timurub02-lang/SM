@@ -42,6 +42,14 @@ try{
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'settings',retentionDays:2},headers:{Origin:'https://evil.test'}})).status,403);
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'settings',retentionDays:2},headers:{Origin:''}})).status,403);
  assert.equal((await call('/api/warehouse',{cookie:cookies.one})).status,403);
+ assert.equal((await call('/api/skorozvon',{cookie:cookies.one})).status,403);
+ assert.equal((await call('/api/skorozvon',{cookie:cookies.head,body:{revision:''}})).status,403);
+ assert.equal((await call('/api/skorozvon',{cookie:cookies.admin})).data.configured,false);
+ assert.equal((await call('/api/skorozvon',{cookie:cookies.admin,body:{revision:''}})).status,400);
+ db.prepare('INSERT INTO settings VALUES(?,?)').run('skorozvon',JSON.stringify({login:'test@example.invalid',apiKey:'private-api-key',clientId:'private-client-id',clientSecret:'private-secret',checkedAt:new Date().toISOString(),revision:'test'}));
+ const sk=await call('/api/skorozvon',{cookie:cookies.admin});assert.equal(sk.status,200);assert.equal(sk.data.configured,true);assert.equal(sk.data.syncEnabled,false);assert.ok(!sk.text.includes('private-'));
+ assert.equal((await call('/api/skorozvon',{cookie:cookies.admin,body:{revision:'stale'}})).status,409);
+
  assert.equal((await call('/api/cdek',{cookie:cookies.one,body:{action:'save'}})).status,403);
  assert.equal((await call('/api/mainsms',{cookie:cookies.one,body:{action:'preview',orderId:'o-two'}})).status,403);
  async function save(actor,e,patch={},id=e.id){return call('/api/crm',{cookie:cookies[actor],body:{action:'saveEmployee',...(id?{id,version:e.version}:{}),employee:{...e,accessEnabled:true,...patch}}});}
