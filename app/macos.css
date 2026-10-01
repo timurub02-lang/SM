@@ -218,7 +218,7 @@ button:focus-visible,a:focus-visible { outline: 3px solid #007aff70; outline-off
 
 .field input:disabled { color: #78818f; -webkit-text-fill-color: #78818f; background: #e5e7eb; border-color: #d5d9df; box-shadow: none; cursor: not-allowed; opacity: 1; }
 
-.client-card { background: linear-gradient(145deg, #f3f4f6, #e5e7eb); }
+.client-card, .stats .stat[aria-pressed="true"] { background: linear-gradient(145deg, #f3f4f6, #e5e7eb); }
 .client-card .card-top { background: transparent; color: #838b97; }
 .client-card .card-identity { background: transparent; }
 .client-card .avatar { background: linear-gradient(145deg, #f1f2f4, #cdd2d9); color: #626c7b; outline-color: #d5d9df80; }
