@@ -9,3 +9,5 @@ await assert.rejects(checkSkorozvon(config,async()=>{throw Error('network-secret
 await assert.rejects(checkSkorozvon(config,async()=>Response.json({})),/не выдал токен/);
 let n=0;await assert.rejects(checkSkorozvon(config,async()=>++n===1?Response.json({access_token:'token'}):new Response('',{status:403})),/доступ к API/);
 console.log('Skorozvon: authorization, read-only probe, safe errors and invalid responses passed');
+
+let bare=0;assert.ok((await checkSkorozvon(config,async()=>++bare===1?Response.json({access_token:"token"}):Response.json([{id:1}]))).checkedAt);

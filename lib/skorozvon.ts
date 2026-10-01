@@ -8,8 +8,9 @@ export async function checkSkorozvon(c:SkCredentials,request:typeof fetch=fetch)
   // Read one page to verify API access; no clients, calls or projects are changed.
   const check=await request('https://api.skorozvon.ru/api/v2/users?length=1',{headers:{Authorization:`Bearer ${token.access_token}`},signal:AbortSignal.timeout(15000),redirect:'error'});
   if(!check.ok)throw Error('Скорозвон: авторизация прошла, но доступ к API пользователей не подтверждён');
-  const data=await check.json() as {data?:unknown};
-  if(!Array.isArray(data.data))throw Error('Скорозвон вернул неожиданный ответ API');
+  const data=await check.json() as unknown;
+  const users=Array.isArray(data)?data:data&&typeof data==='object'&&'data' in data?data.data:null;
+  if(!Array.isArray(users))throw Error('Скорозвон вернул неожиданный ответ API');
   return {checkedAt:new Date().toISOString()};
  }catch(e){
   if(e instanceof Error&&e.message.startsWith('Скорозвон'))throw e;
