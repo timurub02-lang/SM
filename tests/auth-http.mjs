@@ -145,6 +145,8 @@ try{
  console.log('Delivery reset notice: absent before calculation, persists after edits, clears only after replacements.');
  const returnOperator=await fixture('return-flow');records('return-flow');
  const flowId='return-flow-o-confirm';
+ db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('return-product','test',JSON.stringify({name:'Test'}));
+ db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('return-stock','return-product',10,'Fixture','admin',new Date().toISOString());
  const flow=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...flow,address:'Address',delivery:'cdek_courier',items:[{name:'Test',quantity:1,price:1}]}),flowId);
  async function step(cookie,to,expected=200){
