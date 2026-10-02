@@ -183,7 +183,16 @@ try{
   else {
    await manualStep('redeemed',400);
    let courierView=(await call('/api/crm',{cookie:dispatchCourier.cookie})).data;
-   assert.equal(courierBalance(courierView.orders,dispatchCourier.e.id).parcels,1);
+   assert.equal(courierBalance(courierView.orders,dispatchCourier.e.id).pending,1);
+   assert.equal(courierBalance(courierView.orders,dispatchCourier.e.id).total,0);
+   const beforeAccept=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
+   assert.equal((await call('/api/crm',{cookie:dispatchCourier.cookie,body:{action:'courierOutcome',id,version:beforeAccept,to:'redeemed',confirmed:true}})).status,400);
+   const acceptance={action:'courierAccept',id,version:beforeAccept,confirmed:true};
+   assert.equal((await call('/api/crm',{cookie:strangerCourier.cookie,body:acceptance})).status,400);
+   const accepted=await call('/api/crm',{cookie:dispatchCourier.cookie,body:acceptance});assert.equal(accepted.status,200,accepted.text);
+   assert.ok(accepted.data.state.orders.find(o=>o.id===id).courier.acceptedAt);
+   assert.equal(courierBalance(accepted.data.state.orders,dispatchCourier.e.id).parcels,1);
+   assert.equal((await call('/api/crm',{cookie:dispatchCourier.cookie,body:acceptance})).status,400);
    const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
    const body={action:'courierOutcome',id,version,to:'redeemed',confirmed:true};
    assert.equal((await call('/api/crm',{cookie:strangerCourier.cookie,body})).status,400);
@@ -216,6 +225,10 @@ try{
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'deleteEmployee',id:dispatchCourier.e.id,version:1,mode:'release'}})).status,400);
  await courierAction(dispatchCourier.cookie,{action:'returnToWarehouse'},403);
  await courierAction(dispatchCourier.cookie,{action:'receivePayment'},403);
+ await courierAction(dispatchCourier.cookie,{action:'courierOutcome',to:'returned',confirmed:true,reason:'Client refused'},400);
+ await courierAction(dispatchCourier.cookie,{action:'courierAccept',confirmed:false},400);
+ await courierAction(dispatchCourier.cookie,{action:'courierAccept',confirmed:true});
+ await courierAction(dispatchCourier.cookie,{action:'courierAccept',confirmed:true},400);
  await courierAction(dispatchCourier.cookie,{action:'courierOutcome',to:'returned',confirmed:true,reason:''},400);
  const stockBeforeReturn=db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available;
  const returned=await courierAction(dispatchCourier.cookie,{action:'courierOutcome',to:'returned',confirmed:true,reason:'Client refused'});
