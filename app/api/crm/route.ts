@@ -1,4 +1,4 @@
-import {canReceivePayment,isLogistic} from '@/lib/crm';
+import {total,canReceivePayment,isLogistic} from '@/lib/crm';
 import {removalPlan} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
@@ -148,7 +148,7 @@ async function handlePOST(request:Request){
   }
   if(p.action==="receivePayment"){
    if(!canReceivePayment(o,employee.role))throw Error("Приём оплаты доступен логисту только для оплаченного заказа курьера Москвы или Почты России без ранее принятой оплаты");
-   next.paymentReceipt={amount:z.number().finite().positive().max(100000000).refine(v=>Math.abs(v*100-Math.round(v*100))<0.000001,"Укажите сумму с точностью до копеек").parse(p.amount),operatorLogin:s.employees.find(e=>e.id===o.manager)?.login||"",receivedByName:employee.name,delivery:o.delivery!};next.paymentReceivedAt=now;next.paymentReceivedBy=employee.id;text="Оплата принята логистом · деньги получены · "+next.paymentReceipt.amount+" ₽";
+   next.paymentReceipt={amount:z.number().finite().nonnegative().parse(total(o)),operatorLogin:s.employees.find(e=>e.id===o.manager)?.login||"",receivedByName:employee.name,delivery:o.delivery!};next.paymentReceivedAt=now;next.paymentReceivedBy=employee.id;text="Оплата принята логистом · деньги получены · "+next.paymentReceipt.amount+" ₽";
   }else if(p.action==="saveManualDeliveryCost"){
    if(!canManageDelivery(employee.role,o.status)||!["moscow_courier","russian_post"].includes(o.delivery||""))throw Error("Стоимость доступна логисту для курьера Москвы и Почты России до отправки");
    next.manualDeliveryCost=z.number().finite().min(0).max(1000000).parse(p.amount);text="Сохранена стоимость доставки: "+next.manualDeliveryCost+" ₽";
