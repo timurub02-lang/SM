@@ -1,17 +1,20 @@
 "use client";
-import {useState} from 'react';
+import {useState,useEffect} from 'react';
 import {Toaster} from 'sonner';
 import {money,stamp,type State,type Employee,type Order} from '@/lib/crm';
 import {courierBalance,courierStage} from '@/lib/courier';
 type Props={state:State;employee:Employee;busy:boolean;error:string;refresh:()=>Promise<void>;mutate:(p:Record<string,unknown>)=>Promise<boolean>};
 export function CourierApp({state,employee,busy,error,refresh,mutate}:Props){
  const [tab,setTab]=useState('pending');const [query,setQuery]=useState('');const [action,setAction]=useState<{id:string;to:'redeemed'|'returned'}|null>(null);const [reason,setReason]=useState('');
+ const [design,setDesign]=useState('aurora');
+ useEffect(()=>{try{setDesign(localStorage.getItem(`courier-design:${employee.id}`)==='classic'?'classic':'aurora');}catch{}},[employee.id]);
+ function changeDesign(value:string){setDesign(value);try{localStorage.setItem(`courier-design:${employee.id}`,value);}catch{}}
  const balance=courierBalance(state.orders,employee.id);
  const labels:Record<string,string>={pending:'Принять посылки',delivery:'На доставке',money:'Деньги на руках',return:'Вернуть на склад',settled:'Завершённые'};
  const orders=state.orders.filter(o=>courierStage(o)===tab&&`${o.id} ${state.clients.find(c=>c.id===o.clientId)?.name||''}`.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru'))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
  async function confirm(o:Order){if(!action)return;const ok=await mutate({action:'courierOutcome',id:o.id,version:o.version,to:action.to,reason,confirmed:true});if(ok){setAction(null);setReason('');}}
- return <main className="courier-app"><Toaster richColors position="top-center"/><header className="courier-header"><div><small>СМ · КУРЬЕР</small><h1>{employee.name}</h1></div><button className="secondary" onClick={async()=>{await fetch('/api/auth/logout',{method:'POST'});window.location.replace('/login');}}>Выйти</button></header>
- <section className="courier-balances" aria-label="Мой отчёт"><div><span>Заказы на руках</span><strong>{money(balance.parcels)}</strong><small>Посылки на доставке и возвраты</small></div><div><span>Деньги на руках</span><strong>{money(balance.cash)}</strong><small>Нужно передать логисту</small></div><div><span>Ожидает приёма</span><strong>{money(balance.pending)}</strong><small>Ещё не входит в ваш отчёт</small></div><div className="courier-total"><span>Всего под отчётом</span><strong>{money(balance.total)}</strong></div></section>
+ return <main className={`courier-app courier-design-${design}`}><Toaster richColors position="top-center"/><div className="courier-design-picker" role="group" aria-label="Дизайн кабинета"><span>Дизайн</span><button type="button" aria-pressed={design==='classic'} onClick={()=>changeDesign('classic')}>Классический</button><button type="button" aria-pressed={design==='aurora'} onClick={()=>changeDesign('aurora')}>Аврора</button></div><div className="courier-hero"><header className="courier-header"><div><small>СМ · КУРЬЕР</small><h1>{employee.name}</h1></div><button className="secondary" onClick={async()=>{await fetch('/api/auth/logout',{method:'POST'});window.location.replace('/login');}}>Выйти</button></header>
+ <section className="courier-balances" aria-label="Мой отчёт"><div><span>Заказы на руках</span><strong>{money(balance.parcels)}</strong><small>Посылки на доставке и возвраты</small></div><div><span>Деньги на руках</span><strong>{money(balance.cash)}</strong><small>Нужно передать логисту</small></div><div><span>Ожидает приёма</span><strong>{money(balance.pending)}</strong><small>Ещё не входит в ваш отчёт</small></div><div className="courier-total"><span>Всего под отчётом</span><strong>{money(balance.total)}</strong></div></section></div>
  <div className="courier-refresh"><p>Возвраты и деньги снимаются с отчёта после подтверждения логистом.</p><button className="secondary" disabled={busy} onClick={()=>void refresh()}>Обновить</button></div>{error&&<p role="alert" className="notice amber">{error}. Проверьте соединение и обновите данные.</p>}
  <nav className="courier-tabs" aria-label="Мои заказы">{Object.entries(labels).map(([id,label])=><button key={id} aria-pressed={tab===id} onClick={()=>{setTab(id);setAction(null);}}>{label}<b>{state.orders.filter(o=>courierStage(o)===id).length}</b></button>)}</nav>
  <label className="courier-search">Поиск заказа<input type="search" placeholder="Номер заказа или имя клиента" value={query} onChange={e=>setQuery(e.target.value)}/></label>
