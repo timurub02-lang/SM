@@ -258,5 +258,16 @@ try{
  assert.equal(reminderState.reminders.length,20);assert.ok(reminderState.reminders.find(r=>r.id===reminderId).readAt);
  assert.ok(!(await call('/api/crm',{cookie:chief.cookie})).data.reminders.some(r=>r.id===reminderId));
  console.log('Reminders: latest 20, read persistence, rescheduled-call history and employee isolation passed.');
+ db.exec('CREATE TABLE IF NOT EXISTS activity_incidents(id TEXT PRIMARY KEY,employee_id TEXT NOT NULL,started_at TEXT NOT NULL,detected_at TEXT NOT NULL,ended_at TEXT,reason TEXT NOT NULL)');
+ const incidentAt=new Date().toISOString();db.prepare('INSERT INTO activity_incidents VALUES(?,?,?,?,?,?)').run('test-lunch-reminder',reminderActor.e.id,incidentAt,incidentAt,null,'Превышено время обеда');
+ const adminReminders=(await call('/api/crm',{cookie:cookies.admin})).data.reminders;
+ const lunch=adminReminders.find(r=>r.id==='activity:test-lunch-reminder');assert.ok(lunch);assert.equal(lunch.text,'Превышено время обеда');assert.ok(lunch.readAt);assert.equal(lunch.activityEmployeeId,reminderActor.e.id);
+ assert.ok((await call('/api/crm',{cookie:cashHead.cookie})).data.reminders.some(r=>r.id===lunch.id));
+ const otherHead=await fixture('other-head','2','department_head');
+ for(const cookie of [otherHead.cookie,reminderActor.cookie,chief.cookie])assert.ok(!(await call('/api/crm',{cookie})).data.reminders.some(r=>r.id===lunch.id));
+ db.prepare('UPDATE activity_incidents SET ended_at=? WHERE id=?').run(incidentAt,'test-lunch-reminder');
+ assert.ok((await call('/api/crm',{cookie:cookies.admin})).data.reminders.find(r=>r.id===lunch.id).readAt);
+ console.log('Activity warning history restored in bell, grey, persistent and department scoped.');
+
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
