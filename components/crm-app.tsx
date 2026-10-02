@@ -50,8 +50,8 @@ export default function Page(){
  const [warehouseAddressOpen,setWarehouseAddressOpen]=useState(false);
  const [personalAuth,setPersonalAuth]=useState(false);
  const [requestedView,setView]=useState<View>("mine");const [actor,setActor]=useState("anna");const [query,setQuery]=useState("");const [filter,setFilter]=useState("all");
- const [showSectionSettings,setShowSectionSettings]=useState(true);
- useEffect(()=>{try{setShowSectionSettings(localStorage.getItem(`crm-section-settings:${actor}`)!=='hidden');}catch{setShowSectionSettings(true);}},[actor]);
+ const [showSectionSettings,setShowSectionSettings]=useState(false);
+ useEffect(()=>{try{setShowSectionSettings(localStorage.getItem(`crm-section-settings:${actor}`)==='shown');}catch{setShowSectionSettings(false);}},[actor]);
  function toggleSectionSettings(visible:boolean){setShowSectionSettings(visible);try{localStorage.setItem(`crm-section-settings:${actor}`,visible?'shown':'hidden');}catch{}}
  const [clientHistoryOpen,setClientHistoryOpen]=useState(false);
  const [handoffOpen,setHandoffOpen]=useState(false);
