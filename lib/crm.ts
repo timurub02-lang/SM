@@ -43,20 +43,23 @@ export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:P
  if(!(o.address??c.address).trim())return {field:"address",label:"Заполните адрес"} as const;
  return null;
 }
-export function allowedOrderTransitions(o:Order):Status[]{
- const allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
- if(!o.finalHandoffAt)return allowed;
- const result=allowed.filter(to=>to!=="rework");
- return ["confirm","extra","check"].includes(o.status)&&!result.includes("refused")?[...result,"refused"]:result;
+export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После ${o.round-1}-го возврата оператору`:"";
+export function allowedOrderTransitions(o:Order,role?:string):Status[]{
+ let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
+ if(o.finalHandoffAt){
+  allowed=allowed.filter(to=>to!=="rework");
+  if(["confirm","extra","check"].includes(o.status)&&!allowed.includes("refused"))allowed=[...allowed,"refused"];
+ }
+ return role==="logistic"?allowed.filter(to=>to!=="refused"||!!o.finalHandoffAt&&["confirm","extra"].includes(o.status)):allowed;
 }
 export function finalNoAnswerDeadline(o:Order,contact:string,now:string){
  if(!o.finalHandoffAt||!["confirm","extra"].includes(o.status))return undefined;
  return new Date(Date.parse(o.finalHandoffAt)+86400000).toISOString();
 }
-export function validateTransition(o:Order,to:Status,c:Client,reason:string){
+export function validateTransition(o:Order,to:Status,c:Client,reason:string,role?:string){
  if(o.status==="rework"&&o.reworkDeadline&&Date.now()>=Date.parse(o.reworkDeadline))throw Error("Срок доработки истёк. Заказ подлежит отмене");
  if(["draft","rework"].includes(o.status)&&["confirm","extra"].includes(to)){const missing=orderMissingField(o,c);if(missing)throw Error(missing.label);}
- const allowed=allowedOrderTransitions(o);
+ const allowed=allowedOrderTransitions(o,role);
  if(!allowed.includes(to))throw new Error("Этот переход недоступен для текущего этапа");
  if(["confirm","extra","check","packing"].includes(to)&&(!(o.address??c.address).trim()||!o.items.length))throw new Error("Заполните адрес клиента и корзину заказа");
  if(["rework","refused"].includes(to)&&!reason.trim())throw new Error("Укажите причину возврата или отказа");

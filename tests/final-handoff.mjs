@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {allowedOrderTransitions,finalNoAnswerDeadline,validateTransition} from '../lib/crm.ts';
+import {operatorReturnLabel,allowedOrderTransitions,finalNoAnswerDeadline,validateTransition} from '../lib/crm.ts';
 const now='2026-10-01T10:00:00Z';
 const o={status:'confirm',finalHandoffAt:now,address:'Address',items:[{name:'Product',quantity:1,price:1}]};
 assert.deepEqual(allowedOrderTransitions(o),['check','refused']);
@@ -24,3 +24,19 @@ assert.equal(finalNoAnswerDeadline({...o,noAnswerDeadline:'2026-10-03T10:00:00Z'
 
 assert.deepEqual(allowedOrderTransitions({...o,status:'extra',finalHandoffAt:undefined}),['packing','rework','refused']);
 assert.deepEqual(allowedOrderTransitions({...o,status:'rework',extra:true,finalHandoffAt:undefined}),['extra','refused']);
+
+assert.equal(operatorReturnLabel({round:1}),'');
+assert.equal(operatorReturnLabel({round:2}),'После 1-го возврата оператору');
+assert.equal(operatorReturnLabel({round:3}),'После 2-го возврата оператору');
+for(const status of ['confirm','extra']){
+ const initial={...o,status,round:2,finalHandoffAt:undefined};
+ assert(!allowedOrderTransitions(initial,'logistic').includes('refused'));
+ assert(allowedOrderTransitions(initial,'logistic').includes('rework'));
+ assert.throws(()=>validateTransition(initial,'refused',{},'Refusal','logistic'));
+ const afterReturn={...initial,finalHandoffAt:now};
+ assert(allowedOrderTransitions(afterReturn,'logistic').includes('refused'));
+ assert(!allowedOrderTransitions(afterReturn,'logistic').includes('rework'));
+ assert.doesNotThrow(()=>validateTransition(afterReturn,'refused',{},'Refusal','logistic'));
+}
+assert(allowedOrderTransitions({...o,status:'extra',finalHandoffAt:undefined},'admin').includes('refused'));
+console.log('Return labels and stage-specific logistic cancellation permissions passed');
