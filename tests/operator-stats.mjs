@@ -31,3 +31,10 @@ assert.equal(operatorStats(state,employees[1],'','')[0].orderLists.created.lengt
 assert.equal(operatorStats(state,admin,'','2026-09-30')[0].orderLists.created.length,0);
 assert.equal(operatorStats(state,admin,'','')[0].orderLists.cancelled.length,0);
 assert.deepEqual(operatorStats(state,admin,'','')[0].orderLists.reviewed.map(o=>o.id),['o']);
+
+order.status='redeemed';
+assert.equal(operatorStats(state,admin,'','')[0].redeemed,1);
+assert.deepEqual(operatorStats(state,admin,'','')[0].orderLists.redeemed.map(o=>o.id),['o']);
+assert.equal(operatorStats(state,admin,'','2026-09-30')[0].redeemed,0);
+assert.equal(operatorStats(state,employees[1],'','')[0].redeemed,0);
+order.status='returned';assert.equal(operatorStats(state,admin,'','')[0].redeemed,0);
