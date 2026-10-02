@@ -363,4 +363,4 @@ button.waybill-received {background:#e4e7ec;color:#687385;border:1px solid #d2d7
 
 .courier-balances>div:nth-child(3){grid-column:1/-1}
 
-.courier-navigation{display:flex;flex-direction:column;gap:4px}.courier-navigator{display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px}.courier-navigator svg{flex-shrink:0}.courier-map-fallback{display:flex;align-items:center;justify-content:center;min-height:44px;font-size:13px;color:#225db0;text-decoration:underline}
+.courier-navigation{display:flex;flex-direction:column;gap:4px}.courier-navigator{display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px}.courier-navigator svg{flex-shrink:0}
