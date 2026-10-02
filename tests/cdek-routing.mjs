@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {chooseRouting,mainRoutingProduct,routingWindow,routingSchema,routingReservationGuard} from '../lib/cdek-routing.ts';
+const now=new Date('2026-10-05T08:00:00Z');
+const accounts=[{slot:1,name:'СМ',configured:true},{slot:2,name:'ИП Киселева',configured:true},{slot:4,name:'ИП Аскеров',configured:true}];
+const base={id:'r1',name:'Товар X',enabled:true,slot:1,from:'',to:'',departments:[],products:['X'],weekdays:[],period:'week',maxCount:null,maxAmount:null};
+const config={enabled:true,revision:'1',rules:[base,{...base,id:'r2',name:'Товар Y',products:['Y'],slot:2}]};
+const order={id:'o',manager:'m',items:[{name:'X',price:500,quantity:10},{name:'Y',price:1000,quantity:1}]};
+assert.equal(mainRoutingProduct(order.items).name,'Y');
+assert.equal(chooseRouting(config,accounts,order,'1',[],now).slot,2);
+assert.equal(chooseRouting(config,accounts,{items:[{name:'X',price:1000,quantity:1},{name:'Y',price:1000,quantity:8}]},'1',[],now).slot,1);
+assert.equal(chooseRouting(config,accounts,order,'5',[],now).slot,4);
+assert.equal(chooseRouting({...config,enabled:false},accounts,order,'5',[],now).slot,4);
+assert.equal(chooseRouting({...config,enabled:false},accounts,order,'1',[],now),null);
+assert.throws(()=>chooseRouting(config,accounts.filter(a=>a.slot!==4),order,'5',[],now),/Аскеров/);
+assert.deepEqual(routingWindow(base,now),{start:'2026-10-04T21:00:00.000Z',end:'2026-10-11T21:00:00.000Z'});
+assert.deepEqual(routingWindow({...base,period:'month',from:'2026-10-05',to:'2026-10-10'},now),{start:'2026-10-04T21:00:00.000Z',end:'2026-10-10T21:00:00.000Z'});
+const general={...base,products:[],maxCount:1,maxAmount:6000,from:'2026-10-05',to:'2026-10-05',weekdays:[1],departments:['1']};
+const limited={...config,rules:[general]};
+assert.equal(chooseRouting(limited,accounts,order,'1',[],now).slot,1);
+for(const patch of [{weekdays:[2]},{departments:['2']},{to:'2026-10-04'},{from:'2026-10-06'},{maxAmount:5999}])assert.throws(()=>chooseRouting({...config,rules:[{...general,...patch}]},accounts,order,'1',[],now));
+const usage=[{slot:1,state:'unknown',createdAt:now.toISOString(),amountCents:600000}];
+assert.throws(()=>chooseRouting(limited,accounts,order,'1',usage,now));
+assert.equal(chooseRouting(limited,accounts,order,'1',[{...usage[0],state:'invalid'}],now).slot,1);
+assert.equal(chooseRouting({...config,rules:[general,{...general,id:'fallback',slot:2}]},accounts,order,'1',usage,now).slot,2);
+assert.equal(routingSchema.safeParse({...config,rules:[{...base,from:'2026-02-30'}]}).success,false);
+// The same reservation predicate used in production must reject the second sender atomically.
+const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT);CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT);CREATE TABLE orders(id TEXT PRIMARY KEY,data TEXT,version INTEGER)');
+db.prepare('INSERT INTO employees VALUES(?,?)').run('m','{}');db.prepare('INSERT INTO orders VALUES(?,?,1)').run('old',JSON.stringify({items:[{name:'X',price:200,quantity:2}]}));
+const route={raw:'',managerRaw:'{}',amountCents:600000,choice:{slot:1,start:'2020-01-01T00:00:00.000Z',end:'2099-01-01T00:00:00.000Z',maxCount:1,maxCents:600000}};
+function reserve(id,r=route){const guard=routingReservationGuard(r,{...order,id});return db.prepare(`INSERT INTO settings SELECT ?,? WHERE ${guard.sql}`).run('cdek-shipment-'+id,JSON.stringify({slot:1,state:'sending',createdAt:new Date().toISOString(),routingAmountCents:600000}),...guard.values).changes;}
+assert.equal(reserve('one'),1);assert.equal(reserve('two'),0);
+db.prepare('UPDATE settings SET data=json_set(data,\'$.state\',\'invalid\')').run();assert.equal(reserve('two'),1);
+assert.equal(reserve('three',{...route,raw:'stale'}),0);
+db.exec('DELETE FROM settings');db.prepare('INSERT INTO settings VALUES(?,?)').run('cdek-shipment-old',JSON.stringify({slot:1,state:'ready',createdAt:new Date().toISOString()}));
+assert.equal(reserve('four',{...route,choice:{...route.choice,maxCount:null,maxCents:639999}}),0);
+assert.equal(reserve('five',{...route,choice:{...route.choice,maxCount:null,maxCents:640000}}),1);
+db.close();console.log('CDEK routing: main product, equal prices, mandatory A_, dates, priority, quota fallback, invalid retries, legacy amounts and atomic reservation passed.');

@@ -1,3 +1,4 @@
+import {orderRouting,assertRoutingSlot,routingReservationGuard} from '@/lib/cdek-routing-store';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
 import {cdekStatusPatch} from '@/lib/cdek-sync';
@@ -71,7 +72,7 @@ async function handlePOST(req:Request){
    const clientRow=await d.prepare('SELECT data FROM clients WHERE id=?').bind(c.order.clientId).first<{data:string}>();if(!clientRow)throw Error('Клиент не найден');
    const products=await d.prepare('SELECT data FROM products').all<{data:string}>();
    const payload=shipmentPayload(c.order,JSON.parse(clientRow.data) as Client,products.results.map(x=>JSON.parse(x.data)),form);
-   const t=c.order.cdekTariff!;const api=await apiFor(t.slot);
+   const t=c.order.cdekTariff!;assertRoutingSlot(await orderRouting(c.order),t.slot);const api=await apiFor(t.slot);
    for(const [code,side] of [[form.shipmentPoint,'sender'],[form.deliveryPoint,'recipient']]){
     if(side==='sender'&&t.params.originMode!=='warehouse'||side==='recipient'&&c.order.delivery!=='cdek_pickup')continue;
     const filters=new URLSearchParams({code,postal_code:side==='sender'?t.params.originPostalCode:c.order.addressParts?.postalCode||'',type:'PVZ',weight_max:String(Math.ceil(t.params.weight)),length:String(t.params.length),width:String(t.params.width),height:String(t.params.height)});
@@ -79,9 +80,10 @@ async function handlePOST(req:Request){
     if(!point||point.status!=='ACTIVE'||side==='sender'&&!point.is_reception||side==='recipient'&&!point.is_handout)throw Error('Выбранный ПВЗ недоступен. Выберите другой');
     if(side==='recipient'&&(payload.packages[0].items.some(x=>x.payment.value>0)||form.deliveryCost>0)&&point.allowed_cod===false)throw Error('ПВЗ не принимает наложенный платёж');
    }
-   const shipment:Shipment={attempt:crypto.randomUUID(),slot:t.slot,account:t.account,state:'sending',createdAt:new Date().toISOString(),form};const pending=JSON.stringify(shipment);
-   const lock=c.record?await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)').bind(pending,c.key,c.record.data,p.orderId,p.version!).run():await d.prepare('INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)').bind(c.key,pending,p.orderId,p.version!).run();
-   if(!lock.meta.changes)throw Error('Заказ уже отправляется или изменился. Обновите карточку');
+   const routing=await orderRouting(c.order);assertRoutingSlot(routing,t.slot);const guard=routingReservationGuard(routing,c.order);
+   const shipment:Shipment={routingAmountCents:routing.amountCents,routingRuleId:routing.choice?.ruleId,routingReason:routing.choice?.reason,attempt:crypto.randomUUID(),slot:t.slot,account:t.account,state:'sending',createdAt:new Date().toISOString(),form};const pending=JSON.stringify(shipment);
+   const lock=c.record?await d.prepare(`UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?) AND ${guard.sql}`).bind(pending,c.key,c.record.data,p.orderId,p.version!,...guard.values).run():await d.prepare(`INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?) AND ${guard.sql}`).bind(c.key,pending,p.orderId,p.version!,...guard.values).run();
+   if(!lock.meta.changes)throw Error('Заказ, правила или лимит изменились. Обновите карточку и пересчитайте доставку');
    try{
     const response=await api('/orders',payload);const data=await response.json() as any;
     const result=shipmentResult(data);

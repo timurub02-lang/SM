@@ -4,7 +4,7 @@ import {normalizePhone} from './crm.ts';
 import type {Product} from './warehouse.ts';
 export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).default(''),deliveryPoint:z.string().trim().max(255).default(''),senderAddress:z.string().trim().max(255).default(''),recipientPhone:z.string().transform(normalizePhone).refine(Boolean,'Укажите телефон для доставки'),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
-export type Shipment={attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
+export type Shipment={routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
 export function shipmentPayload(order:Order,client:Client,products:Product[],form:ShipmentForm){
  const tariff=order.cdekTariff;if(!tariff||tariff.params.delivery!==order.delivery)throw Error('Сначала сохраните тариф доставки');
  if(!['packing','phone'].includes(order.status))throw Error('Выгрузка доступна на упаковке или подготовке отправления');
