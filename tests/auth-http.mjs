@@ -327,6 +327,7 @@ try{
  let routeSave=await call(routePath,{cookie:cookies.admin,body:routeConfig});assert.equal(routeSave.status,200,routeSave.text);
  assert.equal((await call(routePath,{cookie:cookies.admin,body:routeConfig})).status,400,'Stale settings cannot overwrite new rules');
  const routeOrderId=reminderOrder;
+ for(const name of ['Cheap','Expensive']){db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('routing-'+name,name.toLowerCase(),JSON.stringify({name}));db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('routing-stock-'+name,'routing-'+name,200,'Fixture','admin',new Date().toISOString());}
  db.prepare("UPDATE orders SET data=json_set(data,'$.items',json(?)) WHERE id=?").run(JSON.stringify([{name:'Cheap',price:100,quantity:100},{name:'Expensive',price:200,quantity:1}]),routeOrderId);
  let preview=await call(routePath+'?orderId='+routeOrderId,{cookie:editor.cookie});assert.equal(preview.status,200,preview.text);assert.equal(preview.data.choice.slot,2);assert.ok(!preview.text.includes('private-'));assert.equal(preview.data.config,undefined);
  assert.equal((await call(routePath+'?orderId='+routeOrderId,{cookie:reminderActor.cookie})).status,403);
