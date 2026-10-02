@@ -372,3 +372,5 @@ button.waybill-received {background:#e4e7ec;color:#687385;border:1px solid #d2d7
 .form-dialog:has(.settings-rules-tabs){max-height:90dvh;overflow-y:auto}.settings-rules-tabs{min-width:0}.settings-rules-tabs>[data-slot=tabs-list]{width:100%;margin-bottom:12px}.section-work-rules{display:grid;gap:20px;padding:8px 0}.section-work-rules section{display:grid;gap:8px}.section-work-rules p{font-size:14px;line-height:1.65;color:#52647c}
 
 .sidebar-settings-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 4px;font-size:12px;line-height:1.4;color:#637891;cursor:pointer}.sidebar-settings-toggle [data-slot=switch]{flex-shrink:0}
+
+.team-role-group{display:grid;gap:20px}.team-role-group+.team-role-group{border-top:1px solid #dce3ec;padding-top:24px;margin-top:8px}.team-department-group{display:grid;gap:12px}.team-group-title{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:600}.team-department-group h3{font-size:16px;color:#637891}.team-group-title>span{font-size:13px;background:#e5eaf1;border-radius:8px;padding:3px 8px}
