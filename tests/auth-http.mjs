@@ -208,7 +208,10 @@ try{
  async function courierAction(cookie,body,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(courierReturnId).version;const r=await call('/api/crm',{cookie,body:{id:courierReturnId,version,...body}});assert.equal(r.status,expected,r.text);return r;}
  await courierAction(editor.cookie,{action:'transition',to:'shipping'},400);
  await courierAction(editor.cookie,{action:'transition',to:'shipping',courierId:editor.e.id},400);
- await courierAction(editor.cookie,{action:'transition',to:'shipping',courierId:dispatchCourier.e.id});
+ db.prepare("UPDATE employees SET data=json_set(data,'$.role','operator') WHERE id=?").run(strangerCourier.e.id);
+ await courierAction(editor.cookie,{action:'transition',to:'shipping'});
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(courierReturnId).data).courier.id,dispatchCourier.e.id);
+ db.prepare("UPDATE employees SET data=json_set(data,'$.role','courier') WHERE id=?").run(strangerCourier.e.id);
  await courierAction(editor.cookie,{action:'updateDelivery',delivery:'russian_post'},400);
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'deleteEmployee',id:dispatchCourier.e.id,version:1,mode:'release'}})).status,400);
  await courierAction(dispatchCourier.cookie,{action:'returnToWarehouse'},403);

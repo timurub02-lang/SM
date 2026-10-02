@@ -200,7 +200,8 @@ async function handlePOST(request:Request){
    const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);
    if(to==='shipping'&&o.delivery==='moscow_courier'){
     if(!['admin','logistic','chief_logistic'].includes(employee.role)||o.courier)throw Error('Передача курьеру недоступна');
-    const courier=s.employees.find(e=>e.id===p.courierId&&e.role==='courier');
+    const couriers=s.employees.filter(e=>e.role==='courier');
+    const courier=p.courierId?couriers.find(e=>e.id===p.courierId):couriers.length===1?couriers[0]:undefined;
     if(!courier)throw Error('Выберите курьера для передачи заказа');
     const account=await d.prepare('SELECT enabled FROM auth_accounts WHERE employee_id=?').bind(courier.id).first<{enabled:number}>();
     if(personalAuth()&&!account?.enabled)throw Error('У курьера должен быть включён вход в CRM');
