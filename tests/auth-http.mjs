@@ -339,5 +339,51 @@ try{
  preview=await call(routePath+'?orderId='+routeOrderId,{cookie:editor.cookie});assert.equal(preview.status,400);assert.match(preview.data.error,/лимиты/);
  assert.equal((await call(routePath,{cookie:cookies.admin,body:{...routeSave.data.config,rules:[{...capped.rules[0],from:'2026-02-30'}]}})).status,400);
  console.log('CDEK routing HTTP: admin-only settings, stale saves, logistic preview, credentials privacy, expensive item, mandatory A_ and quota denial passed.');
+ // Order settings: real API, stored stage deadlines, and editing enforcement.
+ const policyPath='/api/order-settings';
+ for(const cookie of [editor.cookie,reminderActor.cookie,chief.cookie]){
+  assert.equal((await call(policyPath,{cookie})).status,403);
+  assert.equal((await call(policyPath,{cookie,body:{}})).status,403);
+ }
+ let savedPolicy=(await call(policyPath,{cookie:cookies.admin})).data;
+ assert.equal(savedPolicy.policy.reworkHours,96);assert.equal(savedPolicy.policy.finalHours,24);
+ const originalPolicy=savedPolicy.policy;
+ const stalePolicy={...savedPolicy};
+ async function setPolicy(patch){const r=await call(policyPath,{cookie:cookies.admin,body:{revision:savedPolicy.revision,policy:{...savedPolicy.policy,...patch}}});assert.equal(r.status,200,r.text);savedPolicy=r.data;}
+ await setPolicy({reworkHours:2,finalHours:3,operatorDraftEdit:false,operatorReworkEdit:false,logisticDetailsEdit:false});
+ assert.equal((await call(policyPath,{cookie:cookies.admin,body:stalePolicy})).status,409);
+ assert.equal((await call(policyPath,{cookie:cookies.admin,body:{...savedPolicy,policy:{...savedPolicy.policy,reworkHours:0}}})).status,400);
+ const policyOperator=await fixture('policy-operator');records('policy-operator');
+ const policyId='policy-operator-o-confirm';
+ db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('policy-product','policy product',JSON.stringify({name:'Policy product'}));
+ db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('policy-stock','policy-product',10,'Fixture','admin',new Date().toISOString());
+ let policyOrder=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(policyId).data);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...policyOrder,address:'Test address 1',delivery:'cdek_courier',items:[{name:'Policy product',quantity:1,price:100}]}),policyId);
+ async function policyAction(cookie,body,status=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(body.id||policyId).version;const r=await call('/api/crm',{cookie,body:{id:policyId,version,...body}});assert.equal(r.status,status,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(body.id||policyId).data);}
+ await policyAction(editor.cookie,{action:'updateOrder',address:'Changed'},400);
+ await policyAction(editor.cookie,{action:'updateDelivery',delivery:'moscow_courier'},400);
+ await policyAction(policyOperator.cookie,{action:'updateOrder',id:'policy-operator-o-draft',items:[]},400);
+ policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'});
+ assert.equal(policyOrder.reworkHours,2);assert.ok(Math.abs(Date.parse(policyOrder.reworkDeadline)-Date.now()-2*3600000)<10000);
+ await policyAction(policyOperator.cookie,{action:'updateOrder',items:policyOrder.items},400);
+ const frozenDeadline=policyOrder.reworkDeadline;
+ await setPolicy({reworkHours:null,finalHours:null});
+ let policyState=(await call('/api/crm',{cookie:cookies.admin})).data;
+ assert.equal(policyState.orders.find(o=>o.id===policyId).reworkDeadline,frozenDeadline);
+ policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'confirm',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,null);assert.equal(policyOrder.noAnswerDeadline,undefined);
+ assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,undefined);
+ await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'},400);
+ await policyAction(editor.cookie,{action:'transition',to:'check',reason:'Test'});
+ await policyAction(cookies.admin,{action:'transition',to:'extra',reason:'Test'});
+ policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'});assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
+ await setPolicy({...originalPolicy,finalHours:3});
+ assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).reworkDeadline,undefined);
+ policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',items:policyOrder.items,address:'Updated address'});assert.equal(policyOrder.address,'Updated address');
+ policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'extra',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,3);assert.ok(Math.abs(Date.parse(policyOrder.noAnswerDeadline)-Date.now()-3*3600000)<10000);
+ const frozenFinal=policyOrder.noAnswerDeadline;await setPolicy({finalHours:1});
+ assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,frozenFinal);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.finalHandoffAt',?) WHERE id=?").run(new Date(Date.now()-4*3600000).toISOString(),policyId);
+ assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).status,'refused');
+ console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

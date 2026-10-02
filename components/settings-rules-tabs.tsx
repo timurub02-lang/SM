@@ -2,6 +2,7 @@
 import type {ReactNode} from 'react';
 import {Tabs,TabsList,TabsTrigger,TabsContent} from '@/components/ui/tabs';
 const rules={
+ orders:[],
  incoming:[
   ['Работа с обращениями','Во «Входящих» показаны обращения, доступные сотруднику по его правам. Из обращения можно открыть карточку клиента. Автоматический источник входящих обращений пока не подключён.'],
   ['Номера обратной связи','Администратор задаёт два номера и назначает нужный номер каждому отделу. Сначала заполните номер, затем выберите его у отдела и сохраните настройки.'],
@@ -34,6 +35,6 @@ const rules={
   ['Название товара','Товар, уже использованный в заказах, нельзя переименовать. Это сохраняет связь корзин заказов со складским учётом.']
  ]
 } as const;
-export function SettingsRulesTabs({section,children}:{section:keyof typeof rules;children:ReactNode}){
- return <Tabs defaultValue="settings" className="settings-rules-tabs"><TabsList className="tabs-line" aria-label="Настройки и правила раздела"><TabsTrigger value="settings">Настройки</TabsTrigger><TabsTrigger value="rules">Правила</TabsTrigger></TabsList><TabsContent value="settings">{children}</TabsContent><TabsContent value="rules"><div className="section-work-rules">{rules[section].map(([title,text])=><section key={title}><h3>{title}</h3><p>{text}</p></section>)}</div></TabsContent></Tabs>;
+export function SettingsRulesTabs({section,children,rulesContent}:{section:keyof typeof rules;children:ReactNode;rulesContent?:ReactNode}){
+ return <Tabs defaultValue="settings" className="settings-rules-tabs"><TabsList className="tabs-line" aria-label="Настройки и правила раздела"><TabsTrigger value="settings">Настройки</TabsTrigger><TabsTrigger value="rules">Правила</TabsTrigger></TabsList><TabsContent value="settings">{children}</TabsContent><TabsContent value="rules">{rulesContent??<div className="section-work-rules">{rules[section].map(([title,text])=><section key={title}><h3>{title}</h3><p>{text}</p></section>)}</div>}</TabsContent></Tabs>;
 }

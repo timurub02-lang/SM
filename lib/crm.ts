@@ -1,3 +1,4 @@
+import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 import type {Reminder} from './reminders';
 import {addressPartsSchema,type AddressParts} from "./address.ts";
 import { z } from "zod";
@@ -23,11 +24,11 @@ export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
 export const deliveryLabels:Record<DeliveryMethod,string>={"":"Не выбран",cdek_pickup:"СДЭК · ПВЗ",cdek_courier:"СДЭК · Курьер",moscow_courier:"Москва · Курьер",russian_post:"Почта России"};
-export type Order={courier?:{id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
+export type Order={reworkHours?:number|null;finalConfirmHours?:number|null;courier?:{id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
 export type Employee={hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={id:string;clientId:string;at:string;text:string;source:string};
-export type State={reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number};};
+export type State={reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
 export const money=(n:number)=>new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:0,maximumFractionDigits:2}).format(n);
 export const total=(o:Order)=>o.items.reduce((n,i)=>n+i.quantity*Math.round(i.price*100),0)/100;
 export const initials=(s:string)=>s.split(" ").slice(0,2).map(x=>x[0]).join("");
@@ -58,8 +59,8 @@ export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  return isLogistic(role)?allowed.filter(to=>to!=="refused"||!!o.finalHandoffAt&&["confirm","extra"].includes(o.status)):allowed;
 }
 export function finalNoAnswerDeadline(o:Order,contact:string,now:string){
- if(!o.finalHandoffAt||!["confirm","extra"].includes(o.status))return undefined;
- return new Date(Date.parse(o.finalHandoffAt)+86400000).toISOString();
+ if(o.finalConfirmHours===null||!o.finalHandoffAt||!["confirm","extra"].includes(o.status))return undefined;
+ return new Date(Date.parse(o.finalHandoffAt)+(o.finalConfirmHours??24)*3600000).toISOString();
 }
 export function validateTransition(o:Order,to:Status,c:Client,reason:string,role?:string){
  if(o.status==="rework"&&o.reworkDeadline&&Date.now()>=Date.parse(o.reworkDeadline))throw Error("Срок доработки истёк. Заказ подлежит отмене");
@@ -141,8 +142,8 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
 
 export const packingStage=(order:Order)=>["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
 
-export const confirmationStage=(order:Order,now=Date.now())=>{
- const stage=order.finalHandoffAt&&order.noAnswerDeadline&&["confirm","extra"].includes(order.status)&&Date.parse(order.noAnswerDeadline)-now<=6*3600000?"expiring":order.contact==="none"?"new":order.contact;
+export const confirmationStage=(order:Order,now=Date.now(),policy:OrderPolicy=defaultOrderPolicy)=>{
+ const stage=order.finalHandoffAt&&order.noAnswerDeadline&&["confirm","extra"].includes(order.status)&&Date.parse(order.noAnswerDeadline)-now<=policy.finalWarningHours*3600000?"expiring":order.contact==="none"?"new":order.contact;
  return order.status==="extra"?(stage==="new"?"repeat":"repeat_"+stage):stage;
 };
 
@@ -166,9 +167,9 @@ export function callTimeClass(due:string,now:number){
  return !Number.isFinite(elapsed)||elapsed<0?"":elapsed<300000?"call-due":"overdue-call";
 }
 
-export const reworkDeadlineFrom=(at:string)=>new Date(Date.parse(at)+4*24*60*60*1000).toISOString();
+export const reworkDeadlineFrom=(at:string,hours:number|null=96)=>hours===null?undefined:new Date(Date.parse(at)+hours*3600000).toISOString();
 export function validateReworkCall(order:Pick<Order,"status"|"reworkDeadline">,due:string){
- if(order.status==="rework"&&order.reworkDeadline&&Date.parse(due)>Date.parse(order.reworkDeadline))throw Error("Звонок нельзя назначить позже срока доработки заказа (4 суток)");
+ if(order.status==="rework"&&order.reworkDeadline&&Date.parse(due)>Date.parse(order.reworkDeadline))throw Error("Звонок нельзя назначить позже срока доработки заказа");
 }
 export function reworkTimeLeft(deadline:string,now:number){
  const minutes=Math.max(0,Math.ceil((Date.parse(deadline)-now)/60000));
@@ -176,8 +177,8 @@ export function reworkTimeLeft(deadline:string,now:number){
  return minutes===0?"Срок истёк — отмена заказа":`${Math.floor(minutes/1440)} д ${Math.floor(minutes%1440/60)} ч ${minutes%60} мин`;
 }
 
-export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extra?:boolean},now:number){
- const stage=order.reworkDeadline&&Date.parse(order.reworkDeadline)-now<=86400000?"expiring":order.contact==="missed"?"missed":order.contact==="callback"?"callback":"new";
+export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extra?:boolean},now:number,policy:OrderPolicy=defaultOrderPolicy){
+ const stage=order.reworkDeadline&&Date.parse(order.reworkDeadline)-now<=policy.reworkWarningHours*3600000?"expiring":order.contact==="missed"?"missed":order.contact==="callback"?"callback":"new";
  return order.extra?"extra_"+stage:stage;
 }
 

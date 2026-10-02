@@ -1,3 +1,5 @@
+import {orderSettings} from '@/lib/order-policy-store';
+import {orderDataEditingEnabled} from '@/lib/order-policy';
 import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
 import {courierOutstanding} from '@/lib/courier';
 import {saveReminders,employeeReminders} from '@/lib/reminders';
@@ -22,15 +24,18 @@ async function identity(){const u=await getChatGPTUser();if(!u)throw new Error("
 async function readState(reconcile=true):Promise<State>{
  await initInventory();const d=db();const tables=await Promise.all([d.prepare("SELECT data,version FROM clients ORDER BY id").all(),d.prepare("SELECT o.data,o.version,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='ready' AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
  const state:State={clients:tables[0].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),orders:tables[1].results.map((r:any)=>({...JSON.parse(r.data),version:r.version,cdekExported:!!r.cdek_exported||(JSON.parse(r.data).testOnly===true&&JSON.parse(r.data).cdekExported===true),cdekWaybillReceived:!!r.cdek_waybill_received})),employees:tables[2].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),events:tables[3].results.map((r:any)=>JSON.parse(r.data)),settings:tables[4]?JSON.parse(tables[4].data):{retentionDays:30}};
+ state.settings.orderPolicy=(await orderSettings()).policy;
  if(reconcile){
   let orderChanged=false;
   for(const o of state.orders.filter(o=>o.status==="rework"||(o.finalHandoffAt&&["confirm","extra"].includes(o.status)))){
+   if(o.status==="rework"&&o.reworkHours===null||o.status!=="rework"&&o.finalConfirmHours===null)continue;
    const received=state.events.find(e=>e.orderId===o.id&&e.text.includes("→ Возврат оператору"))?.at||o.updatedAt;
    const finalMissed=o.status!=="rework";
-   const deadline=finalMissed?finalNoAnswerDeadline(o,o.contact,new Date().toISOString())!:(o.reworkDeadline||reworkDeadlineFrom(received));
+   const deadline=finalMissed?finalNoAnswerDeadline(o,o.contact,new Date().toISOString())!:(o.reworkDeadline||reworkDeadlineFrom(received,o.reworkHours===undefined?96:o.reworkHours));
+   if(!deadline)continue;
    const expired=Date.now()>=Date.parse(deadline);
    if((finalMissed?o.noAnswerDeadline===deadline:!!o.reworkDeadline)&&!expired)continue;
-   const expiryReason=finalMissed?"Истёк срок финального подтверждения: 24 часа":"Истёк срок доработки после возврата логистом (4 суток)";
+   const expiryReason=finalMissed?`Истёк срок финального подтверждения: ${o.finalConfirmHours??24} ч`:`Истёк срок доработки после возврата логистом: ${o.reworkHours??96} ч`;
    const at=new Date().toISOString(),mutation=crypto.randomUUID();
    const next={...o,...(finalMissed?{noAnswerDeadline:deadline}:{}),reworkDeadline:finalMissed?o.reworkDeadline:deadline,returnReason:o.returnReason||o.reason,_mutation:mutation,...(expired?{status:"refused",cancelledAt:o.cancelledAt||deadline,updatedAt:at,contact:"none",due:"",reason:expiryReason}:{})};
    const e:Event={id:"EV-"+crypto.randomUUID(),clientId:o.clientId,orderId:o.id,at,actor:"Система",text:"Заказ отменён: "+expiryReason};
@@ -149,6 +154,7 @@ async function handlePOST(request:Request){
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),eventSQL(ev(c.id,o.id,"Создан заказ · Оформление"+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":"")))]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
  }else if(["courierAccept","courierOutcome","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
   const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(employee.role==="courier"&&["courierAccept","courierOutcome"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");const next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
+  if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
   if(o.status==="rework"&&!next.returnReason)next.returnReason=o.reason;
   if((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
    const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-shipment-${o.id}`).first<{data:string}>();
@@ -215,7 +221,7 @@ async function handlePOST(request:Request){
     if(!o.items.length)throw Error('В заказе нет товаров');
     next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o)};
    }
-   if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&o.reworkDeadline&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;}delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=finalNoAnswerDeadline(next,next.contact,now);if(to==="rework"){next.returnReason=reason;next.reworkDeadline=reworkDeadlineFrom(now);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
+   if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=finalNoAnswerDeadline(next,next.contact,now);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
    if(isLogistic(employee?.role))next.logistic=employee.id;
    const labels=await import("@/lib/crm");text=`${labels.statuses[o.status]} → ${labels.statuses[to]}${reason?" · "+reason:""}`;
   }else if(p.action==="contact"){
