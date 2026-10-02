@@ -1,3 +1,4 @@
+import {saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
 import {total,canReceivePayment,isLogistic} from '@/lib/crm';
 import {removalPlan} from '@/lib/employee-removal';
@@ -63,13 +64,13 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
 async function responseState(user:Awaited<ReturnType<typeof identity>>){
- const state=await readState();if(!user.employee)return state;
+ const state=await readState();await saveReminders(state);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
  if(['admin','department_head','chief_logistic'].includes(user.employee.role)){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});
  }
- return {...visible,currentEmployeeId:user.employee.id,personalAuth:true};
+ return {...visible,reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
 async function handlePOST(request:Request){
@@ -85,7 +86,11 @@ async function handlePOST(request:Request){
  const eventSQL=(e:Event)=>d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e));
  const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
  const assignedUntil=()=>"";
- if(p.action==="createClient"){
+ await saveReminders(s);
+ if(p.action==="readReminder"){
+  if(!employee)throw Error("Требуется сотрудник");
+  await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
+ }else if(p.action==="createClient"){
   if(!employee||!["admin","department_head"].includes(employee.role))throw Error("Добавлять клиентов могут только администратор и руководитель отдела");
   const data=clientSchema.parse(p.client);ownerValid(data.owner);
   if(employee.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");

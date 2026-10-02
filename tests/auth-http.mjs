@@ -228,5 +228,28 @@ try{
  assert.equal((await call('/api/cash?actorId='+cashHead.e.id,{cookie:cookies.admin})).status,403);
  console.log('Cash: delivery receipts, private balances, pending transfers, confirmation, retries, insufficient funds and concurrent spending passed.');
  console.log('Chief logistics and courier: scoped employee management, no role escalation, logistics access and courier isolation passed.');
+
+ const reminderActor=await fixture('reminder-operator');records('reminder-operator');
+ const reminderOrder='reminder-operator-o-draft';
+ for(let i=0;i<25;i++){
+  const o=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(reminderOrder).data);
+  o.contact='callback';o.due=new Date(Date.now()+86400000+i*60000).toISOString();o.updatedAt=new Date(Date.now()+i*60000).toISOString();
+  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(o),reminderOrder);
+  assert.equal((await call('/api/crm',{cookie:reminderActor.cookie})).status,200);
+ }
+ let reminderState=(await call('/api/crm',{cookie:reminderActor.cookie})).data;
+ assert.equal(reminderState.reminders.length,20);
+ const reminderId=reminderState.reminders[0].id;
+ assert.equal((await call('/api/crm',{cookie:reminderActor.cookie,body:{action:'readReminder',id:reminderId}})).status,200);
+ reminderState=(await call('/api/crm',{cookie:reminderActor.cookie})).data;
+ assert.ok(reminderState.reminders[0].readAt);assert.equal(reminderState.reminders.length,20);
+ const unreadId=reminderState.reminders[1].id;
+ await call('/api/crm',{cookie:chief.cookie,body:{action:'readReminder',id:unreadId}});
+ assert.equal((await call('/api/crm',{cookie:reminderActor.cookie})).data.reminders.find(r=>r.id===unreadId).readAt,undefined);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.due','','$.status','confirm') WHERE id=?").run(reminderOrder);
+ reminderState=(await call('/api/crm',{cookie:reminderActor.cookie})).data;
+ assert.equal(reminderState.reminders.length,20);assert.ok(reminderState.reminders.find(r=>r.id===reminderId).readAt);
+ assert.ok(!(await call('/api/crm',{cookie:chief.cookie})).data.reminders.some(r=>r.id===reminderId));
+ console.log('Reminders: latest 20, read persistence, rescheduled-call history and employee isolation passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

@@ -1,3 +1,4 @@
+import type {Reminder} from './reminders';
 import {addressPartsSchema,type AddressParts} from "./address.ts";
 import { z } from "zod";
 export const statuses = {draft:"Оформление",confirm:"Подтверждение",rework:"Возврат оператору",check:"Проверка",extra:"Доп. подтверждение",packing:"Упаковка",phone:"Подготовка телефона",shipping:"В доставке",pickup:"Ожидает выкупа",redeemed:"Выкуплен",refused:"Отказ",returned:"Возврат"} as const;
@@ -26,7 +27,7 @@ export type Order={paymentReceipt?:{amount:number;operatorLogin:string;receivedB
 export type Employee={hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={id:string;clientId:string;at:string;text:string;source:string};
-export type State={incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number};};
+export type State={reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number};};
 export const money=(n:number)=>new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:0,maximumFractionDigits:2}).format(n);
 export const total=(o:Order)=>o.items.reduce((n,i)=>n+i.quantity*Math.round(i.price*100),0)/100;
 export const initials=(s:string)=>s.split(" ").slice(0,2).map(x=>x[0]).join("");
