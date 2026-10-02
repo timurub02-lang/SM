@@ -1,8 +1,7 @@
 "use client";
 import {useState} from 'react';
-import {BarChart3,ChevronDown} from 'lucide-react';
+import {BarChart3} from 'lucide-react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
-import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from './ui/dropdown-menu';
 import {operatorStats} from '../lib/operator-stats';
 import {money,statuses,type Order,type State,type Employee} from '../lib/crm';
 export function OperatorStats({state,actor,onOpenOrder}:{state:State;actor:Employee;onOpenOrder:(id:string)=>void}){
@@ -13,7 +12,7 @@ export function OperatorStats({state,actor,onOpenOrder}:{state:State;actor:Emplo
  function metric(value:string|number,orders:Order[],label:string){
   if(!orders.length)return <span className="stats-zero">{value}</span>;
   if(orders.length===1)return <button className="stats-metric" aria-label={`${label}: открыть заказ ${orders[0].id}`} onClick={()=>openOrder(orders[0].id)}>{value}</button>;
-  return <DropdownMenu><DropdownMenuTrigger asChild><button className="stats-metric" aria-label={`${label}: выбрать заказ`}>{value} <ChevronDown size={13} style={{display:'inline'}}/></button></DropdownMenuTrigger><DropdownMenuContent style={{maxHeight:320,maxWidth:'min(480px,90vw)',zIndex:100}}>{orders.map(o=><DropdownMenuItem key={o.id} onSelect={()=>openOrder(o.id)}><span><b>{o.id}</b> · {state.clients.find(c=>c.id===o.clientId)?.name||'Клиент'}<br/><small>{statuses[o.status]} · {money(o.items.reduce((n,i)=>n+i.price*i.quantity,0))}</small></span></DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>;
+  return <select className="stats-metric stats-order-select" aria-label={`${label}: выбрать заказ`} value="" onChange={e=>{if(e.target.value)openOrder(e.target.value);}}><option value="" disabled>{value} ▾</option>{orders.map(o=><option key={o.id} value={o.id}>{o.id} · {state.clients.find(c=>c.id===o.clientId)?.name||'Клиент'} · {statuses[o.status]} · {money(o.items.reduce((n,i)=>n+i.price*i.quantity,0))}</option>)}</select>;
  }
  const allOrders=(key:'created'|'newOrders'|'reviewed'|'cancelled'|'redeemed')=>rows.flatMap(r=>r.orderLists[key]);
  const count=rows.reduce((n,r)=>n+r.reviewed,0),amount=rows.reduce((n,r)=>n+Math.round(r.amount*100),0)/100;
