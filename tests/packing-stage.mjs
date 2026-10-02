@@ -28,3 +28,15 @@ for(const delivery of ['moscow_courier','russian_post']){
  assert.equal(packingStage({delivery,cdekTariff:{}}),'new');
  assert.equal(packingStage({delivery,packingWaybillAt:'2026-10-02'}),'waybill');
 }
+
+const {allowedOrderTransitions,orderDatesForTransition,orderGroup}=await import('../lib/crm.ts');
+for(const delivery of ['moscow_courier','russian_post']){
+ const o={delivery,status:'packing'};
+ assert.deepEqual(allowedOrderTransitions(o,'logistic'),[]);
+ assert.deepEqual(allowedOrderTransitions({...o,packingWaybillAt:'2026-10-02'},'logistic'),['shipping']);
+ assert.deepEqual(allowedOrderTransitions({...o,packingWaybillAt:'2026-10-02'},'operator'),[]);
+ assert.equal(packingStage({...o,status:'shipping',packingWaybillAt:'2026-10-02'}),'exported');
+ assert.deepEqual(allowedOrderTransitions({...o,status:'shipping'},'logistic'),[]);
+ assert.equal(orderDatesForTransition(o,'shipping','2026-10-02').shippedAt,'2026-10-02');
+ assert.equal(orderGroup('shipping').id,'sent');
+}

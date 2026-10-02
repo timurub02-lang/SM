@@ -169,6 +169,11 @@ try{
   await manualStep('check',400);await manualStep('refused',400);
   let saved=await manualStep('extra');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
   await manualStep('refused',400);saved=await manualStep('packing');assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
+  await manualStep('shipping',400);
+  const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
+  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'markPackingWaybill',id,version}})).status,200);
+  saved=await manualStep('shipping');assert.ok(saved.shippedAt);assert.equal(saved.status,'shipping');
+  await manualStep('shipping',400);
  }
  console.log('Manual delivery HTTP route: confirm -> extra -> packing, no admin review, cancellation blocked before return.');
  const editId='one-o-confirm';

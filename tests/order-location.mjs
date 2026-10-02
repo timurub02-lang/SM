@@ -3,10 +3,12 @@ import {orderLocation} from '../lib/crm.ts';
 import {cdekStatusPatch} from '../lib/cdek-sync.ts';
 assert.equal(orderLocation({status:'rework'}),'У оператора');
 assert.equal(orderLocation({status:'check'}),'У Администратора');
-assert.equal(orderLocation({status:'shipping',delivery:'moscow_courier'}),'У логиста');
+assert.equal(orderLocation({status:'shipping',delivery:'moscow_courier'}),'У Курьера');
 const o={status:'shipping',delivery:'cdek_pickup'};
 assert.equal(orderLocation(o),'У логиста');
 const patch=cdekStatusPatch(o,{statuses:[{code:'CREATED',date_time:'2026-09-30T10:00:00Z'},{code:'ACCEPTED',date_time:'2026-09-30T11:00:00Z'}]}, {},'1');
 assert.equal(orderLocation({...o,...patch}),'У СДЭК');
 assert.equal(orderLocation({...o,cdekStatus:{code:'CREATED'}}),'У СДЭК');
 console.log('Order location passed');
+
+assert.equal(orderLocation({status:'shipping',delivery:'russian_post'}),'У Почты России');

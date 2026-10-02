@@ -47,6 +47,7 @@ export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После 
 export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
  if(o.status==="confirm"&&["moscow_courier","russian_post"].includes(o.delivery||""))allowed=allowed.map(to=>to==="check"?"extra":to);
+ if(["moscow_courier","russian_post"].includes(o.delivery||"")&&["packing","phone"].includes(o.status))allowed=o.packingWaybillAt&&["admin","logistic"].includes(role||"")?["shipping"]:[];
  if(o.finalHandoffAt){
   allowed=allowed.filter(to=>to!=="rework");
   if(["confirm","extra","check"].includes(o.status)&&!allowed.includes("refused"))allowed=[...allowed,"refused"];
@@ -131,7 +132,7 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"operator",department:actor.department});
 }
 
-export const packingStage=(order:Order)=>order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):order.cdekExported?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
+export const packingStage=(order:Order)=>order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
 
 export const confirmationStage=(order:Order,now=Date.now())=>{
  const stage=order.finalHandoffAt&&order.noAnswerDeadline&&["confirm","extra"].includes(order.status)&&Date.parse(order.noAnswerDeadline)-now<=6*3600000?"expiring":order.contact==="none"?"new":order.contact;
@@ -176,6 +177,8 @@ export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extr
 export function orderLocation(order:Order){
  if(["draft","rework"].includes(order.status))return "У оператора";
  if(order.status==="check")return "У Администратора";
+ if(["shipping","pickup"].includes(order.status)&&order.delivery==="moscow_courier")return "У Курьера";
+ if(["shipping","pickup"].includes(order.status)&&order.delivery==="russian_post")return "У Почты России";
  if(["cdek_pickup","cdek_courier"].includes(order.delivery||"")&&(order.cdekTransferredAt||order.cdekStatus?.code==="CREATED"))return "У СДЭК";
  if(["confirm","extra","packing","phone","shipping","pickup"].includes(order.status))return "У логиста";
  return "—";
