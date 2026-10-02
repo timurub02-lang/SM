@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {teamEmployees,employeeForManager,employeeSchema,allowedOrderTransitions,orderEditingLocked} from '../lib/crm.ts';
-import {mayCallEndpoint} from '../lib/permissions.ts';
+import {visibleState,mayCallEndpoint} from '../lib/permissions.ts';
 const base={id:'e',name:'Employee',alias:'',login:'employee',skLogin:'',salary:0,bonus:0,version:1};
 const staff=['admin','chief_logistic','logistic','operator','courier'].map(role=>({...base,id:role,role,department:'1'}));
 const chief=staff[1];
@@ -18,3 +18,8 @@ for(const status of ['confirm','extra','packing','shipping']){
  assert.equal(orderEditingLocked(chief,o),orderEditingLocked(staff[2],o));
 }
 console.log('Chief logistics capabilities, scoped team and role schemas passed');
+
+const receipt={amount:123.45,operatorLogin:'operator',receivedByName:'Logistic',delivery:'russian_post'};
+const state={clients:[],orders:[{id:'o',manager:'operator',status:'redeemed',paymentReceipt:receipt}],employees:staff,events:[],incoming:[]};
+for(const e of staff){const orders=visibleState(state,e).orders;if(['admin','chief_logistic','logistic'].includes(e.role))assert.deepEqual(orders[0].paymentReceipt,receipt);else assert(orders.every(o=>!o.paymentReceipt));}
+console.log('Finance receipt details restricted to admin and logistics.');

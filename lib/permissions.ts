@@ -15,7 +15,7 @@ export function visibleState(s:State,e:Employee):State{
  const staffIds=new Set([e.id,...orders.flatMap(o=>[o.manager,o.logistic]),...clients.map(c=>c.owner)]);
  const employees=s.employees.filter(x=>staffIds.has(x.id)||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&!!e.department&&x.department===e.department).map(x=>({...x,salary:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.salary:0,bonus:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.bonus:0}));
  const hidePhone=e.role==='operator'||e.role==='department_head';
- return {...s,clients:clients.map(c=>hidePhone?{...c,phone:''}:c),orders,employees,events:s.events.filter(x=>ids.has(x.clientId)&&(!x.orderId||orderIds.has(x.orderId))),incoming:(s.incoming||[]).filter(x=>ids.has(x.clientId||''))};
+ return {...s,clients:clients.map(c=>hidePhone?{...c,phone:''}:c),orders:orders.map(o=>{if(isLogistic(e.role))return o;const {paymentReceipt,...rest}=o;return rest;}),employees,events:s.events.filter(x=>ids.has(x.clientId)&&(!x.orderId||orderIds.has(x.orderId))),incoming:(s.incoming||[]).filter(x=>ids.has(x.clientId||''))};
 }
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
