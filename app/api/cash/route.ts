@@ -18,7 +18,7 @@ async function handle(req:Request){
   if(query.has('employeeId')||query.get('scope')==='all'){
    if(actor.role!=='admin'||req.method!=='GET')return Response.json({error:'Просмотр касс сотрудников доступен только администратору'},{status:403});
    if(query.get('scope')==='all'){
-    const rows=await d.prepare("SELECT e.id,json_extract(e.data,'$.name') AS name,json_extract(e.data,'$.login') AS login,json_extract(e.data,'$.role') AS role,COALESCE(b.balance,0) AS balance,COALESCE((SELECT SUM(amount) FROM cash_operations WHERE recipient=e.id AND kind='transfer' AND accepted_at IS NULL),0) AS pending FROM employees e LEFT JOIN cash_balances b ON b.employee=e.id ORDER BY name,e.id").all();
+    const rows=await d.prepare("SELECT e.id,json_extract(e.data,'$.name') AS name,json_extract(e.data,'$.login') AS login,json_extract(e.data,'$.role') AS role,COALESCE(b.balance,0) AS balance,COALESCE((SELECT SUM(amount) FROM cash_operations WHERE recipient=e.id AND kind='transfer' AND accepted_at IS NULL),0) AS pending FROM employees e LEFT JOIN cash_balances b ON b.employee=e.id WHERE json_extract(e.data,'$.role') IN ('admin','department_head','chief_logistic') ORDER BY name,e.id").all();
     return Response.json({accounts:rows.results},{headers:{'Cache-Control':'no-store'}});
    }
    const target=await employee(query.get('employeeId')||'');

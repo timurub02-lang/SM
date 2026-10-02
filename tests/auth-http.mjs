@@ -218,7 +218,7 @@ try{
  const cashTransfer={action:'create',operation:{id:crypto.randomUUID(),kind:'transfer',amount:300,date,purpose:'Перевод другому сотруднику',recipient:cashHead.e.id}};
  cashResult=await cash(cookies.admin,cashTransfer);assert.equal(cashResult.status,200,cashResult.text);assert.equal(cashResult.data.balance,70000);
  let incoming=await cash(cashHead.cookie);assert.equal(incoming.data.balance,0);assert.equal(incoming.data.operations.length,1);assert.equal(incoming.data.operations[0].accepted_at,null);assert.ok(!incoming.text.includes('manual-russian_post'));
- const overview=await call('/api/cash?scope=all',{cookie:cookies.admin});assert.equal(overview.status,200,overview.text);
+ const overview=await call('/api/cash?scope=all',{cookie:cookies.admin});assert.equal(overview.status,200,overview.text);assert.ok(overview.data.accounts.every(a=>['admin','department_head','chief_logistic'].includes(a.role)));assert.ok(!overview.data.accounts.some(a=>a.id===editor.e.id||a.id===courier.e.id));
  const headCash=overview.data.accounts.find(a=>a.id===cashHead.e.id);assert.equal(headCash.balance,0);assert.equal(headCash.pending,30000);assert.equal(headCash.name,cashHead.e.name);
  const adminHistory=await call('/api/cash?employeeId='+cashHead.e.id,{cookie:cookies.admin});assert.equal(adminHistory.status,200);assert.equal(adminHistory.data.operations.length,1);assert.equal(adminHistory.data.operations[0].id,cashTransfer.operation.id);
  for(const cookie of [cashHead.cookie,chief.cookie,editor.cookie])for(const query of ['scope=all','employeeId='+cashHead.e.id])assert.equal((await call('/api/cash?'+query,{cookie})).status,403);
