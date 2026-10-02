@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {money,stamp} from '@/lib/crm';
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from '@/components/ui/table';
-type Operation={id:string;kind:string;sender:string|null;recipient:string|null;amount:number;purpose:string;date:string;created_at:string;accepted_at:string|null;sender_name:string;recipient_name:string};
+export type Operation={id:string;kind:string;sender:string|null;recipient:string|null;amount:number;purpose:string;date:string;created_at:string;accepted_at:string|null;sender_name:string;recipient_name:string};
 type CashData={balance:number;operations:Operation[];recipients:{id:string;name:string;login:string}[]};
 export function Cash({actorId}:{actorId:string}){
  const [data,setData]=useState<CashData|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
@@ -19,7 +19,7 @@ export function Cash({actorId}:{actorId:string}){
  async function submit(id?:string){setBusy(true);setError('');setSuccess('');try{
   if(id){setData(await request({action:'accept',id}));setSuccess('Получение подтверждено. Деньги добавлены в вашу кассу.');}
   else {const operation={kind,amount:Number(amount),date,purpose:kind==='spend'?'Зарплата':kind==='transfer'?'Перевод другому сотруднику':purpose,...(kind==='transfer'?{recipient}:{})};const key=JSON.stringify(operation);if(retry.current?.key!==key)retry.current={key,id:crypto.randomUUID()};setData(await request({action:'create',operation:{...operation,id:retry.current.id}}));retry.current=null;setAmount('');setPurpose('');setSuccess(kind==='transfer'?'Перевод создан. Деньги списаны из вашей кассы и ожидают подтверждения получателя.':kind==='spend'?'Деньги списаны. Операция сохранена в истории.':'Касса пополнена. Операция сохранена в истории.');setKind('');}
- }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}}
+ window.dispatchEvent(new Event('cash-refresh'));}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}}
  return <section className="stack table-panel cash-panel"><div className="toolbar"><div><h2>Моя касса</h2><p className="muted">Ваши деньги и переводы сотрудникам</p></div><button className="secondary" disabled={busy} onClick={()=>{setError('');request().then(setData).catch(e=>setError(e.message));}}>Обновить</button></div>
  <div className="cash-summary"><div className="cash-balance"><span>Доступно в кассе</span><strong>{data?money(data.balance/100):'Загрузка…'}</strong><small>Эту сумму можно списать или перевести.</small></div><div><span>Вам передают</span><strong>{money(pending.reduce((n,o)=>n+o.amount,0)/100)}</strong><small>Добавится в кассу после получения денег.</small></div><div><span>Вы передали</span><strong>{money(outgoing.reduce((n,o)=>n+o.amount,0)/100)}</strong><small>Уже списано. Получатели ещё не подтвердили.</small></div></div>
  {error&&<p role="alert" className="notice amber">{error}</p>}{success&&<p role="status" className="notice">{success}</p>}
