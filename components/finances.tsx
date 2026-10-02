@@ -1,9 +1,12 @@
 "use client";
+import {Cash} from "@/components/cash";
+import {hasCash} from "@/lib/cash";
 import {useState} from "react";
-import {deliveryLabels,money,stamp,type Order} from "@/lib/crm";
+import {deliveryLabels,money,stamp,type Order,type Employee} from "@/lib/crm";
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from "@/components/ui/table";
 
-export function Finances({orders}:{orders:Order[]}){
+export function Finances({orders,employee}:{orders:Order[];employee:Employee}){return <div className="stack">{hasCash(employee.role)&&<Cash key={employee.id} actorId={employee.id}/>}{employee.role!=="department_head"&&<DeliveryFinances orders={orders}/>}</div>;}
+function DeliveryFinances({orders}:{orders:Order[]}){
  const [from,setFrom]=useState("");const [to,setTo]=useState("");
  const rows=orders.filter(o=>{
   if(!o.paymentReceivedAt)return false;

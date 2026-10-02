@@ -1,3 +1,4 @@
+import {initCash} from '@/lib/cash-db';
 import {total,canReceivePayment,isLogistic} from '@/lib/crm';
 import {removalPlan} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
@@ -140,7 +141,7 @@ async function handlePOST(request:Request){
   const o:Order={id:id("SM-"),clientId:c.id,delivery:deliverySchema.parse(p.delivery??""),addressParts:addressPartsSchema.optional().parse(p.addressParts??c.addressParts),address:z.string().trim().max(500).parse(p.address??c.address),status:"draft",items,comment,reason:"",contact:"none",due:"",round:1,extra:false,createdAt:now,updatedAt:now,manager,logistic:"",version:1};
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),eventSQL(ev(c.id,o.id,"Создан заказ · Оформление"+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":"")))]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
  }else if(["receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
-  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");const next={...o,updatedAt:now,_mutation:id("M-")};let text="";
+  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");const next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
   if(o.status==="rework"&&!next.returnReason)next.returnReason=o.reason;
   if((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
    const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-shipment-${o.id}`).first<{data:string}>();
@@ -149,6 +150,12 @@ async function handlePOST(request:Request){
   if(p.action==="receivePayment"){
    if(!canReceivePayment(o,employee.role))throw Error("Приём оплаты доступен логисту только для оплаченного заказа курьера Москвы или Почты России без ранее принятой оплаты");
    next.paymentReceipt={amount:z.number().finite().nonnegative().parse(total(o)),operatorLogin:s.employees.find(e=>e.id===o.manager)?.login||"",receivedByName:employee.name,delivery:o.delivery!};next.paymentReceivedAt=now;next.paymentReceivedBy=employee.id;text="Оплата принята логистом · деньги получены · "+next.paymentReceipt.amount+" ₽";
+   await initCash();
+   const chiefs=s.employees.filter(e=>e.role==='chief_logistic');
+   const chief=employee.role==='chief_logistic'?employee:chiefs.length===1?chiefs[0]:null;
+   if(!chief)throw Error('Для приёма денег нужен один назначенный главный логист');
+   if(next.paymentReceipt.amount>0)cashReceipt=[d.prepare("INSERT INTO cash_operations(id,kind,recipient,amount,purpose,date,created_at,accepted_at,actor,sender_name,recipient_name,order_id) SELECT ?,'receipt',?,?,?,?,?,?,?,'',?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind('receipt-'+o.id,chief.id,Math.round(next.paymentReceipt.amount*100),'Оплата заказа '+o.id+' · '+(o.delivery==='moscow_courier'?'Курьер Москва':'Почта России'),new Date(now).toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'}),now,now,employee.id,chief.name,o.id,o.id,next._mutation)];
+
   }else if(p.action==="saveManualDeliveryCost"){
    if(!canManageDelivery(employee.role,o.status)||!["moscow_courier","russian_post"].includes(o.delivery||""))throw Error("Стоимость доступна логисту для курьера Москвы и Почты России до отправки");
    next.manualDeliveryCost=z.number().finite().min(0).max(1000000).parse(p.amount);text="Сохранена стоимость доставки: "+next.manualDeliveryCost+" ₽";
@@ -204,10 +211,14 @@ async function handlePOST(request:Request){
   const addressPatch=proposedAddress&&(c.address!==proposedAddress.address||JSON.stringify(c.addressParts??null)!==JSON.stringify(proposedAddress.addressParts)||c.city!==proposedAddress.city||c.addressReview)?proposedAddress:null;
   if(addressPatch)text+=" · адрес клиента обновлён из заказа";
   const e=ev(c.id,o.id,text);
-  const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?"+((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[])]);
+  const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?"+((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[]),...cashReceipt]);
   if(!result[0].meta.changes)throw new Error("Заказ уже изменён. Обновите страницу и повторите");
  }else if(p.action==="deleteEmployee"){
   const plan=removalPlan(s,employee,p.id,p.version,p.mode,p.targetId);
+  await initCash();
+  const cash=await d.prepare("SELECT COALESCE((SELECT balance FROM cash_balances WHERE employee=?),0) AS balance,EXISTS(SELECT 1 FROM cash_operations WHERE (sender=? OR recipient=?) AND kind='transfer' AND accepted_at IS NULL) AS pending").bind(p.id,p.id,p.id).first<{balance:number;pending:number}>();
+  if(cash&&(cash.balance!==0||cash.pending))throw Error('Перед удалением сотрудника обнулите кассу и завершите ожидающие переводы');
+
   if(personalAuth())await ensureAuth();
   const key="deleted-employee-"+plan.employee.id,mutation=crypto.randomUUID();
   // Guard the whole batch against changes since the snapshot, including newly assigned records.

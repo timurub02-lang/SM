@@ -1,0 +1,8 @@
+import {z} from 'zod';
+export const hasCash=(role:string)=>['admin','department_head','chief_logistic'].includes(role);
+export const cashSchema=[
+ `CREATE TABLE IF NOT EXISTS cash_operations(id TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('add','spend','transfer','receipt')),sender TEXT,recipient TEXT,amount INTEGER NOT NULL CHECK(amount>0),purpose TEXT NOT NULL,date TEXT NOT NULL,created_at TEXT NOT NULL,accepted_at TEXT,actor TEXT NOT NULL,sender_name TEXT NOT NULL,recipient_name TEXT NOT NULL,order_id TEXT UNIQUE)`,
+ `CREATE VIEW IF NOT EXISTS cash_balances AS SELECT employee,SUM(amount) AS balance FROM (SELECT sender AS employee,-amount AS amount FROM cash_operations WHERE sender IS NOT NULL UNION ALL SELECT recipient AS employee,amount FROM cash_operations WHERE recipient IS NOT NULL AND accepted_at IS NOT NULL) GROUP BY employee`,
+ `CREATE TRIGGER IF NOT EXISTS cash_no_overdraft BEFORE INSERT ON cash_operations WHEN NEW.sender IS NOT NULL AND NOT EXISTS(SELECT 1 FROM cash_operations WHERE id=NEW.id) BEGIN SELECT CASE WHEN NEW.amount>COALESCE((SELECT balance FROM cash_balances WHERE employee=NEW.sender),0) THEN RAISE(ABORT,'Недостаточно денег в кассе') END; END`,
+];
+export const cashInput=z.object({id:z.string().uuid(),kind:z.enum(['add','spend','transfer']),amount:z.number().finite().positive().max(100000000).refine(v=>Math.abs(v*100-Math.round(v*100))<0.000001,'Сумма должна быть с точностью до копеек').transform(v=>Math.round(v*100)),purpose:z.string().trim().min(1,'Укажите назначение платежа').max(500),date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'Неверная дата'),recipient:z.string().max(100).optional()});

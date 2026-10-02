@@ -162,6 +162,7 @@ try{
  await step(editor.cookie,'rework');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,3);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
  console.log('Return workflow: cancellation denied before return in each stage; second return permits cancellation.');
+ const chief=await fixture('chief-logistic',undefined,'chief_logistic');
  for(const [delivery,section] of [['moscow_courier','moscow'],['russian_post','post']]){
   const id='manual-'+delivery,clientId='one-c-confirm';
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'Address',items:[{name:'Test',quantity:1,price:1}]}));
@@ -192,7 +193,7 @@ try{
  }
  assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(editId).data).address,'Corrected address');
  console.log('Logistic edits passed: every status, immutable basket, exported and in-flight shipment guards.');
- const chief=await fixture('chief-logistic',undefined,'chief_logistic'),courier=await fixture('courier',undefined,'courier');
+ const courier=await fixture('courier',undefined,'courier');
  const chiefState=await call('/api/crm',{cookie:chief.cookie});assert.equal(chiefState.status,200);assert.ok(chiefState.data.employees.some(e=>e.id===editor.e.id&&e.hasPassword));
  for(const e of [staff[0],staff[1],chief.e])assert.equal((await call('/api/crm',{cookie:chief.cookie,body:{action:'saveEmployee',id:e.id,version:1,employee:{...e,accessEnabled:false}}})).status,400);
  const created=await call('/api/crm',{cookie:chief.cookie,body:{action:'saveEmployee',employee:{...staff[1],id:undefined,login:'chief-created',role:'admin',accessEnabled:false}}});assert.equal(created.status,200,created.text);const managed=created.data.state.employees.find(e=>e.login==='chief-created');assert.equal(managed.role,'logistic');assert.equal(managed.department,undefined);
@@ -202,6 +203,30 @@ try{
  const courierState=await call('/api/crm',{cookie:courier.cookie});assert.equal(courierState.status,200);assert.equal(courierState.data.orders.length,0);assert.equal(courierState.data.clients.length,0);assert.deepEqual(courierState.data.employees.map(e=>e.id),[courier.e.id]);
  assert.equal((await call('/api/warehouse',{cookie:courier.cookie})).status,403);
  assert.equal((await call('/api/crm',{cookie:courier.cookie,body:{action:'saveEmployee',employee:{...staff[1],login:'forbidden'}}})).status,403);
+
+ const cashHead=await fixture('cash-head','1','department_head');
+ async function cash(cookie,body){return call('/api/cash',{cookie,body});}
+ assert.equal((await cash(editor.cookie)).status,403);assert.equal((await cash(courier.cookie)).status,403);
+ assert.equal((await cash(returnOperator.cookie)).status,403);
+ assert.equal((await cash(chief.cookie)).data.balance,200,'Both delivery receipts credited chief, not accepting logistic');
+ const date=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
+ const add={action:'create',operation:{id:crypto.randomUUID(),kind:'add',amount:1000,date,purpose:'Opening cash'}};
+ let cashResult=await cash(cookies.admin,add);assert.equal(cashResult.status,200,cashResult.text);assert.equal(cashResult.data.balance,100000);
+ assert.equal((await cash(cookies.admin,add)).data.balance,100000,'Retry cannot duplicate cash');
+ assert.equal((await cash(cookies.admin,{...add,operation:{...add.operation,amount:2000}})).status,400);
+ for(const amount of [-1,0,0.001])assert.equal((await cash(cookies.admin,{...add,operation:{...add.operation,id:crypto.randomUUID(),amount}})).status,400);
+ const transfer={action:'create',operation:{id:crypto.randomUUID(),kind:'transfer',amount:300,date,purpose:'Перевод другому сотруднику',recipient:cashHead.e.id}};
+ cashResult=await cash(cookies.admin,transfer);assert.equal(cashResult.status,200,cashResult.text);assert.equal(cashResult.data.balance,70000);
+ let incoming=await cash(cashHead.cookie);assert.equal(incoming.data.balance,0);assert.equal(incoming.data.operations.length,1);assert.equal(incoming.data.operations[0].accepted_at,null);assert.ok(!incoming.text.includes('manual-russian_post'));
+ assert.equal((await cash(chief.cookie,{action:'accept',id:transfer.operation.id})).status,400);
+ incoming=await cash(cashHead.cookie,{action:'accept',id:transfer.operation.id});assert.equal(incoming.data.balance,30000);assert.ok(incoming.data.operations[0].accepted_at);
+ assert.equal((await cash(cashHead.cookie,{action:'accept',id:transfer.operation.id})).data.balance,30000);
+ const spend={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:800,date,purpose:'Зарплата'}};
+ assert.equal((await cash(cookies.admin,spend)).status,400);assert.equal((await cash(cookies.admin)).data.balance,70000);
+ const spends=await Promise.all([1,2].map(()=>cash(cookies.admin,{...spend,operation:{...spend.operation,id:crypto.randomUUID(),amount:500}})));
+ assert.deepEqual(spends.map(x=>x.status).sort(),[200,400]);assert.equal((await cash(cookies.admin)).data.balance,20000);
+ assert.equal((await call('/api/cash?actorId='+cashHead.e.id,{cookie:cookies.admin})).status,403);
+ console.log('Cash: delivery receipts, private balances, pending transfers, confirmation, retries, insufficient funds and concurrent spending passed.');
  console.log('Chief logistics and courier: scoped employee management, no role escalation, logistics access and courier isolation passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
