@@ -143,6 +143,23 @@ try{
  notice=await editNotice({action:'saveManualDeliveryCost',amount:0});assert.equal(notice.deliveryReset.calculation,false);assert.equal(notice.deliveryReset.waybill,true);
  notice=await editNotice({action:'markPackingWaybill'});assert.equal(notice.deliveryReset,undefined);
  console.log('Delivery reset notice: absent before calculation, persists after edits, clears only after replacements.');
+ const returnOperator=await fixture('return-flow');records('return-flow');
+ const flowId='return-flow-o-confirm';
+ const flow=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...flow,address:'Address',delivery:'cdek_courier',items:[{name:'Test',quantity:1,price:1}]}),flowId);
+ async function step(cookie,to,expected=200){
+  const version=db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version;
+  const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,reason:'Test reason',finalHandoffConfirmed:true}});
+  assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
+ }
+ await step(editor.cookie,'refused',400);
+ await step(editor.cookie,'rework');let flowOrder=await step(returnOperator.cookie,'confirm');assert.equal(flowOrder.round,2);assert.ok(flowOrder.finalHandoffAt);
+ await step(editor.cookie,'rework',400);
+ await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);
+ await step(editor.cookie,'refused',400);
+ await step(editor.cookie,'rework');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,3);assert.ok(flowOrder.finalHandoffAt);
+ await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
+ console.log('Return workflow: cancellation denied before return in each stage; second return permits cancellation.');
  const editId='one-o-confirm';
  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:editId,version:2,items:[{name:'Injected',quantity:1,price:1}]}})).status,400);
  for(const state of ['creating','ready']){
