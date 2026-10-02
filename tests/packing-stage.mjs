@@ -36,7 +36,20 @@ for(const delivery of ['moscow_courier','russian_post']){
  assert.deepEqual(allowedOrderTransitions({...o,packingWaybillAt:'2026-10-02'},'logistic'),['shipping']);
  assert.deepEqual(allowedOrderTransitions({...o,packingWaybillAt:'2026-10-02'},'operator'),[]);
  assert.equal(packingStage({...o,status:'shipping',packingWaybillAt:'2026-10-02'}),'exported');
- assert.deepEqual(allowedOrderTransitions({...o,status:'shipping'},'logistic'),[]);
+ assert.deepEqual(allowedOrderTransitions({...o,status:'shipping'},'logistic'),delivery==='russian_post'?['redeemed']:[]);
  assert.equal(orderDatesForTransition(o,'shipping','2026-10-02').shippedAt,'2026-10-02');
  assert.equal(orderGroup('shipping').id,'sent');
 }
+
+const {canReceivePayment}=await import('../lib/crm.ts');
+for(const delivery of ['moscow_courier','russian_post']){
+ const paid={status:'redeemed',delivery};
+ assert.equal(packingStage(paid),'paid');
+ assert.equal(packingStage({...paid,paymentReceivedAt:'2026-10-02'}),'payment_received');
+ assert(canReceivePayment(paid,'chief_logistic'));
+ assert(!canReceivePayment(paid,'operator'));
+ assert(!canReceivePayment({...paid,paymentReceivedAt:'2026-10-02'},'logistic'));
+ assert.equal(orderGroup(paid.status).id,'paid');
+}
+assert.deepEqual(allowedOrderTransitions({status:'shipping',delivery:'russian_post'},'logistic'),['redeemed']);
+assert.deepEqual(allowedOrderTransitions({status:'shipping',delivery:'moscow_courier'},'logistic'),[]);

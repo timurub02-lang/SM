@@ -174,6 +174,14 @@ try{
   assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'markPackingWaybill',id,version}})).status,200);
   saved=await manualStep('shipping');assert.ok(saved.shippedAt);assert.equal(saved.status,'shipping');
   await manualStep('shipping',400);
+  async function receive(expected){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'receivePayment',id,version}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
+  await receive(400);
+  if(delivery==='russian_post')saved=await manualStep('redeemed');
+  else {await manualStep('redeemed',400);saved={...saved,status:'redeemed',redeemedAt:new Date().toISOString()};db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(saved),id);}
+  assert.ok(saved.redeemedAt);
+  const paidAt=saved.redeemedAt;
+  saved=await receive(200);assert.equal(saved.status,'redeemed');assert.equal(saved.redeemedAt,paidAt);assert.ok(saved.paymentReceivedAt);assert.equal(saved.paymentReceivedBy,editor.e.id);
+  await receive(400);
  }
  console.log('Manual delivery HTTP route: confirm -> extra -> packing, no admin review, cancellation blocked before return.');
  const editId='one-o-confirm';

@@ -22,7 +22,7 @@ export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
 export const deliveryLabels:Record<DeliveryMethod,string>={"":"Не выбран",cdek_pickup:"СДЭК · ПВЗ",cdek_courier:"СДЭК · Курьер",moscow_courier:"Москва · Курьер",russian_post:"Почта России"};
-export type Order={deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
+export type Order={paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
 export type Employee={hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={id:string;clientId:string;at:string;text:string;source:string};
@@ -49,6 +49,7 @@ export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
  if(o.status==="confirm"&&["moscow_courier","russian_post"].includes(o.delivery||""))allowed=allowed.map(to=>to==="check"?"extra":to);
  if(["moscow_courier","russian_post"].includes(o.delivery||"")&&["packing","phone"].includes(o.status))allowed=o.packingWaybillAt&&["admin","logistic","chief_logistic"].includes(role||"")?["shipping"]:[];
+ if(o.delivery==="russian_post"&&["shipping","pickup"].includes(o.status)&&["admin","logistic","chief_logistic"].includes(role||""))allowed=["redeemed"];
  if(o.finalHandoffAt){
   allowed=allowed.filter(to=>to!=="rework");
   if(["confirm","extra","check"].includes(o.status)&&!allowed.includes("refused"))allowed=[...allowed,"refused"];
@@ -137,7 +138,7 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"operator",department:actor.department});
 }
 
-export const packingStage=(order:Order)=>order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
+export const packingStage=(order:Order)=>["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
 
 export const confirmationStage=(order:Order,now=Date.now())=>{
  const stage=order.finalHandoffAt&&order.noAnswerDeadline&&["confirm","extra"].includes(order.status)&&Date.parse(order.noAnswerDeadline)-now<=6*3600000?"expiring":order.contact==="none"?"new":order.contact;
@@ -192,3 +193,5 @@ export function orderLocation(order:Order){
 export const canLogisticEditOrder=(o:Pick<Order,"status"|"cdekExported">)=>!o.cdekExported&&!["redeemed","returned"].includes(o.status);
 
 export const teamEmployees=(staff:Employee[],viewer:Employee)=>staff.filter(e=>viewer.role==="admin"||viewer.role==="chief_logistic"&&e.role==="logistic"||viewer.role==="department_head"&&e.role==="operator"&&!!viewer.department&&e.department===viewer.department);
+
+export const canReceivePayment=(order:Order,role:string)=>["admin","logistic","chief_logistic"].includes(role)&&["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"&&!order.paymentReceivedAt;
