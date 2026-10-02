@@ -320,7 +320,7 @@ try{
  for(const slot of [1,2,4])db.prepare('INSERT OR REPLACE INTO settings(id,data) VALUES(?,?)').run('cdek-'+slot,JSON.stringify({name:slot===4?'ИП Аскеров':'Account '+slot,clientId:'private-client',clientSecret:'private-secret'}));
  const routePath='/api/cdek/routing';
  assert.equal((await call(routePath,{cookie:editor.cookie})).status,403);
- assert.equal((await call(routePath,{cookie:cookies.one})).status,403);
+ assert.equal((await call(routePath,{cookie:reminderActor.cookie})).status,403);
  assert.equal((await call(routePath,{cookie:editor.cookie,body:{enabled:true}})).status,403);
  let routeSettings=await call(routePath,{cookie:cookies.admin});assert.equal(routeSettings.status,200,routeSettings.text);assert.ok(!routeSettings.text.includes('private-'));
  const routeConfig={...routeSettings.data.config,enabled:true,rules:[{id:'product',name:'Main product',enabled:true,slot:2,from:'',to:'',departments:[],products:['Expensive'],weekdays:[],period:'week',maxCount:null,maxAmount:null}]};
@@ -329,7 +329,7 @@ try{
  const routeOrderId=reminderOrder;
  db.prepare("UPDATE orders SET data=json_set(data,'$.items',json(?)) WHERE id=?").run(JSON.stringify([{name:'Cheap',price:100,quantity:100},{name:'Expensive',price:200,quantity:1}]),routeOrderId);
  let preview=await call(routePath+'?orderId='+routeOrderId,{cookie:editor.cookie});assert.equal(preview.status,200,preview.text);assert.equal(preview.data.choice.slot,2);assert.ok(!preview.text.includes('private-'));assert.equal(preview.data.config,undefined);
- assert.equal((await call(routePath+'?orderId='+routeOrderId,{cookie:cookies.one})).status,403);
+ assert.equal((await call(routePath+'?orderId='+routeOrderId,{cookie:reminderActor.cookie})).status,403);
  db.prepare("UPDATE employees SET data=json_set(data,'$.department','5') WHERE id=?").run(reminderActor.e.id);
  preview=await call(routePath+'?orderId='+routeOrderId,{cookie:editor.cookie});assert.equal(preview.data.choice.slot,4);
  db.prepare("UPDATE employees SET data=json_set(data,'$.department','1') WHERE id=?").run(reminderActor.e.id);
