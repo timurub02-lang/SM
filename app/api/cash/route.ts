@@ -1,9 +1,10 @@
+import {courierBalance} from '@/lib/courier';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {cashInput,hasCash} from '@/lib/cash';
 import {initCash} from '@/lib/cash-db';
-import {type Employee} from '@/lib/crm';
+import {type Employee,type Order} from '@/lib/crm';
 import {z} from 'zod';
 export const dynamic='force-dynamic';
 async function employee(id:string){const row=await db().prepare('SELECT data FROM employees WHERE id=?').bind(id).first<{data:string}>();return row?JSON.parse(row.data) as Employee:null;}
@@ -18,11 +19,18 @@ async function handle(req:Request){
   if(query.has('employeeId')||query.get('scope')==='all'){
    if(actor.role!=='admin'||req.method!=='GET')return Response.json({error:'Просмотр касс сотрудников доступен только администратору'},{status:403});
    if(query.get('scope')==='all'){
-    const rows=await d.prepare("SELECT e.id,json_extract(e.data,'$.name') AS name,json_extract(e.data,'$.login') AS login,json_extract(e.data,'$.role') AS role,COALESCE(b.balance,0) AS balance,COALESCE((SELECT SUM(amount) FROM cash_operations WHERE recipient=e.id AND kind='transfer' AND accepted_at IS NULL),0) AS pending FROM employees e LEFT JOIN cash_balances b ON b.employee=e.id WHERE json_extract(e.data,'$.role') IN ('admin','department_head','chief_logistic') ORDER BY name,e.id").all();
-    return Response.json({accounts:rows.results},{headers:{'Cache-Control':'no-store'}});
+    const rows=await d.prepare("SELECT e.id,json_extract(e.data,'$.name') AS name,json_extract(e.data,'$.login') AS login,json_extract(e.data,'$.role') AS role,COALESCE(b.balance,0) AS balance,COALESCE((SELECT SUM(amount) FROM cash_operations WHERE recipient=e.id AND kind='transfer' AND accepted_at IS NULL),0) AS pending FROM employees e LEFT JOIN cash_balances b ON b.employee=e.id WHERE json_extract(e.data,'$.role') IN ('admin','department_head','chief_logistic','courier') ORDER BY name,e.id").all<{id:string;role:string;[key:string]:unknown}>();
+    const orders=(await d.prepare("SELECT data FROM orders WHERE json_extract(data,'$.courier.id') IS NOT NULL").all<{data:string}>()).results.map(r=>JSON.parse(r.data) as Order);
+    const accounts=rows.results.map(a=>{if(a.role!=='courier')return a;const b=courierBalance(orders,a.id);return {...a,balance:Math.round(b.cash*100),pending:Math.round(b.pending*100),parcels:Math.round(b.parcels*100),accountable:Math.round(b.total*100)};});
+    return Response.json({accounts},{headers:{'Cache-Control':'no-store'}});
    }
    const target=await employee(query.get('employeeId')||'');
    if(!target)return Response.json({error:'Сотрудник не найден'},{status:404});
+   if(target.role==='courier'){
+    const rows=await d.prepare("SELECT data FROM orders WHERE json_extract(data,'$.courier.id')=? ORDER BY json_extract(data,'$.updatedAt') DESC").bind(target.id).all<{data:string}>();
+    return Response.json({operations:[],courierOrders:rows.results.map(r=>{const o=JSON.parse(r.data) as Order;return {id:o.id,status:o.status,courier:o.courier,redeemedAt:o.redeemedAt,returnedAt:o.returnedAt,warehouseReturnedAt:o.warehouseReturnedAt,paymentReceivedAt:o.paymentReceivedAt,reason:o.reason};})},{headers:{'Cache-Control':'no-store'}});
+   }
+
    const rows=await d.prepare('SELECT * FROM cash_operations WHERE sender=? OR recipient=? ORDER BY created_at DESC,id DESC').bind(target.id,target.id).all();
    return Response.json({operations:rows.results},{headers:{'Cache-Control':'no-store'}});
   }
