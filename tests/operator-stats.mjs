@@ -38,3 +38,8 @@ assert.deepEqual(operatorStats(state,admin,'','')[0].orderLists.redeemed.map(o=>
 assert.equal(operatorStats(state,admin,'','2026-09-30')[0].redeemed,0);
 assert.equal(operatorStats(state,employees[1],'','')[0].redeemed,0);
 order.status='returned';assert.equal(operatorStats(state,admin,'','')[0].redeemed,0);
+
+for(const status of ['shipping','pickup']){order.status=status;assert.equal(operatorStats(state,admin,'','')[0].sent,1);assert.deepEqual(operatorStats(state,admin,'','')[0].orderLists.sent.map(o=>o.id),['o']);}
+assert.equal(operatorStats(state,admin,'','2026-09-30')[0].sent,0);
+assert.equal(operatorStats(state,employees[1],'','')[0].sent,0);
+for(const status of ['packing','redeemed','returned']){order.status=status;assert.equal(operatorStats(state,admin,'','')[0].sent,0);}
