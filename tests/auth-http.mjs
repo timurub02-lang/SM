@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
+import {courierBalance} from '../lib/courier.ts';
 import {authSchema} from '../lib/auth-schema.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-auth-')), db=new DatabaseSync(join(dir,'test.sqlite'));
@@ -163,10 +164,11 @@ try{
  await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
  console.log('Return workflow: cancellation denied before return in each stage; second return permits cancellation.');
  const chief=await fixture('chief-logistic',undefined,'chief_logistic');
+ const dispatchCourier=await fixture('dispatch-courier',undefined,'courier'),strangerCourier=await fixture('stranger-courier',undefined,'courier');
  for(const [delivery,section] of [['moscow_courier','moscow'],['russian_post','post']]){
   const id='manual-'+delivery,clientId='one-c-confirm';
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'Address',items:[{name:'Test',quantity:1,price:1}]}));
-  async function manualStep(to,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version,to,reason:'Test'}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
+  async function manualStep(to,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version,to,reason:'Test',courierId:dispatchCourier.e.id}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
   await manualStep('check',400);await manualStep('refused',400);
   let saved=await manualStep('extra');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
   await manualStep('refused',400);saved=await manualStep('packing');assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
@@ -178,12 +180,50 @@ try{
   async function receive(expected,amount){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'receivePayment',id,version,amount}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
   await receive(400);
   if(delivery==='russian_post')saved=await manualStep('redeemed');
-  else {await manualStep('redeemed',400);saved={...saved,status:'redeemed',redeemedAt:new Date().toISOString()};db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(saved),id);}
+  else {
+   await manualStep('redeemed',400);
+   let courierView=(await call('/api/crm',{cookie:dispatchCourier.cookie})).data;
+   assert.equal(courierBalance(courierView.orders,dispatchCourier.e.id).parcels,1);
+   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
+   const body={action:'courierOutcome',id,version,to:'redeemed',confirmed:true};
+   assert.equal((await call('/api/crm',{cookie:strangerCourier.cookie,body})).status,400);
+   assert.equal((await call('/api/crm',{cookie:editor.cookie,body})).status,400);
+   assert.equal((await call('/api/crm',{cookie:dispatchCourier.cookie,body:{...body,action:'updateOrder',items:[]}})).status,403);
+   assert.equal((await call('/api/crm',{cookie:dispatchCourier.cookie,body:{...body,confirmed:false}})).status,400);
+   const paid=await call('/api/crm',{cookie:dispatchCourier.cookie,body});assert.equal(paid.status,200,paid.text);
+   assert.equal(courierBalance(paid.data.state.orders,dispatchCourier.e.id).cash,1);
+   assert.equal((await call('/api/crm',{cookie:dispatchCourier.cookie,body})).status,400);
+   assert.equal((await call('/api/crm',{cookie:returnOperator.cookie})).data.orders.find(o=>o.id===id).status,'redeemed');
+   saved=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);
+  }
   assert.ok(saved.redeemedAt);
   const paidAt=saved.redeemedAt;
   saved=await receive(200,delivery==='moscow_courier'?99999:undefined);assert.equal(saved.status,'redeemed');assert.equal(saved.redeemedAt,paidAt);assert.ok(saved.paymentReceivedAt);assert.equal(saved.paymentReceivedBy,editor.e.id);assert.equal(saved.paymentReceipt.amount,1);assert.equal(saved.paymentReceipt.receivedByName,editor.e.name);assert.equal(saved.paymentReceipt.delivery,delivery);assert.equal(saved.paymentReceipt.operatorLogin,JSON.parse(db.prepare("SELECT data FROM employees WHERE id=?").get(saved.manager).data).login);
   await receive(400);
  }
+
+ assert.equal(courierBalance((await call('/api/crm',{cookie:dispatchCourier.cookie})).data.orders,dispatchCourier.e.id).total,0);
+ const courierReturnId='courier-return';
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(courierReturnId,'one-c-confirm',JSON.stringify({...flow,id:courierReturnId,clientId:'one-c-confirm',status:'packing',delivery:'moscow_courier',address:'Address',packingWaybillAt:new Date().toISOString(),items:[{name:'Test',quantity:1,price:1}]}));
+ async function courierAction(cookie,body,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(courierReturnId).version;const r=await call('/api/crm',{cookie,body:{id:courierReturnId,version,...body}});assert.equal(r.status,expected,r.text);return r;}
+ await courierAction(editor.cookie,{action:'transition',to:'shipping'},400);
+ await courierAction(editor.cookie,{action:'transition',to:'shipping',courierId:editor.e.id},400);
+ await courierAction(editor.cookie,{action:'transition',to:'shipping',courierId:dispatchCourier.e.id});
+ await courierAction(editor.cookie,{action:'updateDelivery',delivery:'russian_post'},400);
+ assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'deleteEmployee',id:dispatchCourier.e.id,version:1,mode:'release'}})).status,400);
+ await courierAction(dispatchCourier.cookie,{action:'returnToWarehouse'},403);
+ await courierAction(dispatchCourier.cookie,{action:'receivePayment'},403);
+ await courierAction(dispatchCourier.cookie,{action:'courierOutcome',to:'returned',confirmed:true,reason:''},400);
+ const stockBeforeReturn=db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available;
+ const returned=await courierAction(dispatchCourier.cookie,{action:'courierOutcome',to:'returned',confirmed:true,reason:'Client refused'});
+ assert.equal(courierBalance(returned.data.state.orders,dispatchCourier.e.id).parcels,1);
+ assert.equal(db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available,stockBeforeReturn);
+ assert.equal((await call('/api/crm',{cookie:returnOperator.cookie})).data.orders.find(o=>o.id===courierReturnId).status,'returned');
+ await courierAction(editor.cookie,{action:'returnToWarehouse'});
+ assert.equal(db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available,stockBeforeReturn+1);
+ await courierAction(editor.cookie,{action:'returnToWarehouse'},400);
+ assert.equal(courierBalance((await call('/api/crm',{cookie:dispatchCourier.cookie})).data.orders,dispatchCourier.e.id).total,0);
+ console.log('Courier: assignment, scoped mobile data, payment, return, warehouse stock and settlement passed.');
  console.log('Manual delivery HTTP route: confirm -> extra -> packing, no admin review, cancellation blocked before return.');
  const editId='one-o-confirm';
  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:editId,version:2,items:[{name:'Injected',quantity:1,price:1}]}})).status,400);

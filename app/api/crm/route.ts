@@ -1,3 +1,4 @@
+import {courierOutstanding} from '@/lib/courier';
 import {saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
 import {total,canReceivePayment,isLogistic} from '@/lib/crm';
@@ -145,16 +146,23 @@ async function handlePOST(request:Request){
   if(employee?.role==="operator"&&c.owner&&c.owner!==employee.id)throw new Error("Клиент закреплён за другим оператором");const manager=employee?.role==="operator"?employee.id:c.owner;ownerValid(manager);if(!manager)throw new Error("Сначала закрепите клиента за оператором");
   const o:Order={id:id("SM-"),clientId:c.id,delivery:deliverySchema.parse(p.delivery??""),addressParts:addressPartsSchema.optional().parse(p.addressParts??c.addressParts),address:z.string().trim().max(500).parse(p.address??c.address),status:"draft",items,comment,reason:"",contact:"none",due:"",round:1,extra:false,createdAt:now,updatedAt:now,manager,logistic:"",version:1};
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),eventSQL(ev(c.id,o.id,"Создан заказ · Оформление"+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":"")))]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
- }else if(["receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
-  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");const next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
+ }else if(["courierOutcome","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
+  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(employee.role==="courier"&&p.action==="courierOutcome")&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");const next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
   if(o.status==="rework"&&!next.returnReason)next.returnReason=o.reason;
   if((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
    const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-shipment-${o.id}`).first<{data:string}>();
    if(shipment&&JSON.parse(shipment.data).state!=="invalid")throw Error("Заказ уже выгружен или отправляется в СДЭК. Изменение доставки и корзины заблокировано");
   }
-  if(p.action==="receivePayment"){
+  if(p.action==="courierOutcome"){
+   if(employee.role!=='courier'||o.courier?.id!==employee.id||o.delivery!=='moscow_courier'||!['shipping','pickup'].includes(o.status))throw Error('Этот заказ недоступен для действия курьера');
+   const to=z.enum(['redeemed','returned']).parse(p.to);
+   const reason=to==='returned'?z.string().trim().min(1,'Укажите причину возврата').max(1000).parse(p.reason):'';
+   if(p.confirmed!==true)throw Error('Подтвердите получение денег или возврат посылки');
+   next.status=to;Object.assign(next,orderDatesForTransition(o,to,now));next.reason=reason;next.contact='none';next.due='';
+   text=to==='redeemed'?'Курьер получил оплату клиента · '+o.courier.amount+' ₽':'Курьер отметил возврат · ожидает приёма посылки на склад · '+reason;
+  }else if(p.action==="receivePayment"){
    if(!canReceivePayment(o,employee.role))throw Error("Приём оплаты доступен логисту только для оплаченного заказа курьера Москвы или Почты России без ранее принятой оплаты");
-   next.paymentReceipt={amount:z.number().finite().nonnegative().parse(total(o)),operatorLogin:s.employees.find(e=>e.id===o.manager)?.login||"",receivedByName:employee.name,delivery:o.delivery!};next.paymentReceivedAt=now;next.paymentReceivedBy=employee.id;text="Оплата принята логистом · деньги получены · "+next.paymentReceipt.amount+" ₽";
+   next.paymentReceipt={amount:z.number().finite().nonnegative().parse(o.courier?.amount??total(o)),operatorLogin:s.employees.find(e=>e.id===o.manager)?.login||"",receivedByName:employee.name,delivery:o.delivery!};next.paymentReceivedAt=now;next.paymentReceivedBy=employee.id;text="Оплата принята логистом · деньги получены · "+next.paymentReceipt.amount+" ₽";
    await initCash();
    const chiefs=s.employees.filter(e=>e.role==='chief_logistic');
    const chief=employee.role==='chief_logistic'?employee:chiefs.length===1?chiefs[0]:null;
@@ -189,7 +197,17 @@ async function handlePOST(request:Request){
    next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts);next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)?o.items:itemsSchema.parse(p.items);next.comment=z.string().max(3000).parse(p.comment||"");text=isLogistic(employee.role)?"Логист уточнил доставку, адрес и комментарий заказа":"Обновлены доставка, адрес, корзина и комментарий менеджера";
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
-   const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&o.reworkDeadline&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;}delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=finalNoAnswerDeadline(next,next.contact,now);if(to==="rework"){next.returnReason=reason;next.reworkDeadline=reworkDeadlineFrom(now);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
+   const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);
+   if(to==='shipping'&&o.delivery==='moscow_courier'){
+    if(!['admin','logistic','chief_logistic'].includes(employee.role)||o.courier)throw Error('Передача курьеру недоступна');
+    const courier=s.employees.find(e=>e.id===p.courierId&&e.role==='courier');
+    if(!courier)throw Error('Выберите курьера для передачи заказа');
+    const account=await d.prepare('SELECT enabled FROM auth_accounts WHERE employee_id=?').bind(courier.id).first<{enabled:number}>();
+    if(personalAuth()&&!account?.enabled)throw Error('У курьера должен быть включён вход в CRM');
+    if(!o.items.length)throw Error('В заказе нет товаров');
+    next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o)};
+   }
+   if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&o.reworkDeadline&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;}delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=finalNoAnswerDeadline(next,next.contact,now);if(to==="rework"){next.returnReason=reason;next.reworkDeadline=reworkDeadlineFrom(now);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
    if(isLogistic(employee?.role))next.logistic=employee.id;
    const labels=await import("@/lib/crm");text=`${labels.statuses[o.status]} → ${labels.statuses[to]}${reason?" · "+reason:""}`;
   }else if(p.action==="contact"){
@@ -200,6 +218,7 @@ async function handlePOST(request:Request){
    if(isLogistic(employee?.role))next.logistic=employee.id;
    text=`${next.contact==="missed"?"Недозвон":"Перезвон"}: ${next.reason}${next.due?" · "+new Date(next.due).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК":""}`;
   }else{text="Комментарий: "+z.string().trim().min(1).max(3000).parse(p.text);}
+  if(o.courier&&['updateOrder','updateDelivery','saveManualDeliveryCost','selectCdekTariff','markPackingWaybill','updateWaybillComment'].includes(p.action))throw Error('Заказ уже передан курьеру. Данные отправления зафиксированы');
   if(p.action!=="selectCdekTariff"&&next.cdekTariff&&(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)))delete next.cdekTariff;
   if(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)){delete next.manualDeliveryCost;delete next.packingWaybillAt;}
   const deliveryChanged=next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts);
@@ -219,6 +238,7 @@ async function handlePOST(request:Request){
   const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?"+((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[]),...cashReceipt]);
   if(!result[0].meta.changes)throw new Error("Заказ уже изменён. Обновите страницу и повторите");
  }else if(p.action==="deleteEmployee"){
+  if(s.orders.some(o=>o.courier?.id===p.id&&courierOutstanding(o)))throw Error('Сначала примите у курьера все деньги и возвраты');
   const plan=removalPlan(s,employee,p.id,p.version,p.mode,p.targetId);
   await initCash();
   const cash=await d.prepare("SELECT COALESCE((SELECT balance FROM cash_balances WHERE employee=?),0) AS balance,EXISTS(SELECT 1 FROM cash_operations WHERE (sender=? OR recipient=?) AND kind='transfer' AND accepted_at IS NULL) AS pending").bind(p.id,p.id,p.id).first<{balance:number;pending:number}>();
@@ -247,6 +267,7 @@ async function handlePOST(request:Request){
  }else if(p.action==="saveEmployee"){
   const existing=s.employees.find(e=>e.id===p.id);
   const data=employeeForManager(employee,p.employee,existing);
+  if(existing?.role==='courier'&&data.role!=='courier'&&s.orders.some(o=>o.courier?.id===existing.id&&courierOutstanding(o)))throw Error('Сначала примите у курьера все деньги и возвраты');
   data.login=data.login.trim();
   if(s.employees.some(e=>e.login.toLowerCase()===data.login.toLowerCase()&&e.id!==p.id))throw Error("Такой логин уже существует");
   if(p.id&&(!existing||existing.version!==p.version))throw Error("Карточка сотрудника уже изменена");
