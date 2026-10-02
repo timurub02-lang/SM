@@ -162,6 +162,15 @@ try{
  await step(editor.cookie,'rework');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,3);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
  console.log('Return workflow: cancellation denied before return in each stage; second return permits cancellation.');
+ for(const [delivery,section] of [['moscow_courier','moscow'],['russian_post','post']]){
+  const id='manual-'+delivery,clientId='one-c-confirm';
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'Address',items:[{name:'Test',quantity:1,price:1}]}));
+  async function manualStep(to,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version,to,reason:'Test'}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
+  await manualStep('check',400);await manualStep('refused',400);
+  let saved=await manualStep('extra');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
+  await manualStep('refused',400);saved=await manualStep('packing');assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
+ }
+ console.log('Manual delivery HTTP route: confirm -> extra -> packing, no admin review, cancellation blocked before return.');
  const editId='one-o-confirm';
  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:editId,version:2,items:[{name:'Injected',quantity:1,price:1}]}})).status,400);
  for(const state of ['creating','ready']){

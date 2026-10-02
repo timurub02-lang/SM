@@ -46,6 +46,7 @@ export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:P
 export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После ${o.round-1}-го возврата оператору`:"";
 export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
+ if(o.status==="confirm"&&["moscow_courier","russian_post"].includes(o.delivery||""))allowed=allowed.map(to=>to==="check"?"extra":to);
  if(o.finalHandoffAt){
   allowed=allowed.filter(to=>to!=="rework");
   if(["confirm","extra","check"].includes(o.status)&&!allowed.includes("refused"))allowed=[...allowed,"refused"];
@@ -73,7 +74,7 @@ export function seed():State{
 export function orderDatesForTransition(order:Order,to:Status,at:string):Partial<Order>{
  const dates:Partial<Order>={};
  if(order.status==="check"&&["packing","extra"].includes(to)&&!order.adminReviewedAt)dates.adminReviewedAt=at;
- if((order.status==="confirm"&&to==="check"||order.status==="extra"&&to==="packing")&&!order.confirmedAt)dates.confirmedAt=at;
+ if((order.status==="confirm"&&["check","extra"].includes(to)||order.status==="extra"&&to==="packing")&&!order.confirmedAt)dates.confirmedAt=at;
  if(to==="shipping"&&!order.shippedAt)dates.shippedAt=at;
  if(to==="redeemed"&&!order.redeemedAt)dates.redeemedAt=at;
  if(to==="returned"&&!order.returnedAt)dates.returnedAt=at;
