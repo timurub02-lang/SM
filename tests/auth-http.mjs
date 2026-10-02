@@ -215,12 +215,12 @@ try{
  assert.equal((await cash(cookies.admin,add)).data.balance,100000,'Retry cannot duplicate cash');
  assert.equal((await cash(cookies.admin,{...add,operation:{...add.operation,amount:2000}})).status,400);
  for(const amount of [-1,0,0.001])assert.equal((await cash(cookies.admin,{...add,operation:{...add.operation,id:crypto.randomUUID(),amount}})).status,400);
- const transfer={action:'create',operation:{id:crypto.randomUUID(),kind:'transfer',amount:300,date,purpose:'Перевод другому сотруднику',recipient:cashHead.e.id}};
- cashResult=await cash(cookies.admin,transfer);assert.equal(cashResult.status,200,cashResult.text);assert.equal(cashResult.data.balance,70000);
+ const cashTransfer={action:'create',operation:{id:crypto.randomUUID(),kind:'transfer',amount:300,date,purpose:'Перевод другому сотруднику',recipient:cashHead.e.id}};
+ cashResult=await cash(cookies.admin,cashTransfer);assert.equal(cashResult.status,200,cashResult.text);assert.equal(cashResult.data.balance,70000);
  let incoming=await cash(cashHead.cookie);assert.equal(incoming.data.balance,0);assert.equal(incoming.data.operations.length,1);assert.equal(incoming.data.operations[0].accepted_at,null);assert.ok(!incoming.text.includes('manual-russian_post'));
- assert.equal((await cash(chief.cookie,{action:'accept',id:transfer.operation.id})).status,400);
- incoming=await cash(cashHead.cookie,{action:'accept',id:transfer.operation.id});assert.equal(incoming.data.balance,30000);assert.ok(incoming.data.operations[0].accepted_at);
- assert.equal((await cash(cashHead.cookie,{action:'accept',id:transfer.operation.id})).data.balance,30000);
+ assert.equal((await cash(chief.cookie,{action:'accept',id:cashTransfer.operation.id})).status,400);
+ incoming=await cash(cashHead.cookie,{action:'accept',id:cashTransfer.operation.id});assert.equal(incoming.data.balance,30000);assert.ok(incoming.data.operations[0].accepted_at);
+ assert.equal((await cash(cashHead.cookie,{action:'accept',id:cashTransfer.operation.id})).data.balance,30000);
  const spend={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:800,date,purpose:'Зарплата'}};
  assert.equal((await cash(cookies.admin,spend)).status,400);assert.equal((await cash(cookies.admin)).data.balance,70000);
  const spends=await Promise.all([1,2].map(()=>cash(cookies.admin,{...spend,operation:{...spend.operation,id:crypto.randomUUID(),amount:500}})));
