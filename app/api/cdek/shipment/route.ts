@@ -14,7 +14,7 @@ const uuidSchema=z.string().uuid();
 async function context(actorId:string,orderId:string){
  await initInventory();
  const actor=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();
- if(!actor||!['logistic','admin'].includes(JSON.parse(actor.data).role))throw Error('Отправления доступны только логисту');
+ if(!actor||!['logistic','chief_logistic','admin'].includes(JSON.parse(actor.data).role))throw Error('Отправления доступны только логисту');
  const row=await db().prepare('SELECT data,version FROM orders WHERE id=?').bind(orderId).first<{data:string;version:number}>();
  if(!row)throw Error('Заказ не найден');
  const order={...JSON.parse(row.data),version:row.version} as Order;

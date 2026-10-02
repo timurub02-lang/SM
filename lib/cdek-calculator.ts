@@ -1,7 +1,7 @@
 import {z} from 'zod';
 export const calculationSchema=z.object({actorId:z.string().min(1),orderId:z.string().min(1),slot:z.number().int().min(1).max(4),delivery:z.enum(['cdek_pickup','cdek_courier']),originPostalCode:z.string().regex(/^\d{6}$/,'Укажите индекс отправления из 6 цифр'),originMode:z.enum(['warehouse','door']),weight:z.number().positive().max(1000000),length:z.number().int().positive().max(1000),width:z.number().int().positive().max(1000),height:z.number().int().positive().max(1000)});
 export type CalculationInput=z.infer<typeof calculationSchema>;
-export const canManageDelivery=(role:string,status:string)=>['admin','logistic'].includes(role)&&['draft','rework','confirm','extra','check','packing','phone'].includes(status);
+export const canManageDelivery=(role:string,status:string)=>['admin','logistic','chief_logistic'].includes(role)&&['draft','rework','confirm','extra','check','packing','phone'].includes(status);
 export const tariffMode=(p:Pick<CalculationInput,'originMode'|'delivery'>)=>p.originMode==='warehouse'?(p.delivery==='cdek_pickup'?4:3):(p.delivery==='cdek_pickup'?2:1);
 export function calculationPayload(p:CalculationInput,destinationPostalCode:string){
  if(!/^\d{6}$/.test(destinationPostalCode))throw new Error('Заполните индекс получателя в адресе заказа');

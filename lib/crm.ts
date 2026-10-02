@@ -15,7 +15,8 @@ export const orderGroup=(status:Status)=>orderGroups.find(g=>g.stages.includes(s
 export const transitions:Record<Status,Status[]>={draft:["confirm","refused"],confirm:["check","rework"],rework:["confirm","refused"],check:["packing","extra"],extra:["packing","rework"],packing:["phone"],phone:[],shipping:[],pickup:[],redeemed:[],refused:[],returned:[]};
 export const departments={"1":"SKP_","2":"POD_","3":"M31_","4":"UDL_","5":"A_"} as const;
 export const departmentIds=["1","2","3","4","5"] as const;
-export const roles={operator:"Оператор",logistic:"Логист",admin:"Администратор",department_head:"Руководитель отдела",redemption:"Отдел выкупа"};
+export const roles={operator:"Оператор",logistic:"Логист",chief_logistic:"Главный логист",courier:"Курьер",admin:"Администратор",department_head:"Руководитель отдела",redemption:"Отдел выкупа"};
+export const isLogistic=(role?:string)=>role==="logistic"||role==="chief_logistic";
 export type Client={importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
 export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
@@ -34,8 +35,8 @@ export const normalizePhone=(v:string)=>{let p=v.replace(/\D/g,"");if(p.length==
 export const daysLeft=(c:Client)=>c.assignedUntil?Math.ceil((Date.parse(c.assignedUntil)-Date.now())/86400000):0;
 export const clientSchema=z.object({name:z.string().trim().min(2,"Укажите имя клиента").max(150),phone:z.string().transform(normalizePhone).refine(Boolean,"Укажите российский телефон из 11 цифр"),city:z.string().trim().max(250).default(""),address:z.string().trim().max(500).default(""),addressParts:addressPartsSchema.optional(),source:z.string().trim().max(200).default("Вручную"),owner:z.string().max(100).default("")});
 export const itemsSchema=z.array(z.object({name:z.string().trim().min(1,"Укажите товар").max(200),quantity:z.number().int().min(1).max(9999),price:z.number().min(0.01).max(10000000)})).max(100);
-export const needsDepartment=(role:string)=>!["logistic","redemption"].includes(role);
-export const employeeSchema=z.object({name:z.string().trim().min(2).max(150),alias:z.string().trim().max(100),login:z.string().trim().min(1).max(100),skLogin:z.string().trim().max(100),role:z.enum(["operator","logistic","admin","redemption","department_head"]),department:z.enum(departmentIds,{required_error:"Выберите отдел",invalid_type_error:"Выберите отдел"}).optional(),salary:z.number().min(0).max(10000000),bonus:z.number().min(0).max(100)}).superRefine((employee,ctx)=>{if(needsDepartment(employee.role)&&!employee.department)ctx.addIssue({code:z.ZodIssueCode.custom,path:["department"],message:"Выберите отдел"});}).transform(employee=>({...employee,department:needsDepartment(employee.role)?employee.department:undefined}));
+export const needsDepartment=(role:string)=>!["logistic","chief_logistic","courier","redemption"].includes(role);
+export const employeeSchema=z.object({name:z.string().trim().min(2).max(150),alias:z.string().trim().max(100),login:z.string().trim().min(1).max(100),skLogin:z.string().trim().max(100),role:z.enum(["operator","logistic","chief_logistic","courier","admin","redemption","department_head"]),department:z.enum(departmentIds,{required_error:"Выберите отдел",invalid_type_error:"Выберите отдел"}).optional(),salary:z.number().min(0).max(10000000),bonus:z.number().min(0).max(100)}).superRefine((employee,ctx)=>{if(needsDepartment(employee.role)&&!employee.department)ctx.addIssue({code:z.ZodIssueCode.custom,path:["department"],message:"Выберите отдел"});}).transform(employee=>({...employee,department:needsDepartment(employee.role)?employee.department:undefined}));
 export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:Pick<Client,"address">){
  if(!o.delivery||!deliverySchema.safeParse(o.delivery).success)return {field:"delivery",label:"Выберите способ доставки"} as const;
  if(!o.items.length)return {field:"basket",label:"Добавьте товар"} as const;
@@ -47,12 +48,12 @@ export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После 
 export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
  if(o.status==="confirm"&&["moscow_courier","russian_post"].includes(o.delivery||""))allowed=allowed.map(to=>to==="check"?"extra":to);
- if(["moscow_courier","russian_post"].includes(o.delivery||"")&&["packing","phone"].includes(o.status))allowed=o.packingWaybillAt&&["admin","logistic"].includes(role||"")?["shipping"]:[];
+ if(["moscow_courier","russian_post"].includes(o.delivery||"")&&["packing","phone"].includes(o.status))allowed=o.packingWaybillAt&&["admin","logistic","chief_logistic"].includes(role||"")?["shipping"]:[];
  if(o.finalHandoffAt){
   allowed=allowed.filter(to=>to!=="rework");
   if(["confirm","extra","check"].includes(o.status)&&!allowed.includes("refused"))allowed=[...allowed,"refused"];
  }
- return role==="logistic"?allowed.filter(to=>to!=="refused"||!!o.finalHandoffAt&&["confirm","extra"].includes(o.status)):allowed;
+ return isLogistic(role)?allowed.filter(to=>to!=="refused"||!!o.finalHandoffAt&&["confirm","extra"].includes(o.status)):allowed;
 }
 export function finalNoAnswerDeadline(o:Order,contact:string,now:string){
  if(!o.finalHandoffAt||!["confirm","extra"].includes(o.status))return undefined;
@@ -111,8 +112,8 @@ export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){
  return {address:o.address.trim(),addressParts:o.addressParts||null,city:o.addressParts?.city||'',addressReview:false,addressProcessingError:false};
 }
 
-export const orderEditingLocked=(employee:Pick<Employee,"role"|"id">,order:Pick<Order,"status"|"manager">)=>order.status==="check"&&employee.role!=="admin"?true:employee.role==="operator"?(order.manager!==employee.id||!["draft","rework"].includes(order.status)):!["logistic","admin","redemption"].includes(employee.role);
-export const scheduledCalls=(orders:Order[],employee:Pick<Employee,"id"|"role">)=>orders.filter(o=>["callback","missed"].includes(o.contact)&&!!o.due&&Number.isFinite(Date.parse(o.due))&&(employee.role==="operator"?o.manager===employee.id&&["draft","rework"].includes(o.status):employee.role==="logistic"?o.logistic===employee.id&&["confirm","extra","pickup"].includes(o.status):false)).sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
+export const orderEditingLocked=(employee:Pick<Employee,"role"|"id">,order:Pick<Order,"status"|"manager">)=>order.status==="check"&&employee.role!=="admin"?true:employee.role==="operator"?(order.manager!==employee.id||!["draft","rework"].includes(order.status)):!["logistic","chief_logistic","admin","redemption"].includes(employee.role);
+export const scheduledCalls=(orders:Order[],employee:Pick<Employee,"id"|"role">)=>orders.filter(o=>["callback","missed"].includes(o.contact)&&!!o.due&&Number.isFinite(Date.parse(o.due))&&(employee.role==="operator"?o.manager===employee.id&&["draft","rework"].includes(o.status):isLogistic(employee.role)?o.logistic===employee.id&&["confirm","extra","pickup"].includes(o.status):false)).sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
 export const logisticCallsDue=(orders:Order[],actorId:string,now:number)=>scheduledCalls(orders,{id:actorId,role:"logistic"}).filter(o=>Date.parse(o.due)<=now);
 
 export function assignedClients(clients:Client[],employees:Employee[],viewer:Employee){
@@ -126,6 +127,10 @@ export function departmentOrders(orders:Order[],employees:Employee[],viewer:Empl
 }
 
 export function employeeForManager(actor:Employee|undefined,data:unknown,existing?:Employee){
+ if(actor?.role==="chief_logistic"){
+  if(existing&&existing.role!=="logistic")throw Error("Можно изменять только логистов");
+  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"logistic",department:undefined});
+ }
  if(actor?.role!=="department_head")return employeeSchema.parse(data);
  if(!actor.department)throw Error("Сначала назначьте отдел руководителю");
  if(existing&&(existing.role!=="operator"||existing.department!==actor.department))throw Error("Можно изменять только операторов своего отдела");
@@ -185,3 +190,5 @@ export function orderLocation(order:Order){
 }
 
 export const canLogisticEditOrder=(o:Pick<Order,"status"|"cdekExported">)=>!o.cdekExported&&!["redeemed","returned"].includes(o.status);
+
+export const teamEmployees=(staff:Employee[],viewer:Employee)=>staff.filter(e=>viewer.role==="admin"||viewer.role==="chief_logistic"&&e.role==="logistic"||viewer.role==="department_head"&&e.role==="operator"&&!!viewer.department&&e.department===viewer.department);

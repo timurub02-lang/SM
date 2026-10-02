@@ -184,5 +184,16 @@ try{
  }
  assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(editId).data).address,'Corrected address');
  console.log('Logistic edits passed: every status, immutable basket, exported and in-flight shipment guards.');
+ const chief=await fixture('chief-logistic',undefined,'chief_logistic'),courier=await fixture('courier',undefined,'courier');
+ const chiefState=await call('/api/crm',{cookie:chief.cookie});assert.equal(chiefState.status,200);assert.ok(chiefState.data.employees.some(e=>e.id===editor.e.id&&e.hasPassword));
+ for(const e of [staff[0],staff[1],chief.e])assert.equal((await call('/api/crm',{cookie:chief.cookie,body:{action:'saveEmployee',id:e.id,version:1,employee:{...e,accessEnabled:false}}})).status,400);
+ const created=await call('/api/crm',{cookie:chief.cookie,body:{action:'saveEmployee',employee:{...staff[1],id:undefined,login:'chief-created',role:'admin',accessEnabled:false}}});assert.equal(created.status,200,created.text);const managed=created.data.state.employees.find(e=>e.login==='chief-created');assert.equal(managed.role,'logistic');assert.equal(managed.department,undefined);
+ assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'saveEmployee',employee:{...staff[1],login:'forbidden'}}})).status,400);
+ assert.equal((await call('/api/crm',{cookie:chief.cookie,body:{action:'deleteEmployee',id:managed.id,version:managed.version,mode:'release'}})).status,400);
+ assert.equal((await call('/api/warehouse',{cookie:chief.cookie})).status,200);
+ const courierState=await call('/api/crm',{cookie:courier.cookie});assert.equal(courierState.status,200);assert.equal(courierState.data.orders.length,0);assert.equal(courierState.data.clients.length,0);assert.deepEqual(courierState.data.employees.map(e=>e.id),[courier.e.id]);
+ assert.equal((await call('/api/warehouse',{cookie:courier.cookie})).status,403);
+ assert.equal((await call('/api/crm',{cookie:courier.cookie,body:{action:'saveEmployee',employee:{...staff[1],login:'forbidden'}}})).status,403);
+ console.log('Chief logistics and courier: scoped employee management, no role escalation, logistics access and courier isolation passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
