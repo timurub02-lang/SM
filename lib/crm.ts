@@ -131,7 +131,7 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"operator",department:actor.department});
 }
 
-export const packingStage=(order:Order)=>order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):order.cdekExported?"exported":order.packingWaybillAt?"waybill":(order.cdekTariff||order.manualDeliveryCost!==undefined)?"calculated":"new";
+export const packingStage=(order:Order)=>order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):order.cdekExported?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
 
 export const confirmationStage=(order:Order,now=Date.now())=>{
  const stage=order.finalHandoffAt&&order.noAnswerDeadline&&["confirm","extra"].includes(order.status)&&Date.parse(order.noAnswerDeadline)-now<=6*3600000?"expiring":order.contact==="none"?"new":order.contact;

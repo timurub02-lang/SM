@@ -18,7 +18,13 @@ const {deliveryQueue}=await import('../lib/crm.ts');
 for(const [delivery,queue] of [['moscow_courier','moscow'],['russian_post','post'],['cdek_pickup','shipping'],['cdek_courier','shipping'],['','shipping']]){
  for(const view of ['moscow','post','shipping'])assert.equal(deliveryQueue({delivery},view),queue===view);
 }
-assert.equal(packingStage({delivery:'moscow_courier',manualDeliveryCost:0}),'calculated');
+assert.equal(packingStage({delivery:'moscow_courier',manualDeliveryCost:0}),'new');
 assert.equal(packingStage({delivery:'russian_post',manualDeliveryCost:300,packingWaybillAt:'2026-09-30'}),'waybill');
 assert.equal(packingStage({delivery:'russian_post',manualDeliveryCost:300,status:'returned'}),'returned');
 console.log('Delivery queues and manual delivery calculation passed');
+
+for(const delivery of ['moscow_courier','russian_post']){
+ assert.equal(packingStage({delivery,manualDeliveryCost:300}),'new');
+ assert.equal(packingStage({delivery,cdekTariff:{}}),'new');
+ assert.equal(packingStage({delivery,packingWaybillAt:'2026-10-02'}),'waybill');
+}
