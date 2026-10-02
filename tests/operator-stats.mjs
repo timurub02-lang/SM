@@ -25,3 +25,9 @@ assert.equal(operatorStats(state,admin,"","2026-09-30")[0].created,0);
 assert.equal(operatorStats(state,admin,"","")[0].cancelled,1);
 assert.equal(operatorStats(state,admin,"","2026-09-30")[0].cancelled,0);
 order.status="packing";assert.equal(operatorStats(state,admin,"","")[0].cancelled,0);
+
+assert.deepEqual(operatorStats(state,admin,'','')[0].orderLists.created.map(o=>o.id),['o']);
+assert.equal(operatorStats(state,employees[1],'','')[0].orderLists.created.length,0);
+assert.equal(operatorStats(state,admin,'','2026-09-30')[0].orderLists.created.length,0);
+assert.equal(operatorStats(state,admin,'','')[0].orderLists.cancelled.length,0);
+assert.deepEqual(operatorStats(state,admin,'','')[0].orderLists.reviewed.map(o=>o.id),['o']);

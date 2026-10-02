@@ -6,6 +6,6 @@ export function operatorStats(state:State,actor:Employee,from:string,to:string){
   const orders=state.orders.filter(o=>!o.testOnly&&o.manager===employee.id).filter(o=>{const day=new Date(o.createdAt).toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});return (!from||day>=from)&&(!to||day<=to);});
   const accepted=orders.filter(o=>(o.adminReviewedAt||reviewed.has(o.id))&&o.status!=='refused');
   const amount=accepted.reduce((sum,o)=>sum+Math.round(total(o)*100),0)/100;
-  return {id:employee.id,login:employee.login,created:orders.length,cancelled:orders.filter(o=>o.status==='refused').length,newOrders:orders.filter(o=>orderGroup(o.status).id==='new').length,reviewed:accepted.length,amount,average:accepted.length?amount/accepted.length:0};
+  return {orderLists:{created:orders,newOrders:orders.filter(o=>orderGroup(o.status).id==='new'),reviewed:accepted,cancelled:orders.filter(o=>o.status==='refused')},id:employee.id,login:employee.login,created:orders.length,cancelled:orders.filter(o=>o.status==='refused').length,newOrders:orders.filter(o=>orderGroup(o.status).id==='new').length,reviewed:accepted.length,amount,average:accepted.length?amount/accepted.length:0};
  });
 }
