@@ -392,7 +392,8 @@ try{
  let imported=await call('/api/base',{cookie:cookies.admin,body:baseImport});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.added,1);assert.equal(imported.data.applied,false);
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.applied,true);assert.ok(imported.data.backupId);
  assert.ok(db.prepare('SELECT COUNT(*) AS n FROM base_import_snapshots WHERE session=?').get(baseImport.session).n>0);
- imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.data.skipped,1);
+ imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.data.added,1,'Retry must return the original result');
+ imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,session:crypto.randomUUID(),apply:true}});assert.equal(imported.data.skipped,1);
  let conflict=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,base:'M'}});assert.equal(conflict.data.conflicts.length,1);
  const importedId=conflict.data.conflicts[0].clientId;assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.clients.some(c=>c.id===importedId),false,'Free database records must not enter the CRM card payload');
  const denied=await call('/api/base',{cookie:cookies.admin,body:{action:'dispatch',base:'J',sheet:'К',project:'1',count:1}});assert.equal(denied.status,400);

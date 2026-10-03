@@ -4,9 +4,9 @@ import {db} from './db';
 import {planImport,type ExistingClient} from './base-import';
 import {clientSheet,type Client} from './crm';
 import {baseSettingsSchema,initialBaseSettings} from './base-policy';
-const input=z.object({base:z.enum(['M','J']),rows:z.array(z.object({row:z.number().int().positive(),phone:z.string().max(100),name:z.string().max(300),linkedPhones:z.array(z.string().max(100)).max(20).optional(),fields:z.record(z.string().max(2000)).optional()})).min(1).max(1000),choices:z.record(z.enum(['M','J'])).default({}),apply:z.boolean().default(false),filename:z.string().max(200),revision:z.string().max(100),session:z.string().uuid()});
+const input=z.object({base:z.enum(['M','J']),rows:z.array(z.object({row:z.number().int().positive(),phone:z.string().max(100),name:z.string().max(300),linkedPhones:z.array(z.string().max(100)).max(20).optional(),fields:z.record(z.string().max(2000)).optional()})).min(1).max(1000),choices:z.record(z.enum(['M','J'])).default({}),apply:z.boolean().default(false),filename:z.string().max(200),revision:z.string().max(100),session:z.string().uuid(),offset:z.number().int().min(0).max(10000000).default(0)});
 export async function importBase(raw:unknown,actorId:string){
- const p=input.parse(raw),d=db();await initBaseStorage(d);const saved=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();
+ const p=input.parse(raw),d=db();await initBaseStorage(d);await d.prepare('CREATE TABLE IF NOT EXISTS base_import_backups(id TEXT PRIMARY KEY,at TEXT NOT NULL,data TEXT NOT NULL)').run();const id='BI-'+p.session+'-'+p.offset;if(p.apply){const previous=await d.prepare('SELECT data FROM base_import_backups WHERE id=?').bind(id).first<{data:string}>();if(previous)return {...JSON.parse(previous.data).report,applied:true,backupId:id};}const saved=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();
  const settings=saved?JSON.parse(saved.data):{config:initialBaseSettings(),revision:''};if(settings.revision!==p.revision)throw Error('Настройки листов изменились. Откройте импорт заново');
  const target=baseSettingsSchema.parse(settings.config)[p.base].importSheet;
  const rows=(await d.prepare('SELECT id,data,version FROM clients').all<{id:string;data:string;version:number}>()).results;
@@ -14,7 +14,7 @@ export async function importBase(raw:unknown,actorId:string){
  const plan=planImport(p.rows,clients,p.base,target,p.choices);
  const report={added:plan.added.length,moved:plan.moved.length,skipped:plan.skipped,duplicates:plan.duplicates,invalid:plan.invalid,conflicts:plan.conflicts};
  if(!p.apply||plan.conflicts.length)return {...report,applied:false};
- const id='BI-'+crypto.randomUUID(),at=new Date().toISOString();
+ const at=new Date().toISOString();
  await d.prepare('CREATE TABLE IF NOT EXISTS base_import_snapshots(session TEXT NOT NULL,client_id TEXT NOT NULL,phone TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(session,client_id))').run();
  await d.prepare('CREATE TABLE IF NOT EXISTS base_import_sessions(id TEXT PRIMARY KEY,created_at TEXT NOT NULL)').run();
  await d.prepare('CREATE TABLE IF NOT EXISTS base_import_backups(id TEXT PRIMARY KEY,at TEXT NOT NULL,data TEXT NOT NULL)').run();
