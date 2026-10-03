@@ -1,3 +1,6 @@
+import {reconcileOrderTimers,reconcileClients} from '@/lib/base-retention-store';
+import {initBaseStorage} from '@/lib/base-storage';
+import {normalizedPhone} from '@/lib/base-distribution';
 import {orderSettings} from '@/lib/order-policy-store';
 import {orderDataEditingEnabled} from '@/lib/order-policy';
 import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
@@ -21,44 +24,14 @@ import {z} from "zod";
 export const dynamic="force-dynamic";
 const json=JSON.stringify;
 async function identity(){const u=await getChatGPTUser();if(!u)throw new Error("Требуется вход в CRM");return u;}
-async function readState(reconcile=true):Promise<State>{
- await initInventory();const d=db();const tables=await Promise.all([d.prepare("SELECT data,version FROM clients ORDER BY id").all(),d.prepare("SELECT o.data,o.version,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='ready' AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
+async function readState(reconcile=true,extraClientId='',includeFree=false):Promise<State>{
+ await initInventory();const d=db();await initBaseStorage(d);const tables=await Promise.all([d.prepare("SELECT data,version FROM clients WHERE ?=1 OR id=? OR COALESCE(json_extract(data,'$.owner'),'')<>'' OR EXISTS(SELECT 1 FROM orders WHERE orders.client_id=clients.id) ORDER BY id").bind(includeFree?1:0,extraClientId).all(),d.prepare("SELECT o.data,o.version,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='ready' AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
  const state:State={clients:tables[0].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),orders:tables[1].results.map((r:any)=>({...JSON.parse(r.data),version:r.version,cdekExported:!!r.cdek_exported||(JSON.parse(r.data).testOnly===true&&JSON.parse(r.data).cdekExported===true),cdekWaybillReceived:!!r.cdek_waybill_received})),employees:tables[2].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),events:tables[3].results.map((r:any)=>JSON.parse(r.data)),settings:tables[4]?JSON.parse(tables[4].data):{retentionDays:30}};
  state.settings.orderPolicy=(await orderSettings()).policy;
  if(reconcile){
-  let orderChanged=false;
-  for(const o of state.orders.filter(o=>o.status==="rework"||(o.finalHandoffAt&&["confirm","extra"].includes(o.status)))){
-   if(o.status==="rework"&&o.reworkHours===null||o.status!=="rework"&&o.finalConfirmHours===null)continue;
-   const received=state.events.find(e=>e.orderId===o.id&&e.text.includes("→ Возврат оператору"))?.at||o.updatedAt;
-   const finalMissed=o.status!=="rework";
-   const deadline=finalMissed?finalNoAnswerDeadline(o,o.contact,new Date().toISOString())!:(o.reworkDeadline||reworkDeadlineFrom(received,o.reworkHours===undefined?96:o.reworkHours));
-   if(!deadline)continue;
-   const expired=Date.now()>=Date.parse(deadline);
-   if((finalMissed?o.noAnswerDeadline===deadline:!!o.reworkDeadline)&&!expired)continue;
-   const expiryReason=finalMissed?`Истёк срок финального подтверждения: ${o.finalConfirmHours??24} ч`:`Истёк срок доработки после возврата логистом: ${o.reworkHours??96} ч`;
-   const at=new Date().toISOString(),mutation=crypto.randomUUID();
-   const next={...o,...(finalMissed?{noAnswerDeadline:deadline}:{}),reworkDeadline:finalMissed?o.reworkDeadline:deadline,returnReason:o.returnReason||o.reason,_mutation:mutation,...(expired?{status:"refused",cancelledAt:o.cancelledAt||deadline,updatedAt:at,contact:"none",due:"",reason:expiryReason}:{})};
-   const e:Event={id:"EV-"+crypto.randomUUID(),clientId:o.clientId,orderId:o.id,at,actor:"Система",text:"Заказ отменён: "+expiryReason};
-   const results=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?").bind(json(next),o.id,o.version),...(expired?[d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,at,json(e),o.id,mutation)]:[])]);
-   orderChanged=orderChanged||!!results[0].meta.changes;
-  }
-  if(orderChanged)return readState();
-  let changed=false;
-  for(const c of state.clients){
-   const next=applyRetention(c,state.orders);
-   if(JSON.stringify(next)===JSON.stringify(c))continue;
-   const at=new Date().toISOString();const eid="EV-"+crypto.randomUUID();
-   const event:Event={id:eid,clientId:c.id,orderId:"",at,actor:"Система",text:next.owner?"Правило К · закрепление обновлено":"Правило К · откреплён, возвращён в "+(clientSheet(next)||"исходную базу")};
-   const related=state.orders.filter(o=>o.clientId===c.id);
-   const guard=" AND (SELECT COUNT(*) FROM orders WHERE client_id=?)=?"+related.map(()=>" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)").join("");
-   const args=[c.id,related.length,...related.flatMap(o=>[o.id,o.version])];
-   const result=await d.batch([
-    d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?"+guard+")").bind(eid,c.id,"",at,json(event),c.id,c.version,...args),
-    d.prepare("UPDATE clients SET data=?,version=version+1 WHERE id=? AND version=?"+guard).bind(json(next),c.id,c.version,...args)
-   ]);
-   changed=changed||!!result[1].meta.changes;
-  }
-  if(changed)return readState(false);
+  if(await reconcileOrderTimers(d,state.orders,state.events))return readState(true,extraClientId,includeFree);
+  if(await reconcileClients(d,state.clients,state.orders))return readState(false,extraClientId,includeFree);
+
  }
  return state;
 }
@@ -85,7 +58,7 @@ async function handlePOST(request:Request){
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
  const raw=await request.text();if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
- const p=JSON.parse(raw);const d=db();const s=await readState();const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
+ const p=JSON.parse(raw);const d=db();const s=await readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import'].includes(p.action));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
@@ -101,19 +74,19 @@ async function handlePOST(request:Request){
   if(!employee||!["admin","department_head"].includes(employee.role))throw Error("Добавлять клиентов могут только администратор и руководитель отдела");
   const data=clientSchema.parse(p.client);ownerValid(data.owner);
   if(employee.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");
-  const duplicate=s.clients.find(c=>c.phone===data.phone);
+  const duplicateRow=await d.prepare("SELECT c.data,c.version FROM clients c JOIN client_phone_index p ON p.client_id=c.id WHERE p.phone=?").bind(normalizedPhone(data.phone)).first<{data:string;version:number}>();const duplicate:Client|undefined=duplicateRow?{...JSON.parse(duplicateRow.data),version:duplicateRow.version}:undefined;
   if(duplicate?.owner)throw Error("Клиент уже существует и закреплён за "+(s.employees.find(e=>e.id===duplicate.owner)?.login||duplicate.owner));
-  if(duplicate&&p.claimId!==duplicate.id)throw Error("Клиент уже есть в базе и свободен. Обновите данные и выберите оператора для передачи");
+  if(duplicate&&["ЧС","ПВ"].includes(clientSheet(duplicate)))throw Error("Клиент находится на листе "+clientSheet(duplicate)+" и не участвует в раздаче");
   if(duplicate&&!data.owner)throw Error("Выберите оператора для передачи клиента");
   const firstSheet=s.clients.map(c=>sourceSheet(c.source)).find(x=>x&&x!=="К")||"Т1";
-  const trial=data.owner?{trialUntil:new Date(Date.parse(now)+86400000).toISOString(),trialReturnSheet:firstSheet,assignedUntil:new Date(Date.parse(now)+86400000).toISOString(),assignmentStartedAt:now,sheet:"К",returnSheet:duplicate?clientSheet(duplicate):firstSheet}:{};
+  const trial=data.owner?{trialUntil:new Date(Date.parse(now)+86400000).toISOString(),trialReturnSheet:duplicate?clientSheet(duplicate)||firstSheet:firstSheet,assignedUntil:new Date(Date.parse(now)+86400000).toISOString(),assignmentStartedAt:now,sheet:"К",returnSheet:duplicate?clientSheet(duplicate):firstSheet}:{};
   if(duplicate){
    const next={...duplicate,...trial,owner:data.owner};
    const r=await d.prepare("UPDATE clients SET data=?,version=version+1 WHERE id=? AND version=? AND json_extract(data,'$.owner')=''").bind(json(next),duplicate.id,duplicate.version).run();
    if(!r.meta.changes)throw Error("Клиент уже изменён. Обновите данные");
    await eventSQL(ev(duplicate.id,"","Клиент передан оператору на 24 часа без заказа")).run();message="Клиент передан оператору";
   }else{
-   const c:Client={...data,id:id("C-"),assignedUntil:"",createdAt:now,version:1,...trial};
+   const c:Client={...data,baseType:"M",sheet:firstSheet,id:id("C-"),assignedUntil:"",createdAt:now,version:1,...trial};
    await d.batch([d.prepare("INSERT INTO clients(id,phone,data) VALUES(?,?,?)").bind(c.id,c.phone,json(c)),eventSQL(ev(c.id,"","Клиент добавлен в базу"))]);message="Клиент добавлен";
   }
  }else if(p.action==="updateClient"){
@@ -152,7 +125,7 @@ async function handlePOST(request:Request){
   if(employee?.role==="operator"&&c.owner&&c.owner!==employee.id)throw new Error("Клиент закреплён за другим оператором");const manager=employee?.role==="operator"?employee.id:c.owner;ownerValid(manager);if(!manager)throw new Error("Сначала закрепите клиента за оператором");
   const o:Order={id:id("SM-"),clientId:c.id,delivery:deliverySchema.parse(p.delivery??""),addressParts:addressPartsSchema.optional().parse(p.addressParts??c.addressParts),address:z.string().trim().max(500).parse(p.address??c.address),status:"draft",items,comment,reason:"",contact:"none",due:"",round:1,extra:false,createdAt:now,updatedAt:now,manager,logistic:"",version:1};
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),eventSQL(ev(c.id,o.id,"Создан заказ · Оформление"+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":"")))]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
- }else if(["courierAccept","courierOutcome","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
+ }else if(["markPV","courierAccept","courierOutcome","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
   const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(employee.role==="courier"&&["courierAccept","courierOutcome"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");const next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
   if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
   if(o.status==="rework"&&!next.returnReason)next.returnReason=o.reason;
@@ -160,7 +133,9 @@ async function handlePOST(request:Request){
    const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-shipment-${o.id}`).first<{data:string}>();
    if(shipment&&JSON.parse(shipment.data).state!=="invalid")throw Error("Заказ уже выгружен или отправляется в СДЭК. Изменение доставки и корзины заблокировано");
   }
-  if(p.action==="courierAccept"){
+  if(p.action==="markPV"){
+   if(employee.role!=='admin'||o.status!=='check')throw Error('Метка ПВ ставится администратором на этапе проверки');next.pv=z.boolean().parse(p.value);next.pvMarkedAt=next.pv?now:undefined;text=next.pv?'Заказ отмечен ПВ':'Метка ПВ снята';
+  }else if(p.action==="courierAccept"){
    if(employee.role!=='courier'||o.courier?.id!==employee.id||o.delivery!=='moscow_courier'||!['shipping','pickup'].includes(o.status)||o.courier.acceptedAt)throw Error('Приём этой посылки недоступен или уже подтверждён');
    if(p.confirmed!==true)throw Error('Подтвердите фактическое получение посылки');
    next.courier={...o.courier,acceptedAt:now};text='Принято курьером · '+o.courier.name+' · '+o.courier.amount+' ₽';

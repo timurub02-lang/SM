@@ -107,7 +107,7 @@ try{
  const release=await fixture('release');records('release');
  deleted=await remove('admin',release.e,'release');assert.equal(deleted.status,200,deleted.text);
  const live=['draft','confirm','rework','check','extra','packing','phone','shipping','pickup'];
- for(const row of db.prepare("SELECT data FROM clients WHERE id LIKE 'release-c-%'").all()){const c=JSON.parse(row.data),status=c.id.replace('release-c-','');assert.equal(c.owner,'');assert.equal(c.sheet,live.includes(status)?'К':status==='redeemed'?'ТК':'Т3');}
+ for(const row of db.prepare("SELECT data FROM clients WHERE id LIKE 'release-c-%'").all()){const c=JSON.parse(row.data),status=c.id.replace('release-c-','');assert.equal(c.owner,'');assert.equal(c.sheet,live.includes(status)?'К':status==='redeemed'?'П':'Т3');}
  for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'release-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'');assert.equal(o.status,o.id.replace('release-o-',''));}
  assert.equal((await call('/api/auth/me',{cookie:release.cookie})).status,401);
  assert.ok(db.prepare("SELECT data FROM settings WHERE id='deleted-employee-release'").get());
@@ -385,5 +385,18 @@ try{
  db.prepare("UPDATE orders SET data=json_set(data,'$.finalHandoffAt',?) WHERE id=?").run(new Date(Date.now()-4*3600000).toISOString(),policyId);
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).status,'refused');
  console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
+
+ const baseOverview=await call('/api/base',{cookie:cookies.admin});assert.equal(baseOverview.status,200,baseOverview.text);assert.ok(baseOverview.data.config.M.sheets.some(s=>s.name==='П'));assert.equal('clients' in baseOverview.data,false);
+ assert.equal((await call('/api/base',{cookie:policyOperator.cookie})).status,403);
+ const baseImport={action:'import',base:'J',filename:'test.xlsx',revision:baseOverview.data.revision,session:crypto.randomUUID(),rows:[{row:2,name:'Import test',phone:'8 (999) 123-98-76',linkedPhones:['79991239875'],fields:{custom:'preserved'}}]};
+ let imported=await call('/api/base',{cookie:cookies.admin,body:baseImport});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.added,1);assert.equal(imported.data.applied,false);
+ imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.applied,true);assert.ok(imported.data.backupId);
+ assert.ok(db.prepare('SELECT COUNT(*) AS n FROM base_import_snapshots WHERE session=?').get(baseImport.session).n>0);
+ imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.data.skipped,1);
+ let conflict=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,base:'M'}});assert.equal(conflict.data.conflicts.length,1);
+ const importedId=conflict.data.conflicts[0].clientId;assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.clients.some(c=>c.id===importedId),false,'Free database records must not enter the CRM card payload');
+ const denied=await call('/api/base',{cookie:cookies.admin,body:{action:'dispatch',base:'J',sheet:'К',project:'1',count:1}});assert.equal(denied.status,400);
+ const baseAssigned=await call('/api/base',{cookie:cookies.admin,body:{action:'assign',base:'J',sheet:'Т1',operator:'one',count:1}});assert.equal(baseAssigned.status,200,baseAssigned.text);assert.equal(baseAssigned.data.assigned,1);
+ console.log('Base HTTP: aggregate response, admin guard, Excel import preview/apply/backup/duplicates, cross-base conflicts, no free cards, blocked dispatch and manual assignment passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

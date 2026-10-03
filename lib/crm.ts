@@ -19,13 +19,13 @@ export const departments={"1":"SKP_","2":"POD_","3":"M31_","4":"UDL_","5":"A_"} 
 export const departmentIds=["1","2","3","4","5"] as const;
 export const roles={operator:"Оператор",logistic:"Логист",chief_logistic:"Главный логист",courier:"Курьер",admin:"Администратор",department_head:"Руководитель отдела",redemption:"Отдел выкупа"};
 export const isLogistic=(role?:string)=>role==="logistic"||role==="chief_logistic";
-export type Client={importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
+export type Client={linkedPhones?:string[];importFields?:Record<string,string>;baseType?:"M"|"J";distributedAt?:string;releasedAt?:string;importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
 export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
 export const deliveryLabels:Record<DeliveryMethod,string>={"":"Не выбран",cdek_pickup:"СДЭК · ПВЗ",cdek_courier:"СДЭК · Курьер",moscow_courier:"Москва · Курьер",russian_post:"Почта России"};
-export type Order={reworkHours?:number|null;finalConfirmHours?:number|null;courier?:{id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
-export type Employee={hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
+export type Order={pvMarkedAt?:string;pv?:boolean;reworkHours?:number|null;finalConfirmHours?:number|null;courier?:{id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
+export type Employee={baseAccess?:"M"|"J"|"both";hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={id:string;clientId:string;at:string;text:string;source:string};
 export type State={reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
@@ -38,7 +38,7 @@ export const daysLeft=(c:Client)=>c.assignedUntil?Math.ceil((Date.parse(c.assign
 export const clientSchema=z.object({name:z.string().trim().min(2,"Укажите имя клиента").max(150),phone:z.string().transform(normalizePhone).refine(Boolean,"Укажите российский телефон из 11 цифр"),city:z.string().trim().max(250).default(""),address:z.string().trim().max(500).default(""),addressParts:addressPartsSchema.optional(),source:z.string().trim().max(200).default("Вручную"),owner:z.string().max(100).default("")});
 export const itemsSchema=z.array(z.object({name:z.string().trim().min(1,"Укажите товар").max(200),quantity:z.number().int().min(1).max(9999),price:z.number().min(0.01).max(10000000)})).max(100);
 export const needsDepartment=(role:string)=>!["logistic","chief_logistic","courier","redemption"].includes(role);
-export const employeeSchema=z.object({name:z.string().trim().min(2).max(150),alias:z.string().trim().max(100),login:z.string().trim().min(1).max(100),skLogin:z.string().trim().max(100),role:z.enum(["operator","logistic","chief_logistic","courier","admin","redemption","department_head"]),department:z.enum(departmentIds,{required_error:"Выберите отдел",invalid_type_error:"Выберите отдел"}).optional(),salary:z.number().min(0).max(10000000),bonus:z.number().min(0).max(100)}).superRefine((employee,ctx)=>{if(needsDepartment(employee.role)&&!employee.department)ctx.addIssue({code:z.ZodIssueCode.custom,path:["department"],message:"Выберите отдел"});}).transform(employee=>({...employee,department:needsDepartment(employee.role)?employee.department:undefined}));
+export const employeeSchema=z.object({baseAccess:z.enum(["M","J","both"]).default("both"),name:z.string().trim().min(2).max(150),alias:z.string().trim().max(100),login:z.string().trim().min(1).max(100),skLogin:z.string().trim().max(100),role:z.enum(["operator","logistic","chief_logistic","courier","admin","redemption","department_head"]),department:z.enum(departmentIds,{required_error:"Выберите отдел",invalid_type_error:"Выберите отдел"}).optional(),salary:z.number().min(0).max(10000000),bonus:z.number().min(0).max(100)}).superRefine((employee,ctx)=>{if(needsDepartment(employee.role)&&!employee.department)ctx.addIssue({code:z.ZodIssueCode.custom,path:["department"],message:"Выберите отдел"});}).transform(employee=>({...employee,department:needsDepartment(employee.role)?employee.department:undefined}));
 export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:Pick<Client,"address">){
  if(!o.delivery||!deliverySchema.safeParse(o.delivery).success)return {field:"delivery",label:"Выберите способ доставки"} as const;
  if(!o.items.length)return {field:"basket",label:"Добавьте товар"} as const;
@@ -88,26 +88,34 @@ export function orderDatesForTransition(order:Order,to:Status,at:string):Partial
 }
 
 export const sourceSheet=(source:string)=>source.match(/\.xlsx · (.+)$/i)?.[1]||"";
-export const clientSheet=(c:Client)=>c.sheet??sourceSheet(c.source);
+export const clientSheet=(c:Client)=>{const sheet=c.sheet??sourceSheet(c.source);return sheet==="ТК"||sheet==="ТКП"?"П":sheet;};
 export function clientAssignment(c:Client,owner:string,now:string,firstSheet="Т1"):Partial<Client>{
  if(c.owner===owner)return {};
  if(!owner)return {importRetentionUntil:undefined,owner:"",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined};
  const until=new Date(Date.parse(now)+86400000).toISOString();
- return {importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
+ return {importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:clientSheet(c)||firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
 }
-export function applyRetention(c:Client,orders:Order[],now=Date.now()):Client{
+function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35):Client{
  if(!c.owner)return c;
- const original=c.returnSheet??(clientSheet(c)==="К"?"ТК":clientSheet(c));
+ const original=c.returnSheet??(clientSheet(c)==="К"?"П":clientSheet(c));
  const own=orders.filter(o=>o.clientId===c.id&&o.manager===c.owner&&(!c.assignmentStartedAt||o.createdAt>=c.assignmentStartedAt));
- if(c.trialUntil&&!own.length){return Date.parse(c.trialUntil)>now?c:{...c,owner:"",sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
+ const active=orders.some(o=>o.clientId===c.id&&["new","accepted","sent"].includes(orderGroup(o.status).id));
+ if(c.trialUntil&&!own.length&&!active){return Date.parse(c.trialUntil)>now?c:{...c,owner:"",distributedAt:new Date(now).toISOString(),releasedAt:new Date(now).toISOString(),sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
  const base={...c,trialUntil:undefined,trialReturnSheet:undefined,sheet:"К",returnSheet:original,assignedUntil:"",assignmentStartedAt:c.assignmentStartedAt||own.map(o=>o.createdAt).filter(Boolean).sort()[0]};
- if(!own.length||own.some(o=>["new","accepted","sent"].includes(orderGroup(o.status).id)))return base;
+ if(!own.length||active)return base;
  const paid=own.filter(o=>o.status==="redeemed");
  // Missing historical redemption dates must not silently release a client.
  if(paid.some(o=>!o.redeemedAt||!Number.isFinite(Date.parse(o.redeemedAt))))return base;
- const until=Math.max(paid.length?Math.max(...paid.map(o=>Date.parse(o.redeemedAt!)))+35*86400000:0,Date.parse(c.importRetentionUntil||"")||0);
+ const until=Math.max(paid.length?Math.max(...paid.map(o=>Date.parse(o.redeemedAt!)))+retentionDays*86400000:0,Date.parse(c.importRetentionUntil||"")||0);
  if(until>now)return {...base,assignedUntil:new Date(until).toISOString()};
- return {...base,owner:"",sheet:paid.length?"ТК":original,returnSheet:undefined,assignmentStartedAt:undefined};
+ return {...base,owner:"",releasedAt:new Date(now).toISOString(),sheet:paid.length?"П":original,returnSheet:undefined,assignmentStartedAt:undefined};
+}
+
+export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35):Client{
+ const next=retentionResult(c,orders,now,days),related=orders.filter(o=>o.clientId===c.id);
+ if(!related.some(o=>o.pv))return next;
+ const events=related.flatMap(o=>o.status==='redeemed'&&o.redeemedAt?[{at:o.redeemedAt,sheet:next.owner?'К':'П'}]:o.pv?[{at:o.status==='returned'?o.returnedAt||o.updatedAt:o.status==='refused'?o.cancelledAt||o.updatedAt:o.pvMarkedAt||o.createdAt,sheet:['returned','refused'].includes(o.status)?'ЧС':'ПВ'}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
+ return events.length?{...next,sheet:events[0].sheet}:next;
 }
 
 export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){

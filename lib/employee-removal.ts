@@ -3,7 +3,7 @@ export function releasedClient(c:Client,orders:Order[]):Client{
  const related=orders.filter(o=>o.clientId===c.id);
  const active=related.some(o=>['new','accepted','sent'].includes(orderGroup(o.status).id));
  const original=c.returnSheet||((clientSheet(c)!=='К'&&clientSheet(c))||(sourceSheet(c.source)||'Т1'));
- const sheet=active?'К':related.some(o=>o.status==='redeemed')?'ТК':!related.length?(c.trialReturnSheet||c.returnSheet||'Т1'):original;
+ const sheet=active?'К':related.some(o=>o.status==='redeemed')?'П':!related.length?(c.trialReturnSheet||c.returnSheet||'Т1'):original;
  return {...c,owner:'',sheet,assignedUntil:'',assignmentStartedAt:undefined,trialUntil:undefined,trialReturnSheet:undefined,returnSheet:undefined,orderRequest:undefined};
 }
 export function removalPlan(s:State,actor:Employee|undefined,id:string,version:number,mode:string,targetId?:string){
