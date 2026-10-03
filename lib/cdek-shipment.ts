@@ -2,10 +2,11 @@ import {z} from 'zod';
 import type {Order,Client} from './crm.ts';
 import {normalizePhone} from './crm.ts';
 import type {Product} from './warehouse.ts';
-export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).default(''),deliveryPoint:z.string().trim().max(255).default(''),senderAddress:z.string().trim().max(255).default(''),recipientPhone:z.string().transform(normalizePhone).refine(Boolean,'Укажите телефон для доставки'),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
+export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).default(''),deliveryPoint:z.string().trim().max(255).default(''),senderAddress:z.string().trim().max(255).default(''),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
-export type Shipment={routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
+export type Shipment={recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
 export function shipmentPayload(order:Order,client:Client,products:Product[],form:ShipmentForm){
+ const recipientPhone=normalizePhone(client.phone||'');if(!recipientPhone)throw Error('Укажите корректный телефон в карточке клиента перед выгрузкой в СДЭК');
  const tariff=order.cdekTariff;if(!tariff||tariff.params.delivery!==order.delivery)throw Error('Сначала сохраните тариф доставки');
  if(!['packing','phone'].includes(order.status))throw Error('Выгрузка доступна на упаковке или подготовке отправления');
  const p=tariff.params;
@@ -21,7 +22,7 @@ export function shipmentPayload(order:Order,client:Client,products:Product[],for
  });
  if(new Set(items.map(i=>i.ware_key)).size!==items.length)throw Error('Объедините одинаковые товары в одну строку корзины');
  if(items.reduce((n,i)=>n+i.weight*i.amount,0)>Math.ceil(p.weight*1000))throw Error('Вес посылки меньше суммарного веса товаров. Пересчитайте доставку');
- return {type:1,number:order.id,tariff_code:tariff.code,recipient:{name:client.name,phones:[{number:form.recipientPhone}]},
+ return {type:1,number:order.id,tariff_code:tariff.code,recipient:{name:client.name,phones:[{number:recipientPhone}]},
   ...(p.originMode==='warehouse'?{shipment_point:form.shipmentPoint}:{from_location:{country_code:'RU',postal_code:p.originPostalCode,address:form.senderAddress}}),
   ...(order.delivery==='cdek_pickup'?{delivery_point:form.deliveryPoint}:{to_location:{country_code:'RU',postal_code:order.addressParts?.postalCode,address:order.address}}),
   delivery_recipient_cost:{value:form.deliveryCost},packages:[{number:'1',weight:Math.ceil(p.weight*1000),length:p.length,width:p.width,height:p.height,items}]};

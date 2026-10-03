@@ -3,9 +3,15 @@ import {shipmentPayload,shipmentFormSchema,shipmentResult} from '../lib/cdek-shi
 const client={name:'Получатель',phone:'+79991234567'};
 const order={id:'SM-1',status:'packing',delivery:'cdek_pickup',items:[{name:'Кроссовки',quantity:2,price:15000}],address:'Москва, ул. Тестовая, д. 1',addressParts:{postalCode:'101000',house:'1'},cdekTariff:{code:136,params:{delivery:'cdek_pickup',originPostalCode:'127422',originMode:'warehouse',weight:2.4,length:35,width:25,height:30}}};
 const products=[{name:'Кроссовки',sku:'SHOES-001',weight:1000,cost:15000,payment:15000}];
-const form=shipmentFormSchema.parse({shipmentPoint:'MSK1',deliveryPoint:'KSD1',recipientPhone:'89991234567',payment:'cod',deliveryCost:410});
+const form=shipmentFormSchema.parse({shipmentPoint:'MSK1',deliveryPoint:'KSD1',payment:'cod',deliveryCost:410});
 const payload=shipmentPayload(order,client,products,form);
 assert.equal(payload.recipient.phones[0].number,'+79991234567');
+const injected=shipmentFormSchema.parse({...form,recipientPhone:'+79990000000'});
+assert.ok(!('recipientPhone' in injected),'Browser cannot select a delivery phone');
+assert.equal(shipmentPayload(order,client,products,{...injected,recipientPhone:'+79990000000'}).recipient.phones[0].number,client.phone);
+assert.equal(shipmentPayload(order,{...client,phone:'8 (999) 123-45-68'},products,form).recipient.phones[0].number,'+79991234568');
+assert.throws(()=>shipmentPayload(order,{...client,phone:''},products,form),/телефон в карточке клиента/);
+assert.throws(()=>shipmentPayload(order,{...client,phone:'invalid'},products,form),/телефон в карточке клиента/);
 assert.equal(payload.packages[0].weight,2400);
 assert.equal(payload.packages[0].items[0].amount,2);
 assert.equal(payload.packages[0].items[0].payment.value,15000);

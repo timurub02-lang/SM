@@ -47,9 +47,8 @@ async function handleGET(req:Request){
    return reply({points:side==='recipient'?rankRecipientPoints(points,c.order.addressParts):points});
   }
   const products=await db().prepare('SELECT data FROM products').all<{data:string}>();
-  const client=await db().prepare('SELECT data FROM clients WHERE id=?').bind(c.order.clientId).first<{data:string}>();
   const warehouse=await db().prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
-  return reply({shipment:c.shipment,phone:client?JSON.parse(client.data).phone:'',warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:p?.payment};})});
+  return reply({shipment:c.shipment,warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:p?.payment};})});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }
 async function handlePOST(req:Request){
@@ -81,7 +80,7 @@ async function handlePOST(req:Request){
     if(side==='recipient'&&(payload.packages[0].items.some(x=>x.payment.value>0)||form.deliveryCost>0)&&point.allowed_cod===false)throw Error('ПВЗ не принимает наложенный платёж');
    }
    const routing=await orderRouting(c.order);assertRoutingSlot(routing,t.slot);const guard=routingReservationGuard(routing,c.order);
-   const shipment:Shipment={routingAmountCents:routing.amountCents,routingRuleId:routing.choice?.ruleId,routingReason:routing.choice?.reason,attempt:crypto.randomUUID(),slot:t.slot,account:t.account,state:'sending',createdAt:new Date().toISOString(),form};const pending=JSON.stringify(shipment);
+   const shipment:Shipment={recipientPhone:payload.recipient.phones[0].number,routingAmountCents:routing.amountCents,routingRuleId:routing.choice?.ruleId,routingReason:routing.choice?.reason,attempt:crypto.randomUUID(),slot:t.slot,account:t.account,state:'sending',createdAt:new Date().toISOString(),form};const pending=JSON.stringify(shipment);
    const lock=c.record?await d.prepare(`UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?) AND ${guard.sql}`).bind(pending,c.key,c.record.data,p.orderId,p.version!,...guard.values).run():await d.prepare(`INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?) AND ${guard.sql}`).bind(c.key,pending,p.orderId,p.version!,...guard.values).run();
    if(!lock.meta.changes)throw Error('Заказ, правила или лимит изменились. Обновите карточку и пересчитайте доставку');
    try{
