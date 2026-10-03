@@ -291,10 +291,12 @@ try{
  const spends=await Promise.all([1,2].map(()=>cash(cookies.admin,{...spend,operation:{...spend.operation,id:crypto.randomUUID(),amount:500}})));
  assert.deepEqual(spends.map(x=>x.status).sort(),[200,400]);assert.equal((await cash(cookies.admin)).data.balance,20000);
  assert.equal((await call('/api/cash?actorId='+cashHead.e.id,{cookie:cookies.admin})).status,403);
- const cleaning={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:100,date,purpose:'Уборка'}};
- const cleaned=await cash(cashHead.cookie,cleaning);assert.equal(cleaned.status,200,cleaned.text);assert.equal(cleaned.data.balance,20000);assert.ok(cleaned.data.operations.some(o=>o.id===cleaning.operation.id&&o.purpose==='Уборка'));
- assert.equal((await cash(cashHead.cookie,cleaning)).data.balance,20000);
- assert.equal((await cash(cashHead.cookie,{...cleaning,operation:{...cleaning.operation,id:crypto.randomUUID(),purpose:'Неизвестное назначение'}})).status,400);
+ for(const [purpose,balance] of [['Уборка',20000],['Аренда',10000]]){
+  const expense={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:100,date,purpose}};
+  const result=await cash(cashHead.cookie,expense);assert.equal(result.status,200,result.text);assert.equal(result.data.balance,balance);assert.ok(result.data.operations.some(o=>o.id===expense.operation.id&&o.purpose===purpose));
+  assert.equal((await cash(cashHead.cookie,expense)).data.balance,balance);
+  assert.equal((await cash(cashHead.cookie,{...expense,operation:{...expense.operation,id:crypto.randomUUID(),purpose:'Неизвестное назначение'}})).status,400);
+ }
  console.log('Cash: delivery receipts, private balances, pending transfers, confirmation, retries, insufficient funds and concurrent spending passed.');
  console.log('Chief logistics and courier: scoped employee management, no role escalation, logistics access and courier isolation passed.');
 
