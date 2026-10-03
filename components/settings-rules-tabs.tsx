@@ -39,6 +39,6 @@ export const rules={
   ['Название товара','Товар, уже использованный в заказах, нельзя переименовать. Это сохраняет связь корзин заказов со складским учётом.']
  ]
 } as const;
-export function SettingsRulesTabs({section,children,rulesContent}:{section?:keyof typeof rules;children:ReactNode;rulesContent?:ReactNode}){
- return <Tabs defaultValue="settings" className="settings-rules-tabs"><TabsList className="tabs-line" aria-label="Настройки и правила раздела"><TabsTrigger value="settings">Настройки</TabsTrigger><TabsTrigger value="rules">Правила</TabsTrigger></TabsList><TabsContent value="settings">{children}</TabsContent><TabsContent value="rules">{rulesContent??<div className="section-work-rules">{(section?rules[section]:[]).map(([title,text])=><section key={title}><h3>{title}</h3><p>{text}</p></section>)}</div>}</TabsContent></Tabs>;
+export function SettingsRulesTabs({section,children,rulesContent,specContent}:{section?:keyof typeof rules;children:ReactNode;rulesContent?:ReactNode;specContent?:ReactNode}){
+ return <Tabs defaultValue="settings" className="settings-rules-tabs"><TabsList className="tabs-line" aria-label="Настройки и правила раздела"><TabsTrigger value="settings">Настройки</TabsTrigger><TabsTrigger value="rules">Правила</TabsTrigger>{specContent&&<TabsTrigger value="spec">ТЗ</TabsTrigger>}</TabsList><TabsContent value="settings">{children}</TabsContent><TabsContent value="rules">{rulesContent??<div className="section-work-rules">{(section?rules[section]:[]).map(([title,text])=><section key={title}><h3>{title}</h3><p>{text}</p></section>)}</div>}</TabsContent>{specContent&&<TabsContent value="spec">{specContent}</TabsContent>}</Tabs>;
 }
