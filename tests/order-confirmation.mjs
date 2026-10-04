@@ -3,7 +3,7 @@ import {orderGroup,validateTransition,transitions} from '../lib/crm.ts';
 assert.equal(orderGroup('draft').id,'new');
 assert.equal(orderGroup('confirm').id,'new');
 assert.equal(orderGroup('check').id,'accepted');
-const order={status:'draft',address:'Москва, Тверская 1',items:[{name:'Товар',quantity:1,price:100}]};
+const order={createdAt:new Date().toISOString(),status:'draft',delivery:'cdek_pickup',address:'Москва, Тверская 1',items:[{name:'Товар',quantity:1,price:100}]};
 assert.doesNotThrow(()=>validateTransition(order,'confirm',{address:''},''));
 assert.throws(()=>validateTransition({...order,address:''},'confirm',{address:''},''));
 assert.throws(()=>validateTransition({...order,items:[]},'confirm',{address:''},''));

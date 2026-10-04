@@ -11,7 +11,7 @@ const parts=suggestionParts({postal_code:'123456',region_with_type:'Москов
 assert.equal(parts.city,'г Химки, мкр Подрезково');assert.equal(parts.house,'д 4, к 2');assert.equal(parts.flat,'кв 17');assert.equal(parts.postalCode,'123456');assert.deepEqual(suggestionParts({}),emptyAddressParts);assert(formatAddress(parts).includes('кв 17'));assert(addressPartsSchema.safeParse(parts).success);
 await assert.rejects(suggestAddress('bad','Москва',async()=>new Response('',{status:403})),/ключ/);
 await assert.rejects(suggestAddress('bad','Москва',async()=>Response.json({})),/некорректный/);
-const order={status:'draft',delivery:'cdek_pickup',address:'Москва, ул Тверская, д 1',items:[{name:'Тест',quantity:1,price:1}]};
+const order={createdAt:new Date().toISOString(),status:'draft',delivery:'cdek_pickup',address:'Москва, ул Тверская, д 1',items:[{name:'Тест',quantity:1,price:1}]};
 assert.doesNotThrow(()=>validateTransition(order,'confirm',{address:''},''));
 assert.throws(()=>validateTransition({...order,address:''},'confirm',{address:'Другой адрес'},''),/адрес/);
 console.log('DaData request, errors and order-address checks passed');
