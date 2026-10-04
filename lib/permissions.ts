@@ -13,7 +13,7 @@ export function seesOrder(e:Employee,o:Order,staff:Employee[]){
 export function visibleState(s:State,e:Employee):State{
  if(e.role==='admin')return s;
  if(e.role==='courier'){
-  const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)).map(o=>({...o,paymentReceipt:undefined,manager:'',logistic:'',paymentReceivedBy:undefined}));
+  const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)).map(o=>({...o,contactAuthor:undefined,paymentReceipt:undefined,manager:'',logistic:'',paymentReceivedBy:undefined}));
   return {orders,clients:s.clients.filter(c=>orders.some(o=>o.clientId===c.id)).map(c=>({id:c.id,name:c.name,phone:c.phone,city:c.city,address:c.address,source:'',owner:'',assignedUntil:'',createdAt:c.createdAt,version:c.version})),employees:[e],events:[],incoming:[],settings:{retentionDays:0}};
  }
  const orders=s.orders.filter(o=>seesOrder(e,o,s.employees));const orderIds=new Set(orders.map(o=>o.id));

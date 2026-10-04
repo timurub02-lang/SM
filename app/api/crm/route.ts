@@ -221,6 +221,7 @@ async function handlePOST(request:Request){
    if(!["draft","confirm","rework","extra","pickup"].includes(o.status))throw new Error("Звонок недоступен на этом этапе");
    if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
    next.contact=z.enum(["missed","callback"]).parse(p.contact);next.reason=z.string().trim().min(1,"Укажите причину").max(1000).parse(p.reason);
+   next.contactAuthor={id:employee.id,name:employee.name,at:now};
    next.noAnswerDeadline=confirmationDeadline(o);
    if(p.due){const due=z.string().datetime().parse(p.due);validateReworkCall(o,due);const deadline=draftDeadline(o);if(deadline&&Date.parse(due)>Date.parse(deadline))throw Error("Звонок нельзя назначить позже срока оформления: "+new Date(deadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");if(next.noAnswerDeadline&&Date.parse(due)>Date.parse(next.noAnswerDeadline))throw Error("Звонок нельзя назначить позже срока автоотмены подтверждения");if(Date.parse(due)<=Date.now())throw new Error("Выберите будущее время звонка");next.due=due;}else{if(next.contact==="callback")throw new Error("Для перезвона нужно время звонка");next.due="";}
    if(isLogistic(employee?.role))next.logistic=employee.id;

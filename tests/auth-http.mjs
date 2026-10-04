@@ -323,6 +323,60 @@ try{
  assert.equal(reminderState.reminders.length,20);assert.ok(reminderState.reminders.find(r=>r.id===reminderId).readAt);
  assert.ok(!(await call('/api/crm',{cookie:chief.cookie})).data.reminders.some(r=>r.id===reminderId));
  console.log('Reminders: latest 20, read persistence, rescheduled-call history and employee isolation passed.');
+ const colleague=await fixture('shared-reminder-logistic','1','logistic');
+ colleague.e.name='Shared reminder colleague';
+ db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify(colleague.e),colleague.e.id);
+ const logistics=[editor,chief,colleague];
+ let sharedOrderId,sharedReminderId;
+ for(const [status,delivery] of [['confirm','cdek_pickup'],['extra','moscow_courier'],['pickup','russian_post']]){
+  const orderId='reminder-operator-o-'+status;
+  db.prepare("UPDATE orders SET data=json_set(data,'$.delivery',?) WHERE id=?").run(delivery,orderId);
+  const version=db.prepare('SELECT version FROM orders WHERE id=?').get(orderId).version;
+  const due=new Date(Date.now()+120000).toISOString();
+  const result=await call('/api/crm',{cookie:editor.cookie,body:{action:'contact',id:orderId,version,contact:'callback',reason:'Shared test call',due,contactAuthor:{id:'forged',name:'Forged'}}});
+  assert.equal(result.status,200,result.text);
+  const reminderId='call:'+orderId+':'+due;
+  // Fanout is committed before any colleague fetches the CRM.
+  for(const employee of logistics){
+   const saved=JSON.parse(db.prepare('SELECT data FROM reminders WHERE employee_id=? AND id=?').get(employee.e.id,reminderId).data);
+   assert.ok(saved.text.includes(editor.e.name));assert.ok(!saved.text.includes('Forged'));
+   const state=(await call('/api/crm',{cookie:employee.cookie})).data;
+   const reminder=state.reminders.find(r=>r.id===reminderId);
+   assert.ok(reminder);assert.equal(reminder.resolved,false);
+  }
+  assert.ok(!(await call('/api/crm',{cookie:reminderActor.cookie})).data.reminders.some(r=>r.id===reminderId));
+  sharedOrderId=orderId;sharedReminderId=reminderId;
+ }
+ const legacy=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(sharedOrderId).data);
+ assert.equal(legacy.contactAuthor.id,editor.e.id);
+ await call('/api/crm',{cookie:colleague.cookie,body:{action:'readReminder',id:sharedReminderId}});
+ assert.ok((await call('/api/crm',{cookie:colleague.cookie})).data.reminders.find(r=>r.id===sharedReminderId).readAt);
+ assert.equal((await call('/api/crm',{cookie:chief.cookie})).data.reminders.find(r=>r.id===sharedReminderId).readAt,undefined);
+ // Reassigning the same scheduled time updates the author without clearing each person's read marker.
+ let sharedVersion=db.prepare('SELECT version FROM orders WHERE id=?').get(sharedOrderId).version;
+ let changedCall=await call('/api/crm',{cookie:colleague.cookie,body:{action:'contact',id:sharedOrderId,version:sharedVersion,contact:'missed',reason:'Colleague retry',due:legacy.due}});
+ assert.equal(changedCall.status,200,changedCall.text);
+ for(const employee of logistics){
+  const r=(await call('/api/crm',{cookie:employee.cookie})).data.reminders.find(r=>r.id===sharedReminderId);
+  assert.ok(r.text.includes(colleague.e.name));assert.equal(!!r.readAt,employee.e.id===colleague.e.id);
+ }
+ sharedVersion=db.prepare('SELECT version FROM orders WHERE id=?').get(sharedOrderId).version;
+ const rescheduledDue=new Date(Date.now()+240000).toISOString();
+ changedCall=await call('/api/crm',{cookie:chief.cookie,body:{action:'contact',id:sharedOrderId,version:sharedVersion,contact:'callback',reason:'New time',due:rescheduledDue}});
+ assert.equal(changedCall.status,200,changedCall.text);
+ const newReminderId='call:'+sharedOrderId+':'+rescheduledDue;
+ for(const employee of logistics){
+  const reminders=(await call('/api/crm',{cookie:employee.cookie})).data.reminders;
+  assert.equal(reminders.find(r=>r.id===sharedReminderId).resolved,true);
+  assert.ok(reminders.find(r=>r.id===sharedReminderId).text.includes(colleague.e.name));
+  assert.equal(reminders.find(r=>r.id===newReminderId).resolved,false);
+  assert.equal(reminders.find(r=>r.id===newReminderId).readAt,undefined);
+ }
+ // A completed stage resolves the common task, but keeps the bell history.
+ db.prepare("UPDATE orders SET data=json_set(data,'$.contact','none','$.due','','$.status','shipping') WHERE id=?").run(sharedOrderId);
+ for(const employee of logistics)assert.equal((await call('/api/crm',{cookie:employee.cookie})).data.reminders.find(r=>r.id===newReminderId).resolved,true);
+ console.log('Shared reminders: all logistics recipients, authenticated author, personal read state, reschedule history and completion passed.');
+
  // Routing settings are admin-only; previews reveal only the selected rule, never credentials.
  for(const slot of [1,2,4])db.prepare('INSERT OR REPLACE INTO settings(id,data) VALUES(?,?)').run('cdek-'+slot,JSON.stringify({name:slot===4?'ИП Аскеров':'Account '+slot,clientId:'private-client',clientSecret:'private-secret'}));
  const routePath='/api/cdek/routing';
