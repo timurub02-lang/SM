@@ -1,5 +1,6 @@
 import {isLogistic} from './crm.ts';
 import {canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
+export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'owner'>){return !!c&&(e.role!=='operator'||c.owner===e.id);}
 export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
 export function seesOrder(e:Employee,o:Order,staff:Employee[]){
  if(e.role==='admin')return true;
