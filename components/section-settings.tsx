@@ -36,6 +36,7 @@ export function SectionSettings({section,label,actor,state,onSaved,onNavigate,ch
  if(section==='post')groups=['Курьер Москва и Почта России'];
  if(section==='finances'&&actor.role!=='department_head')groups=['Финансы'];
  if(section==='settings')groups=['Напоминания'];
+ if(['shipping','moscow','post'].includes(section))groups=[...groups,'Совместная работа логистов','Напоминания'];
  const paragraphs=sectionRuleGroups.filter(([title])=>groups.includes(title));
  const sectionRules=<div className="section-work-rules">
   {orderSection&&<OrderRules policy={policy}/>}

@@ -376,6 +376,51 @@ try{
  db.prepare("UPDATE orders SET data=json_set(data,'$.contact','none','$.due','','$.status','shipping') WHERE id=?").run(sharedOrderId);
  for(const employee of logistics)assert.equal((await call('/api/crm',{cookie:employee.cookie})).data.reminders.find(r=>r.id===newReminderId).resolved,true);
  console.log('Shared reminders: all logistics recipients, authenticated author, personal read state, reschedule history and completion passed.');
+ const accessPath='/api/order-access',lockOrder='reminder-operator-o-confirm';
+ const lease=(employee,token,action='acquire',orderId=lockOrder)=>call(accessPath,{cookie:employee.cookie,body:{orderId,token,action}});
+ const firstToken=crypto.randomUUID(),secondToken=crypto.randomUUID();
+ const simultaneous=await Promise.all([lease(editor,firstToken),lease(colleague,secondToken)]);
+ assert.deepEqual(simultaneous.map(r=>r.status),[200,200]);
+ assert.equal(simultaneous.filter(r=>r.data.editable).length,1,'Only one logistic wins simultaneous opening');
+ const winner=simultaneous[0].data.editable?editor:colleague,loser=winner===editor?colleague:editor;
+ const winnerToken=winner===editor?firstToken:secondToken,loserToken=winner===editor?secondToken:firstToken;
+ assert.equal((await lease(loser,loserToken)).data.holder,winner.e.name);
+ assert.equal((await lease(chief,crypto.randomUUID())).data.editable,false);
+ assert.equal((await call(accessPath,{cookie:reminderActor.cookie,body:{orderId:lockOrder,token:crypto.randomUUID(),action:'acquire'}})).status,403);
+ const readOrder=(await call('/api/crm',{cookie:loser.cookie})).data.orders.find(o=>o.id===lockOrder);
+ assert.ok(readOrder,'A busy order remains readable');
+ const beforeLockedWrite=db.prepare('SELECT data,version FROM orders WHERE id=?').get(lockOrder);
+ for(const action of ['contact','comment','transition','updateOrder','updateDelivery','selectCdekTariff','saveManualDeliveryCost','markPackingWaybill','updateWaybillComment','receivePayment','returnToWarehouse']){
+  const denied=await call('/api/crm',{cookie:loser.cookie,body:{action,id:lockOrder,version:readOrder.version}});
+  assert.equal(denied.status,409,action+': '+denied.text);assert.ok(denied.data.error.includes(winner.e.name));
+ }
+ for(const path of ['/api/cdek/calculate','/api/cdek/shipment','/api/mainsms']){
+  const denied=await call(path,{cookie:loser.cookie,body:{orderId:lockOrder,action:'create'}});
+  assert.equal(denied.status,409,path+': '+denied.text);
+ }
+ assert.deepEqual(db.prepare('SELECT data,version FROM orders WHERE id=?').get(lockOrder),beforeLockedWrite);
+ const winnerComment=await call('/api/crm',{cookie:winner.cookie,body:{action:'comment',id:lockOrder,version:readOrder.version,text:'Current logistic may act'}});
+ assert.equal(winnerComment.status,200,winnerComment.text);
+ assert.equal((await lease(loser,winnerToken,'release')).status,200);
+ assert.equal((await lease(loser,loserToken)).data.editable,false,'Another employee cannot release the holder');
+ // Closing one of the same employee's tabs does not release the other tab.
+ const extraTab=crypto.randomUUID();assert.equal((await lease(winner,extraTab)).data.editable,true);
+ await lease(winner,winnerToken,'release');
+ assert.equal((await lease(loser,loserToken)).data.editable,false);
+ await lease(winner,extraTab,'release');
+ assert.equal((await lease(loser,loserToken)).data.editable,true);
+ const latestVersion=db.prepare('SELECT version FROM orders WHERE id=?').get(lockOrder).version;
+ assert.equal((await call('/api/crm',{cookie:loser.cookie,body:{action:'comment',id:lockOrder,version:latestVersion,text:'Next logistic may act'}})).status,200);
+ // A disconnected/closed tab's expired lease must not block the next colleague.
+ db.prepare('UPDATE order_edit_leases SET expires_at=? WHERE order_id=?').run(Date.now()-1,lockOrder);
+ assert.equal((await lease(chief,secondToken)).data.editable,true);
+ assert.equal((await lease(winner,firstToken)).data.editable,false);
+ await lease(chief,secondToken,'release');
+ assert.equal((await lease(winner,firstToken)).data.editable,true);
+ await lease(winner,firstToken,'release');
+ assert.equal(db.prepare('SELECT count(*) AS n FROM order_edit_leases WHERE order_id=?').get(lockOrder).n,0,'Transient action leases are released');
+ console.log('Order access: atomic competing opens, chief logistics, readonly API, all order actions, CDEK/SMS guards, independent tabs, release and expiry passed.');
+
 
  // Routing settings are admin-only; previews reveal only the selected rule, never credentials.
  for(const slot of [1,2,4])db.prepare('INSERT OR REPLACE INTO settings(id,data) VALUES(?,?)').run('cdek-'+slot,JSON.stringify({name:slot===4?'ИП Аскеров':'Account '+slot,clientId:'private-client',clientSecret:'private-secret'}));
