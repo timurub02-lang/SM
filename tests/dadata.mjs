@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {suggestAddress} from '../lib/dadata.ts';
-import {suggestionParts,emptyAddressParts,formatAddress,addressPartsSchema} from '../lib/address.ts';
+import {suggestionParts,emptyAddressParts,formatAddress,addressPartsSchema,orderAddressWarnings} from '../lib/address.ts';
 import {clientSchema,validateTransition} from '../lib/crm.ts';
 let called=false;
 const results=await suggestAddress('test-token','Москва',async(url,options)=>{
@@ -11,7 +11,7 @@ const parts=suggestionParts({postal_code:'123456',region_with_type:'Москов
 assert.equal(parts.city,'г Химки, мкр Подрезково');assert.equal(parts.house,'д 4, к 2');assert.equal(parts.flat,'кв 17');assert.equal(parts.postalCode,'123456');assert.deepEqual(suggestionParts({}),emptyAddressParts);assert(formatAddress(parts).includes('кв 17'));assert(addressPartsSchema.safeParse(parts).success);
 await assert.rejects(suggestAddress('bad','Москва',async()=>new Response('',{status:403})),/ключ/);
 await assert.rejects(suggestAddress('bad','Москва',async()=>Response.json({})),/некорректный/);
-const order={status:'draft',address:'Москва, ул Тверская, д 1',items:[{}]};
+const order={status:'draft',delivery:'cdek_pickup',address:'Москва, ул Тверская, д 1',items:[{name:'Тест',quantity:1,price:1}]};
 assert.doesNotThrow(()=>validateTransition(order,'confirm',{address:''},''));
 assert.throws(()=>validateTransition({...order,address:''},'confirm',{address:'Другой адрес'},''),/адрес/);
 console.log('DaData request, errors and order-address checks passed');
@@ -26,3 +26,15 @@ assert.equal(recognized.city,'г Москва');assert.equal(recognized.addressO
 for(const qc of [1,2,3]){const unknown=await cleanImportedAddress('Обещанны',keys,async()=>Response.json([{qc,result:'случайный вариант'}]));assert.equal(unknown.address,'Обещанны');assert.deepEqual(unknown.addressParts,emptyAddressParts);assert(unknown.addressReview);}
 const unavailable=await cleanImportedAddress('Обещанны',keys,async()=>new Response('',{status:503}));assert.equal(unavailable.address,'Обещанны');assert(unavailable.addressProcessingError);
 console.log('Excel address preservation and normalization checks passed');
+
+const suspect={...emptyAddressParts,region:'Московская обл',city:'г Подольск',street:'пр-кт Ленина',house:'д 16, к 15'};
+assert.deepEqual(orderAddressWarnings(formatAddress(suspect),suspect).map(w=>w.field),['postalCode','house']);
+const corrected={...suspect,house:'д 16',flat:'кв 15',postalCode:'142106'};
+assert.deepEqual(orderAddressWarnings(formatAddress(corrected),corrected),[]);
+assert.deepEqual(orderAddressWarnings('Дом с корпусом',{...suspect,postalCode:'142106'}),[],'A known building may legitimately have a block and no flat');
+assert.equal(orderAddressWarnings('',emptyAddressParts)[0].field,'address');
+assert.equal(orderAddressWarnings('Неразобранный адрес',emptyAddressParts)[0].field,'address');
+assert.deepEqual(orderAddressWarnings('Неполный адрес',{...emptyAddressParts,region:'Московская обл'}).map(w=>w.field),['postalCode','city','house']);
+assert.deepEqual(orderAddressWarnings('Адрес без улицы',{...corrected,street:'',city:'',region:'г Москва'}),[],'No street or flat can be valid');
+assert.equal(orderAddressWarnings('Адрес',{...corrected,postalCode:'14210x'})[0].field,'postalCode');
+console.log('Order address review: missing postcode, house/block hint, manual input, missing fields and corrected addresses passed');

@@ -422,5 +422,23 @@ try{
  const headClient=await call('/api/crm',{cookie:cookies.head,body:{action:'createClient',client:{...manualClient,phone:'+79991237703',owner:'one'}}});assert.equal(headClient.status,200,headClient.text);
  const headAdded=JSON.parse(db.prepare('SELECT data FROM clients WHERE phone=?').get('+79991237703').data);assert.equal(headAdded.baseType,'M');assert.equal(headAdded.sheet,'К');assert.equal(headAdded.owner,'one');assert.ok(Math.abs(Date.parse(headAdded.trialUntil)-Date.now()-86400000)<10000);
  console.log('Manual client HTTP: admin M/J creation, configured entry sheet, counts, duplicate protection, invalid base, role guards and head assignment passed.');
+ // A suspicious address must be explicitly reviewed before any order/client write.
+ const suspectAddress={postalCode:'',region:'Московская обл',city:'г Подольск',street:'пр-кт Ленина',house:'д 16, к 15',flat:''};
+ const suspectCreate={action:'createOrder',clientId:headAdded.id,items:[],address:'Московская обл, г Подольск, пр-кт Ленина, д 16 к 15',addressParts:suspectAddress};
+ const ordersBefore=db.prepare('SELECT COUNT(*) AS n FROM orders').get().n;
+ for(const addressConfirmed of [undefined,false,'true']){
+  const warning=await call('/api/crm',{cookie:cookies.admin,body:{...suspectCreate,addressConfirmed}});assert.equal(warning.status,400,warning.text);assert.match(warning.data.error,/Индекс не определён/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM orders').get().n,ordersBefore);
+  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(headAdded.id).data).address||'','');
+ }
+ const confirmedAddress=await call('/api/crm',{cookie:cookies.admin,body:{...suspectCreate,addressConfirmed:true}});assert.equal(confirmedAddress.status,200,confirmedAddress.text);
+ assert.equal(db.prepare('SELECT COUNT(*) AS n FROM orders').get().n,ordersBefore+1);
+ const reviewedOrder=confirmedAddress.data.state.orders.find(o=>o.clientId===headAdded.id);assert.deepEqual(reviewedOrder.addressParts,suspectAddress);
+ assert.ok(confirmedAddress.data.state.events.some(e=>e.orderId===reviewedOrder.id&&e.text.includes('адрес проверен вручную')));
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(headAdded.id).data).address,suspectCreate.address);
+ const cleanClient=await call('/api/crm',{cookie:cookies.head,body:{action:'createClient',client:{...manualClient,phone:'+79991237704',owner:'one'}}});assert.equal(cleanClient.status,200,cleanClient.text);
+ const cleanId=JSON.parse(db.prepare('SELECT data FROM clients WHERE phone=?').get('+79991237704').data).id;
+ const cleanAddress=await call('/api/crm',{cookie:cookies.admin,body:{...suspectCreate,clientId:cleanId,address:'142106, Московская обл, г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:{...suspectAddress,postalCode:'142106',house:'д 16',flat:'кв 15'}}});assert.equal(cleanAddress.status,200,cleanAddress.text);
+ console.log('Order address HTTP: warning without writes, explicit boolean confirmation, audit, client synchronization and normal creation passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

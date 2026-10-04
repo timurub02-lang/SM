@@ -41,3 +41,5 @@
 
 .courier-summary-card .card-numbers>div{min-width:0;padding:0 3px}
 .courier-summary-card .card-numbers strong,.courier-summary-card .card-bottom b{overflow-wrap:anywhere}
+
+.address-review{border:1px solid #efca8e;border-radius:14px;background:#fff8ec;padding:16px 18px;color:#785017;font-size:14px;line-height:1.55}.address-review strong{display:block;color:#855011}.address-review p{margin:6px 0 0}.address-warning{color:#9a5b13;font-size:13px;line-height:1.5;font-weight:400}.field input[aria-invalid=true]{border-color:#d78b29;background:#fffbf3}.field input[aria-invalid=true]:focus{box-shadow:0 0 0 3px #d78b2922}.address-confirmation{font-size:14px;line-height:1.65}.address-confirmation ul{list-style:disc;padding-left:20px}.address-confirmation .action-buttons{margin-top:18px}
