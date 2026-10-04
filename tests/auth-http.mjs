@@ -395,6 +395,10 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(timerClient.id,timerClient.phone,JSON.stringify(timerClient));
  let timerResult=await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'createOrder',clientId:timerClient.id,items:[{name:'Policy product',quantity:1,price:100}],addressConfirmed:true,delivery:'moscow_courier'}});assert.equal(timerResult.status,200,timerResult.text);
  let timerOrder=timerResult.data.state.orders.find(o=>o.clientId===timerClient.id);assert.equal(timerOrder.draftHours,24);
+ const timerReminder=timerResult.data.state.reminders.find(r=>r.kind==='draft'&&r.orderId===timerOrder.id);assert.ok(timerReminder);assert.equal(timerReminder.resolved,false);assert.equal(timerReminder.due,new Date(Date.parse(timerOrder.createdAt)+86400000).toISOString());
+ assert.ok(!(await call('/api/crm',{cookie:chief.cookie})).data.reminders.some(r=>r.id===timerReminder.id));
+ assert.equal((await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'readReminder',id:timerReminder.id}})).status,200);
+ const reread=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.filter(r=>r.id===timerReminder.id);assert.equal(reread.length,1);assert.ok(reread[0].readAt);
  await setPolicy({draftHours:2});
  for(const contact of ['missed','callback']){
   const body={action:'contact',id:timerOrder.id,version:timerOrder.version,contact,reason:'Test',due:new Date(Date.parse(timerOrder.createdAt)+86400001).toISOString()};
@@ -406,6 +410,17 @@ try{
  db.prepare("UPDATE clients SET data=json_set(data,'$.assignmentStartedAt',?) WHERE id=?").run(pastCreated,timerClient.id);
  const expiredDraft=(await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===timerOrder.id);assert.equal(expiredDraft.status,'refused');assert.equal(expiredDraft.cancelledAt,new Date(Date.parse(pastCreated)+86400000).toISOString());
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(timerClient.id).data).owner,'');
+ const completedReminder=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.find(r=>r.id===timerReminder.id);assert.equal(completedReminder.resolved,true);assert.equal(completedReminder.text,'Заказ отменён');assert.ok(completedReminder.readAt);
+ // A handoff resolves the existing reminder; disabled timers create no reminder.
+ const noticeClient={...timerClient,id:'notice-client',phone:'+79990000988',createdAt:new Date().toISOString()};
+ const noticeOrder={...timerOrder,id:'notice-order',clientId:noticeClient.id,status:'draft',draftHours:24,createdAt:noticeClient.createdAt,updatedAt:noticeClient.createdAt};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(noticeClient.id,noticeClient.phone,JSON.stringify(noticeClient));
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(noticeOrder.id,noticeClient.id,JSON.stringify(noticeOrder));
+ const handoffReminder=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.find(r=>r.kind==='draft'&&r.orderId===noticeOrder.id);assert.ok(handoffReminder);assert.equal(handoffReminder.resolved,false);
+ await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'confirm'});
+ const handed=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.find(r=>r.id===handoffReminder.id);assert.equal(handed.resolved,true);assert.equal(handed.text,'Заказ передан логисту');
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','draft','$.draftHours',NULL) WHERE id=?").run(noticeOrder.id);
+ const disabledReminders=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.filter(r=>r.kind==='draft'&&r.orderId===noticeOrder.id);assert.equal(disabledReminders.length,1);assert.equal(disabledReminders[0].resolved,true);
  await setPolicy(originalPolicy);
  console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
 
