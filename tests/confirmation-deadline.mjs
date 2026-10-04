@@ -22,7 +22,23 @@ try{
  for(const id of ['disabled','check','rework','final-disabled'])assert.equal(confirmationDeadline(orders.find(o=>o.id===id)),undefined);
  assert.equal(confirmationStage({...base,confirmationStartedAt:new Date(now-42*3600000).toISOString()},now),'expiring');
  assert.equal(confirmationStage({...base,status:'extra',confirmationStartedAt:new Date(now-42*3600000).toISOString()},now),'repeat_expiring');
- assert.equal(await reconcileOrderTimers(db,orders,[]),true);
+ // The client's first-call request changes only the queue tab, never the deadline.
+ const requested={...base,confirmationStartedAt:fresh,contact:'none',due:'',confirmationRequest:{at:new Date(now+2*3600000).toISOString(),by:'operator'}};
+ const callAt=Date.parse(requested.confirmationRequest.at),deadline=confirmationDeadline(requested);
+ assert.equal(confirmationStage(requested,callAt-5*60000-1),'callback');
+ for(const at of [callAt-5*60000,callAt,callAt+3600000])assert.equal(confirmationStage(requested,at),'new');
+ assert.equal(confirmationDeadline(requested),deadline);
+ // Requested first calls retain their queue until handled, even within the warning window.
+ assert.equal(confirmationStage({...requested,confirmationHours:1},now),'callback');
+ const handled={...requested,contact:'callback',due:new Date(callAt+3600000).toISOString(),confirmationRequest:{...requested.confirmationRequest,handledAt:fresh}};
+ assert.equal(confirmationStage(handled,callAt),'callback');
+ assert.equal(confirmationStage({...handled,contact:'missed'},callAt),'missed');
+ assert.equal(confirmationStage({...requested,status:'extra'},callAt),'repeat');
+ assert.equal(confirmationStage({...requested,confirmationRequest:undefined,contact:'callback',due:fresh},now),'callback');
+ // A waiting request also expires on the original timer, including without an open browser.
+ await db.prepare("UPDATE orders SET data=json_set(data,'$.confirmationRequest',json(?)) WHERE id='first'").bind(JSON.stringify(requested.confirmationRequest)).run();
+ const before=await read();
+ assert.equal(await reconcileOrderTimers(db,before,[]),true);
  const after=await read();
  for(const o of after){assert.equal(o.status,['first','repeat','final'].includes(o.id)?'refused':orders.find(x=>x.id===o.id).status);}
  assert.equal((await db.prepare('SELECT reserved FROM product_stock').first()).reserved,5);

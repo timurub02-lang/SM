@@ -205,10 +205,20 @@ async function handlePOST(request:Request){
    }
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
    delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
+   if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
+   if(p.confirmationAt){
+    if(o.status!=="draft"||to!=="confirm"||!["operator","admin"].includes(employee.role))throw Error("Время первого подтверждения задаётся при первой передаче оператором логисту");
+    const at=z.string().datetime().parse(p.confirmationAt);
+    if(Date.parse(at)<=Date.parse(now))throw Error("Выберите будущее время подтверждения");
+    if(next.noAnswerDeadline&&Date.parse(at)>Date.parse(next.noAnswerDeadline))throw Error("Подтверждение нельзя назначить позже срока автоотмены: "+new Date(next.noAnswerDeadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");
+    next.confirmationRequest={at,by:employee.id};
+   }
    if(isLogistic(employee?.role))next.logistic=employee.id;
    const labels=await import("@/lib/crm");text=`${labels.statuses[o.status]} → ${labels.statuses[to]}${reason?" · "+reason:""}`;
+   if(p.confirmationAt)text+=" · Просил подтверждения ко времени: "+new Date(next.confirmationRequest!.at).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК · по просьбе клиента";
   }else if(p.action==="contact"){
    if(!["draft","confirm","rework","extra","pickup"].includes(o.status))throw new Error("Звонок недоступен на этом этапе");
+   if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
    next.contact=z.enum(["missed","callback"]).parse(p.contact);next.reason=z.string().trim().min(1,"Укажите причину").max(1000).parse(p.reason);
    next.noAnswerDeadline=confirmationDeadline(o);
    if(p.due){const due=z.string().datetime().parse(p.due);validateReworkCall(o,due);const deadline=draftDeadline(o);if(deadline&&Date.parse(due)>Date.parse(deadline))throw Error("Звонок нельзя назначить позже срока оформления: "+new Date(deadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");if(next.noAnswerDeadline&&Date.parse(due)>Date.parse(next.noAnswerDeadline))throw Error("Звонок нельзя назначить позже срока автоотмены подтверждения");if(Date.parse(due)<=Date.now())throw new Error("Выберите будущее время звонка");next.due=due;}else{if(next.contact==="callback")throw new Error("Для перезвона нужно время звонка");next.due="";}

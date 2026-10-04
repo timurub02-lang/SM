@@ -431,11 +431,44 @@ try{
  for(const contact of ['missed','callback'])await policyAction(editor.cookie,{action:'contact',id:noticeOrder.id,contact,reason:'Test',due:new Date(Date.parse(confirmed.noAnswerDeadline)+1).toISOString()},400);
  await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'rework',reason:'Test'});
  confirmed=await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'extra',finalHandoffConfirmed:true});assert.equal(confirmed.finalConfirmHours,24);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.finalHandoffAt)+86400000).toISOString());
+ // Client-requested first confirmation: validate on handoff, preserve timers and the original request.
+ await setPolicy({confirmationHours:48});
+ const scheduledDraft={...noticeOrder,id:'scheduled-confirmation',createdAt:new Date().toISOString(),status:'draft'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(scheduledDraft.id,scheduledDraft.clientId,JSON.stringify(scheduledDraft));
+ const handoff={action:'transition',id:scheduledDraft.id,to:'confirm'};
+ for(const confirmationAt of ['invalid',new Date(Date.now()-60000).toISOString(),new Date(Date.now()+49*3600000).toISOString()]){
+  const rejected=await policyAction(policyOperator.cookie,{...handoff,confirmationAt},400);assert.equal(rejected.status,'draft');assert.equal(rejected.confirmationRequest,undefined);
+ }
+ const requestedAt=new Date(Date.now()+2*3600000).toISOString();
+ await policyAction(cookies.head,{...handoff,confirmationAt:requestedAt},400);
+ let scheduled=await policyAction(policyOperator.cookie,{...handoff,confirmationAt:requestedAt});
+ assert.deepEqual(scheduled.confirmationRequest,{at:requestedAt,by:policyOperator.e.id});
+ assert.equal(scheduled.contact,'none');assert.equal(scheduled.due,'');assert.equal(scheduled.confirmationHours,48);
+ const scheduledDeadline=scheduled.noAnswerDeadline;
+ assert.equal(scheduledDeadline,new Date(Date.parse(scheduled.confirmationStartedAt)+48*3600000).toISOString());
+ assert.ok((await call('/api/crm',{cookie:editor.cookie})).data.orders.some(o=>o.id===scheduled.id&&o.confirmationRequest.at===requestedAt));
+ assert.ok(JSON.parse(db.prepare('SELECT data FROM events WHERE order_id=? ORDER BY at DESC LIMIT 1').get(scheduled.id).data).text.includes('Просил подтверждения ко времени'));
+ await policyAction(policyOperator.cookie,{action:'transition',id:scheduled.id,to:'check'},400);
+ scheduled=await policyAction(editor.cookie,{action:'updateOrder',id:scheduled.id,addressConfirmed:true,comment:'Clarified'});
+ assert.equal(scheduled.confirmationRequest.handledAt,undefined);assert.equal(scheduled.noAnswerDeadline,scheduledDeadline);
+ scheduled=await policyAction(editor.cookie,{action:'contact',id:scheduled.id,contact:'missed',reason:'No answer'});
+ assert.ok(scheduled.confirmationRequest.handledAt);assert.equal(scheduled.confirmationRequest.at,requestedAt);assert.equal(scheduled.noAnswerDeadline,scheduledDeadline);
+ await policyAction(editor.cookie,{action:'transition',id:scheduled.id,to:'rework',reason:'Correct order'});
+ await policyAction(policyOperator.cookie,{...handoff,confirmationAt:requestedAt,finalHandoffConfirmed:true},400);
+ scheduled=await policyAction(policyOperator.cookie,{...handoff,finalHandoffConfirmed:true});
+ assert.ok(scheduled.confirmationRequest.handledAt);assert.equal(scheduled.finalConfirmHours,24);
+ // Advancing without a call result also consumes the request, so it cannot reappear on a later stage.
+ const directDraft={...scheduledDraft,id:'scheduled-direct'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(directDraft.id,directDraft.clientId,JSON.stringify(directDraft));
+ await policyAction(policyOperator.cookie,{...handoff,id:directDraft.id,confirmationAt:requestedAt});
+ const advanced=await policyAction(editor.cookie,{action:'transition',id:directDraft.id,to:'extra'});
+ assert.ok(advanced.confirmationRequest.handledAt);assert.equal(advanced.status,'extra');
+ console.log('Requested confirmation HTTP: future time, deadline cap, permissions, initial handoff only, visible origin, stable timers and normal logistic follow-up passed.');
  // Disabled initial and repeated stages remain disabled even after their settings change.
  await setPolicy({confirmationHours:null,extraConfirmationHours:null});
  const untimed={...noticeOrder,id:'untimed-confirmation',status:'draft'};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(untimed.id,untimed.clientId,JSON.stringify(untimed));
- let noTimer=await policyAction(policyOperator.cookie,{action:'transition',id:untimed.id,to:'confirm'});assert.equal(noTimer.confirmationHours,null);assert.equal(noTimer.noAnswerDeadline,undefined);
+ let noTimer=await policyAction(policyOperator.cookie,{action:'transition',id:untimed.id,to:'confirm',confirmationAt:new Date(Date.now()+60*3600000).toISOString()});assert.equal(noTimer.confirmationHours,null);assert.equal(noTimer.noAnswerDeadline,undefined);
  noTimer=await policyAction(editor.cookie,{action:'transition',id:untimed.id,to:'extra'});assert.equal(noTimer.confirmationHours,null);assert.equal(noTimer.noAnswerDeadline,undefined);
  await setPolicy(originalPolicy);
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===untimed.id).noAnswerDeadline,undefined);
