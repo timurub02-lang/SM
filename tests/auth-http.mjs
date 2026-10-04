@@ -448,7 +448,7 @@ try{
 
  // Replies belong to the requester and survive closing the form, retries and using permission.
  const approvalClient={...noticeClient,id:'approval-client',phone:'+79990000989',createdAt:new Date().toISOString()};
- const approvalOrder={...noticeOrder,id:'approval-existing',clientId:approvalClient.id,items:[],createdAt:approvalClient.createdAt};
+ const approvalOrder={...noticeOrder,id:'approval-existing',clientId:approvalClient.id,items:[],createdAt:approvalClient.createdAt,status:'extra',extra:true,confirmationStartedAt:approvalClient.createdAt,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(approvalClient.createdAt)+48*3600000).toISOString()};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(approvalClient.id,approvalClient.phone,JSON.stringify(approvalClient));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(approvalOrder.id,approvalClient.id,JSON.stringify(approvalOrder));
  const approvalPeer=await fixture('approval-peer');
@@ -461,6 +461,9 @@ try{
  const hourAgo=new Date(Date.now()-3600000).toISOString();
  db.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest.at',?) WHERE id=?").run(hourAgo,approvalClient.id);
  await approvalCall(cookies.admin,{action:'decideOrderRequest',requestId:request.id,decision:'rejected'});
+ const protectedOrder=db.prepare('SELECT data,version FROM orders WHERE id=?').get(approvalOrder.id);
+ await approvalCall(policyOperator.cookie,{action:'updateOrder',id:approvalOrder.id,version:protectedOrder.version,address:'Cannot edit',addressConfirmed:true},400);
+ assert.deepEqual(db.prepare('SELECT data,version FROM orders WHERE id=?').get(approvalOrder.id),protectedOrder,'Opening a rejected request never grants editing of an existing confirmation');
  const rejectionId='decision:'+request.id;
  const persisted=JSON.parse(db.prepare('SELECT data FROM reminders WHERE employee_id=? AND id=?').get(policyOperator.e.id,rejectionId).data);
  assert.equal(persisted.decision,'rejected');assert.ok(Date.parse(persisted.at)>Date.parse(hourAgo)+3500000);
