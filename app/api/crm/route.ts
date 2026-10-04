@@ -1,7 +1,7 @@
 import {baseTypes,baseSettingsSchema,initialBaseSettings} from '@/lib/base-policy';
 import {reconcileOrderTimers,reconcileClients} from '@/lib/base-retention-store';
 import {initBaseStorage} from '@/lib/base-storage';
-import {normalizedPhone} from '@/lib/base-distribution';
+import {moscowDate,normalizedPhone} from '@/lib/base-distribution';
 import {orderSettings} from '@/lib/order-policy-store';
 import {orderDataEditingEnabled} from '@/lib/order-policy';
 import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
@@ -209,6 +209,7 @@ async function handlePOST(request:Request){
    if(p.confirmationAt){
     if(o.status!=="draft"||to!=="confirm"||!["operator","admin"].includes(employee.role))throw Error("Время первого подтверждения задаётся при первой передаче оператором логисту");
     const at=z.string().datetime().parse(p.confirmationAt);
+    if(moscowDate(new Date(at))!==moscowDate(new Date(now)))throw Error("Подтверждение ко времени можно назначить только на сегодня по Москве");
     if(Date.parse(at)<=Date.parse(now))throw Error("Выберите будущее время подтверждения");
     if(next.noAnswerDeadline&&Date.parse(at)>Date.parse(next.noAnswerDeadline))throw Error("Подтверждение нельзя назначить позже срока автоотмены: "+new Date(next.noAnswerDeadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");
     next.confirmationRequest={at,by:employee.id};
