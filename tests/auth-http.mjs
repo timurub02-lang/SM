@@ -370,7 +370,13 @@ try{
  await policyAction(editor.cookie,{action:'updateOrder',address:'Changed'},400);
  await policyAction(editor.cookie,{action:'updateDelivery',delivery:'moscow_courier'},400);
  await policyAction(policyOperator.cookie,{action:'updateOrder',id:'policy-operator-o-draft',items:[]},400);
- policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'});
+ await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'  '},400);
+ const selectedReturnReason='Клиент отказывается — дорого · Просит обсудить меньшую корзину';
+ policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:selectedReturnReason});
+ assert.equal(policyOrder.returnReason,selectedReturnReason);
+ const operatorReturnView=(await call('/api/crm',{cookie:policyOperator.cookie})).data;
+ assert.equal(operatorReturnView.orders.find(o=>o.id===policyId).returnReason,selectedReturnReason);
+ assert.ok(operatorReturnView.events.some(e=>e.orderId===policyId&&e.text.includes(selectedReturnReason)));
  assert.equal(policyOrder.reworkHours,2);assert.ok(Math.abs(Date.parse(policyOrder.reworkDeadline)-Date.now()-2*3600000)<10000);
  await policyAction(policyOperator.cookie,{action:'updateOrder',items:policyOrder.items},400);
  const frozenDeadline=policyOrder.reworkDeadline;
@@ -382,7 +388,7 @@ try{
  await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'},400);
  await policyAction(editor.cookie,{action:'transition',to:'check',reason:'Test'});
  await policyAction(cookies.admin,{action:'transition',to:'extra',reason:'Test'});
- policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'});assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
+ policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Своя причина возврата'});assert.equal(policyOrder.returnReason,'Своя причина возврата');assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
  await setPolicy({...originalPolicy,finalHours:3});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).reworkDeadline,undefined);
  policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',addressConfirmed:true,items:policyOrder.items,address:'Updated address'});assert.equal(policyOrder.address,'Updated address');
