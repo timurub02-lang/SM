@@ -1,3 +1,4 @@
+import {baseTypes,baseSettingsSchema,initialBaseSettings} from '@/lib/base-policy';
 import {reconcileOrderTimers,reconcileClients} from '@/lib/base-retention-store';
 import {initBaseStorage} from '@/lib/base-storage';
 import {normalizedPhone} from '@/lib/base-distribution';
@@ -72,13 +73,14 @@ async function handlePOST(request:Request){
   await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
  }else if(p.action==="createClient"){
   if(!employee||!["admin","department_head"].includes(employee.role))throw Error("Добавлять клиентов могут только администратор и руководитель отдела");
-  const data=clientSchema.parse(p.client);ownerValid(data.owner);
+  const data=clientSchema.parse(p.client);ownerValid(data.owner);const baseType=z.enum(baseTypes).default("M").parse(p.baseType);
   if(employee.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");
   const duplicateRow=await d.prepare("SELECT c.data,c.version FROM clients c JOIN client_phone_index p ON p.client_id=c.id WHERE p.phone=?").bind(normalizedPhone(data.phone)).first<{data:string;version:number}>();const duplicate:Client|undefined=duplicateRow?{...JSON.parse(duplicateRow.data),version:duplicateRow.version}:undefined;
   if(duplicate?.owner)throw Error("Клиент уже существует и закреплён за "+(s.employees.find(e=>e.id===duplicate.owner)?.login||duplicate.owner));
   if(duplicate&&["ЧС","ПВ"].includes(clientSheet(duplicate)))throw Error("Клиент находится на листе "+clientSheet(duplicate)+" и не участвует в раздаче");
   if(duplicate&&!data.owner)throw Error("Выберите оператора для передачи клиента");
-  const firstSheet=s.clients.map(c=>sourceSheet(c.source)).find(x=>x&&x!=="К")||"Т1";
+  const savedBase=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();
+  const firstSheet=(savedBase?baseSettingsSchema.parse(JSON.parse(savedBase.data).config):initialBaseSettings())[baseType].importSheet;
   const trial=data.owner?{trialUntil:new Date(Date.parse(now)+86400000).toISOString(),trialReturnSheet:duplicate?clientSheet(duplicate)||firstSheet:firstSheet,assignedUntil:new Date(Date.parse(now)+86400000).toISOString(),assignmentStartedAt:now,sheet:"К",returnSheet:duplicate?clientSheet(duplicate):firstSheet}:{};
   if(duplicate){
    const next={...duplicate,...trial,owner:data.owner};
@@ -86,7 +88,7 @@ async function handlePOST(request:Request){
    if(!r.meta.changes)throw Error("Клиент уже изменён. Обновите данные");
    await eventSQL(ev(duplicate.id,"","Клиент передан оператору на 24 часа без заказа")).run();message="Клиент передан оператору";
   }else{
-   const c:Client={...data,baseType:"M",sheet:firstSheet,id:id("C-"),assignedUntil:"",createdAt:now,version:1,...trial};
+   const c:Client={...data,baseType,sheet:firstSheet,id:id("C-"),assignedUntil:"",createdAt:now,version:1,...trial};
    await d.batch([d.prepare("INSERT INTO clients(id,phone,data) VALUES(?,?,?)").bind(c.id,c.phone,json(c)),eventSQL(ev(c.id,"","Клиент добавлен в базу"))]);message="Клиент добавлен";
   }
  }else if(p.action==="updateClient"){

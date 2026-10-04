@@ -405,5 +405,22 @@ try{
  const denied=await call('/api/base',{cookie:cookies.admin,body:{action:'dispatch',base:'J',sheet:'К',project:'1',count:1}});assert.equal(denied.status,400);
  const baseAssigned=await call('/api/base',{cookie:cookies.admin,body:{action:'assign',base:'J',sheet:'Т1',operator:'one',count:1}});assert.equal(baseAssigned.status,200,baseAssigned.text);assert.equal(baseAssigned.data.assigned,1);
  console.log('Base HTTP: aggregate response, admin guard, Excel import preview/apply/backup/duplicates, cross-base conflicts, no free cards, blocked dispatch and manual assignment passed.');
+ // Manual creation uses the selected base and its configured entry sheet.
+ const manualBase=await call('/api/base',{cookie:cookies.admin});
+ const config=manualBase.data.config;config.J.importSheet='Ж1';config.J.sheets.push({...config.J.sheets.find(s=>s.name==='Т1'),name:'Ж1'});
+ const manualConfig=await call('/api/base',{cookie:cookies.admin,body:{config,revision:manualBase.data.revision}});assert.equal(manualConfig.status,200,manualConfig.text);
+ const manualClient={name:'Manual client',phone:'+79991237701',owner:'',source:'Вручную'};
+ for(const [baseType,phone,sheet] of [['J','+79991237701','Ж1'],['M','+79991237702','Т1']]){
+  const created=await call('/api/crm',{cookie:cookies.admin,body:{action:'createClient',baseType,client:{...manualClient,phone}}});assert.equal(created.status,200,created.text);
+  const c=JSON.parse(db.prepare('SELECT data FROM clients WHERE phone=?').get(phone).data);assert.equal(c.baseType,baseType);assert.equal(c.sheet,sheet);assert.equal(c.owner,'');assert.ok(!c.distributedAt);
+ }
+ const manualOverview=await call('/api/base',{cookie:cookies.admin});assert.equal(manualOverview.data.summary.J['Ж1'].total,1);
+ const duplicateManual=await call('/api/crm',{cookie:cookies.admin,body:{action:'createClient',baseType:'M',client:manualClient}});assert.equal(duplicateManual.status,400,duplicateManual.text);
+ assert.equal(db.prepare('SELECT COUNT(*) AS n FROM clients WHERE phone=?').get(manualClient.phone).n,1);assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE phone=?').get(manualClient.phone).data).baseType,'J');
+ assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'createClient',baseType:'unknown',client:{...manualClient,phone:'+79991237703'}}})).status,400);
+ assert.equal((await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'createClient',client:{...manualClient,phone:'+79991237703'}}})).status,400);
+ const headClient=await call('/api/crm',{cookie:cookies.head,body:{action:'createClient',client:{...manualClient,phone:'+79991237703',owner:'one'}}});assert.equal(headClient.status,200,headClient.text);
+ const headAdded=JSON.parse(db.prepare('SELECT data FROM clients WHERE phone=?').get('+79991237703').data);assert.equal(headAdded.baseType,'M');assert.equal(headAdded.sheet,'К');assert.equal(headAdded.owner,'one');assert.ok(Math.abs(Date.parse(headAdded.trialUntil)-Date.now()-86400000)<10000);
+ console.log('Manual client HTTP: admin M/J creation, configured entry sheet, counts, duplicate protection, invalid base, role guards and head assignment passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
