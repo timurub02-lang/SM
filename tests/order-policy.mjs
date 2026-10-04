@@ -12,8 +12,8 @@ assert.equal(finalNoAnswerDeadline({...order,finalConfirmHours:null},'none',at),
 assert.ok(!allowedOrderTransitions({...order,finalConfirmHours:null},'logistic').includes('rework'));
 const changed={...defaults,reworkWarningHours:2,finalWarningHours:1,operatorDraftEdit:false,operatorReworkEdit:false,logisticDetailsEdit:false};
 assert.equal(reworkStage({contact:'none',reworkDeadline:reworkDeadlineFrom(at,3)},now,changed),'new');
-assert.equal(confirmationStage({...order,noAnswerDeadline:reworkDeadlineFrom(at,2)},now,changed),'new');
-assert.equal(confirmationStage({...order,noAnswerDeadline:reworkDeadlineFrom(at,1)},now,changed),'expiring');
+assert.equal(confirmationStage({...order,finalConfirmHours:2},now,changed),'new');
+assert.equal(confirmationStage({...order,finalConfirmHours:1},now,changed),'expiring');
 for(const role of ['operator','logistic','chief_logistic'])assert.equal(orderDataEditingEnabled(role,'draft',changed),false);
 assert.equal(orderDataEditingEnabled('operator','rework',changed),false);
 assert.equal(orderDataEditingEnabled('admin','draft',changed),true);
@@ -21,3 +21,7 @@ assert.equal(orderPolicySchema.safeParse({...defaults,reworkHours:0}).success,fa
 assert.equal(orderPolicySchema.safeParse({...defaults,finalHours:1.5}).success,false);
 assert.equal(orderPolicySchema.safeParse({...defaults,finalHours:null}).success,true);
 console.log('Order policy: defaults, disabled and custom timers, warning thresholds, final handoff restrictions and editing switches passed.');
+
+assert.equal(orderPolicySchema.parse({...defaults,confirmationHours:undefined,extraConfirmationHours:undefined}).confirmationHours,48);
+assert.equal(orderPolicySchema.safeParse({...defaults,confirmationHours:0}).success,false);
+assert.equal(orderPolicySchema.safeParse({...defaults,extraConfirmationHours:1.5}).success,false);

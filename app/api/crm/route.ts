@@ -6,7 +6,7 @@ import {orderSettings} from '@/lib/order-policy-store';
 import {orderDataEditingEnabled} from '@/lib/order-policy';
 import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
 import {courierOutstanding} from '@/lib/courier';
-import {saveReminders,employeeReminders} from '@/lib/reminders';
+import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
 import {total,canReceivePayment,isLogistic} from '@/lib/crm';
 import {removalPlan} from '@/lib/employee-removal';
@@ -20,7 +20,7 @@ import {cleanImportedAddress} from "@/lib/dadata";
 import {addressPartsSchema,orderAddressWarnings} from "@/lib/address";
 import {db} from "@/lib/db";
 import {getChatGPTUser} from "@/app/chatgpt-auth";
-import {clientAssignment,draftDeadline,finalNoAnswerDeadline,reworkDeadlineFrom,validateReworkCall,hasActiveOrder,employeeForManager,canLogisticEditOrder,orderEditingLocked,clientAddressFromOrder,deliverySchema,applyRetention,sourceSheet,clientSheet,seed,orderDatesForTransition,clientSchema,itemsSchema,employeeSchema,validateTransition,roles,type State,type Client,type Order,type Employee,type Event,type Status} from "@/lib/crm";
+import {clientAssignment,draftDeadline,confirmationDeadline,reworkDeadlineFrom,validateReworkCall,hasActiveOrder,employeeForManager,canLogisticEditOrder,orderEditingLocked,clientAddressFromOrder,deliverySchema,applyRetention,sourceSheet,clientSheet,seed,orderDatesForTransition,clientSchema,itemsSchema,employeeSchema,validateTransition,roles,type State,type Client,type Order,type Employee,type Event,type Status} from "@/lib/crm";
 import {z} from "zod";
 export const dynamic="force-dynamic";
 const json=JSON.stringify;
@@ -113,9 +113,12 @@ async function handlePOST(request:Request){
   }else{
    if(!request||request.status!=="pending"||request.id!==p.requestId)throw Error("Запрос уже обработан");
    if(employee.role!=="admin"&&(employee.role!=="department_head"||!employee.department||employee.department!==request.department))throw Error("Запрос доступен руководителю этого отдела");
-   request={...request,status:z.enum(["approved","rejected"]).parse(p.decision)};message=request.status==="approved"?"Повторный заказ разрешён":"Запрос отклонён";
+   request={...request,status:z.enum(["approved","rejected"]).parse(p.decision),decidedAt:now,decidedBy:employee.id};message=request.status==="approved"?"Повторный заказ разрешён":"Запрос отклонён";
   }
-  const r=await d.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest',json(?)),version=version+1 WHERE id=? AND version=?").bind(json(request),c.id,c.version).run();if(!r.meta.changes)throw Error("Клиент изменился. Повторите действие");
+  const decision=orderDecisionReminder({...c,orderRequest:request},s.employees);
+  if(decision)await initReminders();
+  const r=await d.batch([d.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest',json(?)),version=version+1 WHERE id=? AND version=?").bind(json(request),c.id,c.version),...(decision?[d.prepare("INSERT OR IGNORE INTO reminders(employee_id,id,data,at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=? AND json_extract(data,'$.orderRequest.id')=? AND json_extract(data,'$.orderRequest.status')=? AND json_extract(data,'$.orderRequest.decidedAt')=?)").bind(request.actorId,decision.id,json(decision),decision.at,c.id,c.version+1,request.id,request.status,request.decidedAt)]:[])]);
+  if(!r[0].meta.changes)throw Error("Клиент изменился. Повторите действие");
   await eventSQL(ev(c.id,"",message)).run();
  }else if(p.action==="createOrder"){
   const c=s.clients.find(c=>c.id===p.clientId);if(!c)throw new Error("Выберите клиента");
@@ -200,14 +203,15 @@ async function handlePOST(request:Request){
     if(!o.items.length)throw Error('В заказе нет товаров');
     next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o)};
    }
-   if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=finalNoAnswerDeadline(next,next.contact,now);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
+   if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
+   delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
    if(isLogistic(employee?.role))next.logistic=employee.id;
    const labels=await import("@/lib/crm");text=`${labels.statuses[o.status]} → ${labels.statuses[to]}${reason?" · "+reason:""}`;
   }else if(p.action==="contact"){
    if(!["draft","confirm","rework","extra","pickup"].includes(o.status))throw new Error("Звонок недоступен на этом этапе");
    next.contact=z.enum(["missed","callback"]).parse(p.contact);next.reason=z.string().trim().min(1,"Укажите причину").max(1000).parse(p.reason);
-   next.noAnswerDeadline=finalNoAnswerDeadline(o,next.contact,now);
-   if(p.due){const due=z.string().datetime().parse(p.due);validateReworkCall(o,due);const deadline=draftDeadline(o);if(deadline&&Date.parse(due)>Date.parse(deadline))throw Error("Звонок нельзя назначить позже срока оформления: "+new Date(deadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");if(next.noAnswerDeadline&&Date.parse(due)>Date.parse(next.noAnswerDeadline))throw Error("Звонок нельзя назначить позже срока автоотмены финального подтверждения");if(Date.parse(due)<=Date.now())throw new Error("Выберите будущее время звонка");next.due=due;}else{if(next.contact==="callback")throw new Error("Для перезвона нужно время звонка");next.due="";}
+   next.noAnswerDeadline=confirmationDeadline(o);
+   if(p.due){const due=z.string().datetime().parse(p.due);validateReworkCall(o,due);const deadline=draftDeadline(o);if(deadline&&Date.parse(due)>Date.parse(deadline))throw Error("Звонок нельзя назначить позже срока оформления: "+new Date(deadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");if(next.noAnswerDeadline&&Date.parse(due)>Date.parse(next.noAnswerDeadline))throw Error("Звонок нельзя назначить позже срока автоотмены подтверждения");if(Date.parse(due)<=Date.now())throw new Error("Выберите будущее время звонка");next.due=due;}else{if(next.contact==="callback")throw new Error("Для перезвона нужно время звонка");next.due="";}
    if(isLogistic(employee?.role))next.logistic=employee.id;
    text=`${next.contact==="missed"?"Недозвон":"Перезвон"}: ${next.reason}${next.due?" · "+new Date(next.due).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК":""}`;
   }else{text="Комментарий: "+z.string().trim().min(1).max(3000).parse(p.text);}

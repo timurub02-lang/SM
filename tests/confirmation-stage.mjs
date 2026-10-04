@@ -8,7 +8,7 @@ for(const contact of ['none','missed','callback']) {
 }
 assert.equal(confirmationStage({...order,status:'extra'},now),'repeat_expiring');
 assert.equal(confirmationStage({...order,status:'extra'},now-1),'repeat');
-assert.equal(confirmationStage({...order,noAnswerDeadline:undefined},now),'new');
+assert.equal(confirmationStage({...order,noAnswerDeadline:undefined},now),'expiring');
 assert.equal(confirmationStage({...order,finalHandoffAt:undefined},now),'new');
 console.log('Confirmation expiry grouping passed');
 

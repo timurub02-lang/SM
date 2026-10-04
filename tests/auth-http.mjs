@@ -87,7 +87,7 @@ try{
   for(const [i,status] of [...statuses,'none'].entries()){
    const c={id:id+'-c-'+status,name:'Client',phone:'+7'+String(8000000000+db.prepare('SELECT COUNT(*) AS n FROM clients').get().n),city:'',address:'',source:'test.xlsx · Т3',sheet:'К',returnSheet:'Т3',trialReturnSheet:'Т1',owner:id,createdAt:new Date().toISOString(),version:1};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));
    if(status==='none')continue;
-   const o={id:id+'-o-'+status,clientId:c.id,manager:id,logistic:'',status,items:[],comment:'Original comment',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,redeemedAt:c.createdAt,...(status==='rework'?{reworkDeadline:new Date(Date.now()+86400000).toISOString()}:{}),version:1};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
+   const o={id:id+'-o-'+status,clientId:c.id,manager:id,logistic:'',status,items:[],comment:'Original comment',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,redeemedAt:c.createdAt,...(['confirm','extra'].includes(status)?{confirmationStartedAt:c.createdAt,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(c.createdAt)+48*3600000).toISOString()}:{}),...(status==='rework'?{reworkDeadline:new Date(Date.now()+86400000).toISOString()}:{}),version:1};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
   }
  }
  async function remove(actor,e,mode,targetId,version=e.version){return call('/api/crm',{cookie:cookies[actor],body:{action:'deleteEmployee',id:e.id,version,mode,targetId}});}
@@ -158,7 +158,7 @@ try{
  await step(editor.cookie,'refused',400);
  await step(editor.cookie,'rework');let flowOrder=await step(returnOperator.cookie,'confirm');assert.equal(flowOrder.round,2);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);
- await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);
+ await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);assert.equal(flowOrder.confirmationHours,48);assert.equal(flowOrder.noAnswerDeadline,new Date(Date.parse(flowOrder.confirmationStartedAt)+48*3600000).toISOString());
  await step(editor.cookie,'refused',400);
  await step(editor.cookie,'rework');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,3);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
@@ -417,12 +417,77 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(noticeClient.id,noticeClient.phone,JSON.stringify(noticeClient));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(noticeOrder.id,noticeClient.id,JSON.stringify(noticeOrder));
  const handoffReminder=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.find(r=>r.kind==='draft'&&r.orderId===noticeOrder.id);assert.ok(handoffReminder);assert.equal(handoffReminder.resolved,false);
- await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'confirm'});
+ let confirmed=await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'confirm'});
+ assert.equal(confirmed.confirmationHours,48);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.confirmationStartedAt)+48*3600000).toISOString());
+ const firstDeadline=confirmed.noAnswerDeadline;
+ for(const contact of ['missed','callback']){
+  await policyAction(editor.cookie,{action:'contact',id:noticeOrder.id,contact,reason:'Test',due:new Date(Date.parse(firstDeadline)+1).toISOString()},400);
+  confirmed=await policyAction(editor.cookie,{action:'contact',id:noticeOrder.id,contact,reason:'Test',due:firstDeadline});assert.equal(confirmed.noAnswerDeadline,firstDeadline);
+ }
+ confirmed=await policyAction(editor.cookie,{action:'updateOrder',id:noticeOrder.id,comment:'Changed during confirmation',addressConfirmed:true});assert.equal(confirmed.noAnswerDeadline,firstDeadline);
+ await setPolicy({confirmationHours:1,extraConfirmationHours:2,finalHours:24});
+ assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===noticeOrder.id).noAnswerDeadline,firstDeadline);
+ confirmed=await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'extra'});assert.equal(confirmed.confirmationHours,2);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.confirmationStartedAt)+2*3600000).toISOString());
+ for(const contact of ['missed','callback'])await policyAction(editor.cookie,{action:'contact',id:noticeOrder.id,contact,reason:'Test',due:new Date(Date.parse(confirmed.noAnswerDeadline)+1).toISOString()},400);
+ await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'rework',reason:'Test'});
+ confirmed=await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'extra',finalHandoffConfirmed:true});assert.equal(confirmed.finalConfirmHours,24);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.finalHandoffAt)+86400000).toISOString());
+ // Disabled initial and repeated stages remain disabled even after their settings change.
+ await setPolicy({confirmationHours:null,extraConfirmationHours:null});
+ const untimed={...noticeOrder,id:'untimed-confirmation',status:'draft'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(untimed.id,untimed.clientId,JSON.stringify(untimed));
+ let noTimer=await policyAction(policyOperator.cookie,{action:'transition',id:untimed.id,to:'confirm'});assert.equal(noTimer.confirmationHours,null);assert.equal(noTimer.noAnswerDeadline,undefined);
+ noTimer=await policyAction(editor.cookie,{action:'transition',id:untimed.id,to:'extra'});assert.equal(noTimer.confirmationHours,null);assert.equal(noTimer.noAnswerDeadline,undefined);
+ await setPolicy(originalPolicy);
+ assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===untimed.id).noAnswerDeadline,undefined);
+
  const handed=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.find(r=>r.id===handoffReminder.id);assert.equal(handed.resolved,true);assert.equal(handed.text,'Заказ передан логисту');
  db.prepare("UPDATE orders SET data=json_set(data,'$.status','draft','$.draftHours',NULL) WHERE id=?").run(noticeOrder.id);
  const disabledReminders=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.filter(r=>r.kind==='draft'&&r.orderId===noticeOrder.id);assert.equal(disabledReminders.length,1);assert.equal(disabledReminders[0].resolved,true);
  await setPolicy(originalPolicy);
  console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
+
+ // Replies belong to the requester and survive closing the form, retries and using permission.
+ const approvalClient={...noticeClient,id:'approval-client',phone:'+79990000989',createdAt:new Date().toISOString()};
+ const approvalOrder={...noticeOrder,id:'approval-existing',clientId:approvalClient.id,items:[],createdAt:approvalClient.createdAt};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(approvalClient.id,approvalClient.phone,JSON.stringify(approvalClient));
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(approvalOrder.id,approvalClient.id,JSON.stringify(approvalOrder));
+ const approvalPeer=await fixture('approval-peer');
+ async function approvalCall(cookie,body,status=200){const r=await call('/api/crm',{cookie,body:{clientId:approvalClient.id,...body}});assert.equal(r.status,status,r.text);return r.data;}
+ let requested=await approvalCall(policyOperator.cookie,{action:'requestOrder'});
+ let request=requested.state.clients.find(c=>c.id===approvalClient.id).orderRequest;
+ assert.ok(!(requested.state.reminders||[]).some(r=>r.requestId===request.id));
+ assert.ok((await call('/api/crm',{cookie:cookies.head})).data.reminders.some(r=>r.requestId===request.id));
+ await approvalCall(policyOperator.cookie,{action:'decideOrderRequest',requestId:request.id,decision:'approved'},400);
+ const hourAgo=new Date(Date.now()-3600000).toISOString();
+ db.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest.at',?) WHERE id=?").run(hourAgo,approvalClient.id);
+ await approvalCall(cookies.admin,{action:'decideOrderRequest',requestId:request.id,decision:'rejected'});
+ const rejectionId='decision:'+request.id;
+ const persisted=JSON.parse(db.prepare('SELECT data FROM reminders WHERE employee_id=? AND id=?').get(policyOperator.e.id,rejectionId).data);
+ assert.equal(persisted.decision,'rejected');assert.ok(Date.parse(persisted.at)>Date.parse(hourAgo)+3500000);
+ let decisionReminders=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders;
+ assert.equal(decisionReminders.filter(r=>r.id===rejectionId).length,1);assert.equal(decisionReminders.find(r=>r.id===rejectionId).readAt,undefined);
+ assert.ok(!(await call('/api/crm',{cookie:approvalPeer.cookie})).data.reminders.some(r=>r.id===rejectionId));
+ await call('/api/crm',{cookie:approvalPeer.cookie,body:{action:'readReminder',id:rejectionId}});
+ assert.equal(db.prepare('SELECT read_at FROM reminders WHERE employee_id=? AND id=?').get(policyOperator.e.id,rejectionId).read_at,null);
+ await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'readReminder',id:rejectionId}});
+ requested=await approvalCall(policyOperator.cookie,{action:'requestOrder'});request=requested.state.clients.find(c=>c.id===approvalClient.id).orderRequest;
+ // A notification failure must roll back the decision, so the requester cannot miss it.
+ db.exec("CREATE TRIGGER fail_decision BEFORE INSERT ON reminders WHEN NEW.id LIKE 'decision:%' BEGIN SELECT RAISE(ABORT,'test decision rollback'); END;");
+ await approvalCall(cookies.head,{action:'decideOrderRequest',requestId:request.id,decision:'approved'},400);
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(approvalClient.id).data).orderRequest.status,'pending');
+ db.exec('DROP TRIGGER fail_decision');
+ await approvalCall(cookies.head,{action:'decideOrderRequest',requestId:request.id,decision:'approved'});
+ await approvalCall(cookies.admin,{action:'decideOrderRequest',requestId:request.id,decision:'rejected'},400);
+ const approvalId='decision:'+request.id;
+ const createdExtra=await approvalCall(policyOperator.cookie,{action:'createOrder',items:[],addressConfirmed:true,delivery:'moscow_courier'});
+ assert.equal(createdExtra.state.clients.find(c=>c.id===approvalClient.id).orderRequest,undefined);
+ const history=createdExtra.state.reminders;
+ assert.ok(history.find(r=>r.id===rejectionId).readAt);assert.equal(history.find(r=>r.id===approvalId).decision,'approved');
+ await approvalCall(policyOperator.cookie,{action:'createOrder',items:[],addressConfirmed:true},400);
+ // Recover a decision made before notifications were added.
+ db.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest',json(?)) WHERE id=?").run(JSON.stringify({...request,id:'legacy-rejected',status:'rejected',at:hourAgo}),approvalClient.id);
+ assert.ok((await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.some(r=>r.id==='decision:legacy-rejected'&&r.decision==='rejected'));
+ console.log('Order decisions: delayed admin rejection, head approval, requester isolation, atomic notification, read history, one-use permission and legacy recovery passed.');
 
  const baseOverview=await call('/api/base',{cookie:cookies.admin});assert.equal(baseOverview.status,200,baseOverview.text);assert.ok(baseOverview.data.config.M.sheets.some(s=>s.name==='П'));assert.equal('clients' in baseOverview.data,false);
  assert.equal((await call('/api/base',{cookie:policyOperator.cookie})).status,403);
