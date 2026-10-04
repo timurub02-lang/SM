@@ -126,7 +126,7 @@ try{
  const editor=await fixture('editing-logistic','1','logistic');records('one');
  for(const status of statuses){
   const id='one-o-'+status;
-  const body={action:'updateOrder',id,version:1,address:'Corrected address',delivery:'cdek_courier',comment:'Confirmed with client'};
+  const body={action:'updateOrder',addressConfirmed:true,id,version:1,address:'Corrected address',delivery:'cdek_courier',comment:'Confirmed with client'};
   const r=await call('/api/crm',{cookie:editor.cookie,body});
   assert.equal(r.status,['redeemed','returned'].includes(status)?400:200,status+': '+r.text);
   const saved=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);
@@ -138,9 +138,9 @@ try{
  assert.equal(savedOrder().deliveryReset,undefined);
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...savedOrder(),manualDeliveryCost:0,packingWaybillAt:new Date().toISOString()}),noticeId);
  async function editNotice(body){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(noticeId).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{id:noticeId,version,...body}});assert.equal(r.status,200,r.text);return savedOrder();}
- let notice=await editNotice({action:'updateOrder',address:'New address',delivery:'moscow_courier',comment:'Correction'});
+ let notice=await editNotice({action:'updateOrder',addressConfirmed:true,address:'New address',delivery:'moscow_courier',comment:'Correction'});
  assert.equal(notice.deliveryReset.calculation,true);assert.equal(notice.deliveryReset.waybill,true);assert.equal(notice.manualDeliveryCost,undefined);assert.equal(notice.packingWaybillAt,undefined);
- notice=await editNotice({action:'updateOrder',address:'New address',delivery:'moscow_courier',comment:'Another comment'});assert.equal(notice.deliveryReset.waybill,true);
+ notice=await editNotice({action:'updateOrder',addressConfirmed:true,address:'New address',delivery:'moscow_courier',comment:'Another comment'});assert.equal(notice.deliveryReset.waybill,true);
  notice=await editNotice({action:'saveManualDeliveryCost',amount:0});assert.equal(notice.deliveryReset.calculation,false);assert.equal(notice.deliveryReset.waybill,true);
  notice=await editNotice({action:'markPackingWaybill'});assert.equal(notice.deliveryReset,undefined);
  console.log('Delivery reset notice: absent before calculation, persists after edits, clears only after replacements.');
@@ -384,7 +384,7 @@ try{
  policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'});assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
  await setPolicy({...originalPolicy,finalHours:3});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).reworkDeadline,undefined);
- policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',items:policyOrder.items,address:'Updated address'});assert.equal(policyOrder.address,'Updated address');
+ policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',addressConfirmed:true,items:policyOrder.items,address:'Updated address'});assert.equal(policyOrder.address,'Updated address');
  policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'extra',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,3);assert.ok(Math.abs(Date.parse(policyOrder.noAnswerDeadline)-Date.now()-3*3600000)<10000);
  const frozenFinal=policyOrder.noAnswerDeadline;await setPolicy({finalHours:1});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,frozenFinal);
@@ -440,5 +440,28 @@ try{
  const cleanId=JSON.parse(db.prepare('SELECT data FROM clients WHERE phone=?').get('+79991237704').data).id;
  const cleanAddress=await call('/api/crm',{cookie:cookies.admin,body:{...suspectCreate,clientId:cleanId,address:'142106, Московская обл, г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:{...suspectAddress,postalCode:'142106',house:'д 16',flat:'кв 15'}}});assert.equal(cleanAddress.status,200,cleanAddress.text);
  console.log('Order address HTTP: warning without writes, explicit boolean confirmation, audit, client synchronization and normal creation passed.');
+ // Regression: an operator removes a postcode from an existing order.
+ const addressEditor=await fixture('address-edit-operator');
+ const editClient=await call('/api/crm',{cookie:cookies.admin,body:{action:'createClient',client:{...manualClient,phone:'+79991237705',owner:addressEditor.e.id}}});assert.equal(editClient.status,200,editClient.text);
+ const addressClient=JSON.parse(db.prepare('SELECT data FROM clients WHERE phone=?').get('+79991237705').data);
+ const validParts={...suspectAddress,postalCode:'142106',house:'д 16',flat:'кв 15'};
+ const createdForEdit=await call('/api/crm',{cookie:addressEditor.cookie,body:{...suspectCreate,clientId:addressClient.id,address:'142106, г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:validParts}});assert.equal(createdForEdit.status,200,createdForEdit.text);
+ let orderForEdit=createdForEdit.data.state.orders.find(o=>o.clientId===addressClient.id);
+ const withoutPostcode={action:'updateOrder',id:orderForEdit.id,version:orderForEdit.version,items:[],address:'г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:{...validParts,postalCode:''}};
+ const orderBeforeEdit=db.prepare('SELECT * FROM orders WHERE id=?').get(orderForEdit.id);
+ const clientBeforeEdit=db.prepare('SELECT * FROM clients WHERE id=?').get(addressClient.id);
+ for(const addressConfirmed of [undefined,false,'true']){
+  const failedEdit=await call('/api/crm',{cookie:addressEditor.cookie,body:{...withoutPostcode,addressConfirmed}});assert.equal(failedEdit.status,400,failedEdit.text);assert.match(failedEdit.data.error,/Индекс не определён/);
+  assert.deepEqual(db.prepare('SELECT * FROM orders WHERE id=?').get(orderForEdit.id),orderBeforeEdit);
+  assert.deepEqual(db.prepare('SELECT * FROM clients WHERE id=?').get(addressClient.id),clientBeforeEdit);
+ }
+ const confirmedEdit=await call('/api/crm',{cookie:addressEditor.cookie,body:{...withoutPostcode,addressConfirmed:true}});assert.equal(confirmedEdit.status,200,confirmedEdit.text);
+ orderForEdit=confirmedEdit.data.state.orders.find(o=>o.id===orderForEdit.id);assert.equal(orderForEdit.addressParts.postalCode,'');
+ assert.ok(confirmedEdit.data.state.events.some(e=>e.orderId===orderForEdit.id&&e.text.includes('сохранение подтверждено несмотря на предупреждение')));
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(addressClient.id).data).addressParts.postalCode,'');
+ const fixedEdit=await call('/api/crm',{cookie:addressEditor.cookie,body:{...withoutPostcode,version:orderForEdit.version,address:'142106, г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:validParts}});assert.equal(fixedEdit.status,200,fixedEdit.text);
+ orderForEdit=fixedEdit.data.state.orders.find(o=>o.id===orderForEdit.id);
+ const basketOnly=await call('/api/crm',{cookie:addressEditor.cookie,body:{action:'updateOrder',id:orderForEdit.id,version:orderForEdit.version,items:[],comment:'Only comment changes'}});assert.equal(basketOnly.status,200,basketOnly.text);assert.deepEqual(basketOnly.data.state.orders.find(o=>o.id===orderForEdit.id).addressParts,validParts);
+ console.log('Order editing address HTTP: operator postcode removal blocked, order/client unchanged, explicit override audited, correction accepted and omitted address parts preserved.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

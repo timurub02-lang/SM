@@ -186,7 +186,7 @@ async function handlePOST(request:Request){
    next.delivery=deliverySchema.parse(p.delivery);text="Изменён способ доставки";
   }else if(p.action==="updateOrder"){
    if(!isLogistic(employee.role)&&!["draft","rework"].includes(o.status))throw new Error("Корзину можно менять на этапе оформления или возврата оператору");
-   next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts);next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)?o.items:itemsSchema.parse(p.items);next.comment=z.string().max(3000).parse(p.comment||"");text=isLogistic(employee.role)?"Логист уточнил доставку, адрес и комментарий заказа":"Обновлены доставка, адрес, корзина и комментарий менеджера";
+   next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts??(p.address===undefined||p.address===o.address?o.addressParts:undefined));next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)?o.items:itemsSchema.parse(p.items);next.comment=z.string().max(3000).parse(p.comment||"");text=isLogistic(employee.role)?"Логист уточнил доставку, адрес и комментарий заказа":"Обновлены доставка, адрес, корзина и комментарий менеджера";
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
    const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);
@@ -211,6 +211,11 @@ async function handlePOST(request:Request){
    if(isLogistic(employee?.role))next.logistic=employee.id;
    text=`${next.contact==="missed"?"Недозвон":"Перезвон"}: ${next.reason}${next.due?" · "+new Date(next.due).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК":""}`;
   }else{text="Комментарий: "+z.string().trim().min(1).max(3000).parse(p.text);}
+  if(p.action==="updateOrder"){
+   const addressWarnings=orderAddressWarnings(next.address||'',next.addressParts);
+   if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите сохранение заказа вручную.');
+   if(addressWarnings.length)text+=' · адрес проверен вручную, сохранение подтверждено несмотря на предупреждение: '+addressWarnings.map(w=>w.message).join(' ');
+  }
   if(o.courier&&['updateOrder','updateDelivery','saveManualDeliveryCost','selectCdekTariff','markPackingWaybill','updateWaybillComment'].includes(p.action))throw Error('Заказ уже передан курьеру. Данные отправления зафиксированы');
   if(p.action!=="selectCdekTariff"&&next.cdekTariff&&(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)))delete next.cdekTariff;
   if(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)){delete next.manualDeliveryCost;delete next.packingWaybillAt;}
