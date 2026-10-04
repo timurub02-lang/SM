@@ -1,11 +1,12 @@
 "use client";
+import {useSessionTab} from "@/hooks/use-session-tab";
 import {useState,useEffect} from 'react';
 import {Toaster} from 'sonner';
 import {money,stamp,type State,type Employee,type Order} from '@/lib/crm';
 import {courierBalance,courierStage} from '@/lib/courier';
 type Props={state:State;employee:Employee;busy:boolean;error:string;refresh:()=>Promise<void>;mutate:(p:Record<string,unknown>)=>Promise<boolean>};
 export function CourierApp({state,employee,busy,error,refresh,mutate}:Props){
- const [tab,setTab]=useState('pending');const [query,setQuery]=useState('');const [action,setAction]=useState<{id:string;to:'redeemed'|'returned'}|null>(null);const [reason,setReason]=useState('');
+ const [tab,setTab]=useSessionTab<string>(`crm-navigation:${employee.id}:courier:tab`,'pending',['pending','delivery','money','return','settled']);const [query,setQuery]=useState('');const [action,setAction]=useState<{id:string;to:'redeemed'|'returned'}|null>(null);const [reason,setReason]=useState('');
  const [design,setDesign]=useState('aurora');
  useEffect(()=>{try{setDesign(localStorage.getItem(`courier-design:${employee.id}`)==='classic'?'classic':'aurora');}catch{}},[employee.id]);
  function changeDesign(value:string){setDesign(value);try{localStorage.setItem(`courier-design:${employee.id}`,value);}catch{}}
