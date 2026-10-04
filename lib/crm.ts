@@ -24,7 +24,7 @@ export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
 export const deliveryLabels:Record<DeliveryMethod,string>={"":"Не выбран",cdek_pickup:"СДЭК · ПВЗ",cdek_courier:"СДЭК · Курьер",moscow_courier:"Москва · Курьер",russian_post:"Почта России"};
-export type Order={pvMarkedAt?:string;pv?:boolean;reworkHours?:number|null;finalConfirmHours?:number|null;courier?:{id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
+export type Order={draftHours?:number|null;pvMarkedAt?:string;pv?:boolean;reworkHours?:number|null;finalConfirmHours?:number|null;courier?:{id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
 export type Employee={baseAccess?:"M"|"J"|"both";hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={id:string;clientId:string;at:string;text:string;source:string};
@@ -58,11 +58,16 @@ export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  }
  return isLogistic(role)?allowed.filter(to=>to!=="refused"||!!o.finalHandoffAt&&["confirm","extra"].includes(o.status)):allowed;
 }
+export function draftDeadline(o:Pick<Order,"status"|"createdAt"|"draftHours">){
+ if(o.status!=="draft"||o.draftHours===null)return undefined;
+ return new Date(Date.parse(o.createdAt)+(o.draftHours??24)*3600000).toISOString();
+}
 export function finalNoAnswerDeadline(o:Order,contact:string,now:string){
  if(o.finalConfirmHours===null||!o.finalHandoffAt||!["confirm","extra"].includes(o.status))return undefined;
  return new Date(Date.parse(o.finalHandoffAt)+(o.finalConfirmHours??24)*3600000).toISOString();
 }
 export function validateTransition(o:Order,to:Status,c:Client,reason:string,role?:string){
+ const deadline=draftDeadline(o);if(deadline&&Date.now()>=Date.parse(deadline))throw Error("Срок оформления истёк. Заказ подлежит отмене");
  if(o.status==="rework"&&o.reworkDeadline&&Date.now()>=Date.parse(o.reworkDeadline))throw Error("Срок доработки истёк. Заказ подлежит отмене");
  if(["draft","rework"].includes(o.status)&&["confirm","extra"].includes(to)){const missing=orderMissingField(o,c);if(missing)throw Error(missing.label);}
  const allowed=allowedOrderTransitions(o,role);

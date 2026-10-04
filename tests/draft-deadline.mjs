@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {openDatabase} from '../server/sqlite.ts';
+import {reconcileOrderTimers,reconcileClients} from '../lib/base-retention-store.ts';
+import {draftDeadline,applyRetention,validateTransition} from '../lib/crm.ts';
+import {inventorySQL} from '../lib/inventory-sql.ts';
+const db=openDatabase(':memory:'),now=Date.now(),at=new Date(now-25*3600000).toISOString();
+try{
+ for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await db.prepare(sql).run();
+ await db.batch(inventorySQL.map(sql=>db.prepare(sql)));
+ const client={id:'client',phone:'+79990008005',name:'Test',owner:'operator',sheet:'К',returnSheet:'Т2',source:'Test',assignedUntil:'',createdAt:at,version:1};
+ await db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(client.id,client.phone,JSON.stringify(client)).run();
+ await db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').bind('product','test',JSON.stringify({name:'Test'})).run();
+ await db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').bind('stock','product',100,'Test','operator',at).run();
+ const base={id:'expired',clientId:client.id,manager:'operator',status:'draft',items:[{name:'Test',quantity:1,price:100}],createdAt:at,updatedAt:new Date(now).toISOString(),contact:'callback',due:new Date(now+3600000).toISOString(),round:1,extra:false,version:1};
+ const orders=[base,{...base,id:'recent',createdAt:new Date(now-23*3600000).toISOString()},{...base,id:'disabled',draftHours:null},{...base,id:'custom',draftHours:48},{...base,id:'passed',status:'confirm'}];
+ for(const o of orders)await db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(o.id,o.clientId,JSON.stringify(o)).run();
+ const read=async()=> (await db.prepare('SELECT data,version FROM orders').all()).results.map(r=>({...JSON.parse(r.data),version:r.version}));
+ assert.equal(draftDeadline(base),new Date(Date.parse(at)+86400000).toISOString());
+ assert.equal(draftDeadline(orders[2]),undefined);assert.equal(draftDeadline(orders[4]),undefined);
+ assert.throws(()=>validateTransition(base,'confirm',client,''),/Срок оформления истёк/);
+ assert.equal((await db.prepare('SELECT reserved FROM product_stock').first()).reserved,5);
+ assert.equal(await reconcileOrderTimers(db,orders,[]),true);
+ const after=await read(),expired=after.find(o=>o.id==='expired');
+ assert.equal(expired.status,'refused');assert.equal(expired.contact,'none');assert.equal(expired.due,'');assert.equal(expired.cancelledAt,draftDeadline(base));
+ for(const id of ['recent','disabled','custom'])assert.equal(after.find(o=>o.id===id).status,'draft');
+ assert.equal(after.find(o=>o.id==='passed').status,'confirm');
+ assert.equal((await db.prepare('SELECT reserved FROM product_stock').first()).reserved,4);
+ assert.equal(await reconcileOrderTimers(db,await read(),[]),false);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM events').first()).n,1);
+ // A stale snapshot cannot cancel an order already handed to logistics.
+ await db.prepare("UPDATE orders SET data=json_set(data,'$.status','confirm'),version=version+1 WHERE id='recent'").run();
+ assert.equal(await reconcileOrderTimers(db,[{...orders[1],createdAt:at}],[]),false);
+ assert.equal(applyRetention(client,[expired],now).owner,'');assert.equal(applyRetention(client,[expired],now).sheet,'Т2');
+ assert.equal(applyRetention(client,after,now).owner,'operator');
+ const paid={...base,id:'paid',status:'redeemed',redeemedAt:new Date(now-7*86400000).toISOString()};
+ assert.equal(applyRetention(client,[expired,paid],now).owner,'operator');
+ assert.equal(applyRetention(client,[expired,paid],now+36*86400000).sheet,'П');
+ await db.prepare("UPDATE orders SET data=json_set(data,'$.status','refused'),version=version+1").run();
+ await reconcileClients(db,[client],await read());assert.equal(JSON.parse((await db.prepare('SELECT data FROM clients').first()).data).owner,'');
+ console.log('Draft timer: creation deadline, edits/callbacks, custom/disabled timers, logistics exclusion, idempotence, concurrent handoff, stock release and client retention passed.');
+}finally{db.close();}

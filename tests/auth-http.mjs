@@ -390,6 +390,23 @@ try{
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,frozenFinal);
  db.prepare("UPDATE orders SET data=json_set(data,'$.finalHandoffAt',?) WHERE id=?").run(new Date(Date.now()-4*3600000).toISOString(),policyId);
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).status,'refused');
+ // New drafts freeze the configured duration; both call outcomes respect their deadline.
+ const timerClient={id:'timer-client',name:'Timer client',phone:'+79990000987',owner:policyOperator.e.id,source:'Test',sheet:'К',returnSheet:'Т2',address:'Test address',createdAt:new Date().toISOString()};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(timerClient.id,timerClient.phone,JSON.stringify(timerClient));
+ let timerResult=await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'createOrder',clientId:timerClient.id,items:[{name:'Policy product',quantity:1,price:100}],addressConfirmed:true,delivery:'moscow_courier'}});assert.equal(timerResult.status,200,timerResult.text);
+ let timerOrder=timerResult.data.state.orders.find(o=>o.clientId===timerClient.id);assert.equal(timerOrder.draftHours,24);
+ await setPolicy({draftHours:2});
+ for(const contact of ['missed','callback']){
+  const body={action:'contact',id:timerOrder.id,version:timerOrder.version,contact,reason:'Test',due:new Date(Date.parse(timerOrder.createdAt)+86400001).toISOString()};
+  const rejected=await call('/api/crm',{cookie:policyOperator.cookie,body});assert.equal(rejected.status,400,rejected.text);assert.match(rejected.data.error,/позже срока оформления/);
+  const accepted=await call('/api/crm',{cookie:policyOperator.cookie,body:{...body,due:new Date(Date.parse(timerOrder.createdAt)+86400000).toISOString()}});assert.equal(accepted.status,200,accepted.text);timerOrder=accepted.data.state.orders.find(o=>o.id===timerOrder.id);assert.equal(timerOrder.draftHours,24);
+ }
+ const pastCreated=new Date(Date.now()-25*3600000).toISOString();
+ db.prepare("UPDATE orders SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(pastCreated,timerOrder.id);
+ db.prepare("UPDATE clients SET data=json_set(data,'$.assignmentStartedAt',?) WHERE id=?").run(pastCreated,timerClient.id);
+ const expiredDraft=(await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===timerOrder.id);assert.equal(expiredDraft.status,'refused');assert.equal(expiredDraft.cancelledAt,new Date(Date.parse(pastCreated)+86400000).toISOString());
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(timerClient.id).data).owner,'');
+ await setPolicy(originalPolicy);
  console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
 
  const baseOverview=await call('/api/base',{cookie:cookies.admin});assert.equal(baseOverview.status,200,baseOverview.text);assert.ok(baseOverview.data.config.M.sheets.some(s=>s.name==='П'));assert.equal('clients' in baseOverview.data,false);
