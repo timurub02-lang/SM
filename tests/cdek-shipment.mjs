@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {shipmentPayload,shipmentFormSchema,shipmentResult} from '../lib/cdek-shipment.ts';
+import {shipmentPayload,shipmentFormSchema,shipmentResult,shipmentDeletionResult} from '../lib/cdek-shipment.ts';
 const client={name:'Получатель',phone:'+79991234567'};
 const order={id:'SM-1',status:'packing',delivery:'cdek_pickup',items:[{name:'Кроссовки',quantity:2,price:15000}],address:'Москва, ул. Тестовая, д. 1',addressParts:{postalCode:'101000',house:'1'},cdekTariff:{code:136,params:{delivery:'cdek_pickup',originPostalCode:'127422',originMode:'warehouse',weight:2.4,length:35,width:25,height:30}}};
 const products=[{name:'Кроссовки',sku:'SHOES-001',weight:1000,cost:15000,payment:15000}];
@@ -29,3 +29,11 @@ assert.equal(shipmentResult({requests:[{type:'CREATE',state:'INVALID',errors:[{c
 assert.equal(shipmentResult({entity:{cdek_number:'123'},requests:[{type:'CREATE',state:'ACCEPTED'}]}).state,'pending');
 console.log('CDEK payload, pickup/courier, payment and asynchronous status checks passed');
 assert.equal(shipmentResult({entity:{uuid:'x',cdek_number:'123'},requests:[{type:'CREATE',state:'SUCCESSFUL'},{type:'UPDATE',state:'INVALID',errors:[{code:'unrelated'}]}]}).state,'ready');
+const deletion={at:new Date().toISOString(),actor:'admin',reason:'Correct order',previousRequests:['old-delete']};
+assert.equal(shipmentDeletionResult({requests:[{type:'CREATE',state:'SUCCESSFUL'}]},deletion).state,'pending');
+assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state:'SUCCESSFUL',request_uuid:'old-delete'}]},deletion).state,'pending');
+assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state:'SUCCESSFUL',request_uuid:'new-delete'}]},deletion).state,'deleted');
+assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state:'SUCCESSFUL',request_uuid:'other'}]},{...deletion,requestId:'new-delete'}).state,'pending');
+assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state:'INVALID',request_uuid:'new-delete',errors:[{message:'Parcel moved'}]}]},deletion).state,'rejected');
+for(const state of ['ACCEPTED','WAITING'])assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state,request_uuid:'new-delete'}]},deletion).state,'pending');
+console.log('CDEK asynchronous deletion request identity and confirmation checks passed');

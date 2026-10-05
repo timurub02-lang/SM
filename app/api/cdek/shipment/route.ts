@@ -7,7 +7,7 @@ import {rankRecipientPoints} from '@/lib/cdek-points';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {cdekToken} from '@/lib/cdek';
-import {shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,type Shipment} from '@/lib/cdek-shipment';
+import {shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,shipmentDeletionResult,deletionRequestKey,returnedFromCdek,type Shipment} from '@/lib/cdek-shipment';
 import type {Order,Client} from '@/lib/crm';
 import type {Product} from '@/lib/warehouse';
 import {z} from 'zod';
@@ -28,7 +28,7 @@ async function apiFor(slot:number){
  const config=await db().prepare('SELECT data FROM settings WHERE id=?').bind(`cdek-${slot}`).first<{data:string}>();
  if(!config)throw Error('Аккаунт СДЭК не подключён');const keys=JSON.parse(config.data);
  const token=await cdekToken(keys.clientId,keys.clientSecret);
- return async(path:string,body?:unknown)=>fetch(`https://api.cdek.ru/v2${path}`,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
+ return async(path:string,body?:unknown,method=body?'POST':'GET')=>fetch(`https://api.cdek.ru/v2${path}`,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
 }
 async function json(response:Response){const data=await response.json();if(!response.ok)throw Error(cdekErrors(data)||`СДЭК: ошибка ${response.status}`);return data as any;}
 const reply=(data:unknown)=>Response.json(data,{headers:{'Cache-Control':'no-store'}});
@@ -48,7 +48,7 @@ async function handleGET(req:Request){
   }
   const products=await db().prepare('SELECT data FROM products').all<{data:string}>();
   const warehouse=await db().prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
-  return reply({shipment:c.shipment,warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:p?.payment};})});
+  return reply({shipment:c.shipment,canDelete:['admin','chief_logistic'].includes(c.actor.role),warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:p?.payment};})});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }
 async function handlePOST(req:Request){
@@ -56,9 +56,57 @@ async function handlePOST(req:Request){
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
   const raw=await req.text();if(raw.length>6000)throw Error('Слишком большой запрос');
-  const p=z.object({actorId:z.string().min(1),orderId:z.string().min(1),action:z.enum(['create','refresh','print']),version:z.number().int().optional(),form:shipmentFormSchema.optional(),recoveryUuid:uuidSchema.optional()}).parse(JSON.parse(raw));
+  const p=z.object({actorId:z.string().min(1),orderId:z.string().min(1),action:z.enum(['create','refresh','print','delete']),version:z.number().int().optional(),form:shipmentFormSchema.optional(),recoveryUuid:uuidSchema.optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional()}).parse(JSON.parse(raw));
   const c=await context(p.actorId,p.orderId);const d=db();
-  const save=async(next:Shipment,previous:string)=>{await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(JSON.stringify(next),c.key,previous).run();};
+  const save=async(next:Shipment,previous:string)=>{
+   const result=await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(JSON.stringify(next),c.key,previous).run();
+   if(!result.meta.changes)throw Error('Отправление изменилось. Обновите карточку');
+  };
+  const finishDeletion=async(shipment:Shipment,previous:string)=>{
+   const at=new Date().toISOString(),mutation=crypto.randomUUID();
+   const next={...returnedFromCdek(c.order,at),_mutation:mutation};
+   const event={id:mutation,clientId:c.order.clientId,orderId:c.order.id,at,actor:shipment.deletion!.actor,text:'Вернули из СДЭК · удалена накладная № '+(shipment.number||'—')+' · UUID '+shipment.uuid+' · '+shipment.account+' · Причина: '+shipment.deletion!.reason};
+   const changed="EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)";
+   const result=await d.batch([
+    d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)').bind(JSON.stringify(next),c.order.id,c.order.version,c.key,previous),
+    d.prepare('INSERT INTO settings(id,data) SELECT ?,? WHERE '+changed).bind('cdek-archive-'+shipment.attempt,JSON.stringify({...shipment,state:'deleted',deletedAt:at}),c.order.id,mutation),
+    d.prepare('DELETE FROM settings WHERE id=? AND data=? AND '+changed).bind(c.key,previous,c.order.id,mutation),
+    d.prepare('INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE '+changed).bind(mutation,c.order.clientId,c.order.id,at,JSON.stringify(event),c.order.id,mutation)
+   ]);
+   if(!result[0].meta.changes)throw Error('Заказ изменился. Обновите статус отправления для завершения возврата из СДЭК');
+   return reply({shipment:null,changed:true,message:'Вернули из СДЭК. Внесите правки и выгрузите заказ заново. Старую накладную использовать нельзя.'});
+  };
+  const deletionResponse=async(shipment:Shipment,previous:string,data:any,direct=false,httpStatus=200)=>{
+   if(data.entity?.uuid&&data.entity.uuid!==shipment.uuid)throw Error('СДЭК вернул другой идентификатор отправления');
+   const result=shipmentDeletionResult(data,shipment.deletion!,direct);
+   if(result.state==='deleted'&&httpStatus<300)return finishDeletion(shipment,previous);
+   if(result.requestId)shipment.deletion={...shipment.deletion!,requestId:result.requestId};
+   if(result.state==='rejected'||direct&&httpStatus>=400&&httpStatus<500){
+    shipment.state='ready';delete shipment.deletion;
+    shipment.error='Удаление отклонено СДЭК: '+(result.error||'заказ нельзя удалить');
+   }else shipment.error=result.error||'СДЭК ещё не подтвердил удаление. Правки и повторная выгрузка временно недоступны.';
+   await save(shipment,previous);return reply({shipment,message:shipment.error});
+  };
+  if(p.action==='delete'){
+   if(!['admin','chief_logistic'].includes(c.actor.role))return Response.json({error:'Удалить отправление может только администратор или главный логист'},{status:403});
+   if(p.confirmed!==true||!p.reason)throw Error('Укажите причину и подтвердите удаление отправления из СДЭК');
+   if(c.order.version!==p.version)throw Error('Заказ изменён. Обновите карточку');
+   if(!c.shipment?.uuid||c.shipment.state!=='ready')throw Error('Удаление доступно после подтверждения выгрузки. Сначала обновите статус отправления');
+   if(!['packing','phone','shipping','pickup'].includes(c.order.status))throw Error('Удаление доступно только до завершения доставки');
+   const api=await apiFor(c.shipment.slot),uuid=uuidSchema.parse(c.shipment.uuid);
+   const data=await json(await api('/orders/'+uuid));
+   if(data.entity?.uuid!==uuid||data.entity?.number!==c.order.id)throw Error('СДЭК вернул другое отправление');
+   const latest=[...(data.entity?.statuses||[])].filter((s:any)=>!s.deleted&&Number.isFinite(Date.parse(s.date_time))).sort((a:any,b:any)=>Date.parse(b.date_time)-Date.parse(a.date_time))[0];
+   if(latest?.code!=='CREATED')throw Error('СДЭК разрешает удалять только отправление в статусе «Создан», до движения посылки на складе. Текущий статус: '+(latest?.code||'неизвестен'));
+   const shipment:Shipment={...c.shipment,state:'deleting',error:undefined,deletion:{at:new Date().toISOString(),reason:p.reason,actor:c.actor.login,previousRequests:(data.requests||[]).filter((r:any)=>r.type==='DELETE').map(deletionRequestKey)}};
+   const pending=JSON.stringify(shipment);
+   const lock=await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)').bind(pending,c.key,c.record!.data,c.order.id,c.order.version).run();
+   if(!lock.meta.changes)throw Error('Отправление изменилось. Обновите карточку');
+   let response:Response,answer:any;
+   try{response=await api('/orders/'+uuid,undefined,'DELETE');answer=await response.json();}
+   catch{shipment.error='Ответ на удаление не получен. Обновите статус отправления: до подтверждения СДЭК повторная выгрузка заблокирована.';await save(shipment,pending);return reply({shipment,message:shipment.error});}
+   return deletionResponse(shipment,pending,answer,true,response.status);
+  }
   if(p.action==='create'){
    if(c.shipment&&c.shipment.state!=='invalid')return reply({shipment:c.shipment});
    if(c.order.version!==p.version)throw Error('Заказ изменён. Закройте карточку и откройте заново');
@@ -99,9 +147,11 @@ async function handlePOST(req:Request){
   if(p.action==='refresh'){
    const uuid=uuidSchema.parse(shipment.uuid||p.recoveryUuid);
    const data=await json(await api(`/orders/${uuid}`));
-   if(data.entity?.number!==c.order.id)throw Error('Этот UUID относится к другому заказу');
-   Object.assign(shipment,shipmentResult(data));await save(shipment,c.record!.data);
    if(data.entity?.uuid!==uuid)throw Error('СДЭК вернул другой идентификатор отправления');
+   if(data.entity?.number&&data.entity.number!==c.order.id)throw Error('Этот UUID относится к другому заказу');
+   if(shipment.state==='deleting'&&shipment.deletion)return deletionResponse(shipment,c.record!.data,data);
+   if(data.entity?.number!==c.order.id)throw Error('СДЭК не подтвердил номер заказа');
+   Object.assign(shipment,shipmentResult(data));await save(shipment,c.record!.data);
    const rules=await d.prepare("SELECT data FROM settings WHERE id='cdek-status-mapping'").first<{data:string}>();
    const config=rules?JSON.parse(rules.data):{mapping:{},revision:''};
    const patch=cdekStatusPatch(c.order,data.entity,config.mapping,config.revision);
@@ -109,8 +159,8 @@ async function handlePOST(req:Request){
    if(patch){
     const mutation=crypto.randomUUID(),at=new Date().toISOString();
     const next={...c.order,...patch,updatedAt:at,_mutation:mutation};
-    const event={id:mutation,clientId:c.order.clientId,orderId:c.order.id,at,actor:'СДЭК',text:patch.status?`СДЭК: ${patch.cdekStatus.code} → ${statuses[patch.status]}`:`Обновлён статус СДЭК: ${patch.cdekStatus.code}`};
-    const result=await d.batch([d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(next),c.order.id,c.order.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,event.clientId,event.orderId,at,JSON.stringify(event),c.order.id,mutation)]);
+    const event={id:mutation,clientId:c.order.clientId,orderId:c.order.id,at,actor:'СДЭК',text:patch.status?`СДЭК: ${patch.cdekStatus?.code} → ${statuses[patch.status]}`:patch.cdekStatus?`Обновлён статус СДЭК: ${patch.cdekStatus.code}`:"Уточнена дата регистрации отправления в СДЭК"};
+    const result=await d.batch([d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)').bind(JSON.stringify(next),c.order.id,c.order.version,c.key,JSON.stringify(shipment)),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,event.clientId,event.orderId,at,JSON.stringify(event),c.order.id,mutation)]);
     if(!result[0].meta.changes)throw Error('Заказ изменился во время обновления. Повторите проверку статуса');
     changed=true;
    }
@@ -128,6 +178,8 @@ async function handlePOST(req:Request){
   const pdf=await api(`/print/orders/${printId}.pdf`);if(!pdf.ok)throw Error('Не удалось скачать PDF из СДЭК');
   const bytes=await pdf.arrayBuffer();if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw Error('СДЭК вернул некорректный PDF');
   if(!shipment.downloadedAt){const previous=JSON.stringify(shipment);shipment.downloadedAt=new Date().toISOString();await save(shipment,previous);}
+  const current=await d.prepare('SELECT data FROM settings WHERE id=?').bind(c.key).first<{data:string}>();
+  if(!current||current.data!==JSON.stringify(shipment))throw Error('Отправление изменилось. Эта накладная больше недоступна');
   return new Response(bytes,{headers:{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="cdek-waybill.pdf"','Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(x=>x.message).join('; '):e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }

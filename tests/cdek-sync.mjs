@@ -7,5 +7,6 @@ assert.equal(p.status,'shipping');assert.equal(p.shippedAt,'2026-09-29T21:10:22.
 assert.equal(cdekStatusPatch({...order,...p},entity,{CREATED:'sent'},'r1'),null);
 assert.equal(cdekStatusPatch(order,{...entity,is_return:true},{CREATED:'sent'},'r1'),null);
 assert.equal(cdekStatusPatch(order,entity,{},'r1').status,undefined);
-assert.equal(cdekStatusPatch({...order,cdekStatus:{at:'2026-10-01T00:00:00Z'}},entity,{CREATED:'sent'},'r1'),null);
+assert.equal(cdekStatusPatch({...order,cdekTransferredAt:p.cdekTransferredAt,cdekStatus:{at:'2026-10-01T00:00:00Z'}},entity,{CREATED:'sent'},'r1'),null);
+assert.deepEqual(cdekStatusPatch({...order,cdekStatus:{at:'2026-10-01T00:00:00Z'}},entity,{CREATED:'sent'},'r1'),{cdekTransferredAt:p.cdekTransferredAt},'Backfill the transfer date without reverting to an older status');
 console.log('CDEK mapping, dates, duplicates and stale events passed');

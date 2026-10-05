@@ -4,7 +4,8 @@ import {normalizePhone} from './crm.ts';
 import type {Product} from './warehouse.ts';
 export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).default(''),deliveryPoint:z.string().trim().max(255).default(''),senderAddress:z.string().trim().max(255).default(''),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
-export type Shipment={recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
+export type ShipmentDeletion={at:string;reason:string;actor:string;requestId?:string;previousRequests:string[]};
+export type Shipment={deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
 export function shipmentPayload(order:Order,client:Client,products:Product[],form:ShipmentForm){
  const recipientPhone=normalizePhone(client.phone||'');if(!recipientPhone)throw Error('Укажите корректный телефон в карточке клиента перед выгрузкой в СДЭК');
  const tariff=order.cdekTariff;if(!tariff||tariff.params.delivery!==order.delivery)throw Error('Сначала сохраните тариф доставки');
@@ -34,4 +35,15 @@ export function shipmentResult(data:any):Pick<Shipment,'state'|'uuid'|'number'|'
  const number=data.entity?.cdek_number?String(data.entity.cdek_number):undefined;
  if(request?.state==='INVALID'||error)return {state:'invalid',uuid,error:error||'СДЭК отклонил отправление'};
  return {state:request?.state==='SUCCESSFUL'&&number?'ready':'pending',uuid,number};
+}
+export const deletionRequestKey=(r:any)=>String(r.request_uuid||r.date_time||'');
+export function shipmentDeletionResult(data:any,deletion:ShipmentDeletion,direct=false){
+ const request=(data.requests||[]).filter((r:any)=>r.type==='DELETE'&&(direct||(deletion.requestId?r.request_uuid===deletion.requestId:!deletion.previousRequests.includes(deletionRequestKey(r))))).sort((a:any,b:any)=>String(b.date_time||'').localeCompare(String(a.date_time||'')))[0];
+ const error=cdekErrors({errors:data.errors,requests:request?[request]:[]});
+ return {state:request?.state==='SUCCESSFUL'&&!error?'deleted':request?.state==='INVALID'?'rejected':'pending',error:error||undefined,requestId:request?.request_uuid as string|undefined} as const;
+}
+export function returnedFromCdek(order:Order,at:string):Order{
+ const next={...order,status:'packing' as const,contact:'none' as const,due:'',reason:'',cdekReturnedAt:at,updatedAt:at};
+ delete next.cdekStatus;delete next.cdekTransferredAt;delete next.cdekExported;delete next.cdekWaybillReceived;delete next.cdekDeleting;delete next.shippedAt;delete next.contactAuthor;
+ return next;
 }
