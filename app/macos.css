@@ -285,6 +285,7 @@ button:focus-visible,a:focus-visible { outline: 3px solid #007aff70; outline-off
 .warehouse-table th { padding:10px 16px; text-align:left; white-space:nowrap; }
 .warehouse-table td { padding:7px 16px; line-height:20px; vertical-align:middle; border-top:1px solid #4053710e; font-variant-numeric:tabular-nums; }
 .warehouse-table tbody tr:hover { background:#edf3ff80; }
+.warehouse-table .warehouse-out-of-stock :is(td,.table-link,small,.badge) { color:#8993a3; }
 .warehouse-table .table-link { min-height:32px; }
 .warehouse-table .table-link small { margin-top:2px; line-height:16px; }
 .warehouse-product-source { display:inline-block; margin-left:8px; color:#7b899e; font-size:11px; white-space:nowrap; }
