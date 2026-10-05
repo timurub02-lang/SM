@@ -26,6 +26,7 @@ globalThis.fetch=async(input,options={})=>{
  }
  if(method==='GET'){
   if(state.getFailureUuid===uuid)return response({errors:[{message:'Temporary outage'}]},503);
+  if(order.gone)return response({requests:[{type:'GET',state:'INVALID',errors:[{code:order.goneCode||'v2_entity_not_found',message:'Entity is not found by uuid '+(order.goneUuid||uuid)}]}]},400);
   // Capture the response before waiting to reproduce an in-flight stale refresh.
   const data={entity:{uuid,number:order.number,cdek_number:order.cdek_number,statuses:[{code:order.status,date_time:'2026-10-05T08:00:00Z'}]},requests:[{type:'CREATE',state:order.create||'SUCCESSFUL'},...(order.deletion?[{type:'DELETE',state:order.deletion,request_uuid:order.deleteId,...(order.deletion==='INVALID'?{errors:[{message:'Warehouse movement'}]}:{})}]:[])]};
   if(state.delayNextGet){delete state.delayNextGet;save(state);await new Promise(r=>setTimeout(r,1200));}

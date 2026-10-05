@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {cdekToken} from './cdek.ts';
-import {cdekErrors,type Shipment} from './cdek-shipment.ts';
+import type {Shipment} from './cdek-shipment.ts';
 import {applyCdekDeletion} from './cdek-deletion.ts';
 
 export async function syncCdekDeletions(d:Db,request:typeof fetch=fetch){
@@ -19,10 +19,8 @@ export async function syncCdekDeletions(d:Db,request:typeof fetch=fetch){
    }
    const response=await request('https://api.cdek.ru/v2/orders/'+uuid,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)});
    const data=await response.json() as any;
-   if(!response.ok)throw Error(cdekErrors(data)||'СДЭК временно недоступен');
-   if(data.entity?.uuid!==uuid)throw Error('СДЭК не подтвердил идентификатор отправления');
+   const result=await applyCdekDeletion(d,order,shipment,row.shipment,data,false,response.status);
    counts.checked++;
-   const result=await applyCdekDeletion(d,order,shipment,row.shipment,data);
    if('changed' in result&&result.changed)counts.completed++;else counts.pending++;
   }catch{
    // Network errors and competing refreshes leave the persistent queue intact for the next minute.

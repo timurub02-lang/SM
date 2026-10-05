@@ -2,7 +2,7 @@ import type {ActivityDb as Db} from './activity-store.ts';
 import type {Order} from './crm.ts';
 import type {Reminder} from './reminders.ts';
 import {initReminderStore} from './reminder-store.ts';
-import {shipmentDeletionResult,returnedFromCdek,type Shipment} from './cdek-shipment.ts';
+import {shipmentDeletionResult,returnedFromCdek,cdekErrors,type Shipment} from './cdek-shipment.ts';
 
 // Used by both the order card and the background worker; result and notifications commit together.
 export async function applyCdekDeletion(d:Db,order:Order,stored:Shipment,previous:string,data:any,direct=false,httpStatus=200){
@@ -12,7 +12,13 @@ export async function applyCdekDeletion(d:Db,order:Order,stored:Shipment,previou
  const shipment={...stored,deletion:{...stored.deletion}},key='cdek-shipment-'+order.id;
  const result=shipmentDeletionResult(data,shipment.deletion,direct);
  if(result.requestId)shipment.deletion.requestId=result.requestId;
- const deleted=result.state==='deleted'&&httpStatus<300;
+ // CDEK stops returning a deleted entity. Only accept its specific GET error after an acknowledged DELETE for this exact UUID.
+ const removed=!direct&&httpStatus===400&&!!stored.deletion.requestId&&!data.entity&&(data.requests||[]).some((r:any)=>r.type==='GET'&&r.state==='INVALID'&&r.errors?.length&&r.errors.every((e:any)=>e.code==='v2_entity_not_found'&&String(e.message).includes(stored.uuid||'missing-uuid')));
+ if(!direct&&!removed){
+  if(httpStatus>=400)throw Error(cdekErrors(data)||'СДЭК временно недоступен');
+  if(data.entity?.uuid!==stored.uuid)throw Error('СДЭК не подтвердил идентификатор отправления');
+ }
+ const deleted=removed||result.state==='deleted'&&httpStatus<300;
  const rejected=result.state==='rejected'||direct&&httpStatus>=400&&httpStatus<500;
  if(!deleted&&!rejected){
   shipment.error=result.error||'СДЭК ещё не подтвердил удаление. Правки и повторная выгрузка временно недоступны.';

@@ -122,10 +122,11 @@ async function handlePOST(req:Request){
   if(!c.shipment)throw Error('Сначала выгрузите заказ в СДЭК');const shipment={...c.shipment};const api=await apiFor(shipment.slot);
   if(p.action==='refresh'){
    const uuid=uuidSchema.parse(shipment.uuid||p.recoveryUuid);
-   const data=await json(await api(`/orders/${uuid}`));
+   const response=await api(`/orders/${uuid}`),data=await response.json() as any;
+   if(shipment.state==='deleting'&&shipment.deletion)return reply(await applyCdekDeletion(d,c.order,shipment,c.record!.data,data,false,response.status));
+   if(!response.ok)throw Error(cdekErrors(data)||`СДЭК: ошибка ${response.status}`);
    if(data.entity?.uuid!==uuid)throw Error('СДЭК вернул другой идентификатор отправления');
    if(data.entity?.number&&data.entity.number!==c.order.id)throw Error('Этот UUID относится к другому заказу');
-   if(shipment.state==='deleting'&&shipment.deletion)return reply(await applyCdekDeletion(d,c.order,shipment,c.record!.data,data));
    if(data.entity?.number!==c.order.id)throw Error('СДЭК не подтвердил номер заказа');
    Object.assign(shipment,shipmentResult(data));await save(shipment,c.record!.data);
    const rules=await d.prepare("SELECT data FROM settings WHERE id='cdek-status-mapping'").first<{data:string}>();

@@ -102,6 +102,21 @@ try{
  change(s=>s.orders[reject.uuid].deletion='INVALID');assert.equal((await worker()).completed,1);
  assert.equal(notices(reject.order.id).length,4,'Each deletion attempt is distinct');
  assert.match(JSON.parse(notices(reject.order.id)[3].data).text,/Warehouse/);
+ // Production CDEK no longer returns deleted entities; never accept unrelated or unacknowledged missing responses.
+ const gone=fixture('SM-GONE');r=await remove(gone.order.id);assert.ok(r.data.shipment.deletion.requestId);
+ change(s=>{s.orders[gone.uuid].gone=true;s.orders[gone.uuid].goneCode='v2_entity_forbidden';});
+ assert.equal((await worker()).failed,1);assert.equal(notices(gone.order.id).length,0);
+ change(s=>{delete s.orders[gone.uuid].goneCode;s.orders[gone.uuid].goneUuid=crypto.randomUUID();});
+ assert.equal((await worker()).failed,1);assert.equal(shipment(gone.order.id).state,'deleting');
+ change(s=>delete s.orders[gone.uuid].goneUuid);
+ assert.equal((await worker()).completed,1);assert.equal(readOrder(gone.order.id).status,'packing');assert.equal(notices(gone.order.id).length,2);
+ const goneRefresh=fixture('SM-GONE-REFRESH');await remove(goneRefresh.order.id);change(s=>s.orders[goneRefresh.uuid].gone=true);
+ r=await call(path,'admin',{action:'refresh',orderId:goneRefresh.order.id});assert.equal(r.data.changed,true,r.text);assert.equal(notices(goneRefresh.order.id).length,2);
+ const unknownGone=fixture('SM-UNKNOWN-GONE');change(s=>s.mode='timeout');await remove(unknownGone.order.id);change(s=>s.orders[unknownGone.uuid].gone=true);
+ assert.equal((await worker()).failed,1);assert.equal(notices(unknownGone.order.id).length,0);
+ change(s=>{delete s.orders[unknownGone.uuid].gone;s.orders[unknownGone.uuid].deletion='SUCCESSFUL';});
+ assert.equal((await worker()).completed,1);
+ console.log('Deleted-entity responses passed: acknowledged exact UUID only, API refresh and worker; forbidden, wrong UUID and unacknowledged deletion stay blocked.');
  // A network outage must not create a rejection; the next worker resumes after the web app stops.
  const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
  change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');
