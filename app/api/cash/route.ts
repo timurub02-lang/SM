@@ -2,7 +2,7 @@ import {courierBalance} from '@/lib/courier';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
-import {cashInput,hasCash,cashSpendPurposes} from '@/lib/cash';
+import {cashInput,hasCash} from '@/lib/cash';
 import {initCash} from '@/lib/cash-db';
 import {type Employee,type Order} from '@/lib/crm';
 import {z} from 'zod';
@@ -44,7 +44,6 @@ async function handle(req:Request){
    }else if(p.action==='create'){
     const input=cashInput.parse(p.operation);const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
     if(input.date>today)throw Error('Дата операции не может быть в будущем');
-    if(input.kind==='spend'&&!cashSpendPurposes.includes(input.purpose))throw Error('Выберите назначение платежа');
     if(input.kind==='transfer'&&input.purpose!=='Перевод другому сотруднику')throw Error('Выберите назначение платежа');
     const recipient=input.kind==='transfer'?await employee(input.recipient||''):input.kind==='add'?actor:null;
     if(input.kind==='transfer'&&(!recipient||!hasCash(recipient.role)||recipient.id===actor.id||recipient.accessEnabled===false))throw Error('Выберите другого сотрудника с кассой');

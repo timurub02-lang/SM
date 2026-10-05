@@ -9,6 +9,7 @@ import {once} from 'node:events';
 import {courierBalance} from '../lib/courier.ts';
 import {moscowDate} from '../lib/base-distribution.ts';
 import {authSchema} from '../lib/auth-schema.ts';
+import {cashSpendPurposes} from '../lib/cash.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-auth-')), db=new DatabaseSync(join(dir,'test.sqlite'));
 const password='test-password-only-123',changed='changed-password-only-456';
@@ -321,12 +322,22 @@ try{
  const spends=await Promise.all([1,2].map(()=>cash(cookies.admin,{...spend,operation:{...spend.operation,id:crypto.randomUUID(),amount:500}})));
  assert.deepEqual(spends.map(x=>x.status).sort(),[200,400]);assert.equal((await cash(cookies.admin)).data.balance,20000);
  assert.equal((await call('/api/cash?actorId='+cashHead.e.id,{cookie:cookies.admin})).status,403);
- for(const [purpose,balance] of [['Уборка',20000],['Аренда',10000]]){
-  const expense={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:100,date,purpose}};
-  const result=await cash(cashHead.cookie,expense);assert.equal(result.status,200,result.text);assert.equal(result.data.balance,balance);assert.ok(result.data.operations.some(o=>o.id===expense.operation.id&&o.purpose===purpose));
-  assert.equal((await cash(cashHead.cookie,expense)).data.balance,balance);
-  assert.equal((await cash(cashHead.cookie,{...expense,operation:{...expense.operation,id:crypto.randomUUID(),purpose:'Неизвестное назначение'}})).status,400);
+ let remaining=30000;
+ for(const purpose of cashSpendPurposes){
+  const expense={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:10,date,purpose}};
+  remaining-=1000;
+  const result=await cash(cashHead.cookie,expense);assert.equal(result.status,200,result.text);assert.equal(result.data.balance,remaining);assert.ok(result.data.operations.some(o=>o.id===expense.operation.id&&o.purpose===purpose));
+  assert.equal((await cash(cashHead.cookie,expense)).data.balance,remaining);
  }
+ const customExpense={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:100,date,purpose:'  Ремонт принтера  '}};
+ const customResult=await cash(cashHead.cookie,customExpense);assert.equal(customResult.status,200,customResult.text);assert.equal(customResult.data.balance,remaining-10000);assert.ok(customResult.data.operations.some(o=>o.id===customExpense.operation.id&&o.purpose==='Ремонт принтера'));
+ assert.equal((await cash(cashHead.cookie,customExpense)).data.balance,remaining-10000,'Custom expense retry must not spend twice');
+ for(const purpose of ['', '   ', 'x'.repeat(501)]){
+  const invalid=await cash(cashHead.cookie,{...customExpense,operation:{...customExpense.operation,id:crypto.randomUUID(),purpose}});assert.equal(invalid.status,400,invalid.text);
+ }
+ assert.equal((await cash(cashHead.cookie)).data.balance,remaining-10000,'Invalid custom descriptions must not spend money');
+ const expenseHistory=await call('/api/cash?employeeId='+cashHead.e.id,{cookie:cookies.admin});assert.ok(expenseHistory.data.operations.some(o=>o.id===customExpense.operation.id&&o.purpose==='Ремонт принтера'));
+ console.log('Cash purposes: all ten choices, custom text, trimming, history, empty/long text validation and idempotent retries passed.');
  console.log('Cash: delivery receipts, private balances, pending transfers, confirmation, retries, insufficient funds and concurrent spending passed.');
  console.log('Chief logistics and courier: scoped employee management, no role escalation, logistics access and courier isolation passed.');
 
