@@ -442,6 +442,8 @@ body:has(.courier-design-aurora){background:#191a1e}
 .product-choice-option{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 10px;min-height:58px;border-radius:10px;cursor:pointer;color:#34425b;font-size:14px}
 .product-choice-option[data-selected=true]{background:#edf4ff!important;color:#34425b!important}
 .product-choice-action{display:flex;align-items:center;gap:6px;flex-shrink:0;color:#2779ef;font-size:12px}
+.product-choice-option[data-disabled=true]{opacity:1;color:#8793a6;background:#f7f8fa}
+.product-choice-option[data-disabled=true] .product-choice-action{color:#8793a6}
 .product-choice-option .product-choice-action svg{color:inherit!important}
 .product-choice-message{padding:14px 4px;font-size:13px;line-height:1.6;color:#7887a1}
 .basket-row{gap:10px;grid-template-columns:minmax(0,1fr) 76px 100px 30px}

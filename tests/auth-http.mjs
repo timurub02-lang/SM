@@ -166,6 +166,20 @@ try{
  db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('return-stock','return-product',10,'Fixture','admin',new Date().toISOString());
  const flow=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...flow,address:'Address',delivery:'cdek_courier',items:[{name:'Test',quantity:1,price:1}]}),flowId);
+ // Operators see current free stock in the picker, never product prices or integration secrets.
+ db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('catalog-zero','empty catalog product',JSON.stringify({name:'Empty catalog product',cost:100,payment:500}));
+ for(const cookie of [returnOperator.cookie,cookies.head]){
+  const catalog=await call('/api/warehouse?catalog=1',{cookie});assert.equal(catalog.status,200);
+  assert.deepEqual(catalog.data.products.find(p=>p.id==='catalog-zero'),{id:'catalog-zero',name:'Empty catalog product',tag:'',available:0,blocked:false});
+  assert.equal(catalog.data.products.find(p=>p.id==='return-product').available,9,'Catalog must subtract existing reservations');
+ }
+ db.prepare("INSERT INTO lv_stock_operations(id,product_id,lv_id,quantity,after_quantity,state,at,comment) VALUES('catalog-unknown','return-product','1',-1,1,'unknown','2026-10-05','Fixture')").run();
+ const blockedCatalog=await call('/api/warehouse?catalog=1',{cookie:returnOperator.cookie});
+ assert.equal(blockedCatalog.data.products.find(p=>p.id==='return-product').blocked,true);
+ assert.equal(blockedCatalog.data.products.find(p=>p.id==='return-product').available,-1);
+ db.prepare("DELETE FROM lv_stock_operations WHERE id='catalog-unknown'").run();
+ db.prepare("DELETE FROM products WHERE id='catalog-zero'").run();
+ console.log('Product picker catalog: zero stock, reserved stock and reconciliation block passed.');
  async function step(cookie,to,expected=200){
   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version;
   const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,reason:'Test reason',finalHandoffConfirmed:true}});
