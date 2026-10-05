@@ -1,0 +1,17 @@
+[Unit]
+Description=SM CRM LeadVertex warehouse sync
+After=network-online.target
+[Service]
+Type=oneshot
+User=crmadmin
+Group=crmadmin
+WorkingDirectory=/srv/crm/current
+EnvironmentFile=/etc/sm-crm.env
+ExecStart=/opt/sm-node/bin/node --experimental-strip-types scripts/sync-lv-warehouse.mjs
+TimeoutStartSec=1200
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sm-crm

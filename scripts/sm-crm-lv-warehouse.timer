@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh LeadVertex warehouse every minute
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=sm-crm-lv-warehouse.service
+[Install]
+WantedBy=timers.target

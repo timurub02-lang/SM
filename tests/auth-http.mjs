@@ -44,6 +44,21 @@ try{
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'settings',retentionDays:2},headers:{Origin:'https://evil.test'}})).status,403);
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'settings',retentionDays:2},headers:{Origin:''}})).status,403);
  assert.equal((await call('/api/warehouse',{cookie:cookies.one})).status,403);
+ for(const role of ['one','head']){
+  assert.equal((await call('/api/lv-warehouse',{cookie:cookies[role]})).status,403);
+  assert.equal((await call('/api/lv-warehouse',{cookie:cookies[role],body:{action:'sync'}})).status,403);
+ }
+ assert.equal((await call('/api/lv-warehouse')).status,401);
+ assert.equal((await call('/api/lv-warehouse',{cookie:cookies.admin})).data.configured,false);
+ const lvConfig={action:'save',host:'fixture.leadvertex.ru',token:'private-lv-token',enabled:false,trackCrm:false};
+ assert.equal((await call('/api/lv-warehouse',{cookie:cookies.admin,body:{...lvConfig,host:'127.0.0.1'}})).status,400);
+ assert.equal((await call('/api/lv-warehouse',{cookie:cookies.admin,body:lvConfig,headers:{Origin:'https://evil.test'}})).status,403);
+ assert.equal((await call('/api/lv-warehouse',{cookie:cookies.admin,body:lvConfig})).status,200);
+ const lvView=await call('/api/lv-warehouse',{cookie:cookies.admin});assert.equal(lvView.data.configured,true);assert.ok(!lvView.text.includes('private-lv-token'));
+ assert.equal((await call('/api/lv-warehouse',{cookie:cookies.admin,body:{action:'sync'}})).status,200);
+ assert.equal((await call('/api/lv-warehouse',{cookie:cookies.admin,body:{action:'delete',confirmed:false}})).status,400);
+ assert.equal((await call('/api/lv-warehouse',{cookie:cookies.admin,body:{action:'delete',confirmed:true}})).status,200);
+ assert.equal(db.prepare("SELECT id FROM settings WHERE id='lv-warehouse'").get(),undefined);
  assert.equal((await call('/api/skorozvon',{cookie:cookies.one})).status,403);
  assert.equal((await call('/api/skorozvon',{cookie:cookies.head,body:{revision:''}})).status,403);
  assert.equal((await call('/api/skorozvon',{cookie:cookies.admin})).data.configured,false);
