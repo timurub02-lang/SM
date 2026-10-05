@@ -332,10 +332,14 @@ try{
  const customExpense={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:100,date,purpose:'  Ремонт принтера  '}};
  const customResult=await cash(cashHead.cookie,customExpense);assert.equal(customResult.status,200,customResult.text);assert.equal(customResult.data.balance,remaining-10000);assert.ok(customResult.data.operations.some(o=>o.id===customExpense.operation.id&&o.purpose==='Ремонт принтера'));
  assert.equal((await cash(cashHead.cookie,customExpense)).data.balance,remaining-10000,'Custom expense retry must not spend twice');
- for(const purpose of ['', '   ', 'x'.repeat(501)]){
-  const invalid=await cash(cashHead.cookie,{...customExpense,operation:{...customExpense.operation,id:crypto.randomUUID(),purpose}});assert.equal(invalid.status,400,invalid.text);
+ const beforeInvalidReasons=(await cash(cashHead.cookie)).data;
+ for(const kind of ['add','spend'])for(const purpose of [undefined,'','   ',' \t\n ', 'x'.repeat(501)]){
+  const invalid=await cash(cashHead.cookie,{...customExpense,operation:{...customExpense.operation,id:crypto.randomUUID(),kind,purpose}});assert.equal(invalid.status,400,invalid.text);
+  if(purpose===undefined||!purpose.trim())assert.match(invalid.data.error,/Укажите причину операции/);
  }
- assert.equal((await cash(cashHead.cookie)).data.balance,remaining-10000,'Invalid custom descriptions must not spend money');
+ const afterInvalidReasons=(await cash(cashHead.cookie)).data;
+ assert.equal(afterInvalidReasons.balance,beforeInvalidReasons.balance,'Invalid reasons must not change the balance');
+ assert.equal(afterInvalidReasons.operations.length,beforeInvalidReasons.operations.length,'Invalid reasons must not create any receipt or expense');
  const expenseHistory=await call('/api/cash?employeeId='+cashHead.e.id,{cookie:cookies.admin});assert.ok(expenseHistory.data.operations.some(o=>o.id===customExpense.operation.id&&o.purpose==='Ремонт принтера'));
  console.log('Cash purposes: all ten choices, custom text, trimming, history, empty/long text validation and idempotent retries passed.');
  console.log('Cash: delivery receipts, private balances, pending transfers, confirmation, retries, insufficient funds and concurrent spending passed.');
