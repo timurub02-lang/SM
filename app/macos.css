@@ -276,6 +276,10 @@ button:focus-visible,a:focus-visible { outline: 3px solid #007aff70; outline-off
 .warehouse-page { gap:16px; }
 .warehouse-page .warehouse-heading { justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:0; }
 .warehouse-heading p { margin-top:6px; }
+.warehouse-filters { gap:16px; min-width:0; }
+.warehouse-filters .tabs-line { max-width:100%; justify-content:flex-start; }
+.warehouse-filters .tabs-line button { flex-shrink:0; }
+.warehouse-empty { padding:16px; margin:0; }
 .warehouse-table { overflow-x:auto; }
 .warehouse-table table { width:100%; min-width:800px; border-collapse:collapse; }
 .warehouse-table th { padding:10px 16px; text-align:left; white-space:nowrap; }
