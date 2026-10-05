@@ -1,0 +1,8 @@
+[Unit]
+Description=Check active CDEK shipments every minute
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=sm-crm-cdek-shipments.service
+[Install]
+WantedBy=timers.target

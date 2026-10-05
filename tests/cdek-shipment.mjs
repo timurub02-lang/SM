@@ -16,6 +16,20 @@ assert.equal(payload.packages[0].weight,2400);
 assert.equal(payload.packages[0].items[0].amount,2);
 assert.equal(payload.packages[0].items[0].payment.value,15000);
 assert.equal(payload.delivery_recipient_cost.value,410);
+// COD follows this order's negotiated basket price, never the warehouse/default or declared value.
+for(const payment of [0,null,8000]){
+ const goods=[{...products[0],cost:100,payment}];
+ const o={...order,items:[{name:'Кроссовки',quantity:2,price:4990}]};
+ const items=shipmentPayload(o,client,goods,form).packages[0].items;
+ assert.equal(items.reduce((n,i)=>n+i.payment.value*i.amount,0),9980);
+ assert.equal(items[0].cost,100);
+ assert.equal(shipmentPayload(o,client,goods,{...form,payment:'prepaid'}).packages[0].items[0].payment.value,0);
+}
+const second={...products[0],name:'Носки',sku:'SOCKS',weight:100,cost:50,payment:null};
+const mixed=shipmentPayload({...order,items:[{name:'Кроссовки',quantity:1,price:4990},{name:'Носки',quantity:3,price:199.99}]},client,[products[0],second],form);
+assert.equal(Math.round(mixed.packages[0].items.reduce((n,i)=>n+i.amount*i.payment.value,0)*100),558997);
+assert.equal(mixed.delivery_recipient_cost.value,410);
+for(const price of [0,-1,NaN])assert.throws(()=>shipmentPayload({...order,items:[{name:'Кроссовки',quantity:1,price}]},client,products,form));
 assert(!('to_location' in payload));assert(!('from_location' in payload));
 assert.equal(shipmentPayload(order,client,products,{...form,payment:'prepaid'}).packages[0].items[0].payment.value,0);
 assert.throws(()=>shipmentPayload(order,client,products,{...form,deliveryPoint:''}),/ПВЗ/);

@@ -6,6 +6,7 @@ assert(productReady(productSchema.parse({...draft,sku:'SHOES-1',weight:500,payme
 assert.throws(()=>productSchema.parse({...draft,weight:0}));
 assert.throws(()=>productSchema.parse({...draft,sku:'x'.repeat(21)}));
 assert.throws(()=>productSchema.parse({...draft,cost:-1}));
+assert(productReady(productSchema.parse({...draft,sku:'SHOES-1',weight:500,payment:null})));
 console.log('Warehouse validation passed');
 const {parcelDefaults}=await import('../lib/warehouse.ts');
 const product={...productSchema.parse({...draft,packedWeight:1.2,length:35,width:25,height:15}),id:'one',version:1};

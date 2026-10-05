@@ -20,7 +20,7 @@ import {cleanImportedAddress} from "@/lib/dadata";
 import {addressPartsSchema,orderAddressWarnings} from "@/lib/address";
 import {db} from "@/lib/db";
 import {getChatGPTUser} from "@/app/chatgpt-auth";
-import {clientAssignment,draftDeadline,confirmationDeadline,reworkDeadlineFrom,validateReworkCall,hasActiveOrder,employeeForManager,canLogisticEditOrder,canAdminEditReturnedCdekOrder,orderEditingLocked,clientAddressFromOrder,deliverySchema,applyRetention,sourceSheet,clientSheet,seed,orderDatesForTransition,clientSchema,itemsSchema,employeeSchema,validateTransition,roles,type State,type Client,type Order,type Employee,type Event,type Status} from "@/lib/crm";
+import {deliveryChangedAfterHandoff,deliveryLabels,cdekReviewOnDeliveryChange,clientAssignment,draftDeadline,confirmationDeadline,reworkDeadlineFrom,validateReworkCall,hasActiveOrder,employeeForManager,canLogisticEditOrder,canAdminEditReturnedCdekOrder,orderEditingLocked,clientAddressFromOrder,deliverySchema,applyRetention,sourceSheet,clientSheet,seed,orderDatesForTransition,clientSchema,itemsSchema,employeeSchema,validateTransition,roles,type State,type Client,type Order,type Employee,type Event,type Status} from "@/lib/crm";
 import {z} from "zod";
 export const dynamic="force-dynamic";
 const json=JSON.stringify;
@@ -227,6 +227,18 @@ async function handlePOST(request:Request){
    if(isLogistic(employee?.role))next.logistic=employee.id;
    text=`${next.contact==="missed"?"Недозвон":"Перезвон"}: ${next.reason}${next.due?" · "+new Date(next.due).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК":""}`;
   }else{text="Комментарий: "+z.string().trim().min(1).max(3000).parse(p.text);}
+  if(deliveryChangedAfterHandoff(o,next.delivery)){
+   next.deliveryChange={from:o.delivery!,to:next.delivery!,at:now,by:employee.id,name:employee.name};
+   text+=` · Способ доставки изменён: ${deliveryLabels[o.delivery!]} → ${deliveryLabels[next.delivery!]}`;
+  }
+  if(cdekReviewOnDeliveryChange(o,next.delivery)){
+   if(p.adminReviewConfirmed!==true)throw Error("Для доставки СДЭК нужна проверка администратора. Подтвердите смену доставки и передачу заказа на проверку.");
+   next.status="check";next.extra=false;next.contact="none";next.due="";next.reason="";
+   delete next.adminReviewedAt;delete next.confirmationStartedAt;delete next.confirmationHours;delete next.noAnswerDeadline;delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;
+   if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
+   if(isLogistic(employee.role))next.logistic=employee.id;
+   text+=" · Доставка изменена на СДЭК. Заказ передан администратору на проверку";
+  }
   if(p.action==="updateOrder"){
    const addressWarnings=orderAddressWarnings(next.address||'',next.addressParts);
    if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите сохранение заказа вручную.');

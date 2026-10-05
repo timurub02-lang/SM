@@ -1,11 +1,11 @@
 import {z} from 'zod';
 import type {Order,Client} from './crm.ts';
-import {normalizePhone} from './crm.ts';
+import {itemsSchema,normalizePhone} from './crm.ts';
 import type {Product} from './warehouse.ts';
 export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).default(''),deliveryPoint:z.string().trim().max(255).default(''),senderAddress:z.string().trim().max(255).default(''),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
 export type ShipmentDeletion={at:string;reason:string;actor:string;requestId?:string;previousRequests:string[]};
-export type Shipment={deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
+export type Shipment={checkedAt?:string;syncError?:string;deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
 export function shipmentPayload(order:Order,client:Client,products:Product[],form:ShipmentForm){
  const recipientPhone=normalizePhone(client.phone||'');if(!recipientPhone)throw Error('Укажите корректный телефон в карточке клиента перед выгрузкой в СДЭК');
  const tariff=order.cdekTariff;if(!tariff||tariff.params.delivery!==order.delivery)throw Error('Сначала сохраните тариф доставки');
@@ -16,10 +16,10 @@ export function shipmentPayload(order:Order,client:Client,products:Product[],for
  if(order.delivery==='cdek_pickup'&&!form.deliveryPoint)throw Error('Выберите ПВЗ получателя');
  if(order.delivery==='cdek_courier'&&(!order.addressParts?.house||!order.address))throw Error('Укажите полный адрес получателя с домом в заказе');
  if(!order.items.length)throw Error('Корзина заказа пуста');
- const items=order.items.map(item=>{
+ const items=itemsSchema.parse(order.items).map(item=>{
   const product=products.find(x=>x.name.trim().toLowerCase()===item.name.trim().toLowerCase());
-  if(!product?.sku||!product.weight||product.cost===null||product.payment===null)throw Error(`Заполните артикул, вес, стоимость и оплату товара «${item.name}» на складе`);
-  return {name:item.name,ware_key:product.sku,payment:{value:form.payment==='prepaid'?0:product.payment},cost:product.cost,weight:product.weight,amount:item.quantity};
+  if(!product?.sku||!product.weight||product.cost===null)throw Error(`Заполните артикул, вес и объявленную стоимость товара «${item.name}» на складе`);
+  return {name:item.name,ware_key:product.sku,payment:{value:form.payment==='prepaid'?0:Math.round(item.price*100)/100},cost:product.cost,weight:product.weight,amount:item.quantity};
  });
  if(new Set(items.map(i=>i.ware_key)).size!==items.length)throw Error('Объедините одинаковые товары в одну строку корзины');
  if(items.reduce((n,i)=>n+i.weight*i.amount,0)>Math.ceil(p.weight*1000))throw Error('Вес посылки меньше суммарного веса товаров. Пересчитайте доставку');

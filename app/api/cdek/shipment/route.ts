@@ -2,8 +2,7 @@ import {applyCdekDeletion} from '@/lib/cdek-deletion';
 import {orderRouting,assertRoutingSlot,routingReservationGuard} from '@/lib/cdek-routing-store';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
-import {cdekStatusPatch} from '@/lib/cdek-sync';
-import {statuses} from '@/lib/crm';
+import {applyCdekShipment} from '@/lib/cdek-shipment-sync';
 import {rankRecipientPoints} from '@/lib/cdek-points';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -49,7 +48,7 @@ async function handleGET(req:Request){
   }
   const products=await db().prepare('SELECT data FROM products').all<{data:string}>();
   const warehouse=await db().prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
-  return reply({shipment:c.shipment,canDelete:['admin','chief_logistic'].includes(c.actor.role),warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:p?.payment};})});
+  return reply({shipment:c.shipment,canDelete:['admin','chief_logistic'].includes(c.actor.role),warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:i.price};})});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }
 async function handlePOST(req:Request){
@@ -125,23 +124,7 @@ async function handlePOST(req:Request){
    const response=await api(`/orders/${uuid}`),data=await response.json() as any;
    if(shipment.state==='deleting'&&shipment.deletion)return reply(await applyCdekDeletion(d,c.order,shipment,c.record!.data,data,false,response.status));
    if(!response.ok)throw Error(cdekErrors(data)||`СДЭК: ошибка ${response.status}`);
-   if(data.entity?.uuid!==uuid)throw Error('СДЭК вернул другой идентификатор отправления');
-   if(data.entity?.number&&data.entity.number!==c.order.id)throw Error('Этот UUID относится к другому заказу');
-   if(data.entity?.number!==c.order.id)throw Error('СДЭК не подтвердил номер заказа');
-   Object.assign(shipment,shipmentResult(data));await save(shipment,c.record!.data);
-   const rules=await d.prepare("SELECT data FROM settings WHERE id='cdek-status-mapping'").first<{data:string}>();
-   const config=rules?JSON.parse(rules.data):{mapping:{},revision:''};
-   const patch=cdekStatusPatch(c.order,data.entity,config.mapping,config.revision);
-   let changed=false;
-   if(patch){
-    const mutation=crypto.randomUUID(),at=new Date().toISOString();
-    const next={...c.order,...patch,updatedAt:at,_mutation:mutation};
-    const event={id:mutation,clientId:c.order.clientId,orderId:c.order.id,at,actor:'СДЭК',text:patch.status?`СДЭК: ${patch.cdekStatus?.code} → ${statuses[patch.status]}`:patch.cdekStatus?`Обновлён статус СДЭК: ${patch.cdekStatus.code}`:"Уточнена дата регистрации отправления в СДЭК"};
-    const result=await d.batch([d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)').bind(JSON.stringify(next),c.order.id,c.order.version,c.key,JSON.stringify(shipment)),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,event.clientId,event.orderId,at,JSON.stringify(event),c.order.id,mutation)]);
-    if(!result[0].meta.changes)throw Error('Заказ изменился во время обновления. Повторите проверку статуса');
-    changed=true;
-   }
-   return reply({shipment,changed});
+   return reply(await applyCdekShipment(d,c.order,shipment,c.record!.data,data,uuid));
   }
   if(shipment.state!=='ready'||!shipment.uuid)throw Error('СДЭК ещё не подтвердил создание заказа. Обновите статус отправления');
   if(!shipment.printId||Date.now()-Date.parse(shipment.printAt||'')>50*60000){

@@ -78,3 +78,16 @@ VM: `crm`, адрес `10.20.0.10`, домен `https://crm.smanalytics.ru`.
 при повторной проверке используют сохранённые значения. Токен проверки не хранится.
 Обмен клиентами, проекты, звонки, webhooks и фоновые задания пока не включены.
 Официальная документация: https://app.skorozvon.ru/static/skorozvon/docs/SkorozvonAPI.pdf
+
+## Фоновое обновление отправлений СДЭК
+
+Установить `scripts/sm-crm-cdek-shipments.service` и `.timer` в
+`/etc/systemd/system/`, выполнить `systemctl daemon-reload` и
+`systemctl enable --now sm-crm-cdek-shipments.timer`.
+Таймер раз в минуту запускает `scripts/sync-cdek-shipments.mjs` от crmadmin
+с `/etc/sm-crm.env` и рабочей базой. Новые запуски не пересекаются с ещё
+выполняющимся oneshot. Обрабатывается до 200 активных отправлений, по четыре
+запроса одновременно; самые давно проверенные идут первыми. Для удаления
+отправлений продолжает работать отдельный `sm-crm-cdek-deletions.timer`.
+Состояние последнего прохода записывается в settings `cdek-sync-health`.
+Проверка без рабочего API: `node --experimental-strip-types tests/cdek-background.mjs`.

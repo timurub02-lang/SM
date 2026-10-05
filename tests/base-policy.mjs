@@ -33,5 +33,18 @@ const pv={clientId:'c',manager:'op',createdAt:'2026-01-11T00:00:00Z',status:'ret
 assert.equal(applyRetention(owned,[paid,pv],Date.parse('2026-01-13T00:00:00Z')).sheet,'ЧС');
 assert.equal(applyRetention(owned,[{...paid,redeemedAt:'2026-01-14T00:00:00Z'},pv],Date.parse('2026-01-15T00:00:00Z')).sheet,'К');
 assert.equal(applyRetention(owned,[{...paid,pv:true},{...pv,pv:false}],Date.parse('2026-01-13T00:00:00Z')).sheet,'К');
+// Two overlapping orders: either paid order wins, independent of which result arrives last.
+const concurrentPV={...pv,createdAt:'2026-01-05T00:00:00Z'};
+for(const status of ['returned','refused','shipping']){
+ const other={...concurrentPV,status,pvMarkedAt:'2026-01-11T00:00:00Z',cancelledAt:'2026-01-12T00:00:00Z'};
+ assert.equal(applyRetention(owned,[paid,other],Date.parse('2026-01-13T00:00:00Z')).sheet,'К');
+ assert.equal(applyRetention(owned,[{...paid,pv:true},other],Date.parse('2026-01-13T00:00:00Z')).sheet,'К');
+}
+const inTransit={...paid,status:'shipping',redeemedAt:undefined};
+assert.equal(applyRetention(owned,[inTransit,concurrentPV],Date.parse('2026-01-13T00:00:00Z')).sheet,'ЧС');
+assert.equal(applyRetention(owned,[{...paid,redeemedAt:'2026-01-14T00:00:00Z'},concurrentPV],Date.parse('2026-01-15T00:00:00Z')).sheet,'К');
+assert.equal(applyRetention(owned,[{...inTransit,status:'returned'},concurrentPV],Date.parse('2026-01-15T00:00:00Z')).sheet,'ЧС');
+const expiredPV=applyRetention(owned,[paid,concurrentPV],Date.parse('2026-03-01T00:00:00Z'));
+assert.equal(expiredPV.owner,'');assert.equal(expiredPV.sheet,'П');
 assert.equal(applyRetention(owned,[paid],Date.parse('2026-01-10T00:00:01Z'),0).owner,'');
 assert.equal(applyRetention(owned,[paid,{...pv,status:'rework'}],Date.parse('2026-01-10T00:00:01Z'),0).owner,'op');

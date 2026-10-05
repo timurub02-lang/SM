@@ -103,7 +103,7 @@ try{
   for(const [i,status] of [...statuses,'none'].entries()){
    const c={id:id+'-c-'+status,name:'Client',phone:'+7'+String(8000000000+db.prepare('SELECT COUNT(*) AS n FROM clients').get().n),city:'',address:'',source:'test.xlsx · Т3',sheet:'К',returnSheet:'Т3',trialReturnSheet:'Т1',owner:id,createdAt:new Date().toISOString(),version:1};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));
    if(status==='none')continue;
-   const o={id:id+'-o-'+status,clientId:c.id,manager:id,logistic:'',status,items:[],comment:'Original comment',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,redeemedAt:c.createdAt,...(['confirm','extra'].includes(status)?{confirmationStartedAt:c.createdAt,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(c.createdAt)+48*3600000).toISOString()}:{}),...(status==='rework'?{reworkDeadline:new Date(Date.now()+86400000).toISOString()}:{}),version:1};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
+   const o={id:id+'-o-'+status,clientId:c.id,manager:id,logistic:'',status,delivery:'cdek_courier',items:[],comment:'Original comment',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,redeemedAt:c.createdAt,...(['confirm','extra'].includes(status)?{confirmationStartedAt:c.createdAt,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(c.createdAt)+48*3600000).toISOString()}:{}),...(status==='rework'?{reworkDeadline:new Date(Date.now()+86400000).toISOString()}:{}),version:1};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
   }
  }
  async function remove(actor,e,mode,targetId,version=e.version){return call('/api/crm',{cookie:cookies[actor],body:{action:'deleteEmployee',id:e.id,version,mode,targetId}});}
@@ -732,5 +732,45 @@ try{
  orderForEdit=fixedEdit.data.state.orders.find(o=>o.id===orderForEdit.id);
  const basketOnly=await call('/api/crm',{cookie:addressEditor.cookie,body:{action:'updateOrder',id:orderForEdit.id,version:orderForEdit.version,items:[],comment:'Only comment changes'}});assert.equal(basketOnly.status,200,basketOnly.text);assert.deepEqual(basketOnly.data.state.orders.find(o=>o.id===orderForEdit.id).addressParts,validParts);
  console.log('Order editing address HTTP: operator postcode removal blocked, order/client unchanged, explicit override audited, correction accepted and omitted address parts preserved.');
+ // Delivery changes must save the new route and admin handoff atomically.
+ for(const action of ['updateDelivery','updateOrder'])for(const [from,to] of [
+  ['russian_post','cdek_pickup'],['moscow_courier','cdek_courier'],
+  ['cdek_pickup','moscow_courier'],['cdek_courier','russian_post'],
+  ['moscow_courier','russian_post'],['russian_post','moscow_courier'],
+  ['cdek_pickup','cdek_courier']
+ ]){
+  const id=`delivery-review-${action}-${from}-${to}`,at=new Date().toISOString();
+  const original={...flow,id,clientId:cleanId,status:'extra',delivery:from,address:'142106, г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:validParts,items:[{name:'Test',quantity:1,price:100}],extra:true,finalHandoffAt:at,confirmationStartedAt:at,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(at)+86400000).toISOString(),packingWaybillAt:at,manualDeliveryCost:100,contact:'callback',due:new Date(Date.now()+3600000).toISOString()};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,cleanId,JSON.stringify(original));
+  const snapshot=db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+  const body={action,id,version:snapshot.version,delivery:to,addressConfirmed:true};
+  const needsReview=!from.startsWith('cdek_')&&to.startsWith('cdek_');
+  const channelChanged=!(from.startsWith('cdek_')&&to.startsWith('cdek_'));
+  if(needsReview){
+   for(const adminReviewConfirmed of [undefined,false,'true']){
+    const denied=await call('/api/crm',{cookie:editor.cookie,body:{...body,adminReviewConfirmed}});assert.equal(denied.status,400,denied.text);assert.match(denied.data.error,/проверка администратора/);
+    assert.deepEqual(db.prepare('SELECT * FROM orders WHERE id=?').get(id),snapshot);
+   }
+  }
+  const saved=await call('/api/crm',{cookie:editor.cookie,body:{...body,adminReviewConfirmed:true}});assert.equal(saved.status,200,id+": "+saved.text);
+  const next=saved.data.state.orders.find(o=>o.id===id);assert.equal(next.delivery,to);assert.equal(next.status,needsReview?'check':'extra');
+  assert.equal(next.packingWaybillAt,undefined);assert.equal(next.manualDeliveryCost,undefined);
+  if(channelChanged){assert.deepEqual(next.deliveryChange,{from,to,at:next.deliveryChange.at,by:editor.e.id,name:editor.e.name});assert.ok(saved.data.state.events.some(e=>e.orderId===id&&e.text.includes('Способ доставки изменён:')));}
+  else assert.equal(next.deliveryChange,undefined,'CDEK subtype change is not a channel change');
+  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{...body,adminReviewConfirmed:true}})).status,400,'stale save cannot overwrite admin handoff');
+  if(needsReview){
+   assert.equal(next.noAnswerDeadline,undefined);assert.equal(next.finalHandoffAt,undefined);assert.equal(next.confirmationStartedAt,undefined);assert.equal(next.contact,'none');assert.equal(next.due,'');assert.equal(next.extra,false);
+   assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version:next.version,to:'packing'}})).status,400,'logistic cannot pass admin review');
+   const decision=action==='updateOrder'?'extra':'packing';
+   const reviewed=await call('/api/crm',{cookie:cookies.admin,body:{action:'transition',id,version:next.version,to:decision}});assert.equal(reviewed.status,200,reviewed.text);
+   const after=reviewed.data.state.orders.find(o=>o.id===id);assert.equal(after.status,decision);assert.ok(after.adminReviewedAt);assert.deepEqual(after.deliveryChange,next.deliveryChange);
+   if(decision==='extra'){
+    assert.ok(after.confirmationStartedAt);assert.ok(after.noAnswerDeadline);assert.equal(after.finalHandoffAt,undefined);
+    const packed=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version:after.version,to:'packing'}});assert.equal(packed.status,200,packed.text);
+   }
+  }
+  db.prepare('DELETE FROM orders WHERE id=?').run(id);
+ }
+ console.log('Delivery review and badge HTTP: both save paths, six channel directions, explicit confirmation, no writes on cancel, stale versions, cleared timers, admin packing/extra, preserved marker and unchanged CDEK subtype passed.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
