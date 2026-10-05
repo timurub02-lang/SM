@@ -1,3 +1,4 @@
+import {applyCdekDeletion} from '@/lib/cdek-deletion';
 import {orderRouting,assertRoutingSlot,routingReservationGuard} from '@/lib/cdek-routing-store';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
@@ -7,7 +8,7 @@ import {rankRecipientPoints} from '@/lib/cdek-points';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {cdekToken} from '@/lib/cdek';
-import {shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,shipmentDeletionResult,deletionRequestKey,returnedFromCdek,type Shipment} from '@/lib/cdek-shipment';
+import {shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,deletionRequestKey,type Shipment} from '@/lib/cdek-shipment';
 import type {Order,Client} from '@/lib/crm';
 import type {Product} from '@/lib/warehouse';
 import {z} from 'zod';
@@ -62,31 +63,6 @@ async function handlePOST(req:Request){
    const result=await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(JSON.stringify(next),c.key,previous).run();
    if(!result.meta.changes)throw Error('Отправление изменилось. Обновите карточку');
   };
-  const finishDeletion=async(shipment:Shipment,previous:string)=>{
-   const at=new Date().toISOString(),mutation=crypto.randomUUID();
-   const next={...returnedFromCdek(c.order,at),_mutation:mutation};
-   const event={id:mutation,clientId:c.order.clientId,orderId:c.order.id,at,actor:shipment.deletion!.actor,text:'Вернули из СДЭК · удалена накладная № '+(shipment.number||'—')+' · UUID '+shipment.uuid+' · '+shipment.account+' · Причина: '+shipment.deletion!.reason};
-   const changed="EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)";
-   const result=await d.batch([
-    d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)').bind(JSON.stringify(next),c.order.id,c.order.version,c.key,previous),
-    d.prepare('INSERT INTO settings(id,data) SELECT ?,? WHERE '+changed).bind('cdek-archive-'+shipment.attempt,JSON.stringify({...shipment,state:'deleted',deletedAt:at}),c.order.id,mutation),
-    d.prepare('DELETE FROM settings WHERE id=? AND data=? AND '+changed).bind(c.key,previous,c.order.id,mutation),
-    d.prepare('INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE '+changed).bind(mutation,c.order.clientId,c.order.id,at,JSON.stringify(event),c.order.id,mutation)
-   ]);
-   if(!result[0].meta.changes)throw Error('Заказ изменился. Обновите статус отправления для завершения возврата из СДЭК');
-   return reply({shipment:null,changed:true,message:'Вернули из СДЭК. Внесите правки и выгрузите заказ заново. Старую накладную использовать нельзя.'});
-  };
-  const deletionResponse=async(shipment:Shipment,previous:string,data:any,direct=false,httpStatus=200)=>{
-   if(data.entity?.uuid&&data.entity.uuid!==shipment.uuid)throw Error('СДЭК вернул другой идентификатор отправления');
-   const result=shipmentDeletionResult(data,shipment.deletion!,direct);
-   if(result.state==='deleted'&&httpStatus<300)return finishDeletion(shipment,previous);
-   if(result.requestId)shipment.deletion={...shipment.deletion!,requestId:result.requestId};
-   if(result.state==='rejected'||direct&&httpStatus>=400&&httpStatus<500){
-    shipment.state='ready';delete shipment.deletion;
-    shipment.error='Удаление отклонено СДЭК: '+(result.error||'заказ нельзя удалить');
-   }else shipment.error=result.error||'СДЭК ещё не подтвердил удаление. Правки и повторная выгрузка временно недоступны.';
-   await save(shipment,previous);return reply({shipment,message:shipment.error});
-  };
   if(p.action==='delete'){
    if(!['admin','chief_logistic'].includes(c.actor.role))return Response.json({error:'Удалить отправление может только администратор или главный логист'},{status:403});
    if(p.confirmed!==true||!p.reason)throw Error('Укажите причину и подтвердите удаление отправления из СДЭК');
@@ -105,7 +81,7 @@ async function handlePOST(req:Request){
    let response:Response,answer:any;
    try{response=await api('/orders/'+uuid,undefined,'DELETE');answer=await response.json();}
    catch{shipment.error='Ответ на удаление не получен. Обновите статус отправления: до подтверждения СДЭК повторная выгрузка заблокирована.';await save(shipment,pending);return reply({shipment,message:shipment.error});}
-   return deletionResponse(shipment,pending,answer,true,response.status);
+   return reply(await applyCdekDeletion(d,c.order,shipment,pending,answer,true,response.status));
   }
   if(p.action==='create'){
    if(c.shipment&&c.shipment.state!=='invalid')return reply({shipment:c.shipment});
@@ -149,7 +125,7 @@ async function handlePOST(req:Request){
    const data=await json(await api(`/orders/${uuid}`));
    if(data.entity?.uuid!==uuid)throw Error('СДЭК вернул другой идентификатор отправления');
    if(data.entity?.number&&data.entity.number!==c.order.id)throw Error('Этот UUID относится к другому заказу');
-   if(shipment.state==='deleting'&&shipment.deletion)return deletionResponse(shipment,c.record!.data,data);
+   if(shipment.state==='deleting'&&shipment.deletion)return reply(await applyCdekDeletion(d,c.order,shipment,c.record!.data,data));
    if(data.entity?.number!==c.order.id)throw Error('СДЭК не подтвердил номер заказа');
    Object.assign(shipment,shipmentResult(data));await save(shipment,c.record!.data);
    const rules=await d.prepare("SELECT data FROM settings WHERE id='cdek-status-mapping'").first<{data:string}>();

@@ -1,8 +1,9 @@
 import {draftDeadline,scheduledCalls,callAuthor,type State,type Employee,type Client} from './crm';
 import {db} from './db';
+import {initReminderStore} from './reminder-store.ts';
 import {seesOrder,ownsClient} from './permissions';
-export type Reminder={kind?:"call"|"draft"|"order-decision";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
-export async function initReminders(){await db().prepare('CREATE TABLE IF NOT EXISTS reminders(employee_id TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,at TEXT NOT NULL,read_at TEXT,PRIMARY KEY(employee_id,id))').run();}
+export type Reminder={kind?:"call"|"draft"|"order-decision"|"cdek-deletion";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
+export async function initReminders(){await initReminderStore(db());}
 export function orderDecisionReminder(c:Client,staff:Employee[]):Reminder|null{
  const request=c.orderRequest;if(!request||request.status==='pending')return null;
  const author=staff.find(e=>e.id===request.decidedBy)?.name;
@@ -25,6 +26,7 @@ export async function employeeReminders(s:State,e:Employee){
  const activeCalls=new Set(scheduledCalls(s.orders,e).map(o=>`call:${o.id}:${o.due}`));
  const rows=await db().prepare('SELECT data,read_at FROM reminders WHERE employee_id=? ORDER BY at DESC,id DESC').bind(e.id).all<{data:string;read_at:string|null}>();
  return rows.results.map(r=>({...JSON.parse(r.data),readAt:r.read_at||undefined}) as Reminder).filter(r=>{
+  if(r.kind==='cdek-deletion'&&!['admin','chief_logistic'].includes(e.role))return false;
   if(r.orderId){const o=s.orders.find(o=>o.id===r.orderId);return !!o&&seesOrder(e,o,s.employees);}
   const c=s.clients.find(c=>c.id===r.clientId);return !!c&&ownsClient(e,c,s.employees);
  }).map(r=>{

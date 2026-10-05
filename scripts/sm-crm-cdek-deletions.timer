@@ -1,0 +1,8 @@
+[Unit]
+Description=Check pending CDEK deletions every minute
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=sm-crm-cdek-deletions.service
+[Install]
+WantedBy=timers.target

@@ -32,6 +32,12 @@ try{
  for(let i=0;i<100;i++){try{await fetch(base+'/login');break;}catch{await new Promise(r=>setTimeout(r,100));}}
  async function call(path,role='admin',body){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{...(cookies[role]?{cookie:cookies[role]}:{}),...(body?{Origin:origin,'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}return {status:r.status,data,text,headers:r.headers};}
  for(const role of ['admin','chief_logistic','logistic','operator','department_head']){const r=await call('/api/auth/login',role,{login:role,password});assert.equal(r.status,200,r.text);cookies[role]=r.headers.get('set-cookie').split(';')[0];}
+ async function worker(){
+  const process=spawn(globalThis.process.execPath,['--experimental-strip-types','--import',resolve('tests/fixtures/cdek-fetch.mjs'),resolve('scripts/sync-cdek-deletions.mjs')],{env:{...globalThis.process.env,CRM_DATABASE_PATH:join(dir,'test.sqlite'),CDEK_TEST_FIXTURE:file},stdio:['ignore','pipe','pipe']});
+  let output='',errors='';process.stdout.on('data',x=>output+=x);process.stderr.on('data',x=>errors+=x);const [code]=await once(process,'exit');
+  assert.ok(output.trim(),errors);return {code,...JSON.parse(output.trim())};
+ }
+ const notices=id=>db.prepare("SELECT employee_id,data,read_at FROM reminders WHERE json_extract(data,'$.orderId')=? AND json_extract(data,'$.kind')='cdek-deletion' ORDER BY employee_id").all(id);
  const path='/api/cdek/shipment',readOrder=id=>{const r=db.prepare('SELECT data,version FROM orders WHERE id=?').get(id);return {...JSON.parse(r.data),version:r.version};};
  const shipment=id=>{const r=db.prepare('SELECT data FROM settings WHERE id=?').get('cdek-shipment-'+id);return r&&JSON.parse(r.data);};
  function fixture(id){
@@ -56,7 +62,19 @@ try{
  assert.equal((await call('/api/crm','admin',{action:'updateDelivery',id:f.order.id,version:1,delivery:'cdek_pickup'})).status,400);
  r=await call(path,'admin',{action:'create',orderId:f.order.id,version:1,form:shipment(f.order.id).form});assert.equal(r.data.shipment.state,'deleting');assert.equal(upstream().calls.filter(x=>x.path==='/v2/orders'&&x.method==='POST').length,0);
  r=await call(path,'logistic',{action:'refresh',orderId:f.order.id});assert.equal(r.data.shipment.state,'deleting','CREATE success must not count as DELETE success');
- change(s=>s.orders[f.uuid].deletion='SUCCESSFUL');r=await call(path,'logistic',{action:'refresh',orderId:f.order.id});assert.equal(r.status,200,r.text);assert.equal(r.data.shipment,null);assert.equal(r.data.changed,true);
+ const pendingCount=await worker();assert.equal(pendingCount.pending,1);assert.equal(notices(f.order.id).length,0,'No final notification for ACCEPTED');
+ change(s=>s.orders[f.uuid].deletion='SUCCESSFUL');assert.equal((await worker()).completed,1);
+ assert.deepEqual(notices(f.order.id).map(n=>n.employee_id),['admin','chief_logistic']);
+ for(const role of ['admin','chief_logistic']){
+  const bell=await call('/api/crm',role),notice=bell.data.reminders.find(n=>n.kind==='cdek-deletion'&&n.orderId===f.order.id);assert.ok(notice);assert.match(notice.title,/подтвердил/);assert.equal(notice.readAt,undefined);
+ }
+ assert.equal((await call('/api/crm','logistic')).data.reminders.some(n=>n.kind==='cdek-deletion'),false);
+ const notification=JSON.parse(notices(f.order.id)[0].data);
+ r=await call('/api/crm','admin',{action:'readReminder',id:notification.id});assert.equal(r.status,200,r.text);
+ assert.ok(r.data.state.reminders.find(n=>n.id===notification.id).readAt);
+ assert.equal((await worker()).checked,0,'Completed shipment removed from background queue');
+ assert.equal(notices(f.order.id).length,2);assert.ok(notices(f.order.id)[0].read_at);
+ assert.equal(notices(f.order.id)[1].read_at,null,'Read state is personal');
  const returned=readOrder(f.order.id);assert.equal(returned.status,'packing');assert.ok(returned.cdekReturnedAt);assert.equal(returned.cdekStatus,undefined);assert.equal(returned.shippedAt,undefined);assert.ok(returned.packingWaybillAt);assert.equal(returned.clientId,'client');assert.equal(shipment(f.order.id),undefined);
  assert.deepEqual(db.prepare('SELECT * FROM order_stock WHERE order_id=?').all(f.order.id),held,'Returning the shipment must not free stock');
  const archived=db.prepare("SELECT data FROM settings WHERE id LIKE 'cdek-archive-%'").all();assert.equal(archived.length,1);assert.equal(JSON.parse(archived[0].data).uuid,f.uuid);
@@ -69,14 +87,28 @@ try{
  const corrected=readOrder(f.order.id);r=await call(path,'admin',{action:'create',orderId:f.order.id,version:corrected.version,form:JSON.parse(archived[0].data).form});assert.equal(r.status,200,r.text);assert.equal(r.data.shipment.state,'ready');assert.notEqual(r.data.shipment.uuid,f.uuid);assert.equal(r.data.shipment.printId,undefined);assert.equal(r.data.shipment.downloadedAt,undefined);
  const created=upstream().calls.find(x=>x.path==='/v2/orders'&&x.method==='POST');assert.equal(created.body.number,f.order.id,'Reuse CRM number after confirmed deletion');
  // CDEK refusal leaves the order, invoice and stock unchanged.
- const reject=fixture('SM-REJECT');change(s=>s.mode='reject');r=await remove(reject.order.id);assert.equal(r.data.shipment.state,'ready');assert.match(r.data.shipment.error,/Warehouse/);assert.equal(readOrder(reject.order.id).status,'shipping');assert.equal(readOrder(reject.order.id).cdekReturnedAt,undefined);
+ const reject=fixture('SM-REJECT');change(s=>s.mode='reject');r=await remove(reject.order.id);assert.equal(r.data.shipment.state,'ready');assert.match(r.data.shipment.error,/Warehouse/);assert.equal(readOrder(reject.order.id).status,'shipping');assert.equal(readOrder(reject.order.id).cdekReturnedAt,undefined);assert.equal(notices(reject.order.id).length,2);assert.match(JSON.parse(notices(reject.order.id)[0].data).text,/Warehouse/);
  const moved=fixture('SM-MOVED');change(s=>s.orders[moved.uuid].status='RECEIVED_AT_SHIPMENT_WAREHOUSE');const callsBefore=upstream().calls.filter(x=>x.method==='DELETE').length;r=await remove(moved.order.id);assert.equal(r.status,400);assert.equal(upstream().calls.filter(x=>x.method==='DELETE').length,callsBefore);
  // Unknown response remains blocked until GET explicitly confirms the deletion.
  const timeout=fixture('SM-TIMEOUT');change(s=>s.mode='timeout');r=await remove(timeout.order.id);assert.equal(r.data.shipment.state,'deleting');change(s=>s.orders[timeout.uuid].deletion='SUCCESSFUL');r=await call(path,'admin',{action:'refresh',orderId:timeout.order.id});assert.equal(r.data.changed,true);
- const immediate=fixture('SM-IMMEDIATE');change(s=>s.mode='immediate');r=await remove(immediate.order.id);assert.equal(r.data.changed,true);assert.equal(readOrder(immediate.order.id).status,'packing');
+ const immediate=fixture('SM-IMMEDIATE');change(s=>s.mode='immediate');r=await remove(immediate.order.id);assert.equal(r.data.changed,true);assert.equal(readOrder(immediate.order.id).status,'packing');assert.equal(notices(immediate.order.id).length,2,'Immediate DELETE responses also notify');
  // A refresh already on the wire cannot resurrect an old shipment after rollback.
  const race=fixture('SM-RACE');change(s=>{s.mode='immediate';s.delayNextGet=true;});const before=upstream().calls.length;
  const stale=call(path,'admin',{action:'refresh',orderId:race.order.id});while(upstream().calls.length<before+2)await new Promise(r=>setTimeout(r,10));
  r=await remove(race.order.id);assert.equal(r.data.changed,true,r.text);assert.equal((await stale).status,400);assert.equal(shipment(race.order.id),undefined);assert.equal(readOrder(race.order.id).status,'packing');
+ // Retry a failed deletion: a new result gets its own notification, older read flags remain.
+ change(s=>{s.mode='pending';s.orders[reject.uuid].deletion=undefined;});
+ r=await remove(reject.order.id);assert.equal(r.data.shipment.state,'deleting');
+ change(s=>s.orders[reject.uuid].deletion='INVALID');assert.equal((await worker()).completed,1);
+ assert.equal(notices(reject.order.id).length,4,'Each deletion attempt is distinct');
+ assert.match(JSON.parse(notices(reject.order.id)[3].data).text,/Warehouse/);
+ // A network outage must not create a rejection; the next worker resumes after the web app stops.
+ const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
+ change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');
+ change(s=>{delete s.getFailureUuid;s.orders[background.uuid].deletion='SUCCESSFUL';});
+ server.kill('SIGTERM');await once(server,'exit');server=undefined;
+ assert.equal((await worker()).completed,1);assert.equal(readOrder(background.order.id).status,'packing');assert.equal(notices(background.order.id).length,2);
+ assert.equal((await worker()).checked,0);assert.equal(notices(background.order.id).length,2);
+ console.log('Background and bell checks passed: no browser/server, pending, recovery, success/refusal, exact recipients, distinct retries, personal read history and no duplicates.');
  console.log('CDEK deletion HTTP passed: roles, async confirmation, rollback, stock, archive, quota, edits, same-number re-export, refusals, timeout and stale refresh.');
 }catch(e){console.error(logs.slice(-6000));throw e;}finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();if(process.env.CDEK_TEST_KEEP)console.log("Preview fixture: "+dir);else rmSync(dir,{recursive:true,force:true});}
