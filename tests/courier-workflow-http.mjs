@@ -9,6 +9,7 @@ import {once} from 'node:events';
 import {authSchema} from '../lib/auth-schema.ts';
 import {inventorySQL} from '../lib/inventory-sql.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
+import {courierReminderNeedsAction} from '../lib/courier.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-courier-')),db=new DatabaseSync(join(dir,'test.sqlite')),origin='https://crm.test',port='3098',base='http://127.0.0.1:'+port,password='synthetic-password-123';
 let server,logs='';
 try{
@@ -40,6 +41,16 @@ try{
  await act(id,'courier',{action:'courierWorkflow',operation:'confirm'},400);
  await act(id,'stranger',{action:'courierAccept',confirmed:true},400);
  await act(id,'courier',{action:'courierAccept',confirmed:true});assert.equal(order(id).courier.phase,'confirmation');
+ await act(id,'courier',{action:'contact',contact:'missed',reason:'No answer'},400);
+ await act(id,'courier',{action:'contact',contact:'missed',reason:'No answer',due:hours(24)},400);
+ await act(id,'courier',{action:'contact',contact:'missed',reason:'No answer',due:hours(-1)},400);
+ const nextMinute=new Date(Math.ceil((Date.now()+60000)/60000)*60000).toISOString();
+ if(new Date(Date.parse(nextMinute)+3*3600000).toISOString().slice(0,10)===new Date(Date.now()+3*3600000).toISOString().slice(0,10)){
+  const r=await act(id,'courier',{action:'contact',contact:'missed',reason:'No answer',due:nextMinute});
+  assert.equal(order(id).due,nextMinute);const reminder=r.state.reminders.find(r=>r.kind==='call'&&r.orderId===id);
+  assert.ok(reminder);await call('courier','/api/crm',{action:'readReminder',id:reminder.id});
+  const saved=(await call('courier')).data.reminders.find(r=>r.id===reminder.id);assert.ok(saved.readAt);assert.equal(courierReminderNeedsAction(saved,order(id)),true);
+ }
  await act(id,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true},400);
  await act(id,'logistic',{action:'contact',contact:'missed',reason:'Test'},400);
  await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:hours(49)},400);

@@ -1,4 +1,5 @@
 import type {Order,Employee} from './crm.ts';
+import type {Reminder} from './reminders.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 
 export type CourierAssignment={
@@ -31,6 +32,23 @@ export function courierBalance(orders:Order[],id:string){
 }
 export const courierOutstanding=(o:Order)=>!['none','settled'].includes(courierStage(o));
 export const courierWarehouseReturn=(o:Order)=>o.status==='returned'||o.delivery==='moscow_courier'&&o.status==='refused'&&!!o.courier?.acceptedAt;
+export function courierReminderNeedsAction(r:Reminder,o:Order|undefined,now=Date.now()){
+ if(r.resolved||!o?.courier||o.delivery!=='moscow_courier')return false;
+ const phase=courierPhase(o),stage=courierStage(o);
+ if(r.kind==='call')return phase==='confirmation'&&stage==='confirmation'&&!!r.due&&o.due===r.due&&['missed','callback'].includes(o.contact);
+ if(r.kind==='courier-warning')return phase==='confirmation'&&courierDeadline(o)===r.due;
+ if(r.kind==='courier-delivery')return stage==='delivery'&&o.courier.postponement?.state==='approved'&&o.courier.postponement.at===r.due&&Date.parse(r.due)<=now;
+ if(r.kind!=='courier')return false;
+ const started=stage==='pending'?(phase==='resume'?o.courier.confirmedAt:o.courier.assignedAt):stage==='return'?(o.returnedAt||o.cancelledAt):undefined;
+ return !!started&&Date.parse(r.at)>=Date.parse(started);
+}
+export function courierMissedCallTime(time:string,now=Date.now()){
+ if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('Укажите время следующего звонка');
+ const today=new Date(now+3*3600000).toISOString().slice(0,10);
+ const due=Date.parse(today+'T'+time+':00+03:00');
+ if(due<=now)throw Error('Выберите время позже текущего. Повторный звонок после недозвона назначается на сегодня по Москве.');
+ return new Date(due).toISOString();
+}
 export function courierDeadline(o:Order){
  const c=o.courier;
  if(o.delivery!=='moscow_courier'||!c||!['confirmation','logistic'].includes(c.phase||'')||['redeemed','returned','refused'].includes(o.status)||!c.workStartedAt||c.workHours===null)return undefined;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
-import {applyCourierCommand,courierToOperator,courierDeadline,courierStage,courierBalance,courierConfirmationStage} from '../lib/courier.ts';
+import {applyCourierCommand,courierToOperator,courierDeadline,courierStage,courierBalance,courierConfirmationStage,courierMissedCallTime,courierReminderNeedsAction} from '../lib/courier.ts';
 import {allowedOrderTransitions,orderGroup,packingStage,applyRetention,scheduledCalls} from '../lib/crm.ts';
 import {defaultOrderPolicy as policy} from '../lib/order-policy.ts';
 import {reconcileOrderTimers} from '../lib/base-retention-store.ts';
@@ -10,6 +10,15 @@ const hour=3600000,at=new Date().toISOString(),time=Date.parse(at),later=n=>new 
 const courier={id:'driver',name:'Courier',role:'courier'},logistic={id:'logistic',name:'Logistic',role:'logistic'},operator={id:'operator',name:'Operator',role:'operator'};
 const client={id:'client',name:'Client',phone:'+79990000111',owner:operator.id,source:'',sheet:'К',address:'Address',createdAt:at,version:1};
 const base={id:'o',clientId:client.id,manager:operator.id,logistic:'',delivery:'moscow_courier',status:'packing',packingWaybillAt:at,createdAt:at,updatedAt:at,items:[{name:'Product',quantity:1,price:10000}],address:'Address',comment:'',reason:'',contact:'none',due:'',round:1,extra:false,version:1,courier:{id:courier.id,name:courier.name,assignedAt:at,phase:'pending',amount:10000}};
+const moscowNow=Date.parse('2026-10-07T15:00:30Z'); // 18:00 Moscow, independent of the computer timezone.
+assert.equal(courierMissedCallTime('18:01',moscowNow),'2026-10-07T15:01:00.000Z');
+for(const t of ['','25:00','18:60','2026-10-08T18:00','17:00','18:00'])assert.throws(()=>courierMissedCallTime(t,moscowNow));
+assert.equal(courierMissedCallTime('00:01',Date.parse('2026-10-31T21:00:00Z')),'2026-10-31T21:01:00.000Z');
+assert.throws(()=>courierMissedCallTime('00:01',Date.parse('2026-10-31T20:59:00Z')));
+const notice={id:'n',kind:'courier',orderId:base.id,clientId:client.id,title:'Event',text:'Author',at};
+assert.equal(courierReminderNeedsAction(notice,base),true);
+assert.equal(courierReminderNeedsAction({...notice,at:later(-1)},base),false);
+assert.equal(courierReminderNeedsAction(notice,undefined),false);
 const run=(o,e,operation,n=0,extra={})=>applyCourierCommand(o,{action:'courierWorkflow',operation,...extra},e,policy,later(n)).order;
 assert.equal(courierDeadline(base),undefined);assert.equal(orderGroup(base.status).id,'accepted');assert.equal(packingStage(base),'exported');
 assert.deepEqual(courierBalance([base],courier.id),{pending:10000,parcels:0,cash:0,total:0});
@@ -17,6 +26,12 @@ assert.throws(()=>run(base,courier,'confirm'));assert.throws(()=>applyCourierCom
 let accepted=applyCourierCommand(base,{action:'courierAccept',confirmed:true},courier,policy,later(100)).order;
 assert.equal(courierStage(accepted),'confirmation');assert.equal(accepted.status,'packing');assert.equal(courierDeadline(accepted),later(148));assert.equal(courierBalance([accepted],courier.id).total,10000);
 assert.equal(courierConfirmationStage(accepted,time+142*hour),'expiring');
+assert.equal(courierReminderNeedsAction({...notice,at:later(100)},accepted),false,'Physical acceptance is history, not a new task');
+const callOrder={...accepted,contact:'missed',due:later(101)},callNotice={...notice,kind:'call',due:callOrder.due,readAt:later(100)};
+assert.equal(courierReminderNeedsAction(callNotice,callOrder,time+100*hour),true,'Reading a future call does not complete it');
+assert.equal(courierReminderNeedsAction(callNotice,callOrder,time+102*hour),true,'Missed call stays overdue, never moves to tomorrow');
+assert.equal(courierReminderNeedsAction(callNotice,{...callOrder,due:later(103)}),false,'Rescheduled call moves to history');
+assert.equal(courierReminderNeedsAction({...callNotice,resolved:true},callOrder),false);
 assert.equal(courierConfirmationStage({...accepted,contact:'callback',due:later(101)},time+101*hour),'new');
 assert.throws(()=>run(accepted,logistic,'confirm',101));assert.throws(()=>run(accepted,courier,'confirm',149));
 let sent=run(accepted,courier,'confirm',101);assert.equal(sent.status,'shipping');assert.equal(courierStage(sent),'delivery');assert.equal(courierDeadline(sent),undefined);
@@ -29,6 +44,10 @@ sent=run(resume,courier,'resume',150);work=run(sent,courier,'toOperator',151,{re
 let logWork=run(accepted,courier,'toLogistic',101,{reason:'No answer'});assert.equal(courierDeadline(logWork),later(149));assert.equal(logWork.status,'packing');
 assert.equal(scheduledCalls([{...logWork,contact:'callback',due:later(102)}],logistic).length,1);assert.equal(scheduledCalls([{...logWork,contact:'callback',due:later(102)}],courier).length,0);
 resume=run(logWork,logistic,'confirm',102);assert.equal(resume.courier.confirmedBy,'logistic');assert.equal(courierStage(resume),'pending');assert.equal(run(resume,courier,'resume',103).courier.phase,'delivery');
+assert.equal(courierReminderNeedsAction({...notice,at:later(102)},resume),true);
+assert.equal(courierReminderNeedsAction(notice,resume),false,'Earlier handoff must not become actionable again');
+assert.equal(courierReminderNeedsAction({...notice,kind:'courier-warning',due:courierDeadline(logWork)},logWork),false,'Logistic clock is information for courier');
+assert.equal(courierReminderNeedsAction({...notice,kind:'courier-warning',due:courierDeadline(accepted)},accepted),true);
 let requested=run(accepted,courier,'requestPostpone',101,{reason:'Client away',at:later(250)});assert.equal(courierDeadline(requested),later(149));assert.throws(()=>run(requested,courier,'approvePostpone',102));assert.throws(()=>run(requested,logistic,'confirm',102));
 let approved=run(requested,logistic,'approvePostpone',102);assert.equal(approved.status,'shipping');assert.equal(approved.courier.postponement.state,'approved');assert.equal(courierDeadline(approved),undefined);assert.equal(courierStage(approved),'delivery');
 const transferred=run(requested,logistic,'toOperator',102,{reason:'Clarify'});assert.equal(run(transferred,operator,'confirm',103).courier.phase,'resume');

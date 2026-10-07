@@ -3,7 +3,7 @@ import {useSessionTab} from "@/hooks/use-session-tab";
 import {useState,useEffect,useRef} from 'react';
 import {Toaster,toast} from 'sonner';
 import {money,stamp,type State,type Employee,type Order} from '@/lib/crm';
-import {courierBalance,courierStage,courierPhase,courierLabel,courierDeadline,courierTimeLeft,courierWaitingSince,courierConfirmationStage,courierConfirmationTabs,courierReturnReasons,courierOperatorReasons} from '@/lib/courier';
+import {courierBalance,courierStage,courierPhase,courierLabel,courierDeadline,courierTimeLeft,courierWaitingSince,courierConfirmationStage,courierConfirmationTabs,courierReturnReasons,courierOperatorReasons,courierReminderNeedsAction,courierMissedCallTime} from '@/lib/courier';
 import {defaultOrderPolicy} from '@/lib/order-policy';
 type Props={state:State;employee:Employee;busy:boolean;error:string;refresh:()=>Promise<void>;mutate:(p:Record<string,unknown>)=>Promise<boolean>};
 const labels:Record<string,string>={pending:'Принять посылки',confirmation:'На подтверждении',delivery:'Заказы на руках',waiting:'Ожидают решения',return:'Вернуть на склад',money:'Сдать деньги',settled:'Завершённые'};
@@ -11,14 +11,16 @@ const moscowInput=(at:string)=>new Date(Date.parse(at)+3*3600000).toISOString().
 export function CourierApp({state,employee,busy,error,refresh,mutate}:Props){
  const [tab,setTab]=useSessionTab<string>(`crm-navigation:${employee.id}:courier:tab`,'pending',Object.keys(labels));
  const [filter,setFilter]=useState('new'),[query,setQuery]=useState(''),[now,setNow]=useState(Date.now),[remindersOpen,setRemindersOpen]=useState(false),[target,setTarget]=useState('');
+ const [reminderTab,setReminderTab]=useState<'attention'|'history'>('attention');
  const [design,setDesign]=useState('aurora'),notified=useRef(new Set<string>());
  const policy=state.settings.orderPolicy||defaultOrderPolicy;
  useEffect(()=>{try{setDesign(localStorage.getItem(`courier-design:${employee.id}`)==='classic'?'classic':'aurora');}catch{}},[employee.id]);
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(timer);},[]);
  useEffect(()=>{if(target){document.getElementById('courier-'+target)?.scrollIntoView({block:'center',behavior:'smooth'});}},[target,tab,filter]);
- const reminders=state.reminders||[],unread=reminders.filter(r=>!r.readAt&&!r.resolved);
+ const reminders=state.reminders||[],attention=reminders.filter(r=>courierReminderNeedsAction(r,state.orders.find(o=>o.id===r.orderId),now));
+ const history=reminders.filter(r=>!attention.some(a=>a.id===r.id)),shownReminders=reminderTab==='attention'?attention:history;
  function openOrder(id:string){const o=state.orders.find(o=>o.id===id);if(!o)return;setTab(courierStage(o));setQuery('');setFilter('all');setTarget(id);setRemindersOpen(false);}
- useEffect(()=>{for(const r of unread){if(notified.current.has(r.id)||r.kind==='call'&&(!r.due||Date.parse(r.due)>now))continue;notified.current.add(r.id);toast.info(r.kind==='call'?'Пора позвонить клиенту':r.title,{description:r.text,duration:10000,action:r.orderId?{label:'Открыть',onClick:()=>openOrder(r.orderId!)}:undefined});}},[reminders,now]);
+ useEffect(()=>{for(const r of attention){if(notified.current.has(r.id)||r.kind==='call'&&(!r.due||Date.parse(r.due)>now)||r.readAt&&!(r.kind==='call'&&r.due&&Date.parse(r.readAt)<Date.parse(r.due)))continue;notified.current.add(r.id);toast.info(r.kind==='call'?'Пора позвонить клиенту':r.title,{description:r.text,duration:10000,action:r.orderId?{label:'Открыть',onClick:()=>openOrder(r.orderId!)}:undefined});}},[reminders,state.orders,now]);
  function changeDesign(value:string){setDesign(value);try{localStorage.setItem(`courier-design:${employee.id}`,value);}catch{}}
  const balance=courierBalance(state.orders,employee.id);
  const workParcels=state.orders.filter(o=>o.courier?.acceptedAt&&['confirmation','waiting','pending'].includes(courierStage(o))).reduce((sum,o)=>sum+Math.round(o.courier!.amount*100),0)/100;
@@ -28,9 +30,9 @@ export function CourierApp({state,employee,busy,error,refresh,mutate}:Props){
  <div className="courier-hero"><header className="courier-header"><div><small>СМ · КУРЬЕР</small><h1>{employee.name}</h1></div><button className="secondary" onClick={async()=>{await fetch('/api/auth/logout',{method:'POST'});window.location.replace('/login');}}>Выйти</button></header>
  <section className="courier-balances" aria-label="Мой отчёт"><div><span>Посылки у вас</span><strong>{money(balance.parcels)}</strong><small>Включая подтверждение, доработку и возвраты</small></div><div><span>Деньги на руках</span><strong>{money(balance.cash)}</strong><small>Нужно передать логисту</small></div><div><span>Ожидает приёма</span><strong>{money(balance.pending)}</strong><small>Ещё не входит в ваш отчёт</small></div><div className="courier-total"><span>Всего под отчётом</span><strong>{money(balance.total)}</strong></div></section>
  {workParcels>0&&<p className="courier-work-amount">Из посылок у вас: {money(workParcels)} на подтверждении и доработке.</p>}</div>
- <div className="courier-refresh"><button className="secondary" aria-expanded={remindersOpen} onClick={()=>setRemindersOpen(!remindersOpen)}>Напоминания · {unread.length}</button><button className="secondary" disabled={busy} onClick={()=>void refresh()}>Обновить</button></div>
+ <div className="courier-refresh"><button className="secondary" aria-expanded={remindersOpen} onClick={()=>{setRemindersOpen(!remindersOpen);if(!remindersOpen)setReminderTab('attention');}}>Напоминания · {attention.length}</button><button className="secondary" disabled={busy} onClick={()=>void refresh()}>Обновить</button></div>
  {error&&<p role="alert" className="notice amber">{error}. Проверьте соединение и обновите данные.</p>}
- {remindersOpen&&<section className="courier-notices" aria-label="Напоминания"><p>Последние 20. Просмотренные остаются в истории.</p>{reminders.map(r=><article className={r.readAt||r.resolved?'read':''} key={r.id}><strong>{r.title}</strong><p>{r.text}</p><small>{stamp(r.due||r.at,'Europe/Moscow')} МСК</small>{r.orderId&&<button className="secondary" disabled={busy} onClick={()=>{openOrder(r.orderId!);void mutate({action:'readReminder',id:r.id});}}>Открыть заказ</button>}</article>)}{!reminders.length&&<p>Напоминаний пока нет.</p>}</section>}
+ {remindersOpen&&<section className="courier-notices" aria-label="Напоминания"><nav className="courier-subtabs" aria-label="Вкладки напоминаний"><button aria-pressed={reminderTab==='attention'} onClick={()=>setReminderTab('attention')}>Требуют внимания <b>{attention.length}</b></button><button aria-pressed={reminderTab==='history'} onClick={()=>setReminderTab('history')}>История <b>{history.length}</b></button></nav><p>{reminderTab==='attention'?'Актуальные действия и запланированные звонки. Открытие сообщения не завершает задачу.':'Информационные и завершённые события. Хранятся последние 20 сообщений.'}</p>{shownReminders.map(r=><article className={reminderTab==='history'&&(r.readAt||r.resolved)?'read':''} key={r.id}><strong>{r.kind==='call'?(r.due&&Date.parse(r.due)<=now?'Пора позвонить · ':'Запланирован звонок · ')+r.title:r.title}</strong><p>{r.text}</p><small>{r.orderId} · {stamp(r.due||r.at,'Europe/Moscow')} МСК</small>{reminderTab==='attention'&&r.kind==='call'&&r.due&&Date.parse(r.due)<=now&&<strong className="courier-call-overdue">Время звонка наступило — ожидает выполнения</strong>}<small>{r.resolved?'Завершено':r.readAt?'Просмотрено':reminderTab==='history'?'Информация':'Требует действия'}</small>{r.orderId&&<button className="secondary" disabled={busy} onClick={()=>{openOrder(r.orderId!);void mutate({action:'readReminder',id:r.id});}}>Открыть заказ</button>}</article>)}{!shownReminders.length&&<p>{reminderTab==='attention'?'Нет напоминаний, требующих внимания.':'История пока пуста.'}</p>}</section>}
  <nav className="courier-tabs" aria-label="Мои заказы">{Object.entries(labels).filter(([id])=>id!=='settled').map(([id,label])=><button key={id} aria-pressed={tab===id} onClick={()=>{setTab(id);setTarget('');}}>{label}<b>{state.orders.filter(o=>courierStage(o)===id).length}</b></button>)}</nav>
  <button className="secondary courier-completed" aria-pressed={tab==='settled'} onClick={()=>setTab('settled')}>Завершённые · {state.orders.filter(o=>courierStage(o)==='settled').length}</button>
  {tab==='confirmation'&&<nav className="courier-subtabs" aria-label="Этап подтверждения">{courierConfirmationTabs.map(([id,label])=><button key={id} aria-pressed={filter===id} onClick={()=>setFilter(id)}>{label}<b>{state.orders.filter(o=>courierStage(o)==='confirmation'&&courierConfirmationStage(o,now,policy)===id).length}</b></button>)}</nav>}
@@ -51,6 +53,8 @@ export function CourierApp({state,employee,busy,error,refresh,mutate}:Props){
 }
 function CourierActions({order:o,busy,mutate}:Pick<Props,'busy'|'mutate'>&{order:Order}){
  const [mode,setMode]=useState(''),[reason,setReason]=useState(''),[comment,setComment]=useState(''),[at,setAt]=useState('');
+ const form=useRef<HTMLFormElement>(null);
+ useEffect(()=>{if(mode)form.current?.scrollIntoView({block:'start',behavior:'smooth'});},[mode]);
  const stage=courierStage(o),phase=courierPhase(o),deadline=courierDeadline(o);
  function choose(value:string){setMode(value);setReason('');setComment('');setAt('');}
  async function send(p:Record<string,unknown>){if(await mutate({id:o.id,version:o.version,...p}))choose('');}
@@ -60,17 +64,20 @@ function CourierActions({order:o,busy,mutate}:Pick<Props,'busy'|'mutate'>&{order
   const call=['callback','missed'].includes(mode),outcome=['redeemed','returned'].includes(mode),transfer=['toLogistic','toOperator'].includes(mode),postpone=mode==='requestPostpone';
   const reasons=mode==='toLogistic'?courierReturnReasons:courierOperatorReasons;
   const text=[reason,comment.trim()].filter(Boolean).join(' · ');
+  let missedDue='',timeError='';
+  if(mode==='missed'&&at)try{missedDue=courierMissedCallTime(at);if(deadline&&Date.parse(missedDue)>Date.parse(deadline))timeError='Это время позже срока подтверждения. Выберите время до '+stamp(deadline,'Europe/Moscow')+' МСК.';}catch(e){timeError=(e as Error).message;}
   const title=mode==='redeemed'?'Деньги получены?':mode==='returned'?'Окончательный возврат посылки':mode==='toLogistic'?'Передать в работу логисту':mode==='toOperator'?'Передать в работу оператору':postpone?'Запросить перенос доставки':mode==='callback'?'Назначить перезвон':'Отметить недозвон';
-  return <form className="courier-confirm" onSubmit={e=>{e.preventDefault();const due=at?new Date(at+'+03:00').toISOString():'';void send(call?{action:'contact',contact:mode,reason:text,due}:outcome?{action:'courierOutcome',to:mode,confirmed:true,reason:text}:{action:'courierWorkflow',operation:mode,reason:text,...(postpone?{at:due}:{})});}}><h3>{title}</h3>
+  return <form ref={form} className="courier-confirm" onSubmit={e=>{e.preventDefault();try{if(timeError)throw Error(timeError);const due=mode==='missed'?courierMissedCallTime(at):at?new Date(at+'+03:00').toISOString():'';void send(call?{action:'contact',contact:mode,reason:text,due}:outcome?{action:'courierOutcome',to:mode,confirmed:true,reason:text}:{action:'courierWorkflow',operation:mode,reason:text,...(postpone?{at:due}:{})});}catch(error){toast.error((error as Error).message);}}}><h3>{title}</h3>
+   {mode==='missed'&&<><label>Во сколько позвонить повторно · МСК<input type="time" required value={at} min={moscowInput(new Date().toISOString()).slice(11,16)} max={deadline&&moscowInput(deadline).slice(0,10)===moscowInput(new Date().toISOString()).slice(0,10)?moscowInput(deadline).slice(11,16):'23:59'} aria-invalid={!!timeError} aria-describedby={'missed-time-'+o.id} onChange={e=>setAt(e.target.value)}/></label><p id={'missed-time-'+o.id} role={timeError?'alert':undefined}>{timeError||(missedDue?'Следующий звонок — сегодня в '+at+' МСК.':'Выберите время сегодня, позже текущего. Дату выбирать не нужно.')} Срок подтверждения не продлевается.</p></>}
    {mode==='redeemed'?<p>Подтвердите получение полной суммы {money(o.courier!.amount)}. Деньги нужно передать логисту.</p>:<>
    {mode==='returned'&&<p>Заказ получит итог «Возврат». Доставьте посылку на склад; до приёма логистом она остаётся под вашим отчётом.</p>}
    {transfer&&<p>Посылка остаётся у вас. {mode==='toOperator'?'Скажите клиенту, что оператор свяжется с ним и ответит на вопросы.':'Логист свяжется с клиентом и сообщит результат.'}</p>}
    {postpone&&<p>Логист согласует дату. До согласования действует срок работы логиста; один запрос не отключает таймер.</p>}
    {(transfer||mode==='returned')&&<label>Причина<select required value={reason} onChange={e=>setReason(e.target.value)}><option value="">Выберите причину</option>{reasons.filter(r=>mode!=='toLogistic'||r!=='Просит перенести доставку').map(r=><option key={r}>{r}</option>)}</select></label>}
    <label>{transfer||mode==='returned'?'Пояснение (необязательно)':call?'Причина звонка':'Причина переноса'}<textarea rows={2} required={!transfer&&mode!=='returned'} maxLength={800} value={comment} onChange={e=>setComment(e.target.value)} placeholder={call?'Укажите причину недозвона или перезвона':'Что нужно знать сотруднику'}/></label>
-   {(call||postpone)&&<label>{postpone?'Желаемая доставка · МСК':mode==='missed'?'Следующая попытка · МСК (необязательно)':'Время звонка · МСК'}<input type="datetime-local" required={mode!=='missed'} value={at} min={moscowInput(new Date().toISOString())} max={call&&deadline?moscowInput(deadline):undefined} onChange={e=>setAt(e.target.value)}/></label>}
+   {(mode==='callback'||postpone)&&<label>{postpone?'Желаемая доставка · МСК':'Время звонка · МСК'}<input type="datetime-local" required value={at} min={moscowInput(new Date().toISOString())} max={call&&deadline?moscowInput(deadline):undefined} onChange={e=>setAt(e.target.value)}/></label>}
    </>}
-   <button type="submit" className="primary" disabled={busy}>{busy?'Сохранение…':mode==='redeemed'?'Да, деньги получены':postpone?'Отправить на согласование':'Подтвердить'}</button><button type="button" className="secondary" disabled={busy} onClick={()=>choose('')}>Назад</button>
+   <button type="submit" className="primary" disabled={busy||!!timeError}>{busy?'Сохранение…':mode==='redeemed'?'Да, деньги получены':postpone?'Отправить на согласование':mode==='missed'?'Сохранить недозвон и время':'Подтвердить'}</button><button type="button" className="secondary" disabled={busy} onClick={()=>choose('')}>Назад</button>
   </form>;
  }
  return <div className="courier-buttons">
