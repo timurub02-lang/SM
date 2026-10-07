@@ -1,3 +1,4 @@
+import {canEditRecalledCourierOrder} from './courier.ts';
 import {isLogistic} from './crm.ts';
 import {canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
 export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'owner'>){return !!c&&(e.role!=='operator'||c.owner===e.id);}
@@ -44,7 +45,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
    return;
   }
  }
- allow(!orderEditingLocked(e,order));
+ allow(!orderEditingLocked(e,order)||p.action==='updateOrder'&&canEditRecalledCourierOrder(order,e));
  if(p.action==='transition'){
   if(e.role==='operator')allow(['confirm','extra','refused'].includes(p.to));
   if(isLogistic(e.role))allow(!['redeemed','returned'].includes(p.to)||p.to==='redeemed'&&order.delivery==='russian_post'&&['shipping','pickup'].includes(order.status));

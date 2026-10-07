@@ -357,11 +357,11 @@ try{
   assert.equal((await call('/api/crm',{cookie:reminderActor.cookie})).status,200);
  }
  let reminderState=(await call('/api/crm',{cookie:reminderActor.cookie})).data;
- assert.equal(reminderState.reminders.length,20);
+ assert.equal(reminderState.reminders.length,22);
  const reminderId=reminderState.reminders[0].id;
  assert.equal((await call('/api/crm',{cookie:reminderActor.cookie,body:{action:'readReminder',id:reminderId}})).status,200);
  reminderState=(await call('/api/crm',{cookie:reminderActor.cookie})).data;
- assert.ok(reminderState.reminders[0].readAt);assert.equal(reminderState.reminders.length,20);
+ assert.ok(reminderState.reminders[0].readAt);assert.equal(reminderState.reminders.length,22);
  const unreadId=reminderState.reminders[1].id;
  await call('/api/crm',{cookie:chief.cookie,body:{action:'readReminder',id:unreadId}});
  assert.equal((await call('/api/crm',{cookie:reminderActor.cookie})).data.reminders.find(r=>r.id===unreadId).readAt,undefined);
@@ -369,7 +369,7 @@ try{
  reminderState=(await call('/api/crm',{cookie:reminderActor.cookie})).data;
  assert.equal(reminderState.reminders.length,20);assert.ok(reminderState.reminders.find(r=>r.id===reminderId).readAt);
  assert.ok(!(await call('/api/crm',{cookie:chief.cookie})).data.reminders.some(r=>r.id===reminderId));
- console.log('Reminders: latest 20, read persistence, rescheduled-call history and employee isolation passed.');
+ console.log('Reminders: 20 history plus active call and draft, read persistence, rescheduled-call history and employee isolation passed.');
  const colleague=await fixture('shared-reminder-logistic','1','logistic');
  colleague.e.name='Shared reminder colleague';
  db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify(colleague.e),colleague.e.id);
@@ -771,7 +771,7 @@ try{
    }
   }
   const saved=await call('/api/crm',{cookie:editor.cookie,body:{...body,adminReviewConfirmed:true}});assert.equal(saved.status,200,id+": "+saved.text);
-  const next=saved.data.state.orders.find(o=>o.id===id);assert.equal(next.delivery,to);assert.equal(next.status,needsReview?'check':'extra');
+  const next=saved.data.state.orders.find(o=>o.id===id);assert.equal(next.delivery,to);assert.equal(next.status,needsReview?'check':to==='moscow_courier'?'packing':'extra');
   assert.equal(next.packingWaybillAt,undefined);assert.equal(next.manualDeliveryCost,undefined);
   if(channelChanged){assert.deepEqual(next.deliveryChange,{from,to,at:next.deliveryChange.at,by:editor.e.id,name:editor.e.name});assert.ok(saved.data.state.events.some(e=>e.orderId===id&&e.text.includes('Способ доставки изменён:')));}
   else assert.equal(next.deliveryChange,undefined,'CDEK subtype change is not a channel change');

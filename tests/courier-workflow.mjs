@@ -44,7 +44,7 @@ sent=run(resume,courier,'resume',150);work=run(sent,courier,'toOperator',151,{re
 // Retired actions cannot be replayed by an older mobile page.
 for(const operation of ['toLogistic','requestPostpone','approvePostpone','rejectPostpone'])assert.throws(()=>run(accepted,courier,operation,101,{reason:'Test',at:later(250)}));
 const returned=run(accepted,courier,'toOperator',101,{reason:'Недозвон'});
-assert.equal(returned.status,'rework');assert.equal(returned.courier.phase,'operator');assert.equal(returned.courier.atDoor,false);
+assert.equal(returned.status,'rework');assert.equal(orderGroup(returned).id,'accepted');assert.equal(orderGroup(work).id,'sent');assert.equal(orderGroup({...work,status:'refused'}).id,'cancelled');assert.equal(orderGroup({...work,delivery:'russian_post',courier:undefined}).id,'new');assert.equal(returned.courier.phase,'operator');assert.equal(returned.courier.atDoor,false);
 assert.equal(returned.due,'');assert.equal(courierDeadline(returned),undefined);
 assert.equal(scheduledCalls([{...returned,contact:'callback',due:later(102)}],operator).length,1);
 for(const staff of [logistic,{...logistic,role:'chief_logistic'}]){
@@ -58,6 +58,24 @@ assert.equal(run(resume,courier,'resume',103).courier.phase,'delivery');
 assert.equal(courierReminderNeedsAction({...notice,at:later(102)},resume),true);
 assert.equal(courierReminderNeedsAction(notice,resume),false,'Earlier handoff must not become actionable again');
 assert.equal(courierReminderNeedsAction({...notice,kind:'courier-warning',due:courierDeadline(accepted)},accepted),true);
+// Recall is physical custody, not a reintroduction of logistic confirmation.
+const recalledPending=run(base,logistic,'recall',1,{reason:'Wrong parcel'});
+assert.equal(recalledPending.courier,undefined);assert.equal(recalledPending.status,'packing');assert.equal(packingStage(recalledPending),'new');assert.equal(recalledPending.packingWaybillAt,undefined);assert.equal(courierBalance([recalledPending],courier.id).total,0);
+assert.throws(()=>run(base,operator,'recall',1,{reason:'Wrong parcel'}));
+const requested=run(returned,operator,'requestRepack',102,{reason:'Need two products'});
+assert.equal(requested.courier.phase,'operator');assert.equal(requested.reworkDeadline,returned.reworkDeadline);
+assert.throws(()=>run(requested,operator,'confirm',103));assert.throws(()=>run(requested,operator,'requestRepack',103,{reason:'Duplicate'}));
+const recalled=run(requested,logistic,'recall',103,{reason:requested.courierRepackRequest.reason});
+assert.equal(recalled.courier.phase,'recall');assert.equal(courierDeadline(recalled),undefined);assert.equal(recalled.reworkDeadline,undefined);assert.equal(recalled.courier.operatorBudgetMs,94*hour);assert.equal(courierBalance([recalled],courier.id).total,10000);
+assert.equal(courierReminderNeedsAction({...notice,at:later(103)},recalled),true);
+assert.throws(()=>run(recalled,courier,'confirm',104));assert.throws(()=>run(recalled,logistic,'receiveRecall',104,{confirmed:true}));assert.throws(()=>run(recalled,courier,'returnRecall',104));
+const physicallyReturned=run(recalled,courier,'returnRecall',104,{confirmed:true});
+assert.equal(packingStage(physicallyReturned),'new');assert.equal(courierBalance([physicallyReturned],courier.id).total,10000);assert.equal(courierReminderNeedsAction({...notice,at:later(104)},physicallyReturned),false);
+assert.throws(()=>run(physicallyReturned,courier,'receiveRecall',105,{confirmed:true}));
+const received=run(physicallyReturned,logistic,'receiveRecall',105,{confirmed:true});
+assert.equal(received.courier,undefined);assert.equal(received.courierRecall.operatorBudgetMs,94*hour);assert.equal(received.packingWaybillAt,undefined);assert.equal(courierBalance([received],courier.id).total,0);assert.equal(received.warehouseReturnedAt,undefined);
+assert.throws(()=>run(received,logistic,'receiveRecall',106,{confirmed:true}));
+for(const status of ['redeemed','returned','refused'])assert.throws(()=>run({...accepted,status},logistic,'recall',101,{reason:'Invalid final order'}));
 // Existing appointments stay valid; the obsolete logistic work queue migrates once.
 const logWork={...accepted,courier:{...accepted.courier,phase:'logistic',workReason:'Недозвон'}};
 const approved={...sent,status:'shipping',courier:{...sent.courier,phase:'delivery',postponement:{at:later(250),requestedAt:at,reason:'Old appointment',state:'approved'}}};

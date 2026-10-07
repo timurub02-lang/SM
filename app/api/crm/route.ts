@@ -6,7 +6,7 @@ import {moscowDate,normalizedPhone} from '@/lib/base-distribution';
 import {orderSettings} from '@/lib/order-policy-store';
 import {orderDataEditingEnabled} from '@/lib/order-policy';
 import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
-import {applyCourierCommand,courierPhase,courierStage,courierDeadline,courierWarehouseReturn,cancelCourierWork,courierOutstanding} from '@/lib/courier';
+import {applyCourierCommand,canEditCourierOrder,canEditRecalledCourierOrder,courierPhase,courierStage,courierDeadline,courierWarehouseReturn,cancelCourierWork,courierOutstanding} from '@/lib/courier';
 import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
 import {total,canReceivePayment,isLogistic} from '@/lib/crm';
@@ -134,8 +134,8 @@ async function handlePOST(request:Request){
   if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите создание заказа вручную.');
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),eventSQL(ev(c.id,o.id,"Создан заказ · Оформление"+(addressWarnings.length?" · адрес проверен вручную, создание подтверждено несмотря на предупреждение: "+addressWarnings.map(w=>w.message).join(" "):"")+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":"")))]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
  }else if(["markPV","courierAccept","courierOutcome","courierWorkflow","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
-  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(employee.role==="courier"&&["courierAccept","courierOutcome","courierWorkflow","contact"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");if(o.cdekDeleting)throw Error("СДЭК обрабатывает удаление. Дождитесь подтверждения");const next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
-  if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
+  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee))&&!(employee.role==="courier"&&["courierAccept","courierOutcome","courierWorkflow","contact"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");if(o.cdekDeleting)throw Error("СДЭК обрабатывает удаление. Дождитесь подтверждения");let next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
+  if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,canEditRecalledCourierOrder(o,employee)?'rework':o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
   if(o.status==="rework"&&!next.returnReason)next.returnReason=o.reason;
   if((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
    const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-shipment-${o.id}`).first<{data:string}>();
@@ -144,8 +144,8 @@ async function handlePOST(request:Request){
   if(p.action==="markPV"){
    if(employee.role!=='admin'||o.status!=='check')throw Error('Метка ПВ ставится администратором на этапе проверки');next.pv=z.boolean().parse(p.value);next.pvMarkedAt=next.pv?now:undefined;text=next.pv?'Заказ отмечен ПВ':'Метка ПВ снята';
   }else if(p.action==="courierAccept"||p.action==="courierWorkflow"){
-   const command=z.object({action:z.enum(['courierAccept','courierWorkflow']),operation:z.enum(['confirm','toOperator','resume']).optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional()}).parse(p);
-   const result=applyCourierCommand(o,command,employee,s.settings.orderPolicy!,now);Object.assign(next,result.order);text=result.text;
+   const command=z.object({action:z.enum(['courierAccept','courierWorkflow']),operation:z.enum(['confirm','toOperator','resume','recall','returnRecall','receiveRecall','requestRepack']).optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional()}).parse(p);
+   const result=applyCourierCommand(o,command,employee,s.settings.orderPolicy!,now);next={...result.order,_mutation:next._mutation};text=result.text;
   }else if(p.action==="courierOutcome"){
    if(!o.courier?.acceptedAt)throw Error('Сначала примите посылку у логиста');
    if(employee.role!=='courier'||o.courier?.id!==employee.id||o.delivery!=='moscow_courier'||courierStage(o)!=='delivery')throw Error('Этот заказ недоступен для действия курьера');
@@ -173,6 +173,7 @@ async function handlePOST(request:Request){
    next.warehouseReturnedAt=now;text="Возврат на склад · товар принят, резерв освобождён";
   }else if(p.action==="markPackingWaybill"){
    if(!employee||!["admin","logistic","chief_logistic"].includes(employee.role))throw Error("Нет доступа к накладным");
+   if(o.courierRepackRequest&&!o.courierRepackRequest.completedAt)throw Error('Сначала оператор или администратор должен сохранить исправленный заказ после приёма посылки');
    next.packingWaybillAt=o.packingWaybillAt||now;text="Подготовлена накладная на сборку";
   }else if(p.action==="updateWaybillComment"){
    if(!employee||!["operator","logistic","chief_logistic","admin","redemption"].includes(employee.role))throw new Error("Нет доступа к комментарию заказа");
@@ -188,7 +189,7 @@ async function handlePOST(request:Request){
    if(!employee||!canManageDelivery(employee.role,o.status))throw new Error("Способ доставки выбирает логист до отправки заказа");
    next.delivery=deliverySchema.parse(p.delivery);text="Изменён способ доставки";
   }else if(p.action==="updateOrder"){
-   if(!isLogistic(employee.role)&&!["draft","rework"].includes(o.status)&&!(employee.role==="admin"&&canAdminEditReturnedCdekOrder(o)))throw new Error("Корзину можно менять на этапе оформления или возврата оператору");
+   if(!isLogistic(employee.role)&&!["draft","rework"].includes(o.status)&&!canEditRecalledCourierOrder(o,employee)&&!(employee.role==="admin"&&canAdminEditReturnedCdekOrder(o)))throw new Error("Корзину можно менять на этапе оформления или возврата оператору");
    next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts??(p.address===undefined||p.address===o.address?o.addressParts:undefined));next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)?o.items:itemsSchema.parse(p.items);next.comment=z.string().max(3000).parse(p.comment||"");text=isLogistic(employee.role)?"Логист уточнил доставку, адрес и комментарий заказа":"Обновлены доставка, адрес, корзина и комментарий менеджера";
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
@@ -200,8 +201,9 @@ async function handlePOST(request:Request){
     if(!courier)throw Error('Выберите курьера для передачи заказа');
     const account=await d.prepare('SELECT enabled FROM auth_accounts WHERE employee_id=?').bind(courier.id).first<{enabled:number}>();
     if(personalAuth()&&!account?.enabled)throw Error('У курьера должен быть включён вход в CRM');
+    if(o.courierRepackRequest&&!o.courierRepackRequest.completedAt)throw Error('Ожидаются правки корзины после пересборки');
     if(!o.items.length)throw Error('В заказе нет товаров');
-    next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o),phase:"pending"};
+    next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o),phase:"pending",operatorBudgetMs:o.courierRecall?.operatorBudgetMs};
    }
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
    delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
@@ -238,6 +240,12 @@ async function handlePOST(request:Request){
    next.deliveryChange={from:o.delivery!,to:next.delivery!,at:now,by:employee.id,name:employee.name};
    text+=` · Способ доставки изменён: ${deliveryLabels[o.delivery!]} → ${deliveryLabels[next.delivery!]}`;
   }
+  if(o.status==='extra'&&o.delivery!=='moscow_courier'&&next.delivery==='moscow_courier'&&['admin','logistic','chief_logistic'].includes(employee.role)){
+   next.status='packing';next.extra=false;next.contact='none';next.due='';next.reason='';
+   delete next.confirmationStartedAt;delete next.confirmationHours;delete next.noAnswerDeadline;delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;delete next.packingWaybillAt;
+   if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
+   text+=' · Курьер Москва → Новый · заказ направлен на сборку, следующее подтверждение выполнит курьер';
+  }
   if(cdekReviewOnDeliveryChange(o,next.delivery)){
    if(p.adminReviewConfirmed!==true)throw Error("Для доставки СДЭК нужна проверка администратора. Подтвердите смену доставки и передачу заказа на проверку.");
    next.status="check";next.extra=false;next.contact="none";next.due="";next.reason="";
@@ -246,12 +254,23 @@ async function handlePOST(request:Request){
    if(isLogistic(employee.role))next.logistic=employee.id;
    text+=" · Доставка изменена на СДЭК. Заказ передан администратору на проверку";
   }
+  if(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee)&&next.delivery!==o.delivery)throw Error('При пересборке заказа курьера способ доставки не меняется');
+  if(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee)&&o.courierRepackRequest&&!o.courierRepackRequest.completedAt){
+   next.courierRepackRequest={...o.courierRepackRequest,completedAt:now};text+=' · правки для пересборки сохранены';
+  }
   if(p.action==="updateOrder"){
    const addressWarnings=orderAddressWarnings(next.address||'',next.addressParts);
    if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите сохранение заказа вручную.');
    if(addressWarnings.length)text+=' · адрес проверен вручную, сохранение подтверждено несмотря на предупреждение: '+addressWarnings.map(w=>w.message).join(' ');
   }
-  if(o.courier&&['updateOrder','updateDelivery','saveManualDeliveryCost','selectCdekTariff','markPackingWaybill','updateWaybillComment'].includes(p.action))throw Error('Заказ уже передан курьеру. Данные отправления зафиксированы');
+  if(o.courier&&p.action==='updateOrder'&&canEditCourierOrder(o,employee)){
+   if(next.delivery!==o.delivery)throw Error('После передачи курьеру нельзя менять способ доставки. Сначала отзовите посылку.');
+   const contents=(items:Order['items'])=>JSON.stringify(items.map(({name,quantity})=>({name,quantity})));
+   if(contents(next.items)!==contents(o.items))throw Error('Для изменения товара или количества сначала отзовите посылку на пересборку.');
+   next.courier={...o.courier,amount:total(next)};
+   text+=' · сумма под отчётом курьера обновлена: '+next.courier.amount+' ₽';
+  }
+  if(o.courier&&!(p.action==='updateOrder'&&canEditCourierOrder(o,employee))&&['updateOrder','updateDelivery','saveManualDeliveryCost','selectCdekTariff','markPackingWaybill','updateWaybillComment'].includes(p.action))throw Error('Заказ уже передан курьеру. Данные отправления зафиксированы');
   if(p.action!=="selectCdekTariff"&&next.cdekTariff&&(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)))delete next.cdekTariff;
   if(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)){delete next.manualDeliveryCost;delete next.packingWaybillAt;}
   const deliveryChanged=next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts);

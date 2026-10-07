@@ -9,7 +9,7 @@ import {once} from 'node:events';
 import {authSchema} from '../lib/auth-schema.ts';
 import {inventorySQL} from '../lib/inventory-sql.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
-import {courierReminderNeedsAction} from '../lib/courier.ts';
+import {courierBalance,courierReminderNeedsAction} from '../lib/courier.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-courier-')),db=new DatabaseSync(join(dir,'test.sqlite')),origin='https://crm.test',port='3098',base='http://127.0.0.1:'+port,password='synthetic-password-123';
 let server,logs='';
 try{
@@ -57,7 +57,7 @@ try{
  await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
  for(const operation of ['toLogistic','requestPostpone','approvePostpone','rejectPostpone'])await act(id,'courier',{action:'courierWorkflow',operation,reason:'Test',at:hours(200)},400);
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Недозвон'});
- assert.equal(order(id).courier.phase,'operator');assert.equal(order(id).status,'rework');assert.equal(stock(),before);
+ assert.equal(order(id).courier.phase,'operator');assert.equal(order(id).status,'rework');assert.equal(order(id).noAnswerDeadline,undefined);assert.equal(order(id).contactAuthor,undefined);assert.equal(stock(),before);
  await act(id,'operator',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
  assert.ok((await call('operator')).data.reminders.some(r=>r.kind==='call'&&r.orderId===id&&!r.resolved));
  for(const employee of ['logistic','second','chief']){
@@ -79,6 +79,57 @@ try{
  await act(id,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});assert.equal(stock(),before);
  await act(id,'logistic',{action:'receivePayment'});await act(id,'logistic',{action:'receivePayment'},400);
  assert.equal(db.prepare('SELECT amount FROM cash_operations WHERE order_id=?').get(id).amount,1000000);
+ // Editable price/address while operator works: custody follows amount, physical contents stay locked.
+ const editId=await create();await assembled(editId);await act(editId,'courier',{action:'courierAccept',confirmed:true});await act(editId,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Change order'});
+ const editStock=stock(),editableVersion=order(editId).version;
+ const edit={action:'updateOrder',items:[{name:'Product',quantity:1,price:9000}],address:'Москва, Тверская, дом 2',comment:'New price and address',addressConfirmed:true};
+ await act(editId,'operator',edit);assert.equal(order(editId).courier.amount,9000);assert.equal(courierBalance([order(editId)],'courier').parcels,9000);assert.equal(stock(),editStock);
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(order(editId).clientId).data).address,edit.address);
+ assert.ok((await call('courier')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('9000')));
+ await act(editId,'operator',{...edit,version:editableVersion},400);
+ await act(editId,'operator',{...edit,items:[{name:'Product',quantity:2,price:9000}]},400);
+ await act(editId,'operator',{...edit,delivery:'russian_post'},400);
+ await act(editId,'logistic',edit,400);
+ await act(editId,'operator',{action:'courierWorkflow',operation:'requestRepack',reason:'Add one more item'});
+ for(const e of ['logistic','second','chief'])assert.ok((await call(e)).data.reminders.some(r=>r.orderId===editId&&r.title.includes('запросил пересборку')));
+ await act(editId,'operator',{action:'courierWorkflow',operation:'confirm'},400);
+ await act(editId,'courier',{action:'courierWorkflow',operation:'recall',reason:'Invalid'},400);
+ await act(editId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Add one more item'});
+ const recallBudget=order(editId).courier.operatorBudgetMs;assert.equal(order(editId).courier.phase,'recall');assert.equal(stock(),editStock);
+ await act(editId,'operator',edit,400);await act(editId,'logistic',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true},400);
+ await act(editId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true},400);
+ await act(editId,'courier',{action:'courierWorkflow',operation:'returnRecall'},400);
+ await act(editId,'courier',{action:'courierWorkflow',operation:'returnRecall',confirmed:true});
+ assert.equal(order(editId).courier.phase,'recall_returned');assert.equal(courierBalance([order(editId)],'courier').parcels,9000);assert.equal(stock(),editStock);
+ await act(editId,'logistic',{action:'markPackingWaybill'},400);
+ await act(editId,'chief',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true});
+ assert.equal(order(editId).courier,undefined);assert.equal(order(editId).status,'packing');assert.equal(order(editId).packingWaybillAt,undefined);assert.equal(stock(),editStock);assert.equal(courierBalance([order(editId)],'courier').parcels,0);
+ assert.ok((await call('operator')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('принял отозванную')));
+ await act(editId,'chief',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true},400);
+ await act(editId,'logistic',{action:'markPackingWaybill'},400);
+ await act(editId,'operator',{...edit,items:[{name:'Product',quantity:2,price:9000}]});assert.equal(stock(),editStock-1);assert.ok(order(editId).courierRepackRequest.completedAt);
+ assert.ok((await call('logistic')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('правки для пересборки сохранены')));
+ await act(editId,'logistic',{action:'markPackingWaybill'});
+ await act(editId,'operator',edit,400);
+ await act(editId,'logistic',{action:'transition',to:'shipping',courierId:'courier'});assert.equal(order(editId).courier.amount,18000);assert.equal(order(editId).courier.operatorBudgetMs,recallBudget);
+ await act(editId,'courier',{action:'courierAccept',confirmed:true});assert.equal(order(editId).courier.phase,'confirmation');
+ await act(editId,'courier',{action:'courierWorkflow',operation:'confirm'});await act(editId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});
+ await act(editId,'operator',edit,400);await act(editId,'admin',edit,400);await act(editId,'logistic',{action:'receivePayment'});assert.equal(db.prepare('SELECT amount FROM cash_operations WHERE order_id=?').get(editId).amount,1800000);
+ // Before physical acceptance, recall immediately resets to assembly and an obsolete courier click cannot win.
+ const pendingId=await create();await assembled(pendingId);const pendingVersion=order(pendingId).version;
+ await act(pendingId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Wrong handoff'});assert.equal(order(pendingId).courier,undefined);assert.equal(order(pendingId).packingWaybillAt,undefined);
+ await act(pendingId,'courier',{action:'courierAccept',confirmed:true,version:pendingVersion},400);
+ // Logistics extra confirmation is dropped only on a switch to Moscow, not on the first confirmation.
+ for(const from of ['russian_post','cdek_pickup']){
+  const switchId=await create();await act(switchId,'operator',{action:'updateOrder',delivery:from,items:order(switchId).items,addressConfirmed:true});await act(switchId,'operator',{action:'transition',to:'confirm'});
+  if(from==='russian_post')await act(switchId,'logistic',{action:'transition',to:'extra'});else{await act(switchId,'logistic',{action:'transition',to:'check'});await act(switchId,'admin',{action:'transition',to:'extra'});}
+  await act(switchId,'logistic',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
+  const action=from==='russian_post'?{action:'updateDelivery',delivery:'moscow_courier'}:{action:'updateOrder',delivery:'moscow_courier',addressConfirmed:true};
+  await act(switchId,'logistic',action);const switched=order(switchId);assert.equal(switched.status,'packing');assert.equal(switched.extra,false);assert.equal(switched.due,'');assert.equal(switched.noAnswerDeadline,undefined);assert.equal(switched.confirmationStartedAt,undefined);assert.equal(switched.packingWaybillAt,undefined);assert.equal(switched.deliveryChange.to,'moscow_courier');
+  await act(switchId,'logistic',{action:'markPackingWaybill'});await act(switchId,'logistic',{action:'transition',to:'shipping',courierId:'courier'});await act(switchId,'courier',{action:'courierAccept',confirmed:true});assert.equal(order(switchId).courier.phase,'confirmation');
+ }
+ const firstId=await create();await act(firstId,'operator',{action:'updateOrder',delivery:'russian_post',items:order(firstId).items,addressConfirmed:true});await act(firstId,'operator',{action:'transition',to:'confirm'});await act(firstId,'logistic',{action:'updateDelivery',delivery:'moscow_courier'});assert.equal(order(firstId).status,'confirm');
+ console.log('Courier recall/repack, guarded editing, stale clicks, custody, price/stock/cash and delivery-switch regressions passed.');
  // An existing pending logistic request is transferred to the operator without another physical acceptance.
  const legacyId=await create();await assembled(legacyId);await act(legacyId,'courier',{action:'courierAccept',confirmed:true});
  const legacy=order(legacyId),legacyStock=stock();legacy.courier.phase='logistic';legacy.courier.workHours=null;legacy.courier.operatorBudgetMs=4*3600000;legacy.courier.postponement={state:'pending',at:hours(200),reason:'Old request',requestedAt:hours(-1)};
@@ -93,5 +144,17 @@ try{
  const accepted=order(returnedId);accepted.courier.workStartedAt=hours(-49);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(accepted),returnedId);await call('operator');assert.equal(order(returnedId).status,'rework');
  const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
  await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
+ const pendingIds=[];
+ for(let i=0;i<22;i++){const newId=await create();await assembled(newId);pendingIds.push(newId);}
+ function courierNotices(state){return {active:state.reminders.filter(r=>courierReminderNeedsAction(r,state.orders.find(o=>o.id===r.orderId))),history:state.reminders.filter(r=>!courierReminderNeedsAction(r,state.orders.find(o=>o.id===r.orderId)))};}
+ let noticeState=(await call('courier')).data,notices=courierNotices(noticeState);
+ for(const newId of pendingIds)assert.ok(notices.active.some(r=>r.orderId===newId));assert.ok(notices.active.length>=22);assert.ok(notices.history.length<=20);
+ const oldest=notices.active.find(r=>r.orderId===pendingIds[0]);await call('courier','/api/crm',{action:'readReminder',id:oldest.id});assert.ok(courierNotices((await call('courier')).data).active.some(r=>r.id===oldest.id&&r.readAt));
+ db.prepare("DELETE FROM reminders WHERE employee_id='courier' AND json_extract(data,'$.orderId')=?").run(pendingIds[0]);
+ notices=courierNotices((await call('courier')).data);assert.ok(notices.active.some(r=>r.orderId===pendingIds[0]),'Restore missing active task');
+ await act(pendingIds[0],'courier',{action:'courierAccept',confirmed:true});notices=courierNotices((await call('courier')).data);assert.ok(!notices.active.some(r=>r.orderId===pendingIds[0]));assert.ok(notices.history.length<=20);
+ for(const newId of pendingIds){if(!order(newId).courier.acceptedAt)await act(newId,'courier',{action:'courierAccept',confirmed:true});await act(newId,'courier',{action:'contact',contact:'callback',reason:'Scheduled test call',due:hours(1)});}
+ notices=courierNotices((await call('courier')).data);for(const newId of pendingIds)assert.ok(notices.active.some(r=>r.kind==='call'&&r.orderId===newId));assert.ok(notices.history.length<=20);
+ console.log('All active courier tasks persist, viewed tasks stay actionable, missing tasks recover, completed history limited to 20.');
  console.log('Moscow API: real create/handoff/accept, operator-only returns, forbidden retired actions, operator calls, shared budget and legacy migration, money, expiry, physical return and stock passed.');
 }finally{if(server&&server.exitCode===null){const exited=once(server,'exit');server.kill('SIGTERM');await exited;}db.close();rmSync(dir,{recursive:true,force:true});}
