@@ -144,7 +144,7 @@ async function handlePOST(request:Request){
   if(p.action==="markPV"){
    if(employee.role!=='admin'||o.status!=='check')throw Error('Метка ПВ ставится администратором на этапе проверки');next.pv=z.boolean().parse(p.value);next.pvMarkedAt=next.pv?now:undefined;text=next.pv?'Заказ отмечен ПВ':'Метка ПВ снята';
   }else if(p.action==="courierAccept"||p.action==="courierWorkflow"){
-   const command=z.object({action:z.enum(['courierAccept','courierWorkflow']),operation:z.enum(['confirm','toLogistic','toOperator','requestPostpone','approvePostpone','rejectPostpone','resume']).optional(),reason:z.string().trim().max(1000).optional(),at:z.string().datetime().optional(),confirmed:z.boolean().optional()}).parse(p);
+   const command=z.object({action:z.enum(['courierAccept','courierWorkflow']),operation:z.enum(['confirm','toOperator','resume']).optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional()}).parse(p);
    const result=applyCourierCommand(o,command,employee,s.settings.orderPolicy!,now);Object.assign(next,result.order);text=result.text;
   }else if(p.action==="courierOutcome"){
    if(!o.courier?.acceptedAt)throw Error('Сначала примите посылку у логиста');
@@ -223,7 +223,7 @@ async function handlePOST(request:Request){
   }else if(p.action==="contact"){
    if(o.courier){
     const phase=courierPhase(o);
-    if(!(employee.role==='courier'&&o.courier.id===employee.id&&phase==='confirmation'||['admin','logistic','chief_logistic'].includes(employee.role)&&phase==='logistic'||['admin','operator'].includes(employee.role)&&o.status==='rework'))throw Error('Звонок доступен только сотруднику, у которого заказ сейчас в работе');
+    if(!(employee.role==='courier'&&o.courier.id===employee.id&&phase==='confirmation'||['admin','operator'].includes(employee.role)&&o.status==='rework'))throw Error('Звонок доступен только сотруднику, у которого заказ сейчас в работе');
    }else if(!["draft","confirm","rework","extra","pickup"].includes(o.status))throw new Error("Звонок недоступен на этом этапе");
    if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
    next.contact=z.enum(["missed","callback"]).parse(p.contact);next.reason=z.string().trim().min(1,"Укажите причину").max(1000).parse(p.reason);

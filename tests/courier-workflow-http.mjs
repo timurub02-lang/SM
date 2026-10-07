@@ -55,14 +55,17 @@ try{
  await act(id,'logistic',{action:'contact',contact:'missed',reason:'Test'},400);
  await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:hours(49)},400);
  await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
- await act(id,'courier',{action:'courierWorkflow',operation:'toLogistic',reason:'No answer'});assert.equal(order(id).courier.phase,'logistic');assert.equal(stock(),before);
- await act(id,'logistic',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
- for(const employee of ['logistic','second','chief']){const s=(await call(employee)).data;assert.ok(s.reminders.some(r=>r.kind==='call'&&r.orderId===id&&r.text.includes('Test logistic')));}
- // Existing simultaneous-edit protection also covers the new logistic actions.
- const token=crypto.randomUUID();await call('logistic','/api/order-access',{action:'acquire',orderId:id,token});
- await act(id,'second',{action:'courierWorkflow',operation:'confirm'},409);
- await call('logistic','/api/order-access',{action:'release',orderId:id,token});
- await act(id,'logistic',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(id).courier.phase,'resume');
+ for(const operation of ['toLogistic','requestPostpone','approvePostpone','rejectPostpone'])await act(id,'courier',{action:'courierWorkflow',operation,reason:'Test',at:hours(200)},400);
+ await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Недозвон'});
+ assert.equal(order(id).courier.phase,'operator');assert.equal(order(id).status,'rework');assert.equal(stock(),before);
+ await act(id,'operator',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
+ assert.ok((await call('operator')).data.reminders.some(r=>r.kind==='call'&&r.orderId===id&&!r.resolved));
+ for(const employee of ['logistic','second','chief']){
+  await act(id,employee,{action:'contact',contact:'callback',reason:'Later',due:hours(1)},400);
+  await act(id,employee,{action:'courierWorkflow',operation:'confirm'},400);
+  assert.ok(!(await call(employee)).data.reminders.some(r=>r.kind==='call'&&r.orderId===id&&!r.resolved));
+ }
+ await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(id).courier.phase,'resume');
  await act(id,'courier',{action:'courierAccept',confirmed:true},400);
  await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Questions at door'});assert.equal(order(id).status,'rework');assert.equal(order(id).courier.atDoor,true);
@@ -73,16 +76,22 @@ try{
  await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'One more question'});assert.equal(order(id).courier.operatorBudgetMs,remaining);
  await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
- await act(id,'courier',{action:'courierWorkflow',operation:'requestPostpone',reason:'Client away',at:hours(200)});
- await act(id,'courier',{action:'courierWorkflow',operation:'approvePostpone'},400);
- await act(id,'chief',{action:'courierWorkflow',operation:'approvePostpone'});assert.equal(order(id).courier.postponement.state,'approved');assert.equal(order(id).courier.workStartedAt,undefined);
  await act(id,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});assert.equal(stock(),before);
  await act(id,'logistic',{action:'receivePayment'});await act(id,'logistic',{action:'receivePayment'},400);
  assert.equal(db.prepare('SELECT amount FROM cash_operations WHERE order_id=?').get(id).amount,1000000);
+ // An existing pending logistic request is transferred to the operator without another physical acceptance.
+ const legacyId=await create();await assembled(legacyId);await act(legacyId,'courier',{action:'courierAccept',confirmed:true});
+ const legacy=order(legacyId),legacyStock=stock();legacy.courier.phase='logistic';legacy.courier.workHours=null;legacy.courier.operatorBudgetMs=4*3600000;legacy.courier.postponement={state:'pending',at:hours(200),reason:'Old request',requestedAt:hours(-1)};
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(legacy),legacyId);
+ const migratedState=(await call('operator')).data,migrated=order(legacyId);
+ assert.equal(migrated.status,'rework');assert.equal(migrated.courier.phase,'operator');assert.equal(migrated.courier.postponement.state,'rejected');assert.equal(migrated.courier.operatorBudgetMs,4*3600000);assert.equal(stock(),legacyStock);
+ assert.ok(migratedState.reminders.some(r=>r.orderId===legacyId&&r.title.includes('Заказ передан оператору')));
+ await call('operator');assert.equal(order(legacyId).version,migrated.version);
+ await act(legacyId,'operator',{action:'courierWorkflow',operation:'confirm'});await act(legacyId,'courier',{action:'courierWorkflow',operation:'resume'});
  // Expired confirmation returns work, expired shared budget cancels sale but keeps the parcel reserved.
  const returnedId=await create();await assembled(returnedId);await act(returnedId,'courier',{action:'courierAccept',confirmed:true});
  const accepted=order(returnedId);accepted.courier.workStartedAt=hours(-49);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(accepted),returnedId);await call('operator');assert.equal(order(returnedId).status,'rework');
  const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
  await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
- console.log('Moscow API: real create/handoff/accept, ownership and locks, calls to all logistics, repeated operator budget, approved postponement, money, expiry, physical return and stock passed.');
+ console.log('Moscow API: real create/handoff/accept, operator-only returns, forbidden retired actions, operator calls, shared budget and legacy migration, money, expiry, physical return and stock passed.');
 }finally{if(server&&server.exitCode===null){const exited=once(server,'exit');server.kill('SIGTERM');await exited;}db.close();rmSync(dir,{recursive:true,force:true});}

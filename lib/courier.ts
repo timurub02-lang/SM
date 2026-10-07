@@ -4,6 +4,7 @@ import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 
 export type CourierAssignment={
  id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number;
+ // 'logistic' is read only to migrate orders from the retired queue.
  phase?:'pending'|'confirmation'|'logistic'|'operator'|'resume'|'delivery';
  workStartedAt?:string;workHours?:number|null;
  confirmedBy?:'courier'|'logistic'|'operator';confirmedAt?:string;
@@ -11,8 +12,7 @@ export type CourierAssignment={
  operatorBudgetMs?:number|null;operatorStartedAt?:string;
  postponement?:{at:string;reason:string;requestedAt:string;state:'pending'|'approved'|'rejected';decidedAt?:string;by?:string;name?:string};
 };
-export const courierReturnReasons=['Недозвон','Клиент отказывается','Просит перенести доставку'] as const;
-export const courierOperatorReasons=['У клиента вопросы по заказу','Клиент отказывается — дорого','Клиент отказывается — не разрешают родственники','Клиент отказывается — запрещает врач','У клиента вопросы — стоимость заказа','У клиента вопросы — по продукту','Не проходит по срокам доставки'] as const;
+export const courierOperatorReasons=['Недозвон','Клиент отказывается','У клиента вопросы по заказу','Клиент отказывается — дорого','Клиент отказывается — не разрешают родственники','Клиент отказывается — запрещает врач','У клиента вопросы — стоимость заказа','У клиента вопросы — по продукту','Не проходит по срокам доставки'] as const;
 export const courierConfirmationTabs=[['new','Новый'],['expiring','Скоро вернётся оператору'],['missed','Недозвон'],['callback','Перезвон']] as const;
 export function courierPhase(o:Order){
  if(o.delivery!=='moscow_courier'||!o.courier)return undefined;
@@ -51,7 +51,7 @@ export function courierMissedCallTime(time:string,now=Date.now()){
 }
 export function courierDeadline(o:Order){
  const c=o.courier;
- if(o.delivery!=='moscow_courier'||!c||!['confirmation','logistic'].includes(c.phase||'')||['redeemed','returned','refused'].includes(o.status)||!c.workStartedAt||c.workHours===null)return undefined;
+ if(o.delivery!=='moscow_courier'||!c||c.phase!=='confirmation'||['redeemed','returned','refused'].includes(o.status)||!c.workStartedAt||c.workHours===null)return undefined;
  return new Date(Date.parse(c.workStartedAt)+(c.workHours??48)*3600000).toISOString();
 }
 export function courierConfirmationStage(o:Order,now=Date.now(),policy:OrderPolicy=defaultOrderPolicy){
@@ -103,18 +103,18 @@ export function cancelCourierWork(o:Order,at:string){
  if(o.delivery!=='moscow_courier'||!o.courier)return;
  o.courier={...o.courier};pauseCourierOperatorBudget(o,at);stopCourierClock(o);clearCall(o);
 }
-export type CourierCommand={action:'courierAccept'|'courierWorkflow';operation?:'confirm'|'toLogistic'|'toOperator'|'requestPostpone'|'approvePostpone'|'rejectPostpone'|'resume';reason?:string;at?:string;confirmed?:boolean};
+export type CourierCommand={action:'courierAccept'|'courierWorkflow';operation?:'confirm'|'toOperator'|'resume';reason?:string;confirmed?:boolean};
 // Shared by the API and tests; ordinary shipping cannot bypass this workflow.
 export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee,'id'|'role'|'name'>,policy:OrderPolicy,at:string){
  if(order.delivery!=='moscow_courier'||!order.courier||['redeemed','returned','refused'].includes(order.status))throw Error('Работа с этой посылкой недоступна');
  const o:Order={...order,courier:{...order.courier},updatedAt:at},c=o.courier!,phase=courierPhase(o);
- const courier=e.role==='courier'&&c.id===e.id,logistic=['admin','logistic','chief_logistic'].includes(e.role),operator=(e.role==='operator'&&o.manager===e.id)||e.role==='admin';
+ const courier=e.role==='courier'&&c.id===e.id,operator=(e.role==='operator'&&o.manager===e.id)||e.role==='admin';
  const require=(ok:boolean,message='Это действие недоступно на текущем этапе')=>{if(!ok)throw Error(message);};
  const deadline=courierDeadline(o);
  require(!deadline||Date.parse(at)<Date.parse(deadline),'Срок подтверждения истёк. Обновите данные: заказ возвращается оператору');
  require(!(o.status==='rework'&&o.reworkDeadline&&Date.parse(at)>=Date.parse(o.reworkDeadline)),'Срок доработки истёк. Обновите данные');
  const reason=()=>{const r=p.reason?.trim();require(!!r&&r.length<=1000,'Укажите причину (до 1000 символов)');return r!;};
- const sendToDelivery=(by:'courier'|'logistic'|'operator',resume=false)=>{pauseCourierOperatorBudget(o,at);stopCourierClock(o);clearCall(o);c.phase=resume?'resume':'delivery';c.confirmedBy=by;c.confirmedAt=at;o.status='shipping';o.shippedAt||=at;o.reason='';delete o.finalHandoffAt;};
+ const sendToDelivery=(by:'courier'|'operator',resume=false)=>{pauseCourierOperatorBudget(o,at);stopCourierClock(o);clearCall(o);c.phase=resume?'resume':'delivery';c.confirmedBy=by;c.confirmedAt=at;o.status='shipping';o.shippedAt||=at;o.reason='';delete o.finalHandoffAt;};
  let text='';
  if(p.action==='courierAccept'){
   require(courier&&phase==='pending'&&!c.acceptedAt);require(p.confirmed===true,'Подтвердите фактический приём посылки');
@@ -124,31 +124,15 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
  }else if(p.operation==='resume'){
   require(courier&&phase==='resume'&&!!c.acceptedAt);c.phase='delivery';clearCall(o);text='Курьер принял заказ обратно в работу · продолжает доставку';
  }else if(p.operation==='confirm'){
-  require(courier&&phase==='confirmation'||logistic&&phase==='logistic'||operator&&phase==='operator');
-  const by=phase==='operator'?'operator':phase==='logistic'?'logistic':'courier';
-  require(c.postponement?.state!=='pending','Сначала согласуйте или отклоните перенос доставки');
+  require(courier&&phase==='confirmation'||operator&&phase==='operator');
+  const by=phase==='operator'?'operator':'courier';
   sendToDelivery(by,by!=='courier');o.round+=by==='operator'?1:0;
-  text=by==='courier'?'Курьер подтвердил заказ · можно доставлять':by==='operator'?'Подтверждено оператором · клиент готов выкупить заказ':'Подтверждено логистом · клиент ожидает заказ';
+  text=by==='courier'?'Курьер подтвердил заказ · можно доставлять':'Подтверждено оператором · клиент готов выкупить заказ';
  }else if(p.operation==='toOperator'){
-  require(courier&&['confirmation','delivery'].includes(phase||'')||logistic&&phase==='logistic');
+  require(courier&&['confirmation','delivery'].includes(phase||''));
   c.atDoor=courier&&phase==='delivery';
   const r=reason();Object.assign(o,courierToOperator(o,r,policy,at));
   text=(c.atDoor?'Отказ у курьера · ':'')+'Заказ передан в работу оператору · '+r+' · посылка остаётся у курьера';
- }else if(p.operation==='toLogistic'||p.operation==='requestPostpone'){
-  require(courier&&['confirmation','delivery'].includes(phase||'')&&!!c.acceptedAt);
-  const r=reason();
-  if(p.operation==='requestPostpone'){
-   require(!!p.at&&Number.isFinite(Date.parse(p.at))&&Date.parse(p.at)>Date.parse(at),'Укажите будущие дату и время доставки');
-   c.postponement={at:p.at!,reason:r,requestedAt:at,state:'pending'};
-  }else if(c.postponement?.state==='approved')c.postponement={...c.postponement,state:'rejected',decidedAt:at};
-  c.phase='logistic';c.workStartedAt=at;c.workHours=policy.courierLogisticHours;c.workReason=r;clearCall(o);o.reason=r;
-  text=(p.operation==='requestPostpone'?'Курьер запросил согласование переноса доставки':'Курьер передал заказ в работу логисту')+' · '+r+' · посылка остаётся у курьера';
- }else if(p.operation==='approvePostpone'||p.operation==='rejectPostpone'){
-  require(logistic&&phase==='logistic'&&c.postponement?.state==='pending');
-  if(p.operation==='approvePostpone')require(Date.parse(c.postponement!.at)>Date.parse(at),'Запрошенное время уже прошло. Отклоните перенос и согласуйте новое время');
-  c.postponement={...c.postponement!,state:p.operation==='approvePostpone'?'approved':'rejected',decidedAt:at,by:e.id,name:e.name};
-  if(p.operation==='approvePostpone'){sendToDelivery('logistic');text='Логист согласовал доставку ко времени · '+c.postponement.at+' · '+c.postponement.reason;}
-  else{text='Логист отклонил перенос доставки · '+reason();o.reason=reason();}
  }else throw Error('Неизвестное действие курьера');
  return {order:o,text};
 }

@@ -41,16 +41,26 @@ assert.deepEqual(allowedOrderTransitions(work,'operator'),['refused']);assert.de
 assert.throws(()=>run(work,courier,'confirm',103));
 let resume=run(work,operator,'confirm',104);assert.equal(resume.courier.operatorBudgetMs,94*hour);assert.equal(resume.courier.operatorStartedAt,undefined);assert.equal(courierStage(resume),'pending');assert.equal(resume.courier.acceptedAt,accepted.courier.acceptedAt);assert.equal(courierBalance([resume],courier.id).total,10000);
 sent=run(resume,courier,'resume',150);work=run(sent,courier,'toOperator',151,{reason:'Again'});assert.equal(work.reworkDeadline,later(245));assert.equal(work.courier.operatorBudgetMs,94*hour);
-let logWork=run(accepted,courier,'toLogistic',101,{reason:'No answer'});assert.equal(courierDeadline(logWork),later(149));assert.equal(logWork.status,'packing');
-assert.equal(scheduledCalls([{...logWork,contact:'callback',due:later(102)}],logistic).length,1);assert.equal(scheduledCalls([{...logWork,contact:'callback',due:later(102)}],courier).length,0);
-resume=run(logWork,logistic,'confirm',102);assert.equal(resume.courier.confirmedBy,'logistic');assert.equal(courierStage(resume),'pending');assert.equal(run(resume,courier,'resume',103).courier.phase,'delivery');
+// Retired actions cannot be replayed by an older mobile page.
+for(const operation of ['toLogistic','requestPostpone','approvePostpone','rejectPostpone'])assert.throws(()=>run(accepted,courier,operation,101,{reason:'Test',at:later(250)}));
+const returned=run(accepted,courier,'toOperator',101,{reason:'Недозвон'});
+assert.equal(returned.status,'rework');assert.equal(returned.courier.phase,'operator');assert.equal(returned.courier.atDoor,false);
+assert.equal(returned.due,'');assert.equal(courierDeadline(returned),undefined);
+assert.equal(scheduledCalls([{...returned,contact:'callback',due:later(102)}],operator).length,1);
+for(const staff of [logistic,{...logistic,role:'chief_logistic'}]){
+ assert.equal(scheduledCalls([{...returned,contact:'callback',due:later(102)}],staff).length,0);
+ assert.throws(()=>run(returned,staff,'confirm',102));
+}
+assert.throws(()=>run(returned,{...operator,id:'other'},'confirm',102));
+resume=run(returned,operator,'confirm',102);
+assert.equal(resume.courier.confirmedBy,'operator');assert.equal(courierStage(resume),'pending');
+assert.equal(run(resume,courier,'resume',103).courier.phase,'delivery');
 assert.equal(courierReminderNeedsAction({...notice,at:later(102)},resume),true);
 assert.equal(courierReminderNeedsAction(notice,resume),false,'Earlier handoff must not become actionable again');
-assert.equal(courierReminderNeedsAction({...notice,kind:'courier-warning',due:courierDeadline(logWork)},logWork),false,'Logistic clock is information for courier');
 assert.equal(courierReminderNeedsAction({...notice,kind:'courier-warning',due:courierDeadline(accepted)},accepted),true);
-let requested=run(accepted,courier,'requestPostpone',101,{reason:'Client away',at:later(250)});assert.equal(courierDeadline(requested),later(149));assert.throws(()=>run(requested,courier,'approvePostpone',102));assert.throws(()=>run(requested,logistic,'confirm',102));
-let approved=run(requested,logistic,'approvePostpone',102);assert.equal(approved.status,'shipping');assert.equal(approved.courier.postponement.state,'approved');assert.equal(courierDeadline(approved),undefined);assert.equal(courierStage(approved),'delivery');
-const transferred=run(requested,logistic,'toOperator',102,{reason:'Clarify'});assert.equal(run(transferred,operator,'confirm',103).courier.phase,'resume');
+// Existing appointments stay valid; the obsolete logistic work queue migrates once.
+const logWork={...accepted,courier:{...accepted.courier,phase:'logistic',workReason:'Недозвон'}};
+const approved={...sent,status:'shipping',courier:{...sent.courier,phase:'delivery',postponement:{at:later(250),requestedAt:at,reason:'Old appointment',state:'approved'}}};
 assert.equal(applyCourierCommand({...base,status:'shipping',courier:{...base.courier,phase:undefined}},{action:'courierAccept',confirmed:true},courier,policy,at).order.status,'shipping');
 for(const delivery of ['cdek_pickup','russian_post'])assert.throws(()=>run({...accepted,delivery},courier,'confirm',101));
 assert.deepEqual(allowedOrderTransitions({...base,status:'confirm',courier:undefined},'logistic'),['packing','rework']);
@@ -68,6 +78,7 @@ try{
  {...base,id:'pending'},
  {...accepted,id:'courier-expired',courier:{...accepted.courier,workStartedAt:later(-49)}},
  {...logWork,id:'logistic-expired',courier:{...logWork.courier,workStartedAt:later(-49)}},
+ {...logWork,id:'logistic-waiting',contact:'callback',due:later(1),courier:{...logWork.courier,workStartedAt:at,workHours:null,operatorBudgetMs:4*hour,postponement:{at:later(250),reason:'Client away',requestedAt:at,state:'pending'}}},
  {...work,id:'operator-expired',reworkDeadline:later(-1),courier:{...work.courier,operatorBudgetMs:hour,operatorStartedAt:later(-2)}},
  {...approved,id:'approved'},
  {...base,id:'first-moscow',courier:undefined,status:'confirm',confirmationStartedAt:later(-49),confirmationHours:48},
@@ -79,12 +90,17 @@ try{
  const read=async()=> (await d.prepare('SELECT data,version FROM orders').all()).results.map(r=>({...JSON.parse(r.data),version:r.version}));
  assert.equal(await reconcileOrderTimers(d,await read(),[]),true);
  const current=await read(),get=id=>current.find(o=>o.id===id);
- for(const id of ['courier-expired','logistic-expired','first-moscow'])assert.equal(get(id).status,'rework',id);
+ for(const id of ['courier-expired','logistic-expired','logistic-waiting','first-moscow'])assert.equal(get(id).status,'rework',id);
  for(const id of ['first-post','first-cdek','operator-expired'])assert.equal(get(id).status,'refused',id);
+ const migrated=get('logistic-waiting');
+ assert.equal(migrated.courier.phase,'operator');assert.equal(migrated.courier.operatorBudgetMs,4*hour);
+ assert.equal(migrated.courier.acceptedAt,logWork.courier.acceptedAt);assert.equal(migrated.contact,'none');assert.equal(migrated.due,'');
+ assert.equal(migrated.courier.workStartedAt,undefined);assert.equal(migrated.courier.postponement.state,'rejected');
+ assert.ok(Math.abs(Date.parse(migrated.reworkDeadline)-Date.now()-4*hour)<10000);
  assert.equal(get('operator-expired').courier.operatorBudgetMs,0);assert.equal(courierStage(get('operator-expired')),'return');
  assert.equal(courierDeadline(get('pending')),undefined);assert.equal(get('pending').status,'packing');assert.equal(get('disabled').status,'packing');assert.equal(get('approved').status,'shipping');
  assert.equal((await d.prepare('SELECT reserved FROM product_stock').first()).reserved,records.length-2);
- assert.equal((await d.prepare("SELECT COUNT(*) AS n FROM reminders WHERE employee_id='operator'").first()).n,3);
+ assert.equal((await d.prepare("SELECT COUNT(*) AS n FROM reminders WHERE employee_id='operator'").first()).n,4);
  assert.equal(await reconcileOrderTimers(d,await read(),[]),false);
  // Old writes cannot win over a new decision, and accepting the physical return releases exactly once.
  const stale=get('courier-expired');await d.prepare("UPDATE orders SET data=json_set(data,'$.status','shipping'),version=version+1 WHERE id=?").bind(stale.id).run();
@@ -95,4 +111,4 @@ try{
  await d.prepare("UPDATE orders SET data=json_set(data,'$.warehouseReturnedAt',?) WHERE id='operator-expired'").bind(at).run();
  assert.equal((await d.prepare('SELECT reserved FROM product_stock').first()).reserved,reserve-1);
 }finally{d.close();}
-console.log('Moscow workflow: acceptance clock, stage ownership, operator shared budget, postponements, legacy orders, stock custody, notifications and unchanged CDEK/Post passed.');
+console.log('Moscow workflow: acceptance clock, stage ownership, operator shared budget, retired actions, legacy queue migration, stock custody, notifications and unchanged CDEK/Post passed.');
