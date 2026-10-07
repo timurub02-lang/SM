@@ -1,7 +1,7 @@
 'use client';
 import {useState} from 'react';
 import {stamp,money,type Order,type Employee} from '@/lib/crm';
-import {courierLabel,courierParcelLocation,courierPhase,courierDeadline,courierTimeLeft,courierWaitingSince,courierStage,canEditRecalledCourierOrder} from '@/lib/courier';
+import {courierDoorRefusal,courierLabel,courierParcelLocation,courierPhase,courierDeadline,courierTimeLeft,courierWaitingSince,courierStage,canEditRecalledCourierOrder} from '@/lib/courier';
 
 export function CourierWork({order:o,employee,busy,mutate}:{order:Order;employee:Employee;busy:boolean;mutate:(p:Record<string,unknown>)=>Promise<boolean>}){
  const [reason,setReason]=useState(''),[received,setReceived]=useState(false);
@@ -10,6 +10,7 @@ export function CourierWork({order:o,employee,busy,mutate}:{order:Order;employee
  const logistic=['admin','logistic','chief_logistic'].includes(employee.role);
  const operator=(employee.role==='admin'||employee.role==='operator'&&o.manager===employee.id)&&phase==='operator'&&o.status==='rework';
  const act=(operation:string,extra:Record<string,unknown>={})=>void mutate({action:'courierWorkflow',operation,id:o.id,version:o.version,...extra});
+ if(courierDoorRefusal(o))return null;
  if(!c&&!o.courierRecall)return <section className="notice stack courier-work-panel"><strong>{courierLabel(o)}</strong><p>Посылка: {courierParcelLocation(o)}</p></section>;
  if(!c)return o.courierRecall&&['packing','rework'].includes(o.status)?<section className="notice stack courier-work-panel"><strong>{o.status==='rework'?'Заказ в работе у оператора · возврат после пересборки':'Заказ возвращён на сборку'}</strong><p>{o.courierRecall.reason}. Приём подтверждён {stamp(o.courierRecall.completedAt!,'Europe/Moscow')} МСК. {o.courierRecall.returnedAt?'Посылка снята с отчёта курьера, товары остаются в резерве заказа.':'Курьер ещё не принимал посылку. Заказ снова на сборке у логиста.'}</p>{o.status==='rework'&&<p>Посылка на складе. Свяжитесь с клиентом, затем верните заказ логисту на сборку или зафиксируйте отказ. Общий запас доработки не начинается заново.</p>}{needsRepack?<p><b>Ожидаются правки корзины:</b> {request.reason}. {canEditRecalledCourierOrder(o,employee)?'Откройте «Адрес и товары», внесите изменения и сохраните заказ.':'Оператор или администратор должен сохранить исправленный заказ. После этого можно подготовить новую накладную.'}</p>:<p>После возврата заказа на сборку логист подготовит новую накладную и передаст собранный заказ курьеру.</p>}</section>:<section className="notice stack courier-work-panel"><strong>{courierLabel(o)}</strong><p>Посылка: {courierParcelLocation(o)}</p></section>;
  return <section className="notice stack courier-work-panel"><strong>{courierLabel(o)}</strong><p>Посылка: {courierParcelLocation(o)}<br/>Курьер: {c.name} · {money(c.amount)}<br/>Передан: {stamp(c.assignedAt,'Europe/Moscow')} МСК</p>

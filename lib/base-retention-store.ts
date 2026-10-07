@@ -1,4 +1,4 @@
-import {courierDeadline,courierToOperator,cancelCourierWork} from './courier.ts';
+import {courierDoorRefusal,courierDeadline,courierToOperator,cancelCourierWork} from './courier.ts';
 import {courierReminderStatements} from './reminder-store.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {clientSheet,applyRetention,draftDeadline,confirmationDeadline,reworkDeadlineFrom,type Client,type Order,type Event} from './crm.ts';
@@ -12,6 +12,7 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
   const policy=orderPolicySchema.parse(saved?JSON.parse(saved.data).policy:defaultOrderPolicy);
   for(const stored of orders.filter(o=>["draft","rework","confirm","extra"].includes(o.status)||courierDeadline(o)||o.delivery==='moscow_courier'&&o.courier?.phase==='logistic'&&!['redeemed','returned','refused'].includes(o.status))){
    // Retire the old work queue without changing physical custody or resetting the operator budget.
+   if(courierDoorRefusal(stored))continue; // A timeout cannot decide the client's refusal while the courier is at the door.
    const migrateCourier=stored.delivery==='moscow_courier'&&stored.courier?.phase==='logistic';
    // Existing untimed confirmations receive a full window once, instead of retroactive cancellation.
    const initialize=["confirm","extra"].includes(stored.status)&&!stored.finalHandoffAt&&!stored.confirmationStartedAt;

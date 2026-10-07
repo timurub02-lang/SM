@@ -35,7 +35,7 @@ assert.equal(courierReminderNeedsAction({...callNotice,resolved:true},callOrder)
 assert.equal(courierConfirmationStage({...accepted,contact:'callback',due:later(101)},time+101*hour),'new');
 assert.throws(()=>run(accepted,logistic,'confirm',101));assert.throws(()=>run(accepted,courier,'confirm',149));
 let sent=run(accepted,courier,'confirm',101);assert.equal(sent.status,'shipping');assert.equal(courierStage(sent),'delivery');assert.equal(courierDeadline(sent),undefined);
-let work=run(sent,courier,'toOperator',102,{reason:'Questions'});assert.equal(work.status,'rework');assert.equal(work.courier.atDoor,true);assert.equal(courierStage(work),'waiting');assert.equal(work.reworkDeadline,later(198));
+let work=run(sent,courier,'toOperator',102,{reason:'Questions'});assert.equal(work.status,'rework');assert.equal(work.courier.atDoor,false);assert.equal(courierStage(work),'waiting');assert.equal(work.reworkDeadline,later(198));
 assert.equal(courierBalance([work],courier.id).parcels,10000);assert.equal(applyRetention(client,[work],time).owner,operator.id);
 assert.deepEqual(allowedOrderTransitions(work,'operator'),['refused']);assert.deepEqual(allowedOrderTransitions(work,'logistic'),[]);
 assert.throws(()=>run(work,courier,'confirm',103));
@@ -138,7 +138,7 @@ for(const [o,label,place] of [
  [base,'Ожидает приёма курьером','Приём курьером не подтверждён'],
  [accepted,'У курьера на подтверждении · 1-й этап','У курьера'],
  [returned,'Заказ в работе у оператора · возврат с подтверждения курьером','У курьера'],
- [work,'Заказ в работе у оператора · возврат с доставки (отказ у двери)','У курьера'],
+ [work,'Заказ в работе у оператора · возврат с доставки','У курьера'],
  [recalled,'Отозван логистом · вернуть посылку на сборку','У курьера'],
  [physicallyReturned,'Передано логисту · ожидает подтверждения приёма','Передана логисту · приём ещё не подтверждён'],
  [received,'На пересборке у логиста','На складе'],

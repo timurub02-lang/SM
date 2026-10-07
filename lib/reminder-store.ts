@@ -6,7 +6,7 @@ export async function courierReminderStatements(d:Db,before:import('./crm.ts').O
  const assignment=after.courier||before.courier;
  if(after.delivery!=='moscow_courier'||!assignment&&!before.courierRecall)return [];
  const receipt=assignment?.acceptedAt&&(after.paymentReceivedAt&&!before.paymentReceivedAt?'Деньги приняты логистом':after.warehouseReturnedAt&&!before.warehouseReturnedAt?'Возврат принят на склад':!after.courier&&after.courierRecall?.completedAt!==before.courierRecall?.completedAt?'Посылка принята на пересборку':undefined);
- const changed=before.status!==after.status||before.courier?.phase!==after.courier?.phase||before.courier?.acceptedAt!==after.courier?.acceptedAt||JSON.stringify(before.courier?.postponement)!==JSON.stringify(after.courier?.postponement)||JSON.stringify(before.courierRepackRequest)!==JSON.stringify(after.courierRepackRequest)||before.address!==after.address||before.comment!==after.comment||before.courier?.amount!==after.courier?.amount;
+ const changed=JSON.stringify(before.courier?.doorRefusal)!==JSON.stringify(after.courier?.doorRefusal)||before.status!==after.status||before.courier?.phase!==after.courier?.phase||before.courier?.acceptedAt!==after.courier?.acceptedAt||JSON.stringify(before.courier?.postponement)!==JSON.stringify(after.courier?.postponement)||JSON.stringify(before.courierRepackRequest)!==JSON.stringify(after.courierRepackRequest)||before.address!==after.address||before.comment!==after.comment||before.courier?.amount!==after.courier?.amount;
  if(!changed&&!receipt)return [];
  await initReminderStore(d);
  const department=staff.find(e=>e.id===after.manager)?.department;

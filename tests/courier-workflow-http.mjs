@@ -16,15 +16,15 @@ try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));
  for(const sql of [...authSchema,...inventorySQL])db.exec(sql);
  const hash=await hashPassword(password),cookies={};
- for(const [id,role] of [['admin','admin'],['operator','operator'],['logistic','logistic'],['second','logistic'],['chief','chief_logistic'],['courier','courier'],['stranger','courier']]){
-  const e={id,login:id,name:'Test '+id,alias:'',skLogin:'',role,department:['admin','operator'].includes(role)?'1':undefined,salary:0,bonus:0,version:1};db.prepare('INSERT INTO employees VALUES(?,?,1)').run(id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
+ for(const [id,role] of [['admin','admin'],['operator','operator'],['logistic','logistic'],['second','logistic'],['chief','chief_logistic'],['courier','courier'],['stranger','courier'],['head','department_head'],['foreign-head','department_head']]){
+  const e={id,login:id,name:'Test '+id,alias:'',skLogin:'',role,department:role==='department_head'?(id==='head'?'1':'2'):['admin','operator'].includes(role)?'1':undefined,salary:0,bonus:0,version:1};db.prepare('INSERT INTO employees VALUES(?,?,1)').run(id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
  }
  db.prepare("INSERT INTO settings VALUES('main',?)").run(JSON.stringify({retentionDays:35}));
  db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('p','product',JSON.stringify({id:'p',name:'Product'}));db.prepare("INSERT INTO stock_movements VALUES('initial','p',100,'test','admin',?)").run(new Date().toISOString());
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}assert.ok(ready,logs);
  async function call(actor,path='/api/crm',body,expected=200){const response=await fetch(base+path,{method:body?'POST':'GET',headers:{...(cookies[actor]?{cookie:cookies[actor]}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{})},...(body?{body:JSON.stringify(body)}:{})});const data=await response.json();assert.equal(response.status,expected,JSON.stringify(data));return {data,headers:response.headers};}
- for(const id of ['admin','operator','logistic','second','chief','courier','stranger']){const r=await call(id,'/api/auth/login',{login:id,password});cookies[id]=r.headers.get('set-cookie').split(';')[0];}
+ for(const id of ['admin','operator','logistic','second','chief','courier','stranger','head','foreign-head']){const r=await call(id,'/api/auth/login',{login:id,password});cookies[id]=r.headers.get('set-cookie').split(';')[0];}
  const order=id=>{const r=db.prepare('SELECT data,version FROM orders WHERE id=?').get(id);return {...JSON.parse(r.data),version:r.version};};
  const stock=()=>db.prepare("SELECT available FROM product_stock WHERE id='p'").get().available;
  const hours=n=>new Date(Date.now()+n*3600000).toISOString();
@@ -77,8 +77,8 @@ try{
  await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(id).courier.phase,'resume');
  await act(id,'courier',{action:'courierAccept',confirmed:true},400);
  await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
- await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Questions at door'});assert.equal(order(id).status,'rework');assert.equal(order(id).courier.atDoor,true);
- assert.ok((await call('operator')).data.reminders.some(r=>r.orderId===id&&r.title.includes('Отказ у курьера')));
+ await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Questions during delivery'});assert.equal(order(id).status,'rework');assert.equal(order(id).courier.atDoor,false);
+ assert.ok((await call('operator')).data.reminders.some(r=>r.orderId===id&&r.title.includes('Возврат с доставки')));
  const working=order(id);working.courier.operatorStartedAt=hours(-2);working.reworkDeadline=hours(94);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(working),id);
  await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});assert.ok(Math.abs(order(id).courier.operatorBudgetMs-94*3600000)<10000);
  const remaining=order(id).courier.operatorBudgetMs;
@@ -181,6 +181,53 @@ try{
  const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
  await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
  await receipt(returnedId,'Возврат принят на склад',10000);
+ // Explicit doorstep refusal: two human decisions, no timer-driven cancellation.
+ for(const result of ['deliver','return']){
+  const doorId=await create();await assembled(doorId);
+  await act(doorId,'courier',{action:'courierAccept',confirmed:true});
+  await act(doorId,'courier',{action:'courierWorkflow',operation:'doorRefusal',reason:'Клиент отказывается',confirmed:true},400);
+  await act(doorId,'courier',{action:'courierWorkflow',operation:'confirm'});
+  await act(doorId,'courier',{action:'courierWorkflow',operation:'doorRefusal',reason:'Клиент отказывается'},400);
+  await act(doorId,'courier',{action:'courierWorkflow',operation:'doorRefusal',reason:'Клиент отказывается',confirmed:true});
+  const reserve=stock(),opened=order(doorId),door=opened.courier.doorRefusal;
+  assert.equal(opened.status,'rework');assert.equal(opened.courier.atDoor,true);
+  assert.equal(Date.parse(door.claimDueAt)-Date.parse(door.at),120000);assert.equal(Date.parse(door.decisionDueAt)-Date.parse(door.at),600000);
+  for(const who of ['operator','head','admin','courier'])assert.ok((await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved));
+  for(const who of ['foreign-head','stranger','logistic'])assert.ok(!(await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId));
+  await act(doorId,'foreign-head',{action:'courierWorkflow',operation:'claimDoor'},400);
+  await act(doorId,'head',{action:'updateOrder',comment:'Not an edit permission'},400);
+  await act(doorId,'operator',{action:'courierWorkflow',operation:'resolveDoor',result,confirmed:true},400);
+  for(const body of [{action:'contact',contact:'missed',reason:'No answer'},{action:'contact',contact:'callback',reason:'Later',due:hours(1)},{action:'transition',to:'refused',reason:'No'},{action:'courierWorkflow',operation:'confirm'},{action:'courierWorkflow',operation:'requestRepack',reason:'Change product'}])await act(doorId,'operator',body,400);
+  await act(doorId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Recall'},400);
+  await act(doorId,'courier',{action:'courierOutcome',to:'returned',reason:'No',confirmed:true},400);
+  const waiting=(await call('operator')).data.reminders.find(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved);
+  await call('operator','/api/crm',{action:'readReminder',id:waiting.id});assert.ok(!(await call('operator')).data.reminders.find(r=>r.id===waiting.id).resolved);
+  await act(doorId,'operator',{action:'courierWorkflow',operation:'claimDoor'});
+  assert.equal((await call('courier')).data.orders.find(o=>o.id===doorId).courier.doorRefusal.claimedName,'Test operator');
+  const oldVersion=order(doorId).version;
+  await act(doorId,'head',{action:'courierWorkflow',operation:'claimDoor'});
+  await call('operator','/api/crm',{action:'courierWorkflow',operation:'resolveDoor',id:doorId,version:oldVersion,result,confirmed:true},400);
+  await act(doorId,'operator',{action:'courierWorkflow',operation:'resolveDoor',result,confirmed:true},400);
+  const overdue=order(doorId);overdue.courier.doorRefusal.decisionDueAt=hours(-1);overdue.reworkDeadline=hours(-1);overdue.courier.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(overdue),doorId);
+  const late=(await call('head')).data;assert.equal(order(doorId).status,'rework');assert.equal(stock(),reserve);
+  assert.ok(late.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved&&r.title.includes('решение задерживается')));
+  await act(doorId,'head',{action:'courierWorkflow',operation:'resolveDoor',result},400);
+  await act(doorId,'head',{action:'courierWorkflow',operation:'resolveDoor',result,confirmed:true});
+  assert.equal(order(doorId).courier.operatorBudgetMs,0);assert.equal(order(doorId).courier.doorRefusal.result,result);assert.equal(stock(),reserve);
+  assert.ok(!(await call('courier')).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved));
+  await act(doorId,'head',{action:'courierWorkflow',operation:'resolveDoor',result,confirmed:true},400);
+  if(result==='deliver'){
+   assert.equal(order(doorId).status,'shipping');assert.equal(order(doorId).courier.phase,'resume');
+   await act(doorId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true},400);
+   await act(doorId,'courier',{action:'courierWorkflow',operation:'resume'});
+   await act(doorId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});assert.equal(order(doorId).status,'redeemed');
+  }else{
+   assert.equal(order(doorId).status,'refused');assert.equal(order(doorId).warehouseReturnedAt,undefined);
+   await act(doorId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserve+1);
+   await act(doorId,'logistic',{action:'returnToWarehouse'},400);assert.equal(stock(),reserve+1);
+  }
+ }
+ console.log('Door refusal: explicit presence, claim and takeover, department boundaries, two decisions, forbidden deferrals, overdue escalation without cancellation, custody and stock passed.');
  const pendingIds=[];
  for(let i=0;i<22;i++){const newId=await create();await assembled(newId);pendingIds.push(newId);}
  function courierNotices(state){return {active:state.reminders.filter(r=>courierReminderNeedsAction(r,state.orders.find(o=>o.id===r.orderId))),history:state.reminders.filter(r=>!courierReminderNeedsAction(r,state.orders.find(o=>o.id===r.orderId)))};}

@@ -1,4 +1,4 @@
-import {courierPhase,courierParcelLocation,courierWarehouseReturn,courierRecalledAtWarehouse} from './courier.ts';
+import {courierDoorRefusal,courierPhase,courierParcelLocation,courierWarehouseReturn,courierRecalledAtWarehouse} from './courier.ts';
 import type {CourierAssignment,CourierRecall} from './courier.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 import type {Reminder} from './reminders';
@@ -58,6 +58,7 @@ export const cdekReviewOnDeliveryChange=(o:Pick<Order,"delivery"|"status"|"extra
  ["cdek_pickup","cdek_courier"].includes(delivery||"")&&!["cdek_pickup","cdek_courier"].includes(o.delivery||"")&&(["extra","packing","phone"].includes(o.status)||o.status==="rework"&&o.extra);
 export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После ${o.round-1}-го возврата оператору`:"";
 export function allowedOrderTransitions(o:Order,role?:string):Status[]{
+ if(courierDoorRefusal(o))return [];
  if(o.delivery==="moscow_courier"&&o.courier)return o.status==="rework"&&(role==="admin"||role==="operator")?["refused"]:[];
  if(courierRecalledAtWarehouse(o)){
   if(o.status==='rework')return ['admin','operator'].includes(role||'')?['packing','refused']:[];
@@ -221,7 +222,8 @@ export function reworkTimeLeft(deadline:string,now:number){
  return minutes===0?"Срок истёк — отмена заказа":`${Math.floor(minutes/1440)} д ${Math.floor(minutes%1440/60)} ч ${minutes%60} мин`;
 }
 
-export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extra?:boolean},now:number,policy:OrderPolicy=defaultOrderPolicy){
+export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extra?:boolean;delivery?:Order['delivery'];courier?:Order['courier']},now:number,policy:OrderPolicy=defaultOrderPolicy){
+ if(order.delivery==='moscow_courier'&&order.courier?.phase==='operator'&&order.courier.doorRefusal&&!order.courier.doorRefusal.resolvedAt)return 'urgent';
  const stage=order.reworkDeadline&&Date.parse(order.reworkDeadline)-now<=policy.reworkWarningHours*3600000?"expiring":order.contact==="missed"?"missed":order.contact==="callback"?"callback":"new";
  return order.extra?"extra_"+stage:stage;
 }

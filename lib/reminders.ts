@@ -1,10 +1,10 @@
-import {courierDeadline,courierStage,courierPendingAction,courierReminderNeedsAction} from './courier.ts';
+import {courierDoorRefusal,courierDoorPhase,courierDoorNoticeId,canHandleCourierDoor,courierDeadline,courierStage,courierPendingAction,courierReminderNeedsAction} from './courier.ts';
 import {defaultOrderPolicy} from './order-policy.ts';
 import {draftDeadline,scheduledCalls,callAuthor,type State,type Employee,type Client} from './crm';
 import {db} from './db';
 import {initReminderStore} from './reminder-store.ts';
 import {seesOrder,ownsClient} from './permissions';
-export type Reminder={kind?:"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
+export type Reminder={kind?:"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
 export async function initReminders(){await initReminderStore(db());}
 export function orderDecisionReminder(c:Client,staff:Employee[]):Reminder|null{
  const request=c.orderRequest;if(!request||request.status==='pending')return null;
@@ -13,6 +13,7 @@ export function orderDecisionReminder(c:Client,staff:Employee[]):Reminder|null{
 }
 function activeReminder(r:Reminder,s:State,e:Employee){
  const o=s.orders.find(o=>o.id===r.orderId);
+ if(r.kind==='courier-door')return !!o&&r.id===courierDoorNoticeId(o);
  if(e.role==='courier')return courierReminderNeedsAction(r,o);
  if(r.kind==='call')return scheduledCalls(o?[o]:[],e).some(o=>o.due===r.due);
  if(r.kind==='draft')return !!o&&e.id===o.manager&&draftDeadline(o)===r.due;
@@ -40,6 +41,11 @@ export async function saveReminders(s:State){
   const existing=stored.get(e.id)||[];
   const courierNotices:Reminder[]=[];
   for(const o of s.orders){
+   const door=courierDoorRefusal(o);
+   if(door&&(canHandleCourierDoor(o,e,s.employees)||e.id===o.courier?.id)){
+    const phase=courierDoorPhase(o),late=phase==='decision-overdue'||phase==='claim-overdue';
+    courierNotices.push({kind:'courier-door',id:courierDoorNoticeId(o),orderId:o.id,clientId:o.clientId,title:phase==='decision-overdue'?'СРОЧНО: курьер у двери — решение задерживается':phase==='claim-overdue'?'СРОЧНО: отказ у двери ещё не взят в работу':door.claimedAt?'Отказ у двери · обращение взято в работу':'СРОЧНО: отказ у двери · курьер ждёт',text:(door.claimedName?'В работе: '+door.claimedName:'Ожидается ответ оператора')+' · '+o.courier!.workReason+(late?' · Требуется помощь руководителя или администратора':''),at:phase==='decision-overdue'?(o.reworkDeadline&&o.reworkDeadline<door.decisionDueAt?o.reworkDeadline:door.decisionDueAt):phase==='claim-overdue'?door.claimDueAt:door.claimedAt||door.at,due:door.decisionDueAt});
+   }
    if(!o.courier||!(e.id===o.courier.id||['admin','logistic','chief_logistic'].includes(e.role)))continue;
    const action=e.id===o.courier.id?courierPendingAction(o):undefined;
    if(action&&!existing.some(r=>r.kind==='courier'&&r.orderId===o.id&&courierReminderNeedsAction(r,o)))courierNotices.push({kind:'courier',id:`courier-task:${o.id}:${courierStage(o)}:${action.at}`,orderId:o.id,clientId:o.clientId,title:action.title,text:o.id,at:action.at});
@@ -70,6 +76,7 @@ export async function employeeReminders(s:State,e:Employee){
   const c=s.clients.find(c=>c.id===r.clientId);return !!c&&ownsClient(e,c,s.employees);
  }).map(r=>{
   if(r.id.startsWith('call:'))return {...r,resolved:!activeCalls.has(r.id)};
+  if(r.kind==='courier-door'){const o=s.orders.find(o=>o.id===r.orderId);return {...r,resolved:!o||r.id!==courierDoorNoticeId(o)};}
   if(r.kind==='courier-warning')return {...r,resolved:courierDeadline(s.orders.find(o=>o.id===r.orderId)!)!==r.due};
   if(r.kind==='courier-delivery'){const o=s.orders.find(o=>o.id===r.orderId)!;return {...r,resolved:courierStage(o)!=='delivery'||o.courier?.postponement?.state!=='approved'||o.courier.postponement.at!==r.due};}
   if(r.kind!=='draft')return r;
