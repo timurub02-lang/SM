@@ -201,12 +201,12 @@ try{
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'Address',items:[{name:'Test',quantity:1,price:1}]}));
   async function manualStep(to,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version,to,reason:'Test',courierId:dispatchCourier.e.id}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
   await manualStep('check',400);await manualStep('refused',400);
-  let saved=await manualStep('extra');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
-  await manualStep('refused',400);saved=await manualStep('packing');assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
+  let saved=await manualStep(delivery==='moscow_courier'?'packing':'extra');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
+  await manualStep('refused',400);if(delivery==='russian_post')saved=await manualStep('packing');assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
   await manualStep('shipping',400);
   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
   assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'markPackingWaybill',id,version}})).status,200);
-  saved=await manualStep('shipping');assert.ok(saved.shippedAt);assert.equal(saved.status,'shipping');
+  saved=await manualStep('shipping');assert.equal(saved.status,delivery==='moscow_courier'?'packing':'shipping');if(delivery==='russian_post')assert.ok(saved.shippedAt);else assert.equal(saved.shippedAt,undefined);
   await manualStep('shipping',400);
   async function receive(expected,amount){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'receivePayment',id,version,amount}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
   await receive(400);
@@ -224,6 +224,8 @@ try{
    assert.ok(accepted.data.state.orders.find(o=>o.id===id).courier.acceptedAt);
    assert.equal(courierBalance(accepted.data.state.orders,dispatchCourier.e.id).parcels,1);
    assert.equal((await call('/api/crm',{cookie:dispatchCourier.cookie,body:acceptance})).status,400);
+   const confirmVersion=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
+   const confirmDelivery=await call('/api/crm',{cookie:dispatchCourier.cookie,body:{action:'courierWorkflow',operation:'confirm',id,version:confirmVersion}});assert.equal(confirmDelivery.status,200,confirmDelivery.text);
    const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
    const body={action:'courierOutcome',id,version,to:'redeemed',confirmed:true};
    assert.equal((await call('/api/crm',{cookie:strangerCourier.cookie,body})).status,400);
@@ -260,6 +262,7 @@ try{
  await courierAction(dispatchCourier.cookie,{action:'courierAccept',confirmed:false},400);
  await courierAction(dispatchCourier.cookie,{action:'courierAccept',confirmed:true});
  await courierAction(dispatchCourier.cookie,{action:'courierAccept',confirmed:true},400);
+ await courierAction(dispatchCourier.cookie,{action:'courierWorkflow',operation:'confirm'});
  await courierAction(dispatchCourier.cookie,{action:'courierOutcome',to:'returned',confirmed:true,reason:''},400);
  const stockBeforeReturn=db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available;
  const returned=await courierAction(dispatchCourier.cookie,{action:'courierOutcome',to:'returned',confirmed:true,reason:'Client refused'});
@@ -271,7 +274,7 @@ try{
  await courierAction(editor.cookie,{action:'returnToWarehouse'},400);
  assert.equal(courierBalance((await call('/api/crm',{cookie:dispatchCourier.cookie})).data.orders,dispatchCourier.e.id).total,0);
  console.log('Courier: assignment, scoped mobile data, payment, return, warehouse stock and settlement passed.');
- console.log('Manual delivery HTTP route: confirm -> extra -> packing, no admin review, cancellation blocked before return.');
+ console.log('Manual routes: Moscow confirms after parcel acceptance; Post uses extra confirmation; cancellation blocked before return.');
  const editId='one-o-confirm';
  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:editId,version:2,items:[{name:'Injected',quantity:1,price:1}]}})).status,400);
  for(const state of ['creating','ready']){
@@ -543,7 +546,7 @@ try{
  // New drafts freeze the configured duration; both call outcomes respect their deadline.
  const timerClient={id:'timer-client',name:'Timer client',phone:'+79990000987',owner:policyOperator.e.id,source:'Test',sheet:'К',returnSheet:'Т2',address:'Test address',createdAt:new Date().toISOString()};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(timerClient.id,timerClient.phone,JSON.stringify(timerClient));
- let timerResult=await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'createOrder',clientId:timerClient.id,items:[{name:'Policy product',quantity:1,price:100}],addressConfirmed:true,delivery:'moscow_courier'}});assert.equal(timerResult.status,200,timerResult.text);
+ let timerResult=await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'createOrder',clientId:timerClient.id,items:[{name:'Policy product',quantity:1,price:100}],addressConfirmed:true,delivery:'russian_post'}});assert.equal(timerResult.status,200,timerResult.text);
  let timerOrder=timerResult.data.state.orders.find(o=>o.clientId===timerClient.id);assert.equal(timerOrder.draftHours,24);
  const timerReminder=timerResult.data.state.reminders.find(r=>r.kind==='draft'&&r.orderId===timerOrder.id);assert.ok(timerReminder);assert.equal(timerReminder.resolved,false);assert.equal(timerReminder.due,new Date(Date.parse(timerOrder.createdAt)+86400000).toISOString());
  assert.ok(!(await call('/api/crm',{cookie:chief.cookie})).data.reminders.some(r=>r.id===timerReminder.id));

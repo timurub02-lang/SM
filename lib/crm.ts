@@ -1,3 +1,5 @@
+import {courierPhase,courierLabel,courierWarehouseReturn} from './courier.ts';
+import type {CourierAssignment} from './courier.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 import type {Reminder} from './reminders';
 import {addressPartsSchema,type AddressParts} from "./address.ts";
@@ -24,7 +26,7 @@ export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
 export const deliveryLabels:Record<DeliveryMethod,string>={"":"Не выбран",cdek_pickup:"СДЭК · ПВЗ",cdek_courier:"СДЭК · Курьер",moscow_courier:"Москва · Курьер",russian_post:"Почта России"};
-export type Order={deliveryChange?:{from:DeliveryMethod;to:DeliveryMethod;at:string;by:string;name:string};cdekReturnedAt?:string;cdekDeleting?:boolean;contactAuthor?:{id:string;name:string;at:string};confirmationRequest?:{at:string;by:string;handledAt?:string};confirmationStartedAt?:string;confirmationHours?:number|null;draftHours?:number|null;pvMarkedAt?:string;pv?:boolean;reworkHours?:number|null;finalConfirmHours?:number|null;courier?:{id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
+export type Order={deliveryChange?:{from:DeliveryMethod;to:DeliveryMethod;at:string;by:string;name:string};cdekReturnedAt?:string;cdekDeleting?:boolean;contactAuthor?:{id:string;name:string;at:string};confirmationRequest?:{at:string;by:string;handledAt?:string};confirmationStartedAt?:string;confirmationHours?:number|null;draftHours?:number|null;pvMarkedAt?:string;pv?:boolean;reworkHours?:number|null;finalConfirmHours?:number|null;courier?:CourierAssignment;paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
 export type Employee={baseAccess?:"M"|"J"|"both";hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={id:string;clientId:string;at:string;text:string;source:string};
@@ -53,8 +55,10 @@ export const cdekReviewOnDeliveryChange=(o:Pick<Order,"delivery"|"status"|"extra
  ["cdek_pickup","cdek_courier"].includes(delivery||"")&&!["cdek_pickup","cdek_courier"].includes(o.delivery||"")&&(["extra","packing","phone"].includes(o.status)||o.status==="rework"&&o.extra);
 export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После ${o.round-1}-го возврата оператору`:"";
 export function allowedOrderTransitions(o:Order,role?:string):Status[]{
+ if(o.delivery==="moscow_courier"&&o.courier)return o.status==="rework"&&(role==="admin"||role==="operator")?["refused"]:[];
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
- if(o.status==="confirm"&&["moscow_courier","russian_post"].includes(o.delivery||""))allowed=allowed.map(to=>to==="check"?"extra":to);
+ if(o.status==="confirm"&&o.delivery==="moscow_courier")allowed=allowed.map(to=>to==="check"?"packing":to);
+ if(o.status==="confirm"&&o.delivery==="russian_post")allowed=allowed.map(to=>to==="check"?"extra":to);
  if(["moscow_courier","russian_post"].includes(o.delivery||"")&&["packing","phone"].includes(o.status))allowed=o.packingWaybillAt&&["admin","logistic","chief_logistic"].includes(role||"")?["shipping"]:[];
  if(o.delivery==="russian_post"&&["shipping","pickup"].includes(o.status)&&["admin","logistic","chief_logistic"].includes(role||""))allowed=["redeemed"];
  if(o.finalHandoffAt){
@@ -95,7 +99,7 @@ export function seed():State{
 export function orderDatesForTransition(order:Order,to:Status,at:string):Partial<Order>{
  const dates:Partial<Order>={};
  if(order.status==="check"&&["packing","extra"].includes(to)&&!order.adminReviewedAt)dates.adminReviewedAt=at;
- if((order.status==="confirm"&&["check","extra"].includes(to)||order.status==="extra"&&to==="packing")&&!order.confirmedAt)dates.confirmedAt=at;
+ if((order.status==="confirm"&&["check","extra","packing"].includes(to)||order.status==="extra"&&to==="packing")&&!order.confirmedAt)dates.confirmedAt=at;
  if(to==="shipping"&&!order.shippedAt)dates.shippedAt=at;
  if(to==="redeemed"&&!order.redeemedAt)dates.redeemedAt=at;
  if(to==="returned"&&!order.returnedAt)dates.returnedAt=at;
@@ -144,7 +148,7 @@ export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){
 }
 
 export const orderEditingLocked=(employee:Pick<Employee,"role"|"id">,order:Pick<Order,"status"|"manager">)=>order.status==="check"&&employee.role!=="admin"?true:employee.role==="operator"?(order.manager!==employee.id||!["draft","rework"].includes(order.status)):!["logistic","chief_logistic","admin","redemption"].includes(employee.role);
-export const scheduledCalls=(orders:Order[],employee:Pick<Employee,"id"|"role">)=>orders.filter(o=>["callback","missed"].includes(o.contact)&&!!o.due&&Number.isFinite(Date.parse(o.due))&&(employee.role==="operator"?o.manager===employee.id&&["draft","rework"].includes(o.status):isLogistic(employee.role)?["confirm","extra","pickup"].includes(o.status):false)).sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
+export const scheduledCalls=(orders:Order[],employee:Pick<Employee,"id"|"role">)=>orders.filter(o=>["callback","missed"].includes(o.contact)&&!!o.due&&Number.isFinite(Date.parse(o.due))&&(employee.role==="operator"?o.manager===employee.id&&["draft","rework"].includes(o.status):isLogistic(employee.role)?(courierPhase(o)==="logistic"||!o.courier&&["confirm","extra","pickup"].includes(o.status)):employee.role==="courier"?o.courier?.id===employee.id&&courierPhase(o)==="confirmation":false)).sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
 export const callAuthor=(o:Order,employees:Employee[])=>o.contactAuthor?.name||employees.find(e=>e.id===(["draft","rework"].includes(o.status)?o.manager:o.logistic))?.name||"";
 export const logisticCallsDue=(orders:Order[],actorId:string,now:number)=>scheduledCalls(orders,{id:actorId,role:"logistic"}).filter(o=>Date.parse(o.due)<=now);
 
@@ -169,7 +173,7 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"operator",department:actor.department});
 }
 
-export const packingStage=(order:Order)=>["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):order.status==="returned"?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
+export const packingStage=(order:Order)=>["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):courierWarehouseReturn(order)?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||order.delivery==="moscow_courier"&&!!order.courier||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
 
 export const pendingConfirmationRequest=(o:Order)=>o.status==="confirm"&&!!o.confirmationRequest&&!o.confirmationRequest.handledAt;
 export const confirmationStage=(order:Order,now=Date.now(),policy:OrderPolicy=defaultOrderPolicy)=>{
@@ -216,6 +220,7 @@ export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extr
 }
 
 export function orderLocation(order:Order){
+ if(order.delivery==="moscow_courier"&&order.courier)return courierLabel(order);
  if(["draft","rework"].includes(order.status))return "У оператора";
  if(order.status==="check")return "У Администратора";
  if(["shipping","pickup"].includes(order.status)&&order.delivery==="moscow_courier")return "У Курьера";

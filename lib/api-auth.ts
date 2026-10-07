@@ -16,7 +16,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    if(write){const raw=await req.text();if(raw.length>1500000)return Response.json({error:'Слишком большой запрос'},{status:413});body=JSON.parse(raw);}
    if(!mayCallEndpoint(employee,url,req.method,body))return Response.json({error:'Недостаточно прав'},{status:403});
    if((body?.actorId&&body.actorId!==employee.id)||(url.searchParams.has('actorId')&&url.searchParams.get('actorId')!==employee.id))return Response.json({error:'Нельзя действовать от имени другого сотрудника'},{status:403});
-   const crmOrderWrite=url.pathname==='/api/crm'&&['markPV','courierAccept','courierOutcome','receivePayment','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment'].includes(body?.action);
+   const crmOrderWrite=url.pathname==='/api/crm'&&['markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment'].includes(body?.action);
    const orderId=body?.orderId||url.searchParams.get('orderId')||(crmOrderWrite?body.id:undefined);
    if(orderId&&!crmOrderWrite){
     const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(orderId).first<{data:string}>();

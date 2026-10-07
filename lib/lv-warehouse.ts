@@ -1,13 +1,13 @@
 import {z} from 'zod';
 import type {ActivityDb as Db} from './activity-store.ts';
-import {inventorySQL} from './inventory-sql.ts';
+import {inventorySQL,migrateCourierStock} from './inventory-sql.ts';
 
 export const lvConfigSchema=z.object({host:z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]*\.leadvertex\.ru$/,'Укажите адрес проекта вида project.leadvertex.ru'),token:z.string().trim().min(1).max(512),enabled:z.boolean(),trackCrm:z.boolean(),links:z.record(z.string(),z.string()).default({})});
 export type LvConfig=z.infer<typeof lvConfigSchema>;
 type Good={id:string;name:string;available:number;active:boolean;weight:number|null;length:number|null;width:number|null;height:number|null;tag:string;price:number|null};
 const integer=z.coerce.number().int().safe();
 const positive=(value:unknown)=>{const n=Number(value);return Number.isSafeInteger(n)&&n>0?n:null;};
-export async function initLvWarehouse(d:Db){if(!await d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lv_stock'").first())await d.batch(inventorySQL.map(sql=>d.prepare(sql)));}
+export async function initLvWarehouse(d:Db){if(!await d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lv_stock'").first())await d.batch(inventorySQL.map(sql=>d.prepare(sql)));await migrateCourierStock(d);}
 export async function readLvConfig(d:Db):Promise<LvConfig|null>{const r=await d.prepare("SELECT data FROM settings WHERE id='lv-warehouse'").first();return r?JSON.parse(r.data):null;}
 async function lvRequest(c:LvConfig,method:string,request:typeof fetch,body?:Record<string,string>){
  const url=new URL(`https://${c.host}/api/admin/${method}.html`);url.searchParams.set('token',c.token);

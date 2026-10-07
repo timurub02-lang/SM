@@ -43,10 +43,11 @@ console.log('Return labels and stage-specific logistic cancellation permissions 
 
 for(const delivery of ['moscow_courier','russian_post']){
  const first={...o,delivery,finalHandoffAt:undefined};
- assert.deepEqual(allowedOrderTransitions(first,'logistic'),['extra','rework']);
- assert.deepEqual(allowedOrderTransitions({...first,finalHandoffAt:now},'logistic'),['extra','refused']);
+ const target=delivery==='moscow_courier'?'packing':'extra';
+ assert.deepEqual(allowedOrderTransitions(first,'logistic'),[target,'rework']);
+ assert.deepEqual(allowedOrderTransitions({...first,finalHandoffAt:now},'logistic'),[target,'refused']);
  assert.throws(()=>validateTransition(first,'check',{},'','logistic'));
- assert.doesNotThrow(()=>validateTransition(first,'extra',{},'','logistic'));
+ assert.doesNotThrow(()=>validateTransition(first,target,{},'','logistic'));
 }
 assert.deepEqual(allowedOrderTransitions({...o,delivery:'cdek_pickup',finalHandoffAt:undefined},'logistic'),['check','rework']);
 console.log('Manual delivery bypasses admin review; CDEK retains review.');

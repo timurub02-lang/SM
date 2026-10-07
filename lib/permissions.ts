@@ -13,8 +13,8 @@ export function seesOrder(e:Employee,o:Order,staff:Employee[]){
 export function visibleState(s:State,e:Employee):State{
  if(e.role==='admin')return s;
  if(e.role==='courier'){
-  const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)).map(o=>({...o,contactAuthor:undefined,paymentReceipt:undefined,manager:'',logistic:'',paymentReceivedBy:undefined}));
-  return {orders,clients:s.clients.filter(c=>orders.some(o=>o.clientId===c.id)).map(c=>({id:c.id,name:c.name,phone:c.phone,city:c.city,address:c.address,source:'',owner:'',assignedUntil:'',createdAt:c.createdAt,version:c.version})),employees:[e],events:[],incoming:[],settings:{retentionDays:0}};
+  const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)).map(o=>({...o,paymentReceipt:undefined,manager:'',logistic:'',paymentReceivedBy:undefined}));
+  return {orders,clients:s.clients.filter(c=>orders.some(o=>o.clientId===c.id)).map(c=>({id:c.id,name:c.name,phone:c.phone,city:c.city,address:c.address,source:'',owner:'',assignedUntil:'',createdAt:c.createdAt,version:c.version})),employees:[e],events:[],incoming:[],settings:{retentionDays:0,orderPolicy:s.settings?.orderPolicy}};
  }
  const orders=s.orders.filter(o=>seesOrder(e,o,s.employees));const orderIds=new Set(orders.map(o=>o.id));
  const clients=s.clients.filter(c=>ownsClient(e,c,s.employees)||orders.some(o=>o.clientId===c.id));const ids=new Set(clients.map(c=>c.id));
@@ -26,7 +26,7 @@ export function visibleState(s:State,e:Employee):State{
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
- if(e.role==='courier')return allow(['courierOutcome','courierAccept'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
+ if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
  if(p.action==='readReminder')return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
@@ -56,7 +56,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/order-access')return isLogistic(e.role)&&method==='POST';
  if(path==='/api/cash')return ['department_head','chief_logistic'].includes(e.role);
  if(path==='/api/activity')return method==='GET'&&e.role==='department_head'&&!!e.department;
- if(e.role==='courier')return path==='/api/crm'&&(method==='GET'||method==='POST'&&['courierOutcome','courierAccept'].includes(p?.action));
+ if(e.role==='courier')return path==='/api/crm'&&(method==='GET'||method==='POST'&&['courierOutcome','courierAccept','courierWorkflow','contact','readReminder'].includes(p?.action));
  if(path==='/api/crm')return true; // Object-level rules are applied inside the CRM handler.
  if(path==='/api/cdek/routing')return method==='GET'&&isLogistic(e.role)&&url.searchParams.has('orderId');
  if(path==='/api/cdek'||path==='/api/cdek/status-mapping')return method==='GET'&&isLogistic(e.role);

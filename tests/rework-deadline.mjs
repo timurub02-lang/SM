@@ -4,7 +4,7 @@ const at='2026-09-30T10:00:00Z',deadline=reworkDeadlineFrom(at);
 assert.equal(deadline,'2026-10-04T10:00:00.000Z');
 const order={status:'rework',reworkDeadline:deadline};
 assert.doesNotThrow(()=>validateReworkCall(order,deadline));
-assert.throws(()=>validateReworkCall(order,'2026-10-04T10:00:01Z'),/4 суток/);
+assert.throws(()=>validateReworkCall(order,'2026-10-04T10:00:01Z'),/срока доработки/);
 assert.doesNotThrow(()=>validateReworkCall({status:'confirm',reworkDeadline:deadline},'2026-10-05T10:00:00Z'));
 assert.equal(reworkTimeLeft(deadline,Date.parse(at)),'4 д 0 ч 0 мин');
 assert.equal(reworkTimeLeft(deadline,Date.parse(deadline)),'Срок истёк — отмена заказа');
