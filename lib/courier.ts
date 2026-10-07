@@ -58,7 +58,7 @@ export function courierPendingAction(o:Order){
 }
 export function courierReminderNeedsAction(r:Reminder,o:Order|undefined,now=Date.now()){
  if(r.kind==='courier-door')return !r.resolved&&!!o&&r.id===courierDoorNoticeId(o,now);
- if(r.kind==='courier-receipt')return !r.readAt&&!r.resolved;
+ if(r.kind==='courier-receipt')return false; // Receipt is information; no acknowledgement is needed.
  if(r.resolved||!o?.courier||o.delivery!=='moscow_courier')return false;
  const phase=courierPhase(o),stage=courierStage(o);
  if(r.kind==='call')return phase==='confirmation'&&stage==='confirmation'&&!!r.due&&o.due===r.due&&['missed','callback'].includes(o.contact);

@@ -33,7 +33,7 @@ export type Order={deliveryChange?:{from:DeliveryMethod;to:DeliveryMethod;at:str
 export type Employee={baseAccess?:"M"|"J"|"both";hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={id:string;clientId:string;at:string;text:string;source:string};
-export type State={reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
+export type State={tasks?:Reminder[];reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
 export const money=(n:number)=>new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:0,maximumFractionDigits:2}).format(n);
 export const total=(o:Order)=>o.items.reduce((n,i)=>n+i.quantity*Math.round(i.price*100),0)/100;
 export const initials=(s:string)=>s.split(" ").slice(0,2).map(x=>x[0]).join("");
@@ -223,7 +223,7 @@ export function reworkTimeLeft(deadline:string,now:number){
 }
 
 export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extra?:boolean;delivery?:Order['delivery'];courier?:Order['courier']},now:number,policy:OrderPolicy=defaultOrderPolicy){
- if(order.delivery==='moscow_courier'&&order.courier?.phase==='operator'&&order.courier.doorRefusal&&!order.courier.doorRefusal.resolvedAt)return 'urgent';
+ if(order.delivery==='moscow_courier'&&order.courier?.phase==='operator'&&order.courier.doorRefusal&&!order.courier.doorRefusal.resolvedAt)return 'new';
  const stage=order.reworkDeadline&&Date.parse(order.reworkDeadline)-now<=policy.reworkWarningHours*3600000?"expiring":order.contact==="missed"?"missed":order.contact==="callback"?"callback":"new";
  return order.extra?"extra_"+stage:stage;
 }

@@ -40,7 +40,8 @@ try{
   const state=(await call('courier')).data,notices=state.reminders.filter(r=>r.kind==='courier-receipt'&&r.orderId===id);
   assert.equal(notices.length,1,'Receipt is delivered exactly once');const notice=notices[0];
   assert.equal(notice.title,title);assert.ok(notice.text.includes(amount+' ₽'));assert.ok(notice.text.includes('Test '));
-  assert.equal(state.orders.some(o=>o.id===id),visible);assert.equal(courierReminderNeedsAction(notice,state.orders.find(o=>o.id===id)),true);
+  assert.equal(state.orders.some(o=>o.id===id),visible);assert.equal(courierReminderNeedsAction(notice,state.orders.find(o=>o.id===id)),false);
+  assert.ok(!state.tasks.some(t=>t.orderId===id),"Completed receipt must not create a task");
   assert.ok(!(await call('stranger')).data.reminders.some(r=>r.id===notice.id));
   if(read){await call('courier','/api/crm',{action:'readReminder',id:notice.id});const seen=(await call('courier')).data.reminders.find(r=>r.id===notice.id);assert.ok(seen.readAt);assert.equal(courierReminderNeedsAction(seen,order(id)),false);}
   return notice.id;
@@ -66,7 +67,12 @@ try{
  await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
  for(const operation of ['toLogistic','requestPostpone','approvePostpone','rejectPostpone'])await act(id,'courier',{action:'courierWorkflow',operation,reason:'Test',at:hours(200)},400);
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Недозвон'});
- assert.equal(order(id).courier.phase,'operator');assert.equal(order(id).status,'rework');assert.equal(order(id).noAnswerDeadline,undefined);assert.equal(order(id).contactAuthor,undefined);assert.equal(stock(),before);
+ assert.equal(order(id).courier.phase,'operator');assert.equal(order(id).status,'rework');assert.equal(order(id).noAnswerDeadline,undefined);
+ const inbox=(await call('operator')).data;assert.equal(inbox.tasks.filter(t=>t.orderId===id).length,1);
+ await call('operator','/api/crm',{action:'readReminder',id:inbox.tasks.find(t=>t.orderId===id).id});
+ assert.equal((await call('operator')).data.tasks.filter(t=>t.orderId===id).length,1,'Viewing a task does not complete it');
+ assert.equal((await call('head')).data.tasks.filter(t=>t.orderId===id).length,1);
+ assert.equal((await call('foreign-head')).data.tasks.filter(t=>t.orderId===id).length,0);assert.equal(order(id).contactAuthor,undefined);assert.equal(stock(),before);
  await act(id,'operator',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
  assert.ok((await call('operator')).data.reminders.some(r=>r.kind==='call'&&r.orderId===id&&!r.resolved));
  for(const employee of ['logistic','second','chief']){
@@ -74,7 +80,7 @@ try{
   await act(id,employee,{action:'courierWorkflow',operation:'confirm'},400);
   assert.ok(!(await call(employee)).data.reminders.some(r=>r.kind==='call'&&r.orderId===id&&!r.resolved));
  }
- await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(id).courier.phase,'resume');
+ await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(id).courier.phase,'resume');assert.ok(!(await call('operator')).data.tasks.some(t=>t.orderId===id),'Handoff completes the operator task');
  await act(id,'courier',{action:'courierAccept',confirmed:true},400);
  await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Questions during delivery'});assert.equal(order(id).status,'rework');assert.equal(order(id).courier.atDoor,false);
@@ -239,7 +245,7 @@ try{
  await act(pendingIds[0],'courier',{action:'courierAccept',confirmed:true});notices=courierNotices((await call('courier')).data);assert.ok(!notices.active.some(r=>r.orderId===pendingIds[0]));assert.ok(notices.history.length<=20);
  for(const newId of pendingIds){if(!order(newId).courier.acceptedAt)await act(newId,'courier',{action:'courierAccept',confirmed:true});await act(newId,'courier',{action:'contact',contact:'callback',reason:'Scheduled test call',due:hours(1)});}
  notices=courierNotices((await call('courier')).data);for(const newId of pendingIds)assert.ok(notices.active.some(r=>r.kind==='call'&&r.orderId===newId));assert.ok(notices.history.length<=20);
- assert.ok(notices.active.some(r=>r.id===moneyReceipt),'Unread receipt survives more than 20 later events');
+ assert.ok(!noticeState.tasks.some(r=>r.id===moneyReceipt),'Unread receipt never counts as a task');
  await call('courier','/api/crm',{action:'readReminder',id:moneyReceipt});
  notices=courierNotices((await call('courier')).data);assert.ok(!notices.active.some(r=>r.id===moneyReceipt));assert.ok(notices.history.length<=20);
  console.log('Money, warehouse and repacking receipts: one notification, correct recipient, read/history and revoked order access passed.');

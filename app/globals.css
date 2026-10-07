@@ -62,3 +62,14 @@
 .courier-door-check {display:flex!important;align-items:flex-start;gap:12px;}
 .courier-door-check input {width:22px!important;height:22px;flex:none;}
 @media(max-width:600px){.courier-door-alerts {position:relative;top:auto;padding:14px;}.courier-door-alerts article {align-items:stretch;flex-direction:column;}.courier-door-card {padding:14px;}}
+
+.notification-tools,.notification-tabs{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.notification-tools .secondary{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;font-size:13px}
+.notification-task-button.has-tasks{color:#a45b12;background:#fff3df;border-color:#f4d6a3}
+.notification-task-button b{background:#b76a1c;color:white;border-radius:20px;min-width:22px;padding:1px 6px;text-align:center}
+.notification-tabs [aria-pressed=true]{background:#e9f0ff;color:#285ac0;border-color:#b6caf1}
+.courier-refresh{flex-wrap:wrap}
+@media(max-width:1100px){.topbar .notification-tools button>span{display:none}}
+@media(max-width:600px){.courier-refresh .notification-tools{width:100%}.courier-refresh .notification-tools button{flex:1;padding:12px 9px}.courier-refresh .notification-tools span{font-size:12px}}
+
+.badge.courier-door-badge{background:#ffe2df;color:#ac2028;border:1px solid #e7a7a7;font-weight:700}
