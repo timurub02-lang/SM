@@ -36,6 +36,15 @@ try{
   const o=created.data.state.orders.find(o=>o.clientId===c.id);assert.equal(o.status,'draft');return o.id;
  }
  async function act(id,actor,body,expected=200){const result=await call(actor,'/api/crm',{id,version:order(id).version,...body},expected);return result.data;}
+ async function receipt(id,title,amount,{visible=true,read=true}={}){
+  const state=(await call('courier')).data,notices=state.reminders.filter(r=>r.kind==='courier-receipt'&&r.orderId===id);
+  assert.equal(notices.length,1,'Receipt is delivered exactly once');const notice=notices[0];
+  assert.equal(notice.title,title);assert.ok(notice.text.includes(amount+' ₽'));assert.ok(notice.text.includes('Test '));
+  assert.equal(state.orders.some(o=>o.id===id),visible);assert.equal(courierReminderNeedsAction(notice,state.orders.find(o=>o.id===id)),true);
+  assert.ok(!(await call('stranger')).data.reminders.some(r=>r.id===notice.id));
+  if(read){await call('courier','/api/crm',{action:'readReminder',id:notice.id});const seen=(await call('courier')).data.reminders.find(r=>r.id===notice.id);assert.ok(seen.readAt);assert.equal(courierReminderNeedsAction(seen,order(id)),false);}
+  return notice.id;
+ }
  async function assembled(id){await act(id,'operator',{action:'transition',to:'confirm'});await act(id,'logistic',{action:'transition',to:'extra'},400);await act(id,'logistic',{action:'transition',to:'refused',reason:'No'},400);await act(id,'logistic',{action:'transition',to:'packing'});await act(id,'logistic',{action:'transition',to:'shipping',courierId:'courier'},400);await act(id,'logistic',{action:'markPackingWaybill'});await act(id,'logistic',{action:'transition',to:'shipping',courierId:'courier'});assert.equal(order(id).status,'packing');assert.equal(order(id).shippedAt,undefined);}
  const id=await create();await assembled(id);const before=stock();
  await act(id,'courier',{action:'courierWorkflow',operation:'confirm'},400);
@@ -78,6 +87,7 @@ try{
  await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
  await act(id,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});assert.equal(stock(),before);
  await act(id,'logistic',{action:'receivePayment'});await act(id,'logistic',{action:'receivePayment'},400);
+ const moneyReceipt=await receipt(id,'Деньги приняты логистом',10000,{read:false});
  assert.equal(db.prepare('SELECT amount FROM cash_operations WHERE order_id=?').get(id).amount,1000000);
  // Editable price/address while operator works: custody follows amount, physical contents stay locked.
  const editId=await create();await assembled(editId);await act(editId,'courier',{action:'courierAccept',confirmed:true});await act(editId,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Change order'});
@@ -101,17 +111,32 @@ try{
  await act(editId,'courier',{action:'courierWorkflow',operation:'returnRecall'},400);
  await act(editId,'courier',{action:'courierWorkflow',operation:'returnRecall',confirmed:true});
  assert.equal(order(editId).courier.phase,'recall_returned');assert.equal(courierBalance([order(editId)],'courier').parcels,9000);assert.equal(stock(),editStock);
+ await act(editId,'logistic',{action:'transition',to:'rework',reason:'Client refuses'},400);
  await act(editId,'logistic',{action:'markPackingWaybill'},400);
  await act(editId,'chief',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true});
  assert.equal(order(editId).courier,undefined);assert.equal(order(editId).status,'packing');assert.equal(order(editId).packingWaybillAt,undefined);assert.equal(stock(),editStock);assert.equal(courierBalance([order(editId)],'courier').parcels,0);
  assert.ok((await call('operator')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('принял отозванную')));
  await act(editId,'chief',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true},400);
+ await receipt(editId,'Посылка принята на пересборку',9000,{visible:false});
+ await act(editId,'courier',{action:'courierAccept',confirmed:true},400);
+ await act(editId,'logistic',{action:'transition',to:'rework'},400);
+ await act(editId,'logistic',{action:'transition',to:'rework',reason:'Клиент отказывается'});
+ assert.equal(order(editId).status,'rework');assert.equal(stock(),editStock);assert.equal(order(editId).courierRecall.operatorBudgetMs,recallBudget);
+ assert.ok((await call('operator')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('После пересборки')));
+ await act(editId,'logistic',{action:'transition',to:'packing'},400);
+ await act(editId,'operator',{action:'transition',to:'confirm',finalHandoffConfirmed:true},400);
+ await act(editId,'operator',{action:'transition',to:'packing'},400);
+ await act(editId,'operator',{action:'contact',contact:'callback',reason:'Discuss refusal',due:hours(1)});
+ await act(editId,'logistic',{action:'contact',contact:'callback',reason:'Wrong owner',due:hours(1)},400);
  await act(editId,'logistic',{action:'markPackingWaybill'},400);
  await act(editId,'operator',{...edit,items:[{name:'Product',quantity:2,price:9000}]});assert.equal(stock(),editStock-1);assert.ok(order(editId).courierRepackRequest.completedAt);
  assert.ok((await call('logistic')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('правки для пересборки сохранены')));
+ const afterRework=order(editId);afterRework.courierRecall.operatorStartedAt=hours(-2);afterRework.reworkDeadline=new Date(Date.now()+recallBudget-2*3600000).toISOString();db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(afterRework),editId);
+ await act(editId,'operator',{action:'transition',to:'packing'});
+ const repackedBudget=order(editId).courierRecall.operatorBudgetMs;assert.ok(Math.abs(repackedBudget-(recallBudget-2*3600000))<10000);assert.equal(order(editId).reworkDeadline,undefined);assert.equal(order(editId).packingWaybillAt,undefined);
  await act(editId,'logistic',{action:'markPackingWaybill'});
  await act(editId,'operator',edit,400);
- await act(editId,'logistic',{action:'transition',to:'shipping',courierId:'courier'});assert.equal(order(editId).courier.amount,18000);assert.equal(order(editId).courier.operatorBudgetMs,recallBudget);
+ await act(editId,'logistic',{action:'transition',to:'shipping',courierId:'courier'});assert.equal(order(editId).courier.amount,18000);assert.equal(order(editId).courier.operatorBudgetMs,repackedBudget);
  await act(editId,'courier',{action:'courierAccept',confirmed:true});assert.equal(order(editId).courier.phase,'confirmation');
  await act(editId,'courier',{action:'courierWorkflow',operation:'confirm'});await act(editId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});
  await act(editId,'operator',edit,400);await act(editId,'admin',edit,400);await act(editId,'logistic',{action:'receivePayment'});assert.equal(db.prepare('SELECT amount FROM cash_operations WHERE order_id=?').get(editId).amount,1800000);
@@ -119,6 +144,17 @@ try{
  const pendingId=await create();await assembled(pendingId);const pendingVersion=order(pendingId).version;
  await act(pendingId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Wrong handoff'});assert.equal(order(pendingId).courier,undefined);assert.equal(order(pendingId).packingWaybillAt,undefined);
  await act(pendingId,'courier',{action:'courierAccept',confirmed:true,version:pendingVersion},400);
+ await act(pendingId,'logistic',{action:'transition',to:'rework',reason:'Not physically recalled'},400);
+ // At the warehouse, cancellation and expiry release stock once without another courier receipt.
+ for(const expire of [false,true]){
+  const cancelledId=await create();await assembled(cancelledId);await act(cancelledId,'courier',{action:'courierAccept',confirmed:true});
+  await act(cancelledId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Repack'});await act(cancelledId,'courier',{action:'courierWorkflow',operation:'returnRecall',confirmed:true});await act(cancelledId,'logistic',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true});
+  await act(cancelledId,'chief',{action:'transition',to:'rework',reason:'Client refuses'});const reservedStock=stock();
+  if(expire){const expired=order(cancelledId);expired.reworkDeadline=hours(-1);expired.courierRecall.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(expired),cancelledId);await call('operator');}
+  else await act(cancelledId,'operator',{action:'transition',to:'refused',reason:'Client confirmed refusal'});
+  assert.equal(order(cancelledId).status,'refused');assert.equal(stock(),reservedStock+1);assert.equal(courierBalance([order(cancelledId)],'courier').total,0);
+  await act(cancelledId,'operator',{action:'transition',to:'refused',reason:'Duplicate'},400);await act(cancelledId,'logistic',{action:'returnToWarehouse'},400);await call('operator');assert.equal(stock(),reservedStock+1);
+ }
  // Logistics extra confirmation is dropped only on a switch to Moscow, not on the first confirmation.
  for(const from of ['russian_post','cdek_pickup']){
   const switchId=await create();await act(switchId,'operator',{action:'updateOrder',delivery:from,items:order(switchId).items,addressConfirmed:true});await act(switchId,'operator',{action:'transition',to:'confirm'});
@@ -144,6 +180,7 @@ try{
  const accepted=order(returnedId);accepted.courier.workStartedAt=hours(-49);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(accepted),returnedId);await call('operator');assert.equal(order(returnedId).status,'rework');
  const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
  await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
+ await receipt(returnedId,'Возврат принят на склад',10000);
  const pendingIds=[];
  for(let i=0;i<22;i++){const newId=await create();await assembled(newId);pendingIds.push(newId);}
  function courierNotices(state){return {active:state.reminders.filter(r=>courierReminderNeedsAction(r,state.orders.find(o=>o.id===r.orderId))),history:state.reminders.filter(r=>!courierReminderNeedsAction(r,state.orders.find(o=>o.id===r.orderId)))};}
@@ -155,6 +192,10 @@ try{
  await act(pendingIds[0],'courier',{action:'courierAccept',confirmed:true});notices=courierNotices((await call('courier')).data);assert.ok(!notices.active.some(r=>r.orderId===pendingIds[0]));assert.ok(notices.history.length<=20);
  for(const newId of pendingIds){if(!order(newId).courier.acceptedAt)await act(newId,'courier',{action:'courierAccept',confirmed:true});await act(newId,'courier',{action:'contact',contact:'callback',reason:'Scheduled test call',due:hours(1)});}
  notices=courierNotices((await call('courier')).data);for(const newId of pendingIds)assert.ok(notices.active.some(r=>r.kind==='call'&&r.orderId===newId));assert.ok(notices.history.length<=20);
+ assert.ok(notices.active.some(r=>r.id===moneyReceipt),'Unread receipt survives more than 20 later events');
+ await call('courier','/api/crm',{action:'readReminder',id:moneyReceipt});
+ notices=courierNotices((await call('courier')).data);assert.ok(!notices.active.some(r=>r.id===moneyReceipt));assert.ok(notices.history.length<=20);
+ console.log('Money, warehouse and repacking receipts: one notification, correct recipient, read/history and revoked order access passed.');
  console.log('All active courier tasks persist, viewed tasks stay actionable, missing tasks recover, completed history limited to 20.');
  console.log('Moscow API: real create/handoff/accept, operator-only returns, forbidden retired actions, operator calls, shared budget and legacy migration, money, expiry, physical return and stock passed.');
 }finally{if(server&&server.exitCode===null){const exited=once(server,'exit');server.kill('SIGTERM');await exited;}db.close();rmSync(dir,{recursive:true,force:true});}

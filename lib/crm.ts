@@ -1,4 +1,4 @@
-import {courierPhase,courierLabel,courierWarehouseReturn} from './courier.ts';
+import {courierPhase,courierParcelLocation,courierWarehouseReturn,courierRecalledAtWarehouse} from './courier.ts';
 import type {CourierAssignment,CourierRecall} from './courier.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 import type {Reminder} from './reminders';
@@ -14,8 +14,8 @@ export const orderGroups = [
  {id:"paid",label:"Оплачен",stages:["redeemed"]},
  {id:"returned",label:"Возврат",stages:["returned"]},
 ];
-export function orderGroup(value:Status|Pick<Order,'status'|'delivery'|'courier'|'shippedAt'>){
- const status=typeof value==='string'?value:value.status==='rework'&&value.delivery==='moscow_courier'&&value.courier?.phase==='operator'?(value.shippedAt?'shipping':'packing'):value.status;
+export function orderGroup(value:Status|Pick<Order,'status'|'delivery'|'courier'|'shippedAt'|'courierRecall'>){
+ const status=typeof value==='string'?value:value.status==='rework'&&value.delivery==='moscow_courier'&&(value.courier?.phase==='operator'||courierRecalledAtWarehouse(value))?(value.shippedAt?'shipping':'packing'):value.status;
  return orderGroups.find(g=>g.stages.includes(status))!;
 }
 
@@ -59,6 +59,10 @@ export const cdekReviewOnDeliveryChange=(o:Pick<Order,"delivery"|"status"|"extra
 export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После ${o.round-1}-го возврата оператору`:"";
 export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  if(o.delivery==="moscow_courier"&&o.courier)return o.status==="rework"&&(role==="admin"||role==="operator")?["refused"]:[];
+ if(courierRecalledAtWarehouse(o)){
+  if(o.status==='rework')return ['admin','operator'].includes(role||'')?['packing','refused']:[];
+  if(o.status==='packing'&&['admin','logistic','chief_logistic'].includes(role||''))return [...(o.packingWaybillAt?['shipping' as const]:[]),'rework'];
+ }
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
  if(o.status==="confirm"&&o.delivery==="moscow_courier")allowed=allowed.map(to=>to==="check"?"packing":to);
  if(o.status==="confirm"&&o.delivery==="russian_post")allowed=allowed.map(to=>to==="check"?"extra":to);
@@ -87,7 +91,7 @@ export function confirmationDeadline(o:Order){
 export function validateTransition(o:Order,to:Status,c:Client,reason:string,role?:string){
  const deadline=draftDeadline(o);if(deadline&&Date.now()>=Date.parse(deadline))throw Error("Срок оформления истёк. Заказ подлежит отмене");
  if(o.status==="rework"&&o.reworkDeadline&&Date.now()>=Date.parse(o.reworkDeadline))throw Error("Срок доработки истёк. Заказ подлежит отмене");
- if(["draft","rework"].includes(o.status)&&["confirm","extra"].includes(to)){const missing=orderMissingField(o,c);if(missing)throw Error(missing.label);}
+ if(["draft","rework"].includes(o.status)&&(["confirm","extra"].includes(to)||to==='packing'&&courierRecalledAtWarehouse(o))){const missing=orderMissingField(o,c);if(missing)throw Error(missing.label);}
  const allowed=allowedOrderTransitions(o,role);
  if(!allowed.includes(to))throw new Error("Этот переход недоступен для текущего этапа");
  if(["confirm","extra","check","packing"].includes(to)&&(!(o.address??c.address).trim()||!o.items.length))throw new Error("Заполните адрес клиента и корзину заказа");
@@ -176,7 +180,7 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"operator",department:actor.department});
 }
 
-export const packingStage=(order:Order)=>order.courier?.phase==='recall_returned'?"new":["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):courierWarehouseReturn(order)?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||order.delivery==="moscow_courier"&&!!order.courier||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
+export const packingStage=(order:Order)=>order.status==='rework'&&courierRecalledAtWarehouse(order)?'operator':order.courier?.phase==='recall_returned'?"new":["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):courierWarehouseReturn(order)?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||order.delivery==="moscow_courier"&&!!order.courier||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff)?"calculated":"new";
 
 export const pendingConfirmationRequest=(o:Order)=>o.status==="confirm"&&!!o.confirmationRequest&&!o.confirmationRequest.handledAt;
 export const confirmationStage=(order:Order,now=Date.now(),policy:OrderPolicy=defaultOrderPolicy)=>{
@@ -223,10 +227,9 @@ export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extr
 }
 
 export function orderLocation(order:Order){
- if(order.delivery==="moscow_courier"&&order.courier)return courierLabel(order);
+ if(order.delivery==="moscow_courier")return courierParcelLocation(order);
  if(["draft","rework"].includes(order.status))return "У оператора";
  if(order.status==="check")return "У Администратора";
- if(["shipping","pickup"].includes(order.status)&&order.delivery==="moscow_courier")return "У Курьера";
  if(["shipping","pickup"].includes(order.status)&&order.delivery==="russian_post")return "У Почты России";
  if(["cdek_pickup","cdek_courier"].includes(order.delivery||"")&&(order.cdekTransferredAt||order.cdekStatus?.code==="CREATED"))return "У СДЭК";
  if(["confirm","extra","packing","phone","shipping","pickup"].includes(order.status))return "У логиста";

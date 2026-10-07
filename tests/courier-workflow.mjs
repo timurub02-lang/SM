@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
-import {applyCourierCommand,courierToOperator,courierDeadline,courierStage,courierBalance,courierConfirmationStage,courierMissedCallTime,courierReminderNeedsAction} from '../lib/courier.ts';
+import {applyCourierCommand,courierLabel,courierParcelLocation,courierToOperator,courierDeadline,courierStage,courierBalance,courierConfirmationStage,courierMissedCallTime,courierReminderNeedsAction} from '../lib/courier.ts';
 import {allowedOrderTransitions,orderGroup,packingStage,applyRetention,scheduledCalls} from '../lib/crm.ts';
 import {defaultOrderPolicy as policy} from '../lib/order-policy.ts';
 import {reconcileOrderTimers} from '../lib/base-retention-store.ts';
@@ -130,3 +130,27 @@ try{
  assert.equal((await d.prepare('SELECT reserved FROM product_stock').first()).reserved,reserve-1);
 }finally{d.close();}
 console.log('Moscow workflow: acceptance clock, stage ownership, operator shared budget, retired actions, legacy queue migration, stock custody, notifications and unchanged CDEK/Post passed.');
+
+// Every Moscow phase exposes work ownership separately from physical custody.
+for(const [o,label,place] of [
+ [{...base,courier:undefined,status:'draft'},'Оформляет оператор','Ещё не передана курьеру'],
+ [{...base,courier:undefined,status:'confirm'},'Первое подтверждение · логист','Ещё не передана курьеру'],
+ [base,'Ожидает приёма курьером','Приём курьером не подтверждён'],
+ [accepted,'У курьера на подтверждении · 1-й этап','У курьера'],
+ [returned,'Заказ в работе у оператора · возврат с подтверждения курьером','У курьера'],
+ [work,'Заказ в работе у оператора · возврат с доставки (отказ у двери)','У курьера'],
+ [recalled,'Отозван логистом · вернуть посылку на сборку','У курьера'],
+ [physicallyReturned,'Передано логисту · ожидает подтверждения приёма','Передана логисту · приём ещё не подтверждён'],
+ [received,'На пересборке у логиста','На складе'],
+ [{...received,status:'rework'},'Заказ в работе у оператора · возврат после пересборки','На складе'],
+ [{...accepted,status:'refused'},'Отменён · вернуть посылку на склад','У курьера'],
+ [{...accepted,status:'returned',warehouseReturnedAt:at},'Посылка принята на склад','На складе'],
+ [{...accepted,status:'redeemed'},'Оплачен · деньги у курьера','Доставлена клиенту'],
+ [{...accepted,status:'redeemed',paymentReceivedAt:at},'Деньги приняты логистом','Доставлена клиенту'],
+]){assert.equal(courierLabel(o),label);assert.equal(courierParcelLocation(o),place);}
+assert.deepEqual(allowedOrderTransitions(received,'logistic'),['rework']);
+assert.deepEqual(allowedOrderTransitions({...received,status:'rework'},'operator'),['packing','refused']);
+assert.deepEqual(allowedOrderTransitions({...received,status:'rework'},'logistic'),[]);
+assert.equal(orderGroup({...received,status:'rework'}).id,'accepted');
+assert.equal(packingStage({...received,status:'rework'}),'operator');
+console.log('Moscow stage labels, return origins, physical locations and warehouse rework transitions passed.');

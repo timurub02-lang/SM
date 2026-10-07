@@ -4,7 +4,7 @@ import {draftDeadline,scheduledCalls,callAuthor,type State,type Employee,type Cl
 import {db} from './db';
 import {initReminderStore} from './reminder-store.ts';
 import {seesOrder,ownsClient} from './permissions';
-export type Reminder={kind?:"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
+export type Reminder={kind?:"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
 export async function initReminders(){await initReminderStore(db());}
 export function orderDecisionReminder(c:Client,staff:Employee[]):Reminder|null{
  const request=c.orderRequest;if(!request||request.status==='pending')return null;
@@ -17,6 +17,7 @@ function activeReminder(r:Reminder,s:State,e:Employee){
  if(r.kind==='call')return scheduledCalls(o?[o]:[],e).some(o=>o.due===r.due);
  if(r.kind==='draft')return !!o&&e.id===o.manager&&draftDeadline(o)===r.due;
  if(r.requestId)return s.clients.some(c=>c.orderRequest?.id===r.requestId&&c.orderRequest?.status==='pending');
+ if(r.kind==='courier'&&o?.status==='rework'&&!o.courier&&o.courierRecall?.operatorStartedAt)return (e.id===o.manager||e.role==='admin'||e.role==='department_head'&&s.employees.some(x=>x.id===o.manager&&!!e.department&&x.department===e.department))&&Date.parse(r.at)>=Date.parse(o.courierRecall.operatorStartedAt);
  if(r.kind==='courier'&&o?.courierRepackRequest&&!o.courierRepackRequest.completedAt&&Date.parse(r.at)>=Date.parse(o.courierRepackRequest.at)){
   if(o.courier?.phase==='operator'&&['admin','logistic','chief_logistic'].includes(e.role))return true;
   if(!o.courier&&o.status==='packing'&&(e.id===o.manager||e.role==='admin'))return true;
@@ -30,9 +31,9 @@ function activeReminder(r:Reminder,s:State,e:Employee){
 export async function saveReminders(s:State){
  const d=db();await initReminders();
  const writes=[];
- const saved=(await d.prepare('SELECT employee_id,data FROM reminders').all<{employee_id:string;data:string}>()).results;
+ const saved=(await d.prepare('SELECT employee_id,data,read_at FROM reminders').all<{employee_id:string;data:string;read_at:string|null}>()).results;
  const stored=new Map<string,Reminder[]>();
- for(const row of saved){const list=stored.get(row.employee_id)||[];list.push(JSON.parse(row.data));stored.set(row.employee_id,list);}
+ for(const row of saved){const list=stored.get(row.employee_id)||[];list.push({...JSON.parse(row.data),readAt:row.read_at||undefined});stored.set(row.employee_id,list);}
  for(const e of s.employees){
   const calls:Reminder[]=scheduledCalls(s.orders,e).map(o=>({kind:"call",id:`call:${o.id}:${o.due}`,orderId:o.id,clientId:o.clientId,title:s.clients.find(c=>c.id===o.clientId)?.name||o.id,text:(o.contact==='missed'?'Недозвон — повторная попытка':'Перезвон')+(o.reason?' · '+o.reason:'')+(callAuthor(o,s.employees)?' · Кто назначил: '+callAuthor(o,s.employees):''),at:o.contactAuthor?.at||o.updatedAt,due:o.due}));
   const drafts:Reminder[]=e.role==='operator'?s.orders.filter(o=>o.manager===e.id&&draftDeadline(o)).map(o=>({kind:'draft',id:`draft:${o.id}:${draftDeadline(o)}`,orderId:o.id,clientId:o.clientId,title:s.clients.find(c=>c.id===o.clientId)?.name||o.id,text:'Передайте заказ логисту',at:o.createdAt,due:draftDeadline(o)})):[];
@@ -62,6 +63,8 @@ export async function employeeReminders(s:State,e:Employee){
  const activeCalls=new Set(scheduledCalls(s.orders,e).map(o=>`call:${o.id}:${o.due}`));
  const rows=await db().prepare('SELECT data,read_at FROM reminders WHERE employee_id=? ORDER BY at DESC,id DESC').bind(e.id).all<{data:string;read_at:string|null}>();
  return rows.results.map(r=>({...JSON.parse(r.data),readAt:r.read_at||undefined}) as Reminder).filter(r=>{
+  // A personal receipt remains available after recall removes the courier's access to the order.
+  if(r.kind==='courier-receipt')return e.role==='courier';
   if(r.kind==='cdek-deletion'&&!['admin','chief_logistic'].includes(e.role))return false;
   if(r.orderId){const o=s.orders.find(o=>o.id===r.orderId);return !!o&&seesOrder(e,o,s.employees);}
   const c=s.clients.find(c=>c.id===r.clientId);return !!c&&ownsClient(e,c,s.employees);

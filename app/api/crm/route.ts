@@ -6,7 +6,7 @@ import {moscowDate,normalizedPhone} from '@/lib/base-distribution';
 import {orderSettings} from '@/lib/order-policy-store';
 import {orderDataEditingEnabled} from '@/lib/order-policy';
 import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
-import {applyCourierCommand,canEditCourierOrder,canEditRecalledCourierOrder,courierPhase,courierStage,courierDeadline,courierWarehouseReturn,cancelCourierWork,courierOutstanding} from '@/lib/courier';
+import {applyCourierCommand,canEditCourierOrder,canEditRecalledCourierOrder,courierRecalledAtWarehouse,pauseCourierOperatorBudget,courierPhase,courierStage,courierDeadline,courierWarehouseReturn,cancelCourierWork,courierOutstanding} from '@/lib/courier';
 import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
 import {total,canReceivePayment,isLogistic} from '@/lib/crm';
@@ -172,6 +172,7 @@ async function handlePOST(request:Request){
    if(o.warehouseReturnedAt)throw Error("Товар уже возвращён на склад");
    next.warehouseReturnedAt=now;text="Возврат на склад · товар принят, резерв освобождён";
   }else if(p.action==="markPackingWaybill"){
+   if(courierRecalledAtWarehouse(o)&&o.status==='rework')throw Error('Заказ в работе у оператора. Дождитесь возврата на сборку');
    if(!employee||!["admin","logistic","chief_logistic"].includes(employee.role))throw Error("Нет доступа к накладным");
    if(o.courierRepackRequest&&!o.courierRepackRequest.completedAt)throw Error('Сначала оператор или администратор должен сохранить исправленный заказ после приёма посылки');
    next.packingWaybillAt=o.packingWaybillAt||now;text="Подготовлена накладная на сборку";
@@ -208,6 +209,18 @@ async function handlePOST(request:Request){
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
    delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
    if(to==='shipping'&&o.delivery==='moscow_courier'){next.status='packing';delete next.shippedAt;delete next.finalHandoffAt;delete next.reworkDeadline;}
+   if(courierRecalledAtWarehouse(o)){
+    if(to==='rework'){
+     const budget=o.courierRecall!.operatorBudgetMs===undefined?(s.settings.orderPolicy!.reworkHours===null?null:s.settings.orderPolicy!.reworkHours!*3600000):o.courierRecall!.operatorBudgetMs;
+     next.courierRecall={...o.courierRecall!,operatorBudgetMs:budget,operatorStartedAt:now};
+     next.reworkHours=budget===null?null:budget/3600000;
+     next.reworkDeadline=budget===null?undefined:new Date(Date.parse(now)+budget).toISOString();
+     delete next.packingWaybillAt;delete next.finalHandoffAt;delete next.contactAuthor;next.extra=false;
+    }else if(o.status==='rework'&&to==='packing'){
+     if(o.courierRepackRequest&&!o.courierRepackRequest.completedAt)throw Error('Сначала сохраните исправленную корзину для пересборки');
+     pauseCourierOperatorBudget(next,now);delete next.packingWaybillAt;delete next.returnReason;delete next.contactAuthor;next.round++;
+    }
+   }
    if(to==='refused')cancelCourierWork(next,now);
    if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
    if(p.confirmationAt){
@@ -220,9 +233,11 @@ async function handlePOST(request:Request){
    }
    if(isLogistic(employee?.role))next.logistic=employee.id;
    const labels=await import("@/lib/crm");text=`${labels.statuses[o.status]} → ${labels.statuses[to]}${reason?" · "+reason:""}`;
+   if(courierRecalledAtWarehouse(o)&&['rework','packing'].includes(to))text+=' · После пересборки · посылка на складе';
    if(to==='shipping'&&o.delivery==='moscow_courier')text="Передан курьеру · ожидает приёма посылки · заказ остаётся Принят";
    if(p.confirmationAt)text+=" · Просил подтверждения ко времени: "+new Date(next.confirmationRequest!.at).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК · по просьбе клиента";
   }else if(p.action==="contact"){
+   if(courierRecalledAtWarehouse(o)&&o.status==='rework'&&!['admin','operator'].includes(employee.role))throw Error('Заказ после пересборки находится в работе у оператора');
    if(o.courier){
     const phase=courierPhase(o);
     if(!(employee.role==='courier'&&o.courier.id===employee.id&&phase==='confirmation'||['admin','operator'].includes(employee.role)&&o.status==='rework'))throw Error('Звонок доступен только сотруднику, у которого заказ сейчас в работе');
