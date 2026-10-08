@@ -172,6 +172,50 @@ try{
  }
  const firstId=await create();await act(firstId,'operator',{action:'updateOrder',delivery:'russian_post',items:order(firstId).items,addressConfirmed:true});await act(firstId,'operator',{action:'transition',to:'confirm'});await act(firstId,'logistic',{action:'updateDelivery',delivery:'moscow_courier'});assert.equal(order(firstId).status,'confirm');
  console.log('Courier recall/repack, guarded editing, stale clicks, custody, price/stock/cash and delivery-switch regressions passed.');
+ // Department heads share the existing confirmation flow, never the courier's own stage.
+ for(const [delivery,to] of [['cdek_pickup','check'],['russian_post','extra'],['moscow_courier','packing']]){
+  const headId=await create();await act(headId,'operator',{action:'updateOrder',delivery,items:order(headId).items,addressConfirmed:true});await act(headId,'operator',{action:'transition',to:'confirm'});
+  assert.ok((await call('head')).data.tasks.some(t=>t.orderId===headId));assert.ok(!(await call('foreign-head')).data.tasks.some(t=>t.orderId===headId));
+  await act(headId,'foreign-head',{action:'transition',to},403);
+  const token=crypto.randomUUID();assert.equal((await call('head','/api/order-access',{orderId:headId,token,action:'acquire'})).data.editable,true);
+  assert.equal((await call('logistic','/api/order-access',{orderId:headId,token:crypto.randomUUID(),action:'acquire'})).data.editable,false);
+  await act(headId,'logistic',{action:'transition',to},409);
+  const started=order(headId).confirmationStartedAt,deadline=order(headId).noAnswerDeadline;
+  await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});assert.equal(order(headId).contactAuthor.role,'department_head');
+  await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(49)},400);
+  await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(-1)},400);
+  await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});assert.equal(order(headId).confirmationStartedAt,started);assert.equal(order(headId).noAnswerDeadline,deadline);
+  await act(headId,'head',{action:'updateOrder',items:order(headId).items,comment:'Forbidden edit',addressConfirmed:true},400);
+  await act(headId,'head',{action:'transition',to});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');
+  await call('head','/api/order-access',{orderId:headId,token,action:'release'});
+  if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'});assert.equal(order(headId).status,'packing');}
+  else if(to==='check')await act(headId,'head',{action:'transition',to:'packing'},400);
+  else await act(headId,'head',{action:'markPackingWaybill'},400);
+ }
+ const cancelId=await create();await act(cancelId,'operator',{action:'transition',to:'confirm'});const cancelStock=stock();
+ await act(cancelId,'head',{action:'transition',to:'refused',reason:' '},400);
+ await act(cancelId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(cancelId).cancellationAuthor.role,'department_head');assert.equal(stock(),cancelStock+1);
+ const reworkId=await create();await act(reworkId,'operator',{action:'transition',to:'confirm'});await act(reworkId,'logistic',{action:'transition',to:'rework',reason:'Question'});
+ const lease=crypto.randomUUID();await call('operator','/api/order-access',{orderId:reworkId,token:lease,action:'acquire'});
+ await act(reworkId,'head',{action:'contact',contact:'missed',reason:'No answer'},409);await call('head','/api/mainsms',{action:'send',orderId:reworkId},409);await call('operator','/api/order-access',{orderId:reworkId,token:lease,action:'release'});
+ const deadline=order(reworkId).reworkDeadline;await act(reworkId,'head',{action:'contact',contact:'callback',reason:'Discuss',due:hours(1)});assert.equal(order(reworkId).reworkDeadline,deadline);
+ await act(reworkId,'head',{action:'contact',contact:'callback',reason:'Too late',due:hours(100)},400);
+ await act(reworkId,'head',{action:'transition',to:'confirm',finalHandoffConfirmed:true});assert.equal(order(reworkId).confirmationAuthor.id,'head');assert.equal(order(reworkId).round,2);
+ for(const cancel of [false,true]){
+  const headId=await create();await assembled(headId);await act(headId,'courier',{action:'courierAccept',confirmed:true});
+  await act(headId,'head',{action:'courierWorkflow',operation:'confirm'},400);await act(headId,'head',{action:'transition',to:'refused',reason:'Forbidden'},400);
+  await act(headId,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Questions'});
+  const acceptedAt=order(headId).courier.acceptedAt,budget=order(headId).courier.operatorBudgetMs,reserve=stock();
+  await act(headId,'head',{action:'contact',contact:'missed',reason:'Calling'});assert.equal(order(headId).courier.operatorBudgetMs,budget);
+  if(cancel){
+   await act(headId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(headId).cancellationAuthor.id,'head');assert.equal(stock(),reserve);assert.equal(order(headId).courier.acceptedAt,acceptedAt);
+   await act(headId,'head',{action:'returnToWarehouse'},400);await act(headId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserve+1);
+  }else{
+   await act(headId,'head',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(headId).courier.phase,'resume');assert.equal(order(headId).courier.confirmedBy,'department_head');assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).courier.acceptedAt,acceptedAt);assert.equal(stock(),reserve);assert.ok(order(headId).courier.operatorBudgetMs<=budget);
+   await act(headId,'courier',{action:'courierAccept',confirmed:true},400);await act(headId,'courier',{action:'courierWorkflow',operation:'resume'});
+  }
+ }
+ console.log('Department scope, head marks, unchanged timers, shared editing leases, cancellation stock and exclusive courier confirmation passed.');
  // An existing pending logistic request is transferred to the operator without another physical acceptance.
  const legacyId=await create();await assembled(legacyId);await act(legacyId,'courier',{action:'courierAccept',confirmed:true});
  const legacy=order(legacyId),legacyStock=stock();legacy.courier.phase='logistic';legacy.courier.workHours=null;legacy.courier.operatorBudgetMs=4*3600000;legacy.courier.postponement={state:'pending',at:hours(200),reason:'Old request',requestedAt:hours(-1)};
@@ -200,7 +244,7 @@ try{
   assert.equal(Date.parse(door.claimDueAt)-Date.parse(door.at),120000);assert.equal(Date.parse(door.decisionDueAt)-Date.parse(door.at),600000);
   for(const who of ['operator','head','admin','courier'])assert.ok((await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved));
   for(const who of ['foreign-head','stranger','logistic'])assert.ok(!(await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId));
-  await act(doorId,'foreign-head',{action:'courierWorkflow',operation:'claimDoor'},400);
+  await act(doorId,'foreign-head',{action:'courierWorkflow',operation:'claimDoor'},403);
   await act(doorId,'head',{action:'updateOrder',comment:'Not an edit permission'},400);
   await act(doorId,'operator',{action:'courierWorkflow',operation:'resolveDoor',result,confirmed:true},400);
   for(const body of [{action:'contact',contact:'missed',reason:'No answer'},{action:'contact',contact:'callback',reason:'Later',due:hours(1)},{action:'transition',to:'refused',reason:'No'},{action:'courierWorkflow',operation:'confirm'},{action:'courierWorkflow',operation:'requestRepack',reason:'Change product'}])await act(doorId,'operator',body,400);

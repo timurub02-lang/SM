@@ -1,6 +1,7 @@
 import {canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic} from './crm.ts';
 import {canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
+import {departmentWorkStage,isDepartmentOrder} from './department-orders.ts';
 export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'owner'>){return !!c&&(e.role!=='operator'||c.owner===e.id);}
 export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
 export function seesOrder(e:Employee,o:Order,staff:Employee[]){
@@ -38,6 +39,10 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
+ if(e.role==='department_head'){
+  allow(isDepartmentOrder(e,order,s.employees)&&departmentWorkStage(order));
+  return allow(['transition','contact','comment'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','claimDoor','resolveDoor'].includes(p.operation));
+ }
  if(isLogistic(e.role)&&['updateOrder','updateDelivery','updateWaybillComment'].includes(p.action)){
   allow(canLogisticEditOrder(order));
   if(p.action==='updateOrder'){
@@ -55,7 +60,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;if(e.role==='admin')return true;
- if(path==='/api/order-access')return isLogistic(e.role)&&method==='POST';
+ if(path==='/api/order-access')return (isLogistic(e.role)||['operator','department_head'].includes(e.role))&&method==='POST';
  if(path==='/api/cash')return ['department_head','chief_logistic'].includes(e.role);
  if(path==='/api/activity')return method==='GET'&&e.role==='department_head'&&!!e.department;
  if(e.role==='courier')return path==='/api/crm'&&(method==='GET'||method==='POST'&&['courierOutcome','courierAccept','courierWorkflow','contact','readReminder'].includes(p?.action));

@@ -3,6 +3,7 @@ import {db} from './db';
 import {isLogistic} from './crm';
 import {acquireOrderAccess,releaseOrderAccess} from './order-access';
 import {mayCallEndpoint,seesOrder} from './permissions';
+import {usesOrderLease} from './department-orders';
 export function authenticated(handler:(req:Request)=>Promise<Response>){
  return async(req:Request):Promise<Response>=>{
   if(!personalAuth())return handler(req);
@@ -18,12 +19,14 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    if((body?.actorId&&body.actorId!==employee.id)||(url.searchParams.has('actorId')&&url.searchParams.get('actorId')!==employee.id))return Response.json({error:'Нельзя действовать от имени другого сотрудника'},{status:403});
    const crmOrderWrite=url.pathname==='/api/crm'&&['markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment'].includes(body?.action);
    const orderId=body?.orderId||url.searchParams.get('orderId')||(crmOrderWrite?body.id:undefined);
-   if(orderId&&!crmOrderWrite){
+   let order;
+   if(orderId&&(!crmOrderWrite||['operator','department_head'].includes(employee.role))){
     const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(orderId).first<{data:string}>();
     const staff=await db().prepare('SELECT data FROM employees').all<{data:string}>();
     if(!row||!seesOrder(employee,JSON.parse(row.data),staff.results.map(x=>JSON.parse(x.data))))return Response.json({error:'Заказ недоступен'},{status:403});
+    order=JSON.parse(row.data);
    }
-   if(write&&orderId&&isLogistic(employee.role)&&url.pathname!=='/api/order-access'){
+   if(write&&orderId&&(isLogistic(employee.role)||order&&usesOrderLease(employee,order))&&url.pathname!=='/api/order-access'){
     const token=crypto.randomUUID();
     const access=await acquireOrderAccess(orderId,employee,token,300000);
     if(!access.editable)return Response.json({error:'Заказ сейчас обрабатывает '+(access.holder||'другой логист')+'. Доступен только просмотр.'},{status:409});

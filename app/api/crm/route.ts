@@ -14,6 +14,7 @@ import {total,canReceivePayment,isLogistic} from '@/lib/crm';
 import {removalPlan} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
+import {departmentWorkStage,isDepartmentOrder} from "@/lib/department-orders";
 import {visibleState,authorizeCrm} from '@/lib/permissions';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
@@ -65,6 +66,7 @@ async function handlePOST(request:Request){
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
+ else if(employee?.role==="department_head")authorizeCrm(employee,p,s);
  const ev=(clientId:string,orderId:string,text:string):Event=>({id:id("EV-"),clientId,orderId,at:now,actor,actorId:employee?.id,text});
  const eventSQL=(e:Event)=>d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e));
  const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
@@ -242,21 +244,24 @@ async function handlePOST(request:Request){
    if(to==='shipping'&&o.delivery==='moscow_courier')text="Передан курьеру · ожидает приёма посылки · заказ остаётся Принят";
    if(p.confirmationAt)text+=" · Просил подтверждения ко времени: "+new Date(next.confirmationRequest!.at).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК · по просьбе клиента";
   }else if(p.action==="contact"){
-   if(courierRecalledAtWarehouse(o)&&o.status==='rework'&&!['admin','operator'].includes(employee.role))throw Error('Заказ после пересборки находится в работе у оператора');
+   if(courierRecalledAtWarehouse(o)&&o.status==='rework'&&!['admin','operator','department_head'].includes(employee.role))throw Error('Заказ после пересборки находится в работе у оператора');
    if(o.courier){
     const phase=courierPhase(o);
-    if(!(employee.role==='courier'&&o.courier.id===employee.id&&phase==='confirmation'||['admin','operator'].includes(employee.role)&&o.status==='rework'))throw Error('Звонок доступен только сотруднику, у которого заказ сейчас в работе');
+    if(!(employee.role==='courier'&&o.courier.id===employee.id&&phase==='confirmation'||(['admin','operator'].includes(employee.role)||isDepartmentOrder(employee,o,s.employees)&&departmentWorkStage(o))&&o.status==='rework'))throw Error('Звонок доступен только сотруднику, у которого заказ сейчас в работе');
    }else if(!["draft","confirm","rework","extra","pickup"].includes(o.status))throw new Error("Звонок недоступен на этом этапе");
    if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
    next.contact=z.enum(["missed","callback"]).parse(p.contact);next.reason=z.string().trim().min(1,"Укажите причину").max(1000).parse(p.reason);
-   next.contactAuthor={id:employee.id,name:employee.name,at:now};
+   next.contactAuthor={id:employee.id,name:employee.name,role:employee.role,at:now};
    if(employee.role==='courier'&&next.contact==='missed'&&p.due&&moscowDate(new Date(z.string().datetime().parse(p.due)))!==moscowDate())throw Error('Повторный звонок после недозвона назначается только на сегодня по Москве');
    next.noAnswerDeadline=courierDeadline(o)||confirmationDeadline(o);
    if(p.due){const due=z.string().datetime().parse(p.due);validateReworkCall(o,due);const deadline=draftDeadline(o);if(deadline&&Date.parse(due)>Date.parse(deadline))throw Error("Звонок нельзя назначить позже срока оформления: "+new Date(deadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");if(next.noAnswerDeadline&&Date.parse(due)>Date.parse(next.noAnswerDeadline))throw Error("Звонок нельзя назначить позже срока подтверждения");if(Date.parse(due)<=Date.now())throw new Error("Выберите будущее время звонка");next.due=due;}else{if(employee.role==='courier')throw Error('Укажите время следующего звонка');if(next.contact==="callback")throw new Error("Для перезвона нужно время звонка");next.due="";}
    if(isLogistic(employee?.role))next.logistic=employee.id;
-   text=`${next.contact==="missed"?"Недозвон":"Перезвон"}: ${next.reason}${next.due?" · "+new Date(next.due).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК":""}`;
+   text=`${next.contact==="missed"?"Недозвон":"Перезвон"}${employee.role==="department_head"?" руководителем · "+employee.name:""}: ${next.reason}${next.due?" · "+new Date(next.due).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК":""}`;
    if(employee.role==='courier')message=`Заказ ${o.id} · ${next.contact==='missed'?'Недозвон':'Перезвон'} сохранён`;
   }else{text="Комментарий: "+z.string().trim().min(1).max(3000).parse(p.text);}
+  const confirmed=p.action==='transition'&&(o.status==='confirm'&&['check','extra','packing'].includes(next.status)||o.status==='extra'&&next.status==='packing'||o.status==='rework'&&['confirm','extra','packing'].includes(next.status))||p.action==='courierWorkflow'&&(p.operation==='confirm'||p.operation==='resolveDoor'&&p.result==='deliver');
+  if(confirmed){next.confirmationAuthor={id:employee.id,name:employee.name,role:employee.role,at:now};if(employee.role==='department_head')text='Подтверждено руководителем · '+employee.name+' · '+text.replace(/^Подтверждено руководителем · /,'');}
+  if(next.status==='refused'&&o.status!=='refused'){next.cancellationAuthor={id:employee.id,name:employee.name,role:employee.role,at:now};if(employee.role==='department_head')text='Отменено руководителем · '+employee.name+' · '+text;}
   if(deliveryChangedAfterHandoff(o,next.delivery)){
    next.deliveryChange={from:o.delivery!,to:next.delivery!,at:now,by:employee.id,name:employee.name};
    text+=` · Способ доставки изменён: ${deliveryLabels[o.delivery!]} → ${deliveryLabels[next.delivery!]}`;

@@ -6,7 +6,7 @@ import type {Reminder} from './reminders.ts';
 // Tasks describe current work, not unread events. One task per order, regardless of its history.
 export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
  const tasks:Reminder[]=[],clients=new Map(s.clients.map(c=>[c.id,c])),staff=new Map(s.employees.map(x=>[x.id,x]));
- const calls=new Map(scheduledCalls(s.orders,e).map(o=>[o.id,o]));
+ const calls=new Map(scheduledCalls(s.orders,e,s.employees).map(o=>[o.id,o]));
  const logistic=isLogistic(e.role),head=e.role==='department_head',admin=e.role==='admin';
  function add(o:Order,code:string,title:string,due?:string,at=o.updatedAt,kind:Reminder['kind']='task',text=''){
   tasks.push({kind,id:`task:${o.id}:${code}`,orderId:o.id,clientId:o.clientId,title,text:[clients.get(o.clientId)?.name,head?'Контроль отдела · '+(staff.get(o.manager)?.name||'Оператор'):undefined,text].filter(Boolean).join(' · '),at,due});
@@ -31,6 +31,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
    add(o,'call:'+o.due,Date.parse(o.due)<=now?'Пора позвонить клиенту':'Запланирован звонок',o.due,o.contactAuthor?.at||o.updatedAt,'call',[o.reason,o.contactAuthor?.name?'Кто назначил: '+o.contactAuthor.name:''].filter(Boolean).join(' · '));continue;
   }
   if(e.role==='operator'||head){
+   if(head&&!o.courier&&['confirm','extra'].includes(o.status))add(o,o.status,o.status==='extra'?'Повторно подтвердите заказ отдела':'Подтвердите заказ отдела',confirmationDeadline(o),o.confirmationStartedAt);
    if(o.status==='draft')add(o,'draft','Передайте заказ логисту',draftDeadline(o),o.createdAt,'draft','Заказ ещё на оформлении');
    if(o.status==='rework')add(o,'rework','Доработайте возвращённый заказ',o.reworkDeadline,o.courier?.operatorStartedAt||o.updatedAt,'task',o.returnReason||o.reason);
    continue;

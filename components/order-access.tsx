@@ -1,9 +1,10 @@
 'use client';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {isLogistic,type Employee} from '@/lib/crm';
+import type {Employee,Order} from '@/lib/crm';
+import {usesOrderLease} from '@/lib/department-orders';
 
-export function OrderAccess({orderId,employee,onAvailable,children}:{orderId:string;employee:Employee;onAvailable:()=>void;children:(readOnly:boolean)=>ReactNode}){
- const enabled=isLogistic(employee.role);
+export function OrderAccess({order,employee,onAvailable,children}:{order:Order;employee:Employee;onAvailable:()=>void;children:(readOnly:boolean)=>ReactNode}){
+ const orderId=order.id,enabled=usesOrderLease(employee,order);
  const [access,setAccess]=useState<{editable:boolean;holder?:string;until:number;error?:string}>({editable:false,until:0});
  const [now,setNow]=useState(Date.now);
  const onAvailableRef=useRef(onAvailable);onAvailableRef.current=onAvailable;

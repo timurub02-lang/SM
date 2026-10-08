@@ -2,13 +2,14 @@
 import {useState} from 'react';
 import {stamp,money,type Order,type Employee} from '@/lib/crm';
 import {courierDoorRefusal,courierLabel,courierParcelLocation,courierPhase,courierDeadline,courierTimeLeft,courierWaitingSince,courierStage,canEditRecalledCourierOrder} from '@/lib/courier';
+import {isDepartmentOrder} from '@/lib/department-orders';
 
-export function CourierWork({order:o,employee,busy,mutate}:{order:Order;employee:Employee;busy:boolean;mutate:(p:Record<string,unknown>)=>Promise<boolean>}){
+export function CourierWork({order:o,employee,staff,busy,mutate}:{order:Order;employee:Employee;staff:Employee[];busy:boolean;mutate:(p:Record<string,unknown>)=>Promise<boolean>}){
  const [reason,setReason]=useState(''),[received,setReceived]=useState(false);
  const c=o.courier,phase=courierPhase(o),deadline=courierDeadline(o),stage=courierStage(o),request=o.courierRepackRequest;
  const needsRepack=!!request&&!request.completedAt;
  const logistic=['admin','logistic','chief_logistic'].includes(employee.role);
- const operator=(employee.role==='admin'||employee.role==='operator'&&o.manager===employee.id)&&phase==='operator'&&o.status==='rework';
+ const operator=(employee.role==='admin'||employee.role==='operator'&&o.manager===employee.id||isDepartmentOrder(employee,o,staff))&&phase==='operator'&&o.status==='rework';
  const act=(operation:string,extra:Record<string,unknown>={})=>void mutate({action:'courierWorkflow',operation,id:o.id,version:o.version,...extra});
  if(courierDoorRefusal(o))return null;
  if(!c&&!o.courierRecall)return <section className="notice stack courier-work-panel"><strong>{courierLabel(o)}</strong><p>Посылка: {courierParcelLocation(o)}</p></section>;
@@ -23,7 +24,7 @@ export function CourierWork({order:o,employee,busy,mutate}:{order:Order;employee
  {c.recall&&<p><b>Отзыв на сборку:</b> {c.recall.reason}<br/>{c.recall.name} · {stamp(c.recall.requestedAt,'Europe/Moscow')} МСК</p>}
  {phase==='recall'&&<p>Ожидается физическая передача посылки курьером. Доставка и подтверждение остановлены.</p>}
  {logistic&&phase==='recall_returned'&&<><p>Курьер отметил передачу посылки. Подтвердите фактический приём: после этого посылка будет снята с его отчёта, заказ останется в «Курьер Москва → Новый».</p><label><input type="checkbox" checked={received} disabled={busy} onChange={e=>setReceived(e.target.checked)}/> Посылка фактически получена</label><button className="primary" disabled={busy||!received} onClick={()=>act('receiveRecall',{confirmed:true})}>Принять посылку на сборку</button></>}
- {operator&&<><p>Можно изменить адрес, комментарий и цену в «Адрес и товары». Для изменения товара или количества запросите пересборку.</p>{!needsRepack&&<><button className="primary" disabled={busy} onClick={()=>act('confirm')}>Вернуть курьеру — клиент готов выкупить</button><details><summary>Изменить товар или количество — запросить пересборку</summary><label>Что нужно изменить<textarea rows={2} maxLength={1000} value={reason} disabled={busy} onChange={e=>setReason(e.target.value)} placeholder="Укажите товар и нужное количество"/></label><button className="secondary" disabled={busy||!reason.trim()} onClick={()=>act('requestRepack',{reason})}>Отправить запрос логисту</button></details></>}</>}
+ {operator&&<>{employee.role!=='department_head'&&<p>Можно изменить адрес, комментарий и цену в «Адрес и товары». Для изменения товара или количества запросите пересборку.</p>}{!needsRepack&&<><button className="primary" disabled={busy} onClick={()=>act('confirm')}>Вернуть курьеру — клиент готов выкупить</button>{employee.role!=='department_head'&&<details><summary>Изменить товар или количество — запросить пересборку</summary><label>Что нужно изменить<textarea rows={2} maxLength={1000} value={reason} disabled={busy} onChange={e=>setReason(e.target.value)} placeholder="Укажите товар и нужное количество"/></label><button className="secondary" disabled={busy||!reason.trim()} onClick={()=>act('requestRepack',{reason})}>Отправить запрос логисту</button></details>}</>}</>}
  {logistic&&!['none','settled','money'].includes(stage)&&!['returned','refused'].includes(o.status)&&!['recall','recall_returned'].includes(phase||'')&&<details open={needsRepack||undefined}><summary>{c.acceptedAt?'Запросить возврат посылки на сборку':'Отозвать заказ до приёма курьером'}</summary><p>{c.acceptedAt?'Курьеру придёт запрос. Посылка останется под его отчётом до подтверждения приёма логистом.':'Заказ вернётся в «Курьер Москва → Новый». Потребуется новая накладная на сборку.'}</p><label>Причина отзыва<textarea rows={2} maxLength={1000} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)} placeholder={request?.reason||'Что нужно исправить в заказе'}/></label><button className="secondary" disabled={busy||!(reason.trim()||needsRepack&&request.reason)} onClick={()=>act('recall',{reason:reason.trim()||request?.reason})}>{c.acceptedAt?'Запросить возврат на сборку':'Отозвать на сборку'}</button></details>}
  </section>;
 }
