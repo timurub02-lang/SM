@@ -428,18 +428,18 @@ body:has(.courier-design-aurora){background:#191a1e}
 .product-choice-trigger>svg{flex-shrink:0;color:#8796af}
 .product-choice-trigger:hover,.product-choice-trigger[data-state=open]{border-color:#a9caff;background:#f5f8ff}
 .product-choice-trigger[aria-invalid=true]{border-color:#d78b29}
-.product-choice-popover{z-index:70;width:420px;max-width:calc(100vw - 32px);max-height:var(--radix-popover-content-available-height);overflow-y:auto;border:1px solid #dee5f0;border-radius:18px!important;padding:16px!important;background:#fff!important;color:#34425b;box-shadow:0 16px 48px #34425b24}
-.product-choice-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:14px;margin-bottom:10px}
-.product-choice-heading strong{font-weight:600}.product-choice-heading .icon-button{background:#f1f4fa;color:#7887a1}
-.product-choice-command{background:transparent!important;overflow:visible}
-.product-choice-command [data-slot=command-input-wrapper]{height:46px;border:1px solid #dce3ef;border-radius:12px;background:#f8faff;padding:0 12px;color:#8391a9}
+.product-choice-dialog{display:flex;flex-direction:column;gap:12px;width:560px;max-width:calc(100vw - 32px)!important;height:min(720px,calc(100dvh - 32px));overflow:hidden;border:1px solid #dee5f0;border-radius:18px!important;padding:20px!important;background:#fff!important;color:#34425b;box-shadow:0 16px 48px #34425b24}
+.product-choice-heading{display:flex;flex-shrink:0;justify-content:space-between;align-items:center;gap:12px}
+.product-choice-heading [data-slot=dialog-title]{font-size:18px;font-weight:600;margin:0}.product-choice-heading .icon-button{background:#f1f4fa;color:#7887a1}
+.product-choice-command{background:transparent!important;flex:1;min-height:0;height:auto;overflow:hidden}
+.product-choice-command [data-slot=command-input-wrapper]{height:46px;flex-shrink:0;border:1px solid #dce3ef;border-radius:12px;background:#f8faff;padding:0 12px;color:#8391a9}
 .product-choice-command [data-slot=command-input]{color:#34425b;padding:10px 0;font-size:14px}
 .product-choice-command [data-slot=command-input]:focus-visible{outline:none}
 .product-choice-command [data-slot=command-input-wrapper]:focus-within{border-color:#91b9fb;box-shadow:0 0 0 3px #1678f910}
-.product-choice-tags{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}
-.product-choice-tags button{border:1px solid #e0e6ef;background:#fff;color:#75839c;border-radius:20px;padding:6px 11px;font-size:12px}
+.product-choice-tags{display:flex;flex-shrink:0;gap:6px;margin:12px 0;overflow-x:auto}
+.product-choice-tags button{flex-shrink:0;white-space:nowrap;border:1px solid #e0e6ef;background:#fff;color:#75839c;border-radius:20px;padding:6px 11px;font-size:12px}
 .product-choice-tags button[aria-pressed=true]{background:#eaf2ff;border-color:#eaf2ff;color:#2779ef}
-.product-choice-command [data-slot=command-list]{max-height:260px;scroll-padding:6px}
+.product-choice-command [data-slot=command-list]{flex:1;min-height:0;max-height:none;scroll-padding:6px;overscroll-behavior:contain}
 .product-choice-option{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 10px;min-height:58px;border-radius:10px;cursor:pointer;color:#34425b;font-size:14px}
 .product-choice-option[data-selected=true]{background:#edf4ff!important;color:#34425b!important}
 .product-choice-action{display:flex;align-items:center;gap:6px;flex-shrink:0;color:#2779ef;font-size:12px}
@@ -450,7 +450,7 @@ body:has(.courier-design-aurora){background:#191a1e}
 .basket-row{gap:10px;grid-template-columns:minmax(0,1fr) 76px 100px 30px}
 .basket-row .field input:not(.product-choice-validation){min-height:52px}
 .basket-row>.icon-button{min-height:52px}
-@media(max-width:600px){.basket-row{grid-template-columns:1fr 1fr 36px;gap:10px}.basket-row .basket-product{grid-column:1/-1}.product-choice-popover{width:380px;padding:14px!important}.product-choice-command [data-slot=command-input]{font-size:16px}.product-choice-option{gap:10px}.basket .section-title{flex-wrap:wrap;gap:10px}}
+@media(max-width:600px){.basket-row{grid-template-columns:1fr 1fr 36px;gap:10px}.basket-row .basket-product{grid-column:1/-1}.product-choice-dialog{padding:14px!important}.product-choice-command [data-slot=command-input]{font-size:16px}.product-choice-option{gap:10px}.basket .section-title{flex-wrap:wrap;gap:10px}}
 @media(pointer:coarse){.product-choice-tags button{min-height:40px}.product-choice-heading .icon-button{min-width:44px;min-height:44px}}
 
 /* Courier workflow: the same touch targets and layout in both designs. */
