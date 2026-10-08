@@ -68,7 +68,7 @@ export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  if(o.status==="confirm"&&o.delivery==="moscow_courier")allowed=allowed.map(to=>to==="check"?"packing":to);
  if(o.status==="confirm"&&o.delivery==="russian_post")allowed=allowed.map(to=>to==="check"?"extra":to);
  if(["moscow_courier","russian_post"].includes(o.delivery||"")&&["packing","phone"].includes(o.status))allowed=o.packingWaybillAt&&["admin","logistic","chief_logistic"].includes(role||"")?["shipping"]:[];
- if(o.delivery==="russian_post"&&["shipping","pickup"].includes(o.status)&&["admin","logistic","chief_logistic"].includes(role||""))allowed=["redeemed"];
+ if(o.delivery==="russian_post"&&["shipping","pickup"].includes(o.status)&&["admin","logistic","chief_logistic"].includes(role||""))allowed=["redeemed","returned"];
  if(o.finalHandoffAt){
   allowed=allowed.filter(to=>to!=="rework");
   if(["confirm","extra","check"].includes(o.status)&&!allowed.includes("refused"))allowed=[...allowed,"refused"];
@@ -96,7 +96,7 @@ export function validateTransition(o:Order,to:Status,c:Client,reason:string,role
  const allowed=allowedOrderTransitions(o,role);
  if(!allowed.includes(to))throw new Error("Этот переход недоступен для текущего этапа");
  if(["confirm","extra","check","packing"].includes(to)&&(!(o.address??c.address).trim()||!o.items.length))throw new Error("Заполните адрес клиента и корзину заказа");
- if(["rework","refused"].includes(to)&&!reason.trim())throw new Error("Укажите причину возврата или отказа");
+ if(["rework","refused","returned"].includes(to)&&!reason.trim())throw new Error("Укажите причину возврата или отказа");
 }
 export function seed():State{
  const employees:Employee[]=[{id:"anna",name:"Оператор 1",alias:"Оператор 1",login:"a.kovaleva",skLogin:"anna_k",role:"operator",salary:40000,bonus:5,version:1},{id:"maria",name:"Оператор 2",alias:"Оператор 2",login:"m.sokolova",skLogin:"maria_s",role:"operator",salary:40000,bonus:5,version:1},{id:"denis",name:"Логист",alias:"Логист",login:"d.pavlov",skLogin:"denis_p",role:"logistic",salary:45000,bonus:3,version:1},{id:"admin",name:"Администратор",alias:"Админ",login:"admin",skLogin:"",role:"admin",salary:0,bonus:0,version:1}];

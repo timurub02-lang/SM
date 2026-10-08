@@ -36,7 +36,7 @@ for(const delivery of ['moscow_courier','russian_post']){
  assert.deepEqual(allowedOrderTransitions({...o,packingWaybillAt:'2026-10-02'},'logistic'),['shipping']);
  assert.deepEqual(allowedOrderTransitions({...o,packingWaybillAt:'2026-10-02'},'operator'),[]);
  assert.equal(packingStage({...o,status:'shipping',packingWaybillAt:'2026-10-02'}),'exported');
- assert.deepEqual(allowedOrderTransitions({...o,status:'shipping'},'logistic'),delivery==='russian_post'?['redeemed']:[]);
+ assert.deepEqual(allowedOrderTransitions({...o,status:'shipping'},'logistic'),delivery==='russian_post'?['redeemed','returned']:[]);
  assert.equal(orderDatesForTransition(o,'shipping','2026-10-02').shippedAt,'2026-10-02');
  assert.equal(orderGroup('shipping').id,'sent');
 }
@@ -51,5 +51,5 @@ for(const delivery of ['moscow_courier','russian_post']){
  assert(!canReceivePayment({...paid,paymentReceivedAt:'2026-10-02'},'logistic'));
  assert.equal(orderGroup(paid.status).id,'paid');
 }
-assert.deepEqual(allowedOrderTransitions({status:'shipping',delivery:'russian_post'},'logistic'),['redeemed']);
+assert.deepEqual(allowedOrderTransitions({status:'shipping',delivery:'russian_post'},'logistic'),['redeemed','returned']);
 assert.deepEqual(allowedOrderTransitions({status:'shipping',delivery:'moscow_courier'},'logistic'),[]);

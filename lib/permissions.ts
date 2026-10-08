@@ -49,7 +49,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  allow(!orderEditingLocked(e,order)||p.action==='updateOrder'&&canEditRecalledCourierOrder(order,e));
  if(p.action==='transition'){
   if(e.role==='operator')allow(['confirm','extra','refused'].includes(p.to)||p.to==='packing'&&order.status==='rework'&&courierRecalledAtWarehouse(order));
-  if(isLogistic(e.role))allow(!['redeemed','returned'].includes(p.to)||p.to==='redeemed'&&order.delivery==='russian_post'&&['shipping','pickup'].includes(order.status));
+  if(isLogistic(e.role))allow(!['redeemed','returned'].includes(p.to)||order.delivery==='russian_post'&&['shipping','pickup'].includes(order.status));
   if(e.role==='redemption')allow(['pickup','redeemed','returned'].includes(p.to));
  }
 }
