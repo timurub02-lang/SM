@@ -33,6 +33,12 @@ assert.equal(courierReminderNeedsAction(callNotice,callOrder,time+102*hour),true
 assert.equal(courierReminderNeedsAction(callNotice,{...callOrder,due:later(103)}),false,'Rescheduled call moves to history');
 assert.equal(courierReminderNeedsAction({...callNotice,resolved:true},callOrder),false);
 assert.equal(courierConfirmationStage({...accepted,contact:'callback',due:later(101)},time+101*hour),'new');
+for(const contact of ['missed','callback']){
+ const scheduled={...accepted,contact,due:later(144)};
+ for(const hours of [101,142,143])assert.equal(courierConfirmationStage(scheduled,time+hours*hour),contact,'A future call has its own queue, including the deadline warning window');
+ for(const hours of [144,145])assert.equal(courierConfirmationStage(scheduled,time+hours*hour),'new','A due call returns to New');
+ assert.equal(courierDeadline(scheduled),courierDeadline(accepted),'Scheduling does not extend confirmation');
+}
 assert.throws(()=>run(accepted,logistic,'confirm',101));assert.throws(()=>run(accepted,courier,'confirm',149));
 let sent=run(accepted,courier,'confirm',101);assert.equal(sent.status,'shipping');assert.equal(courierStage(sent),'delivery');assert.equal(courierDeadline(sent),undefined);
 let work=run(sent,courier,'toOperator',102,{reason:'Questions'});assert.equal(work.status,'rework');assert.equal(work.courier.atDoor,false);assert.equal(courierStage(work),'waiting');assert.equal(work.reworkDeadline,later(198));

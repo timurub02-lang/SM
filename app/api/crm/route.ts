@@ -255,6 +255,7 @@ async function handlePOST(request:Request){
    if(p.due){const due=z.string().datetime().parse(p.due);validateReworkCall(o,due);const deadline=draftDeadline(o);if(deadline&&Date.parse(due)>Date.parse(deadline))throw Error("Звонок нельзя назначить позже срока оформления: "+new Date(deadline).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК");if(next.noAnswerDeadline&&Date.parse(due)>Date.parse(next.noAnswerDeadline))throw Error("Звонок нельзя назначить позже срока подтверждения");if(Date.parse(due)<=Date.now())throw new Error("Выберите будущее время звонка");next.due=due;}else{if(employee.role==='courier')throw Error('Укажите время следующего звонка');if(next.contact==="callback")throw new Error("Для перезвона нужно время звонка");next.due="";}
    if(isLogistic(employee?.role))next.logistic=employee.id;
    text=`${next.contact==="missed"?"Недозвон":"Перезвон"}: ${next.reason}${next.due?" · "+new Date(next.due).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК":""}`;
+   if(employee.role==='courier')message=`Заказ ${o.id} · ${next.contact==='missed'?'Недозвон':'Перезвон'} сохранён`;
   }else{text="Комментарий: "+z.string().trim().min(1).max(3000).parse(p.text);}
   if(deliveryChangedAfterHandoff(o,next.delivery)){
    next.deliveryChange={from:o.delivery!,to:next.delivery!,at:now,by:employee.id,name:employee.name};

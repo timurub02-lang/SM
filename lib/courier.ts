@@ -81,9 +81,10 @@ export function courierDeadline(o:Order){
  return new Date(Date.parse(c.workStartedAt)+(c.workHours??48)*3600000).toISOString();
 }
 export function courierConfirmationStage(o:Order,now=Date.now(),policy:OrderPolicy=defaultOrderPolicy){
+ if(o.contact!=='none'&&o.due&&Date.parse(o.due)>now)return o.contact;
+ if(o.due&&Date.parse(o.due)<=now)return 'new';
  const deadline=courierDeadline(o);
  if(deadline&&Date.parse(deadline)-now<=policy.courierWarningHours*3600000)return 'expiring';
- if(o.due&&Date.parse(o.due)<=now)return 'new';
  return o.contact==='none'?'new':o.contact;
 }
 export function courierTimeLeft(deadline:string,now=Date.now()){
