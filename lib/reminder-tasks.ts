@@ -8,7 +8,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
  const tasks:Reminder[]=[],clients=new Map(s.clients.map(c=>[c.id,c])),staff=new Map(s.employees.map(x=>[x.id,x]));
  const calls=new Map(scheduledCalls(s.orders,e).map(o=>[o.id,o]));
  const logistic=isLogistic(e.role),head=e.role==='department_head',admin=e.role==='admin';
- function add(o:Order,code:string,title:string,due?:string,at=o.updatedAt,kind:Reminder['kind']='task',text=o.returnReason||o.reason){
+ function add(o:Order,code:string,title:string,due?:string,at=o.updatedAt,kind:Reminder['kind']='task',text=''){
   tasks.push({kind,id:`task:${o.id}:${code}`,orderId:o.id,clientId:o.clientId,title,text:[clients.get(o.clientId)?.name,head?'Контроль отдела · '+(staff.get(o.manager)?.name||'Оператор'):undefined,text].filter(Boolean).join(' · '),at,due});
  }
  for(const o of s.orders){
@@ -32,13 +32,13 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
   }
   if(e.role==='operator'||head){
    if(o.status==='draft')add(o,'draft','Передайте заказ логисту',draftDeadline(o),o.createdAt,'draft','Заказ ещё на оформлении');
-   if(o.status==='rework')add(o,'rework','Доработайте возвращённый заказ',o.reworkDeadline,o.courier?.operatorStartedAt||o.updatedAt);
+   if(o.status==='rework')add(o,'rework','Доработайте возвращённый заказ',o.reworkDeadline,o.courier?.operatorStartedAt||o.updatedAt,'task',o.returnReason||o.reason);
    continue;
   }
   if(admin){if(o.status==='check')add(o,'check','Проверьте заказ перед сборкой');continue;}
   if(e.role==='courier'){
    const action=courierPendingAction(o);
-   if(action)add(o,phase||stage,action.title,undefined,action.at);
+   if(action)add(o,phase||stage,action.title,undefined,action.at,'task',phase==='recall'?o.courier?.recall?.reason:stage==='return'?o.reason:'');
    else if(stage==='confirmation')add(o,'confirmation','Подтвердите заказ у клиента',courierDeadline(o),o.courier?.acceptedAt);
    else if(stage==='delivery')add(o,'delivery','Доставьте заказ клиенту',undefined,o.courier?.confirmedAt);
    else if(stage==='money')add(o,'money','Сдайте деньги логисту',undefined,o.redeemedAt);
@@ -47,7 +47,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
   if(logistic){
    if(phase==='recall_returned'){add(o,'receive-recall','Подтвердите приём посылки на пересборку',undefined,o.courier?.recall?.returnedAt);continue;}
    if(canReceivePayment(o,e.role)){add(o,'receive-money','Примите деньги по заказу',undefined,o.redeemedAt);continue;}
-   if(courierWarehouseReturn(o)&&!o.warehouseReturnedAt){add(o,'receive-return','Примите возвращённую посылку на склад',undefined,o.returnedAt||o.cancelledAt);continue;}
+   if(courierWarehouseReturn(o)&&!o.warehouseReturnedAt){add(o,'receive-return','Примите возвращённую посылку на склад',undefined,o.returnedAt||o.cancelledAt,'task',o.reason);continue;}
    if(o.courier)continue;
    if(['confirm','extra'].includes(o.status)){add(o,o.status,o.status==='extra'?'Повторно подтвердите заказ':'Подтвердите заказ',confirmationDeadline(o),o.confirmationStartedAt);continue;}
    if(o.cdekExported&&!o.cdekWaybillReceived&&['packing','phone','shipping','pickup'].includes(o.status)){add(o,'cdek-waybill','Получите накладную СДЭК');continue;}

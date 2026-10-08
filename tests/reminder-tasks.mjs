@@ -31,6 +31,21 @@ for(const e of [operator,head,admin]){assert.equal(tasks(e,urgent).length,1);ass
 for(const e of [courier,logistic,otherHead])assert.equal(tasks(e,urgent).length,0);
 const paid={...assigned,status:'redeemed',redeemedAt:at};
 assert.equal(tasks(courier,paid).length,1);assert.equal(tasks(logistic,paid).length,1);
+// Past operator returns must not read like a new instruction to the courier.
+const oldReturn='у клиента есть вопросы';
+for(const order of [assigned,confirmation,paid,
+ {...confirmation,status:'shipping',courier:{...confirmation.courier,phase:'resume',confirmedAt:at}},
+ {...confirmation,status:'shipping',courier:{...confirmation.courier,phase:'delivery',confirmedAt:at}}]){
+ const task=tasks(courier,{...order,returnReason:oldReturn})[0];
+ assert.equal(task.text,client.name,task.title+' must not contain past reasons');
+}
+assert.match(tasks(operator,{...wait,returnReason:oldReturn})[0].text,/у клиента есть вопросы/,'The operator still sees the current return reason');
+assert.equal(tasks(courier,{...confirmation,returnReason:oldReturn,contact:'callback',due:future,reason:'Клиент попросил позвонить после работы'})[0].text,'Клиент · Клиент попросил позвонить после работы');
+const requestedRecall={...confirmation,returnReason:oldReturn,courier:{...confirmation.courier,phase:'recall',recall:{requestedAt:at,reason:'Изменить состав посылки'}}};
+assert.equal(tasks(courier,requestedRecall)[0].text,'Клиент · Изменить состав посылки');
+const returned={...confirmation,status:'returned',returnedAt:at,returnReason:oldReturn,reason:'Клиент отказался от доставки'};
+for(const e of [courier,logistic])assert.equal(tasks(e,returned)[0].text,'Клиент · Клиент отказался от доставки');
+assert.equal(tasks(logistic,{...paid,returnReason:oldReturn})[0].text,client.name);
 assert.equal(tasks(courier,{...paid,paymentReceivedAt:at}).length,0,'Receipt is an informational event');
 assert.equal(tasks(logistic,{...paid,paymentReceivedAt:at}).length,0);
 const recall={...confirmation,courier:{...confirmation.courier,phase:'recall_returned',recall:{requestedAt:at,returnedAt:at}}};
