@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {postalFormData,postalMoneyPlaceholders,postalSenderSchema} from '../lib/postal-form.ts';
+import {postalFormPdf} from '../lib/postal-form-pdf.ts';
+import {mayCallEndpoint} from '../lib/permissions.ts';
+const sender={name:'Тестовый отправитель',address:'г. Москва, ул. Тестовая, д. 1',postalCode:'101000',phone:'+79990000001'};
+const client={name:'Тестовый Получатель Александрович',phone:'+79990000002',address:'Старый адрес',addressParts:{postalCode:'190000'}};
+const order={id:'TEST-POSTAL-FORM',version:7,delivery:'russian_post',address:'143000, Московская область, г. Одинцово, ул. Тестовая, д. 15, кв. 7',addressParts:{postalCode:'143000'}};
+const before=JSON.stringify({sender,order,client});
+const data=postalFormData(order,client,sender);
+assert.equal(data.recipient.postalCode,'143000');
+assert(!data.recipient.address.includes('143000'));
+assert(!data.recipient.address.includes('Старый'));
+assert.equal(JSON.stringify({sender,order,client}),before);
+assert.throws(()=>postalFormData({...order,addressParts:{postalCode:''}},client,sender),/индекс/);
+assert.throws(()=>postalFormData({...order,address:'Новый адрес',addressParts:undefined},client,sender),/индекс/);
+assert.equal(postalFormData({...order,addressParts:undefined},client,sender).recipient.postalCode,'143000');
+assert.equal(postalFormData({...order,address:undefined,addressParts:undefined},client,sender).recipient.postalCode,'190000');
+assert.throws(()=>postalFormData({...order,delivery:'moscow_courier'},client,sender),/только/);
+assert.throws(()=>postalFormData(order,client,{...sender,name:''}),/Администратору/);
+assert(!postalSenderSchema.safeParse({...sender,postalCode:'12345'}).success);
+assert.deepEqual(postalMoneyPlaceholders,{declaredValue:'Уточнить_1',cashOnDelivery:'Уточнить_2'});
+for(const role of ['admin','logistic','chief_logistic','operator','department_head','courier','redemption']){
+ const url=new URL('https://crm.test/api/postal-form');
+ assert.equal(mayCallEndpoint({role},url,'GET',{}),['admin','logistic','chief_logistic'].includes(role));
+ assert.equal(mayCallEndpoint({role},url,'POST',{}),role==='admin');
+}
+const assets={font:readFileSync('public/fonts/LiberationSans-Regular.ttf').toString('base64'),template:readFileSync('public/forms/russian-post-f7p.jpg')};
+const doc=postalFormPdf(data,assets);
+assert.equal(doc.getNumberOfPages(),1);
+assert(doc.output().startsWith('%PDF-'));
+mkdirSync('work/postal-form',{recursive:true});
+writeFileSync('work/postal-form/sample.pdf',Buffer.from(doc.output('arraybuffer')));
+const long=postalFormPdf({...data,sender:{...sender,name:'Тестовая Организация Отправитель Почтовых Отправлений',address:'Московская область, городской округ Солнечногорск, посёлок городского типа Тестовый, улица Первая Тестовая, дом 100, корпус 2, строение 3, помещение 18'},recipient:{...data.recipient,name:'Тестовый-Длинная-Фамилия Константин Александрович',address:'Республика Саха (Якутия), муниципальный район Тестовый, село Тестовое, улица Имени Тестового Почтового Отделения, дом 123, корпус 4, квартира 567'}},assets);
+assert.equal(long.getNumberOfPages(),1);
+writeFileSync('work/postal-form/long-address.pdf',Buffer.from(long.output('arraybuffer')));
+assert.throws(()=>postalFormPdf({...data,recipient:{...data.recipient,address:'Очень длинный адрес '.repeat(24)}},assets),/слишком длинные/);
+console.log('Postal form: current address/index, no mutations, role access, placeholders, PDF and overflow checks passed');
