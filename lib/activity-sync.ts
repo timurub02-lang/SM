@@ -20,7 +20,8 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
   const usersRaw=await api('/api/v2/users?length=100'),users=Array.isArray(usersRaw)?usersRaw:usersRaw.data;if(!Array.isArray(users))throw Error('Скорозвон: неожиданный список сотрудников');
   if(ids.some(id=>!users.some((u:any)=>u.id===id)))throw Error('Скорозвон: не все связанные сотрудники доступны');
   const previous=await read('activity-samples')||{},health=await read('activity-health'),schedules=await read('activity-schedules')||{};
-  const cursor=Math.max(dayStart,(Date.parse(health?.lastSuccessAt||'')||dayStart)-900000);
+  const firstSample=ids.some(skId=>previous[reverse.get(skId)!]?.day!==day);
+  const cursor=firstSample?dayStart:Math.max(dayStart,(Date.parse(health?.lastSuccessAt||'')||dayStart)-900000);
   let pages=1;const calls:any[]=[];
   for(let page=1;page<=pages;page++){
    const response=await api('/api/reports/calls_total.json',{filter:{users_ids:ids,types:'all'},selected_fields:['id','started_at','user','duration'],start_time:Math.floor(cursor/1000),end_time:Math.floor(now/1000),page,length:100});

@@ -34,12 +34,15 @@ for(const sql of ['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE
 await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
 for(const [id,v] of Object.entries({'skorozvon':{login:'x',apiKey:'x',clientId:'x',clientSecret:'x'},'activity-sk-map':{e:1},'activity-provider-bootstrap':{url:'https://shard5-lb2.skorozvon.ru/bootstrap'},'activity-schedules':{'1':schedule}}))await d.prepare('INSERT INTO settings VALUES(?,?)').bind(id,JSON.stringify(v)).run();
 let callsRequested=0;
+const callRequests=[];
+const users=[{id:1,uuid:'uuid',locked:false}];
 const request=async(url,options)=>{
  const path=new URL(url).pathname;let data;
  if(path==='/oauth/token')data={access_token:'test'};
- else if(path==='/api/v2/users')data=[{id:1,uuid:'uuid',locked:false}];
- else if(path==='/api/reports/calls_total.json'){callsRequested++;const body=JSON.parse(options.body);data={data:[{id:body.page,user:{id:1},started_at:body.page===1?'2026-10-01 05:01:00':'2026-10-01 05:00:00',duration:30}],total_pages:2};}
+ else if(path==='/api/v2/users')data=users;
+ else if(path==='/api/reports/calls_total.json'){callsRequested++;const body=JSON.parse(options.body);callRequests.push(body);data={data:[{id:body.page,user:{id:1},started_at:body.page===1?'2026-10-01 05:01:00':'2026-10-01 05:00:00',duration:30},...(body.filter.users_ids.includes(2)&&body.page===1&&body.start_time<=Date.parse('2026-10-01T05:30:00Z')/1000?[{id:3,user:{id:2},started_at:'2026-10-01 05:30:00',duration:45}]:[])],total_pages:2};}
  else if(path==='/api/v2/calls/1')data={user_id:1,ended_at:'2026-10-01T05:01:30Z'};
+ else if(path==='/api/v2/calls/3')data={user_id:2,ended_at:'2026-10-01T05:30:45Z'};
  else if(path==='/bootstrap')data={phone_bus_uri:'https://pod1-ncc13-lb1.skorozvon.ru'};
  else if(path==='/postman/user_states')data=[{user_id:'uuid',status:'normal',status_changed_at:'2026-10-01T05:01:30Z',current_time:at}];
  else throw Error('Unexpected API call '+path);
@@ -50,6 +53,14 @@ assert.equal(callsRequested,4);const result=await readActivity(d,now+60000);asse
 assert.equal((await d.prepare('SELECT count(*) AS n FROM activity_incidents').first()).n,1,'Repeated poll must not duplicate alerts');
 await d.prepare('INSERT INTO events VALUES(?,?,?)').bind('EV-work',new Date(now+120000).toISOString(),JSON.stringify({actorId:'e',actor:'Operator',text:'Сохранён заказ'})).run();
 await syncActivity(d,request,now+120000);assert.ok((await d.prepare('SELECT ended_at FROM activity_incidents').first()).ended_at);
+// Linking another department midday must include its earlier calls, without duplicating existing totals.
+await d.prepare('INSERT INTO employees VALUES(?,?)').bind('m31',JSON.stringify({...e,id:'m31',department:'3'})).run();
+await d.prepare("UPDATE settings SET data=? WHERE id='activity-sk-map'").bind(JSON.stringify({e:1,m31:2})).run();
+users.push({id:2,uuid:'uuid2',locked:false});
+await syncActivity(d,request,now+180000);
+assert.equal(callRequests.at(-1).start_time,Date.parse('2026-10-01T00:00:00+03:00')/1000);
+const linked=await readActivity(d,now+180000);assert.equal(linked.rows.find(r=>r.id==='m31').calls,1);assert.equal(linked.rows.find(r=>r.id==='e').calls,2);
+await syncActivity(d,request,now+240000);assert.equal(callRequests.at(-1).start_time,(now+180000-900000)/1000);
 await assert.rejects(syncActivity(d,async()=>{throw Error('secret token must not be exposed')},now+180000));
 const health=JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='activity-health'").first()).data);assert.equal(health.ok,false);assert.ok(!health.message.includes('secret'));
 d.close();console.log('Activity: schedules, live states, breaks, department isolation, pagination, UTC dates, idempotent alerts, recovery and outage checks passed');
