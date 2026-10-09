@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import {activityRow,shiftWindow,visibleActivityEmployee} from '../lib/activity.ts';
 import {mayCallEndpoint} from '../lib/permissions.ts';
-import {syncActivity} from '../lib/activity-sync.ts';
+import {syncActivity as collectActivity} from '../lib/activity-sync.ts';
 import {readActivity} from '../lib/activity-store.ts';
 import {openDatabase} from '../server/sqlite.ts';
+const waits=[];
+const syncActivity=(d,request,now)=>collectActivity(d,request,now,async ms=>{waits.push(ms);});
 const now=Date.parse('2026-10-01T07:00:00Z'),at=new Date(now).toISOString(),e={id:'e',name:'Operator',login:'op',role:'operator',department:'1'},head={...e,id:'head',role:'department_head'},schedule={days:[1,2,3,4,5],start:'08:00',end:'17:00',breakMinutes:60};
 const sample={employeeId:'e',skId:1,locked:false,calls:1,lastCallAt:'2026-10-01T05:00:00Z',lastCallEnd:'2026-10-01T05:01:00Z',callSeconds:60,observedAt:at,status:'normal',statusAt:'2026-10-01T05:01:00Z',breakSeconds:0,breakObservedSince:at,lastBusyAt:'',breakEndedAt:'',day:'2026-10-01'};
 const row=(s=sample,t=now)=>activityRow(e,schedule,s,{at:'',count:0},t);
@@ -61,6 +63,28 @@ await syncActivity(d,request,now+180000);
 assert.equal(callRequests.at(-1).start_time,Date.parse('2026-10-01T00:00:00+03:00')/1000);
 const linked=await readActivity(d,now+180000);assert.equal(linked.rows.find(r=>r.id==='m31').calls,1);assert.equal(linked.rows.find(r=>r.id==='e').calls,2);
 await syncActivity(d,request,now+240000);assert.equal(callRequests.at(-1).start_time,(now+180000-900000)/1000);
+assert.ok(waits.length>0&&waits.every(ms=>ms===200),'API requests must be paced, including report pages and call details');
+const saved=async id=>JSON.parse((await d.prepare('SELECT data FROM settings WHERE id=?').bind(id).first()).data);
+let retries=0;const repeatedBodies=[];
+await syncActivity(d,async(url,options)=>{
+ if(new URL(url).pathname==='/api/reports/calls_total.json'&&JSON.parse(options.body).page===1){repeatedBodies.push(options.body);if(retries++===0)return new Response('busy',{status:429,headers:{'Retry-After':'2'}});}
+ return request(url,options);
+},now+300000);
+assert.equal(retries,2);assert.equal(repeatedBodies[0],repeatedBodies[1]);assert.ok(waits.includes(2000));assert.equal((await saved('activity-health')).ok,true);
+const beforeFailure=await saved('activity-samples');let failures=0;waits.length=0;
+await assert.rejects(syncActivity(d,async(url,options)=>{if(new URL(url).pathname==='/api/reports/calls_total.json'){failures++;return new Response('busy',{status:429});}return request(url,options);},now+360000));
+assert.equal(failures,3,'Persistent 429 must stop after bounded retries');assert.deepEqual(waits.filter(ms=>ms!==200),[5000,15000]);
+const limited=await saved('activity-health');assert.equal(limited.ok,false);assert.equal(limited.lastSuccessAt,new Date(now+300000).toISOString());assert.ok(Date.parse(limited.retryAt)>=now+420000);
+assert.deepEqual(await saved('activity-samples'),beforeFailure,'Failed refresh must retain the last complete snapshot');
+const stale=await readActivity(d,now+360000);assert.ok(stale.rows.every(row=>row.skStatus==='unknown'&&row.state!=='idle'));
+const deferred=await syncActivity(d,async()=>{assert.fail('No request may run during the server cooldown');},now+390000);assert.equal(deferred.deferred,true);
+await syncActivity(d,request,Date.parse(limited.retryAt)+1);assert.equal((await saved('activity-health')).ok,true);assert.equal((await saved('activity-health')).retryAt,undefined);assert.equal((await readActivity(d,now+421000)).rows.find(r=>r.id==='e').calls,2);
+// Long HTTP-date Retry-After survives the next timer run; no early retry is allowed.
+let dateFailures=0;
+await assert.rejects(syncActivity(d,async(url,options)=>{if(new URL(url).pathname==='/api/reports/calls_total.json'){dateFailures++;return new Response('busy',{status:429,headers:{'Retry-After':new Date(now+720000).toUTCString()}});}return request(url,options);},now+480000));
+assert.equal(dateFailures,1);assert.equal((await saved('activity-health')).retryAt,new Date(now+720000).toISOString());
+assert.equal((await syncActivity(d,async()=>{assert.fail('HTTP-date cooldown must be respected');},now+600000)).deferred,true);
+await syncActivity(d,request,now+721000);
 await assert.rejects(syncActivity(d,async()=>{throw Error('secret token must not be exposed')},now+180000));
 const health=JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='activity-health'").first()).data);assert.equal(health.ok,false);assert.ok(!health.message.includes('secret'));
-d.close();console.log('Activity: schedules, live states, breaks, department isolation, pagination, UTC dates, idempotent alerts, recovery and outage checks passed');
+d.close();console.log('Activity: schedules, live states, breaks, department isolation, pagination, UTC dates, idempotent alerts, rate-limit pacing, bounded retries, cooldown, recovery and outage checks passed');
