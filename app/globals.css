@@ -89,3 +89,5 @@
 .phone-pool-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px}.phone-pool-counts>div{padding:12px;border-radius:12px;background:rgba(115,145,195,.08);display:grid;gap:4px}.phone-pool-counts strong{font-size:24px}.phone-pool-counts span{font-size:13px}.phone-pool-replace{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.phone-number-pool{border-top:1px solid #dde3ed;padding-top:20px}.phone-number-pool details p{overflow-wrap:anywhere}
 
 .order-fields[hidden]{display:none!important}
+
+.call-answer-analysis{display:grid;gap:8px;padding:12px 14px;border-radius:12px;background:#fff8e9;border:1px solid #f0d9ad}.call-answer-analysis>.text-button{justify-self:start}.call-answer-analysis .action-buttons{align-items:end;flex-wrap:wrap}

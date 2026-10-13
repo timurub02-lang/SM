@@ -15,7 +15,7 @@ export async function GET(req:Request){
  const call=await db().prepare('SELECT caller_number FROM phone_calls WHERE id=?').bind(id).first<{caller_number:string}>();
  return Response.json({callerId:call!.caller_number},{headers:{'Cache-Control':'no-store'}});
 }
-const result=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),started:z.number().int().positive(),answered:z.number().int().nonnegative(),ended:z.number().int().positive(),status:z.enum(['ANSWER','ANSWERED','BUSY','NOANSWER','CANCEL','CHANUNAVAIL','CONGESTION','FAILED','']),cause:z.string().regex(/^\d{0,3}$/),audio:z.string().max(6*1024*1024).optional()});
+const result=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),started:z.number().int().positive(),answered:z.number().int().nonnegative(),ended:z.number().int().positive(),status:z.enum(['ANSWER','ANSWERED','BUSY','NOANSWER','CANCEL','CHANUNAVAIL','CONGESTION','FAILED','']),cause:z.string().regex(/^\d{0,3}$/),audio:z.string().max(6*1024*1024).optional(),analysis:z.object({kind:z.enum(['human','machine','screening','unknown']),reason:z.enum(['screening_greeting','recorded_greeting','speech_turns','unclear','analysis_error','no_remote_audio']),method:z.literal('local-asr-v1')}).optional()});
 export async function POST(req:Request){
  if(!trusted(req))return Response.json({error:'Forbidden'},{status:403});
  try{
@@ -31,7 +31,9 @@ export async function POST(req:Request){
    const dir=process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings';await mkdir(dir,{recursive:true,mode:0o700});const file=join(dir,p.id+'.wav'),temp=file+'.'+crypto.randomUUID()+'.tmp';await writeFile(temp,audio,{mode:0o600});try{await link(temp,file);}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}finally{await unlink(temp);}recorded=true;
   }
   const iso=(s:number)=>new Date(s*1000).toISOString();
-  await db().prepare('UPDATE phone_calls SET status=?,detail=?,answered_at=?,ended_at=?,duration=?,bill_seconds=?,recording=?,provider_at=? WHERE id=? AND provider_at IS NULL').bind(status,connected?'Соединение могло быть с клиентом или автоответчиком.':status==='failed'?`АТС не смогла соединить звонок${p.cause?' (код '+p.cause+')':''}.`:'',connected?iso(p.answered):null,iso(p.ended),p.ended-p.started,connected?p.ended-p.answered:0,recorded?1:0,new Date().toISOString(),p.id).run();
+  const writes=[db().prepare('UPDATE phone_calls SET status=?,detail=?,answered_at=?,ended_at=?,duration=?,bill_seconds=?,recording=?,provider_at=? WHERE id=? AND provider_at IS NULL').bind(status,connected?'Соединение могло быть с клиентом или автоответчиком.':status==='failed'?`АТС не смогла соединить звонок${p.cause?' (код '+p.cause+')':''}.`:'',connected?iso(p.answered):null,iso(p.ended),p.ended-p.started,connected?p.ended-p.answered:0,recorded?1:0,new Date().toISOString(),p.id)];
+  if(connected&&p.analysis&&c.caller_number)writes.push(db().prepare('INSERT INTO phone_call_analysis(call_id,auto_kind,auto_reason,analyzed_at) VALUES(?,?,?,?) ON CONFLICT(call_id) DO UPDATE SET auto_kind=excluded.auto_kind,auto_reason=excluded.auto_reason,analyzed_at=excluded.analyzed_at WHERE phone_call_analysis.analyzed_at IS NULL').bind(c.id,p.analysis.kind,p.analysis.reason,new Date().toISOString()));
+  await db().batch(writes);
   return Response.json({ok:true});
  }catch{return Response.json({error:'Invalid call result'},{status:400});}
 }

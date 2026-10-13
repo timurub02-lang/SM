@@ -59,12 +59,25 @@ try{
  assert.equal((await pbx('GET',callId)).status,200);
  assert.equal((await pbx('GET',callId)).status,409,'Same call ID cannot dial twice');
  const epoch=Math.floor(Date.now()/1000),audio=Buffer.alloc(16044);audio.write('RIFF');audio.writeUInt32LE(audio.length-8,4);audio.write('WAVEfmt ',8);audio.writeUInt32LE(16,16);audio.writeUInt16LE(1,20);audio.writeUInt16LE(1,22);audio.writeUInt32LE(8000,24);audio.writeUInt32LE(16000,28);audio.writeUInt16LE(2,32);audio.writeUInt16LE(16,34);audio.write('data',36);audio.writeUInt32LE(audio.length-44,40);
- const payload={id:callId,started:epoch,answered:epoch+1,ended:epoch+3,status:'ANSWERED',cause:'16',audio:audio.toString('base64')};
+ const orderBefore=db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data;
+ const payload={analysis:{kind:'screening',reason:'screening_greeting',method:'local-asr-v1'},id:callId,started:epoch,answered:epoch+1,ended:epoch+3,status:'ANSWERED',cause:'16',audio:audio.toString('base64')};
  assert.equal((await pbx('POST','',payload,'wrong-key')).status,403);
+ assert.equal((await pbx('POST','',{...payload,analysis:{...payload.analysis,kind:'invalid'}})).status,400);
  assert.equal((await pbx('POST','',payload)).status,200);
  assert.equal((await pbx('POST','',{...payload,audio:'wrong'})).status,200,'Finalized replay cannot overwrite audio');
  assert.deepEqual(readFileSync(join(dir,'recordings',callId+'.wav')),audio);
- let history=(await api('/api/call-history?orderId=o-one')).data.calls;assert.equal(history[0].status,'completed');assert.equal(history[0].bill_seconds,2);assert.equal(history[0].recording,true);
+ let history=(await api('/api/call-history?orderId=o-one')).data.calls;assert.equal(history[0].status,'completed');assert.equal(history[0].bill_seconds,2);assert.equal(history[0].recording,true);assert.equal(history[0].auto_kind,'screening');assert.equal(history[0].auto_reason,'screening_greeting');assert.equal(history[0].manual_kind,null);
+ const correction={id:callId,kind:'human'};
+ assert.equal((await call('/api/call-history',{body:correction,method:'PATCH'})).status,401);
+ assert.equal((await api('/api/call-history',correction,cookies.two,'PATCH')).status,403);
+ assert.equal((await call('/api/call-history',{cookie:cookies.one,body:correction,method:'PATCH',headers:{Origin:'https://evil.test'}})).status,403);
+ assert.equal((await api('/api/call-history',{...correction,kind:'invalid'},cookies.one,'PATCH')).status,400);
+ assert.equal((await api('/api/call-history',correction,cookies.one,'PATCH')).status,200);
+ assert.equal((await api('/api/call-history',{...correction,kind:'machine'},cookies.head,'PATCH')).status,200);
+ assert.equal((await pbx('POST','',{...payload,analysis:{kind:'human',reason:'speech_turns',method:'local-asr-v1'}})).status,200);
+ const corrected=(await api('/api/call-history?orderId=o-one')).data.calls[0];
+ assert.equal(corrected.auto_kind,'screening');assert.equal(corrected.manual_kind,'machine');assert.equal(corrected.manual_name,'Test head');assert.equal(corrected.status,'completed');assert.equal(corrected.bill_seconds,2);
+ assert.equal(db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data,orderBefore,'Call classification never changes the order');
  assert.equal((await api('/api/telephony',{id:callId,status:'failed',detail:'late browser failure'},cookies.admin,'PATCH')).status,200);
  assert.equal((await api('/api/call-history?orderId=o-one')).data.calls[0].status,'completed','PBX result is authoritative');
  const recording='/api/call-history/recording?id='+callId;
@@ -74,6 +87,8 @@ try{
  const failedId=(await dial({mode:'client',clientId:'c-one'})).data.callId;
  await api('/api/telephony',{id:failedId,status:'failed',detail:'Микрофон недоступен'},cookies.admin,'PATCH');
  assert.equal((await api('/api/call-history?clientId=c-one')).data.calls[0].status,'failed');
+ assert.equal((await api('/api/call-history',{id:failedId,kind:'screening'},cookies.one,'PATCH')).status,400);
+ assert.equal((await api('/api/call-history?clientId=c-one')).data.calls[0].auto_kind,null);
  assert.ok(!(await api('/api/call-history?orderId=o-one')).data.calls.some(c=>c.id===failedId),'Direct client call has no fabricated order link');
  const blocked=(await dial({mode:'order',orderId:'o-one'})).data.callId;
  const nums='/api/telephony/numbers';assert.equal((await api(nums,undefined,cookies.one)).status,403);
@@ -86,6 +101,8 @@ try{
  await api(nums,{action:'markExported',numbers:['79000000000','79991112233']});
  const exported=(await api(nums)).data;assert.equal(exported.numbers.filter(n=>n.exported_at).length,1,'Cannot export active numbers as completed');
  const direct=(await dial({mode:'client',clientId:'c-one'})).data.callId;
+ const nextCall=(await dial({mode:'client',clientId:'c-one'})).data.callId;
+ assert.equal(db.prepare('SELECT caller_number FROM phone_calls WHERE id=?').get(nextCall).caller_number,'79992223344','Next attempt uses the next active number');
  const rotated=db.prepare('SELECT caller_number FROM phone_calls WHERE id=?').get(direct);assert.equal(rotated.caller_number,'79991112233');
  const detached=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get('c-one').data);detached.owner='two';db.prepare('UPDATE clients SET data=? WHERE id=?').run(JSON.stringify(detached),'c-one');
  assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.one)).status,403);assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.head)).status,403);
@@ -93,6 +110,6 @@ try{
  assert.equal((await api(recording,undefined,cookies.two)).status,200,'New client owner can hear client history');
  db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify({...staff[1],role:'admin'}),'one');
  assert.equal((await call('/api/telephony',{cookie:cookies.one,body:{mode:'test'}})).status,403);
- console.log('Call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and telephony pilot: authentication, dedicated admin, CSRF, fixed destinations, card phone normalization, private config and no-store passed. No calls placed.');
+ console.log('Experimental classification, authorized manual correction, unchanged orders, call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and telephony pilot: authentication, dedicated admin, CSRF, fixed destinations, card phone normalization, private config and no-store passed. No calls placed.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

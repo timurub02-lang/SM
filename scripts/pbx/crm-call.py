@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.request
@@ -58,20 +59,37 @@ def run_agi():
         temp.chmod(0o600)
         temp.replace(path)
 
+def classify_remote(path):
+    if not path.exists():
+        return {'kind': 'unknown', 'reason': 'no_remote_audio', 'method': 'local-asr-v1'}
+    try:
+        result = subprocess.run(['/opt/sm-call-analysis/bin/python', '/usr/local/lib/sm-crm/crm-call-analysis.py', str(path)],
+                                capture_output=True, text=True, timeout=45, check=True)
+        return json.loads(result.stdout)
+    except Exception:
+        return {'kind': 'unknown', 'reason': 'analysis_error', 'method': 'local-asr-v1'}
+
 def upload():
     # Failed uploads remain queued, including their audio, until CRM acknowledges them.
-    for path in sorted(ROOT.glob('*.json'))[:50]:
+    for path in sorted(ROOT.glob('*.json'))[:10]:
         try:
             payload = json.loads(path.read_text())
             if not re.fullmatch(r'[a-f0-9]{32}', payload['id']):
                 continue
             audio = ROOT / (payload['id'] + '.wav')
+            remote = ROOT / (payload['id'] + '-remote.wav')
+            if payload['answered'] and 'analysis' not in payload:
+                payload['analysis'] = classify_remote(remote)
+                temp = path.with_suffix('.tmp')
+                temp.write_text(json.dumps(payload))
+                temp.replace(path)
             if payload['answered'] and audio.exists() and 44 < audio.stat().st_size <= 4*1024*1024:
                 payload['audio'] = base64.b64encode(audio.read_bytes()).decode('ascii')
             response = api('POST', payload=payload)
             if response.get('ok'):
                 path.unlink()
                 audio.unlink(missing_ok=True)
+                remote.unlink(missing_ok=True)
         except Exception as error:
             print('CRM call result pending: ' + type(error).__name__, file=sys.stderr)
 
