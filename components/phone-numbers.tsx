@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 type NumberRow={number:string;state:'active'|'available'|'completed';added_at:string;activated_at:string|null;completed_at:string|null;exported_at:string|null};
 type Pool={numbers:NumberRow[];version:number};
 export function PhoneNumbers(){
- const [pool,setPool]=useState<Pool|null>(null),[input,setInput]=useState(''),[count,setCount]=useState('20'),[busy,setBusy]=useState(false),[confirm,setConfirm]=useState(false),[error,setError]=useState(''),[report,setReport]=useState<{added:number;duplicates:number;invalid:{row:number;value:string;reason:string}[]}|null>(null);
+ const [pool,setPool]=useState<Pool|null>(null),[input,setInput]=useState(''),[count,setCount]=useState('25'),[busy,setBusy]=useState(false),[confirm,setConfirm]=useState(false),[error,setError]=useState(''),[report,setReport]=useState<{added:number;duplicates:number;invalid:{row:number;value:string;reason:string}[]}|null>(null);
  async function request(body?:unknown){const r=await fetch('/api/telephony/numbers',{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),cache:'no-store'}),data=await r.json() as Pool&{error?:string;report?:{added:number;duplicates:number;invalid:{row:number;value:string;reason:string}[]}};if(!r.ok)throw Error(data.error||'Не удалось загрузить номера');setPool({numbers:data.numbers,version:data.version});if(data.report)setReport(data.report);return data;}
  useEffect(()=>{void request().catch(e=>setError(e.message));},[]);
  async function run(task:()=>Promise<unknown>){setBusy(true);setError('');try{await task();}catch(e){setError(e instanceof Error?e.message:'Не удалось выполнить действие');}finally{setBusy(false);}}
