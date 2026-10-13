@@ -80,3 +80,6 @@
 .workspace-header .top-right{flex-wrap:wrap;max-width:100%}
 .workspace-header>.courier-door-alerts{margin:16px 30px 0;max-height:40vh;overflow-y:auto}
 @media(max-width:600px){.workspace-header>.courier-door-alerts{margin:12px 16px 0}}
+
+.browser-call-button{align-self:flex-start;display:inline-flex;align-items:center;gap:8px}
+.browser-phone-dialog .phone-hangup{background:#c5303c;color:white}
