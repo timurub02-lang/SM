@@ -83,3 +83,7 @@
 
 .browser-call-button{align-self:flex-start;display:inline-flex;align-items:center;gap:8px}
 .browser-phone-dialog .phone-hangup{background:#c5303c;color:white}
+
+.call-history-item{padding:14px 16px;border:1px solid var(--border,#dde3ed);border-radius:14px;display:grid;gap:6px;background:rgba(255,255,255,.45)}
+.call-history-heading{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.call-history-heading time,.call-history-item small{color:#70809a;font-size:13px}.call-history-item p{margin:0}.call-history-item audio{width:min(100%,420px);margin-top:6px}
+.phone-pool-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px}.phone-pool-counts>div{padding:12px;border-radius:12px;background:rgba(115,145,195,.08);display:grid;gap:4px}.phone-pool-counts strong{font-size:24px}.phone-pool-counts span{font-size:13px}.phone-pool-replace{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.phone-number-pool{border-top:1px solid #dde3ed;padding-top:20px}.phone-number-pool details p{overflow-wrap:anywhere}

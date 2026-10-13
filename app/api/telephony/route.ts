@@ -2,6 +2,7 @@ import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {z} from 'zod';
+import {createPhoneCall,initPhone} from '@/lib/phone-store';
 
 export const dynamic='force-dynamic';
 const input=z.discriminatedUnion('mode',[
@@ -32,7 +33,19 @@ export const POST=authenticated(async(req:Request)=>{
    let phone=row.phone.replace(/\D/g,'');if(phone.length===11&&phone.startsWith('8'))phone='7'+phone.slice(1);
    if(phone!==c.phone)throw Error('Сейчас разрешён только звонок на согласованный тестовый номер. Звонки клиентам включим после проверки звука.');
   }
+  await initPhone(db(),c.callerId);
+  const call=await createPhoneCall(db(),{id:crypto.randomUUID().replaceAll('-',''),clientId:clientId||null,orderId:p.mode==='order'?p.orderId:null,actor:(await getChatGPTUser())!.employee!,echo:p.mode==='echo'});
   // The PBX independently permits only these two destinations during the pilot.
-  return Response.json({username:c.username,password:c.password,destination:p.mode==='echo'?'echo':'test',label:p.mode==='echo'?'Проверка микрофона — эхо':`Тестовый звонок · +${c.phone}`},{headers:{'Cache-Control':'no-store'}});
+  return Response.json({callId:call.id,username:c.username,password:c.password,destination:p.mode==='echo'?'echo':'test',label:p.mode==='echo'?'Проверка микрофона — эхо':`Тестовый звонок · +${c.phone}`},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте параметры звонка':e instanceof Error?e.message:'Не удалось подготовить звонок'},{status:400});}
+});
+
+export const PATCH=authenticated(async req=>{
+ if(!await allowed())return Response.json({error:'Недостаточно прав'},{status:403});
+ try{
+  const p=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),status:z.enum(['dialing','connected','cancelled','failed','unknown','busy','no_answer']),detail:z.string().max(500).default('')}).parse(await req.json());
+  await initPhone(db());const e=(await getChatGPTUser())!.employee!,final=['cancelled','failed','unknown','busy','no_answer'].includes(p.status);
+  await db().prepare("UPDATE phone_calls SET status=?,detail=?,ended_at=? WHERE id=? AND actor_id=? AND provider_at IS NULL AND (ended_at IS NULL OR (?=1 AND status='unknown')) AND (status<>'connected' OR ?=1)").bind(p.status,p.detail,final?new Date().toISOString():null,p.id,e.id,final?1:0,final?1:0).run();
+  return Response.json({ok:true});
+ }catch{return Response.json({error:'Неверный результат звонка'},{status:400});}
 });

@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {initPhone,createPhoneCall,replacePhonePool,normalizeOutgoingNumber,phoneScope,displayPhoneCall} from '../lib/phone-store.ts';
+const d=openDatabase(':memory:');
+try{
+ await d.batch(['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(sql=>d.prepare(sql)));
+ const staff=[{id:'admin',role:'admin',name:'Admin'},{id:'one',role:'operator',name:'One',department:'1'},{id:'two',role:'operator',name:'Two',department:'2'},{id:'head',role:'department_head',department:'1'},{id:'courier',role:'courier'}];
+ for(const e of staff)await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
+ const client={id:'client',owner:'one'};await d.prepare('INSERT INTO clients VALUES(?,?)').bind(client.id,JSON.stringify(client)).run();
+ await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('order',client.id,JSON.stringify({id:'order',clientId:client.id,manager:'one'})).run();
+ await initPhone(d);
+ const all=Array.from({length:1000},(_,i)=>String(79000000000+i));
+ await d.batch(all.map(n=>d.prepare("INSERT INTO phone_numbers(number,state,added_at) VALUES(?,'available','2026-01-01')").bind(n)));
+ await replacePhonePool(d,100,0);
+ const make=()=>createPhoneCall(d,{id:crypto.randomUUID().replaceAll('-',''),clientId:'client',orderId:'order',actor:staff[0],echo:false});
+ const calls=await Promise.all(Array.from({length:105},make));assert.equal(new Set(calls.slice(0,100).map(c=>c.caller_number)).size,100);assert.deepEqual(calls.slice(100).map(c=>c.caller_number),calls.slice(0,5).map(c=>c.caller_number));
+ await assert.rejects(replacePhonePool(d,901,1));assert.equal((await d.prepare("SELECT COUNT(*) n FROM phone_numbers WHERE state='active'").first()).n,100);
+ await replacePhonePool(d,20,1);await assert.rejects(replacePhonePool(d,20,1));
+ const counts=async()=>Object.fromEntries((await d.prepare('SELECT state,COUNT(*) n FROM phone_numbers GROUP BY state').all()).results.map(x=>[x.state,x.n]));
+ assert.deepEqual(await counts(),{active:20,available:880,completed:100});
+ for(let i=0;i<40;i++)assert.ok(!all.slice(0,100).includes((await make()).caller_number));
+ await d.prepare("UPDATE phone_numbers SET exported_at='now' WHERE state='completed'").run();
+ assert.equal((await d.prepare('SELECT COUNT(*) n FROM phone_numbers WHERE exported_at IS NULL').first()).n,900);
+ await initPhone(d,'79990001111');assert.equal((await d.prepare('SELECT COUNT(*) n FROM phone_numbers').first()).n,1000,'No reseeding/reusing archived numbers');
+ assert.equal(normalizeOutgoingNumber('8 (999) 123-45-67'),'79991234567');assert.equal(normalizeOutgoingNumber('=79991234567'),null);assert.equal(normalizeOutgoingNumber('foo'),null);
+ for(const id of ['admin','one','head'])assert.ok(await phoneScope(d,staff.find(e=>e.id===id),{clientId:'client'}));
+ for(const id of ['two','courier'])assert.equal(await phoneScope(d,staff.find(e=>e.id===id),{clientId:'client'}),false);
+ await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify({...client,owner:'two'}),'client').run();
+ assert.equal(await phoneScope(d,staff[1],{clientId:'client'}),false);assert.equal(await phoneScope(d,staff[1],{orderId:'order'}),true);
+ assert.equal(displayPhoneCall({...calls[0],started_at:'2026-01-01',status:'dialing'},Date.now()).status,'unknown');
+ console.log('Phone store: 1000 → active 100 → replace with 20 → export 100 → remaining 900; round-robin, conflict rollback, authorization and stale calls passed.');
+}finally{d.close();}

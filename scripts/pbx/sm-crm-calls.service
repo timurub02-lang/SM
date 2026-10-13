@@ -1,0 +1,15 @@
+[Unit]
+Description=Upload CRM call results and recordings
+After=network-online.target asterisk.service
+[Service]
+Type=oneshot
+User=asterisk
+Group=asterisk
+ExecStart=/usr/bin/python3 /usr/local/lib/sm-crm/crm-call.py --upload
+TimeoutStartSec=600
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/spool/asterisk/crm-calls
