@@ -21,8 +21,11 @@ export function BrowserPhone({admin,actorId,children}:{admin:boolean;actorId:str
    if(!navigator.mediaDevices?.getUserMedia)throw Error('Браузер не поддерживает звонки. Откройте CRM по HTTPS в Chrome или Edge.');
    const r=await fetch('/api/telephony',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(target),signal:AbortSignal.timeout(15000)}),c=await r.json() as CallConfig;
    if(!r.ok)throw Error(c.error||'Телефония недоступна');if(run!==generation.current)return;
+   setTitle(c.label);setMessage('Разрешите доступ к микрофону…');
+   // Ask before opening WSS: Asterisk closes connections without a SIP request after 32 seconds.
+   const probe=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+   probe.getTracks().forEach(track=>track.stop());if(run!==generation.current)return;
    connecting=true;const {SimpleUser}=await import('sip.js/lib/platform/web');if(run!==generation.current)return;
-   setTitle(c.label);
    const host=window.location.host;
    const current=new SimpleUser(`wss://${host}/phone/ws`,{
     aor:`sip:${c.username}@${host}`,reconnectionAttempts:0,
@@ -33,7 +36,7 @@ export function BrowserPhone({admin,actorId,children}:{admin:boolean;actorId:str
    phone.current=current;await current.connect();if(run!==generation.current){await current.disconnect();return;}
    setMessage('Разрешите доступ к микрофону. Выполняется вызов…');
    await current.call(`sip:${c.destination}@${host}`,undefined,{requestDelegate:{onProgress(){if(run===generation.current)setMessage('Идёт вызов…');},onReject(response){if(run===generation.current)void finish(response.message.statusCode===486?'Линия занята. Повторите позже.':`Звонок не состоялся (ответ ${response.message.statusCode}).`);}}});
-  }catch(e){if(run===generation.current)await finish(e instanceof Error&&e.name==='NotAllowedError'?'Разрешите CRM доступ к микрофону в настройках браузера.':e instanceof Error&&e.name==='NotFoundError'?'Микрофон не найден. Подключите гарнитуру и повторите звонок.':connecting?'Не удалось подключиться к телефонии. Повторите попытку или сообщите администратору.':e instanceof Error?e.message:'Не удалось начать звонок');}
+  }catch(e){if(run===generation.current)await finish(e instanceof Error&&e.name==='NotAllowedError'?'Разрешите CRM доступ к микрофону в настройках браузера.':e instanceof Error&&e.name==='NotFoundError'?'Микрофон не найден. Подключите гарнитуру и повторите звонок.':e instanceof Error&&e.name==='NotReadableError'?'Не удалось включить микрофон. Проверьте, не занят ли он другой программой.':connecting?'Не удалось подключиться к телефонии. Повторите попытку или сообщите администратору.':e instanceof Error?e.message:'Не удалось начать звонок');}
  }
  return <PhoneContext.Provider value={{start:target=>void start(target),busy,admin}}>{children}<audio ref={audio} autoPlay/><Dialog open={open} onOpenChange={value=>{if(!busy)setOpen(value);}}><DialogContent showCloseButton={!busy} className="form-dialog browser-phone-dialog" onEscapeKeyDown={e=>{if(busy)e.preventDefault();}} onPointerDownOutside={e=>{if(busy)e.preventDefault();}}><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>Разговор через микрофон и динамики компьютера. Лучше использовать гарнитуру.</DialogDescription></DialogHeader><p role="status">{message}</p>{busy&&soundBlocked&&<button type="button" className="primary" onClick={()=>{void audio.current?.play().then(()=>setSoundBlocked(false)).catch(()=>setMessage("Браузер блокирует звук. Разрешите воспроизведение для CRM."));}}>Включить звук разговора</button>}<div className="action-buttons">{busy?<><button type="button" className="secondary" onClick={()=>{const p=phone.current;if(!p)return;if(muted)p.unmute();else p.mute();setMuted(!muted);}}>{muted?<MicOff size={18}/>:<Mic size={18}/>} {muted?'Включить микрофон':'Выключить микрофон'}</button><button type="button" className="primary phone-hangup" onClick={()=>void stop()}><PhoneOff size={18}/>Завершить звонок</button></>:<button type="button" className="secondary" onClick={()=>setOpen(false)}>Закрыть</button>}</div></DialogContent></Dialog></PhoneContext.Provider>;
 }
