@@ -29,7 +29,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
- if(p.action==='readReminder')return;
+ if(['readReminder','closeIncoming'].includes(p.action))return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
  if(['settings','import','normalizeImportedAddresses','releaseExpired'].includes(p.action))return allow(false);
@@ -39,6 +39,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
+ if(p.action==='incomingResult')return;
  if(e.role==='department_head'){
   allow(isDepartmentOrder(e,order,s.employees)&&departmentWorkStage(order));
   return allow(['transition','contact','comment'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','claimDoor','resolveDoor'].includes(p.operation));

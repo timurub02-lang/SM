@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import io
 import os
 import tempfile
 import subprocess
@@ -43,3 +44,28 @@ with tempfile.TemporaryDirectory() as root:
         module.upload()
     assert 'analysis' not in sent[1] and not remote.exists()
 print('PBX queue: offline retry preserves audio, successful upload removes acknowledged files, no replay.')
+
+with tempfile.TemporaryDirectory() as root:
+    module.ROOT = Path(root)
+    env = 'agi_arg_1: incoming\nagi_arg_2: 79000000000\nagi_extension: s\nagi_uniqueid: 123456.789\nagi_callerid: +79990000001\n\n'
+    with patch.object(module.sys, 'stdin', io.StringIO(env)), patch.object(module, 'agi') as agi:
+        module.run_agi()
+    agi.assert_called_once_with('SET VARIABLE CRM_INCOMING_SAVED 1')
+    paths = list(module.ROOT.glob('incoming-*.json'))
+    assert len(paths) == 1
+    event = json.loads(paths[0].read_text())
+    assert event['phone'] == '+79990000001' and event['calledNumber'] == '79000000000'
+    with patch.object(module.sys, 'stdin', io.StringIO(env)), patch.object(module, 'agi'):
+        module.run_agi()
+    assert json.loads(paths[0].read_text()) == event, 'Replay preserves original event time'
+    with patch.object(module, 'api', side_effect=OSError('offline')):
+        module.upload()
+    assert paths[0].exists()
+    with patch.object(module, 'api', return_value={'ok': True}) as send, patch.object(module, 'classify_remote', side_effect=AssertionError('Incoming has no audio analysis')):
+        module.upload()
+    assert not paths[0].exists() and send.call_args.kwargs['payload'] == event
+    module.ROOT = Path(root) / 'missing-directory'
+    with patch.object(module.sys, 'stdin', io.StringIO(env)), patch.object(module, 'agi') as agi:
+        module.run_agi()
+    assert not agi.called, 'Never promise registration if durable write failed'
+print('Incoming AGI: durable capture, original DID, retry deduplication, offline retention, no false success passed.')

@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 """AGI writes a durable result; a timer uploads it after hangup, without delaying calls."""
 import base64
+import hashlib
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -15,7 +17,12 @@ CONFIG = Path(os.environ.get('CRM_PHONE_CONFIG', '/etc/asterisk/crm-history.json
 
 def api(method, call_id='', payload=None):
     config = json.loads(CONFIG.read_text())
-    req = urllib.request.Request(config['url'] + ('?callId=' + call_id if call_id else ''),
+    url = config['url']
+    if payload and payload.get('event') == 'incoming':
+        if not url.endswith('/pbx'):
+            raise ValueError('Unexpected PBX result URL')
+        url = url[:-4] + '/incoming'
+    req = urllib.request.Request(url + ('?callId=' + call_id if call_id else ''),
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={'X-CRM-PBX-Key': config['key'], 'Content-Type': 'application/json'}, method=method)
     with urllib.request.urlopen(req, timeout=10) as response:
@@ -35,6 +42,28 @@ def run_agi():
         key, _, value = line.rstrip().partition(': ')
         env[key] = value
     mode, call_id = env.get('agi_arg_1', ''), env.get('agi_arg_2', '')
+    if mode == 'incoming':
+        try:
+            unique = env.get('agi_uniqueid', '')
+            if not unique:
+                return
+            call_id = hashlib.sha256(('incoming:' + unique).encode()).hexdigest()[:32]
+            payload = {'event': 'incoming', 'id': call_id,
+                       'phone': env.get('agi_callerid', '')[:40],
+                       'calledNumber': env.get('agi_arg_2', env.get('agi_extension', ''))[:40],
+                       'at': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}
+            path = ROOT / ('incoming-' + call_id + '.json')
+            if not path.exists():
+                temp = path.with_suffix('.tmp')
+                temp.write_text(json.dumps(payload))
+                temp.chmod(0o600)
+                with temp.open('rb') as saved:
+                    os.fsync(saved.fileno())
+                temp.replace(path)
+            agi('SET VARIABLE CRM_INCOMING_SAVED 1')
+        except Exception:
+            print('CRM incoming call could not be saved', file=sys.stderr)
+        return
     if not re.fullmatch(r'[a-f0-9]{32}', call_id):
         return
     if mode == 'prepare':
@@ -71,10 +100,14 @@ def classify_remote(path):
 
 def upload():
     # Failed uploads remain queued, including their audio, until CRM acknowledges them.
-    for path in sorted(ROOT.glob('*.json'))[:10]:
+    for path in sorted(ROOT.glob('*.json'), key=lambda p: (not p.name.startswith('incoming-'), p.name))[:10]:
         try:
             payload = json.loads(path.read_text())
             if not re.fullmatch(r'[a-f0-9]{32}', payload['id']):
+                continue
+            if payload.get('event') == 'incoming':
+                if api('POST', payload=payload).get('ok'):
+                    path.unlink()
                 continue
             audio = ROOT / (payload['id'] + '.wav')
             remote = ROOT / (payload['id'] + '-remote.wav')

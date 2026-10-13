@@ -1,11 +1,11 @@
-import {timingSafeEqual} from 'node:crypto';
+import {trustedPbx as trusted} from '@/lib/phone-pbx-auth';
 import {mkdir,writeFile,link,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {z} from 'zod';
 import {db} from '@/lib/db';
 import {initPhone,type PhoneCall} from '@/lib/phone-store';
 export const dynamic='force-dynamic';
-function trusted(req:Request){const secret=Buffer.from(process.env.CRM_PHONE_RESULT_KEY||''),given=Buffer.from(req.headers.get('x-crm-pbx-key')||'');return secret.length>=32&&secret.length===given.length&&timingSafeEqual(secret,given);}
+
 export async function GET(req:Request){
  if(!trusted(req))return Response.json({error:'Forbidden'},{status:403});
  const id=new URL(req.url).searchParams.get('callId')||'';if(!/^[a-f0-9]{32}$/.test(id))return Response.json({error:'Not found'},{status:404});

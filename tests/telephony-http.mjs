@@ -16,7 +16,7 @@ try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));
  for(const sql of authSchema)db.exec(sql);
  const hash=await hashPassword(password);
- const staff=[['admin','admin','1'],['one','operator','1'],['two','operator','2'],['head','department_head','1']].map(([id,role,department])=>({id,login:id,name:'Test '+id,alias:'',skLogin:'',role,department,salary:100,bonus:1,version:1}));
+ const staff=[['admin','admin','1'],['one','operator','1'],['two','operator','2'],['head','department_head','1'],['head2','department_head','2'],['head0','department_head',''],['logistic','logistic',''],['chief','chief_logistic',''],['redemption','redemption',''],['courier','courier','']].map(([id,role,department])=>({id,login:id,name:'Test '+id,alias:'',skLogin:'',role,department,salary:100,bonus:1,version:1}));
  for(const e of staff){db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(e.id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(e.id,hash);}
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:30}));
  for(const id of ['one','two']){
@@ -31,7 +31,7 @@ try{
  assert.ok(ready,'Server failed to start');
  async function call(path,{cookie,body,headers={},method}={}){const r=await fetch(base+path,{method:method||(body?'POST':'GET'),redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}return {status:r.status,data,headers:r.headers,text};}
  async function login(name,pw=password){return call('/api/auth/login',{body:{login:name,password:pw}});}
- const cookies={};for(const id of ['admin','one','two','head']){const r=await login(id);assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
+ const cookies={};for(const {id} of staff){const r=await login(id);assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
  assert.equal((await call('/api/telephony')).status,401);
  for(const id of ['one','head'])for(const body of [undefined,{mode:'test'}])assert.equal((await call('/api/telephony',{cookie:cookies[id],body})).status,403);
  const status=await call('/api/telephony',{cookie:cookies.admin});assert.equal(status.data.configured,true);assert.ok(!status.text.includes('fixture-secret'));assert.ok(!status.text.includes('pilot-test'));assert.equal(status.headers.get('cache-control'),'no-store');
@@ -110,6 +110,60 @@ try{
  assert.equal((await api(recording,undefined,cookies.two)).status,200,'New client owner can hear client history');
  db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify({...staff[1],role:'admin'}),'one');
  assert.equal((await call('/api/telephony',{cookie:cookies.one,body:{mode:'test'}})).status,403);
+
+ // Incoming callbacks: the production endpoint, persisted visibility and closure.
+ db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify(staff[1]),'one');
+ detached.owner='one';detached.linkedPhones=['+79990000003'];db.prepare('UPDATE clients SET data=? WHERE id=?').run(JSON.stringify(detached),'c-one');
+ const incoming=(id,phone='+79990000001',key=pbxKey)=>call('/api/telephony/incoming',{body:{id,phone,calledNumber:'79000000000',at:new Date().toISOString()},headers:{'X-CRM-PBX-Key':key}});
+ const state=async id=>{const r=await api('/api/crm',undefined,cookies[id]);assert.equal(r.status,200,r.text);return r.data;};
+ assert.equal((await incoming('a'.repeat(32),undefined,'wrong')).status,403);
+ assert.equal((await incoming('invalid')).status,400);
+ const first='b'.repeat(32);
+ assert.equal((await incoming(first,'8 (999) 000-00-03')).status,200);
+ let rows=(await state('admin')).incoming;assert.equal(rows.find(i=>i.id===first).assigneeId,'admin','Last actual caller, not owner');
+ const original=db.prepare('SELECT at FROM incoming_calls WHERE id=?').get(first).at;
+ assert.equal((await incoming(first,'+79999999999')).status,200);assert.equal(db.prepare('SELECT at FROM incoming_calls WHERE id=?').get(first).at,original);
+ assert.equal((await state('one')).incoming.length,0);
+ assert.ok((await state('head')).incoming.some(i=>i.id===first),'Head sees department client even when admin called');
+ assert.ok(!(await state('head2')).incoming.some(i=>i.id===first));
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:first,reason:'Resolved'},cookies.one)).status,400);
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:first,reason:'Resolved'})).status,400,'Active order must be handled in order');
+ assert.equal((await api('/api/crm',{action:'incomingResult',incomingId:first,id:'o-two',reason:'Wrong order'})).status,400);
+ const orderUnchanged=db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data;
+ assert.equal((await api('/api/crm',{action:'incomingResult',incomingId:first,id:'o-one',reason:'  '})).status,400);
+ assert.equal((await api('/api/crm',{action:'incomingResult',incomingId:first,id:'o-one',reason:'Answered the delivery question'})).status,200);
+ assert.equal(db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data,orderUnchanged,'Incoming result does not change order workflow');
+ assert.equal((await api('/api/crm',{action:'incomingResult',incomingId:first,id:'o-one',reason:'Duplicate'})).status,400);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM events WHERE id=?').get('INCOMING-'+first).n,1);
+ // Failed/microphone-only attempts do not redirect a callback.
+ db.prepare('UPDATE phone_calls SET actor_id=? WHERE id=?').run('logistic',callId);
+ const logisticsId='c'.repeat(32);await incoming(logisticsId);
+ assert.equal((await state('logistic')).incoming[0].assigneeId,'logistic');
+ assert.equal((await state('chief')).incoming.length,0);
+ assert.ok((await state('logistic')).tasks.some(t=>t.incomingId===logisticsId));
+ // No history: the client owner receives it, even with no active order.
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed') WHERE id='o-two'").run();
+ const ownerId='d'.repeat(32);await incoming(ownerId,'79990000002');
+ assert.equal((await state('two')).incoming[0].assigneeId,'two');
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:ownerId,reason:''},cookies.two)).status,400);
+ assert.equal((await call('/api/crm',{cookie:cookies.two,body:{action:'closeIncoming',incomingId:ownerId,reason:'Resolved'},headers:{Origin:'https://evil.test'}})).status,403);
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:ownerId,reason:'No question remains'},cookies.two)).status,200);
+ const unknown='e'.repeat(32);await incoming(unknown,'79998888888');
+ for(const id of ['admin','head','head2','head0'])assert.ok((await state(id)).incoming.some(i=>i.id===unknown&&!i.closedAt),id+' unknown caller access');
+ for(const id of ['one','two','logistic','redemption','courier'])assert.ok(!(await state(id)).incoming.some(i=>i.id===unknown),id+' must not see unknown caller');
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:unknown,reason:'Unknown'},cookies.courier)).status,403);
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:unknown,reason:'Question answered'},cookies.head2)).status,200);
+ for(const id of ['admin','head','head2','head0'])assert.ok(!(await state(id)).tasks.some(t=>t.incomingId===unknown),'Shared resolution '+id);
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:unknown,reason:'Duplicate'},cookies.head)).status,400);
+ // A workflow outcome closes only the selected incoming request, never mere viewing.
+ db.prepare('UPDATE phone_calls SET actor_id=? WHERE id=?').run('one',callId);
+ const callback='f'.repeat(32),other='a'.repeat(32);await incoming(callback);await incoming(other);
+ let current=await state('one');assert.equal(current.incoming.filter(i=>!i.closedAt).length,2);
+ const o=current.orders.find(o=>o.id==='o-one');
+ const outcome=await api('/api/crm',{action:'contact',id:o.id,version:o.version,contact:'callback',due:new Date(Date.now()+3600000).toISOString(),reason:'Client requested callback',incomingId:callback},cookies.one);
+ assert.equal(outcome.status,200,outcome.text);
+ assert.ok((await state('one')).incoming.find(i=>i.id===callback).closedAt);assert.ok(!(await state('one')).incoming.find(i=>i.id===other).closedAt);
+ console.log('Incoming HTTP: trusted ingress, linked phone matching, actual last caller/owner routing, role-scoped tasks, all heads unknown queue, required results, CSRF, no view closure, automatic outcome closure, shared deduplication passed.');
  console.log('Experimental classification, authorized manual correction, unchanged orders, call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and telephony pilot: authentication, dedicated admin, CSRF, fixed destinations, card phone normalization, private config and no-store passed. No calls placed.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

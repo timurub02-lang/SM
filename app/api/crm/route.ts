@@ -1,3 +1,4 @@
+import {readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder} from '@/lib/incoming';
 import {employeeTasks} from '@/lib/reminder-tasks';
 import {courierReminderStatements} from '@/lib/reminder-store';
 import {baseTypes,baseSettingsSchema,initialBaseSettings} from '@/lib/base-policy';
@@ -54,7 +55,8 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});
  }
- return {...visible,tasks:employeeTasks(state,user.employee),reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
+ const incoming=await readIncoming(db(),user.employee,state.employees,state.orders);
+ return {...visible,incoming,tasks:[...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
 async function handlePOST(request:Request){
@@ -75,6 +77,19 @@ async function handlePOST(request:Request){
  if(p.action==="readReminder"){
   if(!employee)throw Error("Требуется сотрудник");
   await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
+ }else if(p.action==="closeIncoming"||p.action==="incomingResult"){
+  if(!employee||employee.role==='courier')throw Error('Обращение недоступно');
+  const incomingId=z.string().min(1).max(100).parse(p.incomingId);
+  const reason=z.string().trim().min(1,'Укажите итог обращения').max(2000).parse(p.reason);
+  const row=await incomingForAction(d,incomingId,employee,s.employees);
+  const order=p.action==='incomingResult'?s.orders.find(o=>o.id===p.id):undefined;
+  if(p.action==='incomingResult'&&(!order||order.clientId!==row.client_id))throw Error('Выберите заказ этого клиента');
+  if(!order&&s.orders.some(o=>o.clientId===row.client_id&&activeIncomingOrder(o)))throw Error('Откройте действующий заказ и сохраните итог обращения в нём');
+  const e=row.client_id?ev(row.client_id,order?.id||'','Входящее обращение · '+reason):undefined;
+  if(e)e.id='INCOMING-'+incomingId;
+  const results=await d.batch([incomingCloseStatement(d,incomingId,employee.id,now,reason,order?.id||null),...(e?[d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_by=? AND closed_at=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),incomingId,employee.id,now)]:[])]);
+  if(!results[0].meta.changes)throw Error('Обращение уже обработано или появился действующий заказ. Обновите данные');
+  message='Обращение закрыто';
  }else if(p.action==="createClient"){
   if(!employee||!["admin","department_head"].includes(employee.role))throw Error("Добавлять клиентов могут только администратор и руководитель отдела");
   const data=clientSchema.parse(p.client);ownerValid(data.owner);const baseType=z.enum(baseTypes).default("M").parse(p.baseType);
@@ -312,9 +327,11 @@ async function handlePOST(request:Request){
   const proposedAddress=p.action==="updateOrder"||p.action==="transition"&&["confirm","extra"].includes(next.status)?clientAddressFromOrder(next):null;
   const addressPatch=proposedAddress&&(c.address!==proposedAddress.address||JSON.stringify(c.addressParts??null)!==JSON.stringify(proposedAddress.addressParts)||c.city!==proposedAddress.city||c.addressReview)?proposedAddress:null;
   if(addressPatch)text+=" · адрес клиента обновлён из заказа";
+  const closesIncoming=!!p.incomingId&&(['contact','transition'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','resolveDoor'].includes(p.operation));
+  if(closesIncoming){if(!employee)throw Error('Требуется сотрудник');await incomingForAction(d,z.string().max(100).parse(p.incomingId),employee,s.employees,c.id);text+=' · входящее обращение обработано';}
   const e=ev(c.id,o.id,text);
   const courierNotices=await courierReminderStatements(d,o,next,e,next._mutation,s.employees);
-  const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')='deleting')"+((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[]),...cashReceipt,...courierNotices]);
+  const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')='deleting')"+((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[]),...cashReceipt,...courierNotices,...(closesIncoming?[incomingCloseStatement(d,p.incomingId,employee!.id,now,text,o.id,next._mutation)]:[])]);
   if(!result[0].meta.changes)throw new Error("Заказ уже изменён. Обновите страницу и повторите");
  }else if(p.action==="deleteEmployee"){
   if(s.orders.some(o=>o.courier?.id===p.id&&courierOutstanding(o)))throw Error('Сначала примите у курьера все деньги и возвраты');

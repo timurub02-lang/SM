@@ -91,3 +91,5 @@
 .order-fields[hidden]{display:none!important}
 
 .call-answer-analysis{display:grid;gap:8px;padding:12px 14px;border-radius:12px;background:#fff8e9;border:1px solid #f0d9ad}.call-answer-analysis>.text-button{justify-self:start}.call-answer-analysis .action-buttons{align-items:end;flex-wrap:wrap}
+
+.incoming-card.notice,.incoming-result.notice{align-items:stretch;gap:10px;margin:0;text-align:left;width:100%}.incoming-card.notice{padding:18px}.incoming-result.notice{max-width:720px;padding:14px}.incoming-card>strong{font-size:16px}.incoming-card p{margin:0}.incoming-result .primary{align-self:flex-start}
