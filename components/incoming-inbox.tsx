@@ -13,7 +13,7 @@ export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boo
   <button type="submit" className="primary" disabled={busy||!reason.trim()}>Сохранить итог и закрыть обращение</button>
  </form>;
 }
-export function IncomingInbox({items,clients,employees,employee,busy,onLink,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
+export function IncomingInbox({items,clients,employees,employee,busy,onCreate,onLink,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
  const [selectedDepartments,setSelectedDepartments]=useState<Record<string,string>>({});
  const [assignments,setAssignments]=useState<Record<string,string>>({});
  const [history,setHistory]=useState(false),[scope,setScope]=useState('all');
@@ -27,14 +27,14 @@ export function IncomingInbox({items,clients,employees,employee,busy,onLink,onAs
   <div className="notification-tabs"><button className="secondary" aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {scoped.filter(i=>!i.closedAt).length}</button><button className="secondary" aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button></div>
   </div>
   {shown.map(item=><section className="notice stack incoming-card" key={item.id}>
-   <div className="incoming-client-heading"><strong>{item.clientName||'Неизвестный клиент'}{item.phone?' · '+item.phone:''}</strong>{!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
+   <div className="incoming-client-heading"><strong>{item.clientName||'Неизвестный клиент'}{item.phone?' · '+item.phone:''}</strong>{!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
    <span>Входящий: {stamp(item.at,'Europe/Moscow')} МСК{item.calledNumber?' · На номер '+item.calledNumber:''}</span>
    <span>{item.assigneeName}</span>
    {item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&<div className="action-buttons">
     <button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!)}>Карточка клиента</button>
     <CallButton target={{mode:'client',clientId:item.clientId}} disabled={busy}>Перезвонить</CallButton>
    </div>}
-   {item.sharedQueue&&!item.closedAt&&item.clientId&&['admin','department_head'].includes(employee.role)&&<div className="action-buttons">
+   {!item.hasActiveOrder&&!item.closedAt&&item.clientId&&['admin','department_head'].includes(employee.role)&&<div className="action-buttons">
     <label className="field"><span>Отдел</span><select aria-label="Отдел оператора обращения" value={selectedDepartments[item.id]||''} disabled={busy} onChange={e=>{setSelectedDepartments({...selectedDepartments,[item.id]:e.target.value});setAssignments({...assignments,[item.id]:''});}}><option value="">Выберите отдел</option>{Object.entries(departments).map(([id,name])=><option key={id} value={id}>{name.replace(/_$/,'')}</option>)}{employees.some(e=>!e.department)&&<option value="none">Без отдела</option>}</select></label>
     <label className="field"><span>Назначить ответственного оператора</span><select aria-label="Ответственный оператор обращения" value={assignments[item.id]||''} disabled={busy||!selectedDepartments[item.id]} onChange={e=>setAssignments({...assignments,[item.id]:e.target.value})}><option value="">Выберите оператора</option>{employees.filter(e=>(e.department||'none')===selectedDepartments[item.id]).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
     <button type="button" className="primary incoming-assign-button" disabled={busy||!assignments[item.id]} onClick={()=>void onAssign(item.id,assignments[item.id])}>Передать оператору</button>

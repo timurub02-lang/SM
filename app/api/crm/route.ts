@@ -85,6 +85,28 @@ async function handlePOST(request:Request){
  if(p.action==="readReminder"){
   if(!employee)throw Error("Требуется сотрудник");
   await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
+ }else if(p.action==="createIncomingClient"){
+  if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Создать клиента могут администратор и руководители');
+  const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
+  if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные');
+  const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');if(!target)throw Error('Выберите оператора');
+  const data=clientSchema.parse({name:p.name,phone:row.phone,owner:target.id,source:'Входящее обращение'});
+  await initBaseStorage(d);
+  if(await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(normalizedPhone(data.phone)).first())throw Error('Клиент с этим номером уже существует. Найдите его и соедините номер');
+  const baseType=z.enum(baseTypes).parse(p.baseType);
+  const savedBase=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();
+  const firstSheet=(savedBase?baseSettingsSchema.parse(JSON.parse(savedBase.data).config):initialBaseSettings())[baseType].importSheet;
+  const until=new Date(Date.parse(now)+86400000).toISOString();
+  const c:Client={...data,id:id('C-'),baseType,sheet:'К',createdAt:now,version:1,assignedUntil:until,assignmentStartedAt:now,trialUntil:until,trialReturnSheet:firstSheet,returnSheet:firstSheet};
+  const event=ev(c.id,'','Клиент создан из входящего обращения и передан оператору · '+target.name);
+  const gate='EXISTS(SELECT 1 FROM clients WHERE id=?)';
+  const result=await d.batch([
+   d.prepare('INSERT INTO clients(id,phone,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND client_id IS NULL AND closed_at IS NULL)').bind(c.id,c.phone,json(c),row.id),
+   d.prepare('UPDATE incoming_calls SET client_id=?,assignee_id=?,department_id=?,shared_queue=0 WHERE id=? AND client_id IS NULL AND closed_at IS NULL AND '+gate).bind(c.id,target.id,target.department||'',row.id,c.id),
+   d.prepare('INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE '+gate).bind(event.id,c.id,'',now,json(event),c.id)
+  ]);
+  if(!result[0].meta.changes)throw Error('Обращение уже изменилось. Обновите данные');
+  message='Клиент создан, обращение передано оператору';
  }else if(p.action==="linkIncomingClient"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Связать номер могут администратор и руководители');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
@@ -108,17 +130,19 @@ async function handlePOST(request:Request){
  }else if(p.action==="assignIncoming"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Назначение доступно руководителю и администратору');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
-  if(!row.shared_queue||!row.client_id)throw Error('Выберите общее обращение известного клиента');
+  if(!row.client_id)throw Error('Сначала найдите или создайте клиента');
   const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');
   if(!target)throw Error('Выберите оператора');
   const c=s.clients.find(c=>c.id===row.client_id);
-  if(!c||c.owner||s.orders.some(o=>o.clientId===c.id&&activeIncomingOrder(o)))throw Error('Клиент уже закреплён или появился действующий заказ. Обновите данные');
+  if(!c||s.orders.some(o=>o.clientId===c.id&&activeIncomingOrder(o)))throw Error('У клиента появился действующий заказ. Обновите данные');
+  if(c.owner===target.id&&row.assignee_id===target.id)throw Error('Этот оператор уже назначен');
   const until=new Date(Date.parse(now)+86400000).toISOString(),mutation=crypto.randomUUID();
-  const patch={owner:target.id,assignedUntil:until,assignmentStartedAt:now,trialUntil:until,trialReturnSheet:clientSheet(c)||'Т1',sheet:'К',returnSheet:clientSheet(c)||'Т1',_incomingAssignment:mutation};
+  const returnSheet=c.trialReturnSheet||c.returnSheet||clientSheet(c)||'Т1';
+  const patch={owner:target.id,assignedUntil:until,assignmentStartedAt:now,trialUntil:until,trialReturnSheet:returnSheet,sheet:'К',returnSheet,_incomingAssignment:mutation};
   const gate="EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._incomingAssignment')=?)";
-  const event=ev(c.id,'','Входящее обращение и клиент переданы оператору · '+target.name);
+  const event=ev(c.id,'','Входящее обращение и клиент переданы оператору · '+target.name+(c.owner?' · Прежний ответственный: '+(s.employees.find(e=>e.id===c.owner)?.name||c.owner):''));
   const result=await d.batch([
-   d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND version=? AND COALESCE(json_extract(data,'$.owner'),'')='' AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND shared_queue=1 AND closed_at IS NULL) AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=clients.id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))").bind(json(patch),c.id,c.version,row.id),
+   d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND client_id=clients.id AND closed_at IS NULL) AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=clients.id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))").bind(json(patch),c.id,c.version,row.id),
    d.prepare("UPDATE incoming_calls SET shared_queue=0,assignee_id=?,department_id=? WHERE id=? AND closed_at IS NULL AND "+gate).bind(target.id,target.department||'',row.id,c.id,mutation),
    d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE "+gate).bind(event.id,c.id,'',now,json(event),c.id,mutation)
   ]);

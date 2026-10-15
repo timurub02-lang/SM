@@ -29,7 +29,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
- if(['readReminder','closeIncoming','assignIncoming','linkIncomingClient'].includes(p.action))return;
+ if(['readReminder','closeIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
  if(['settings','import','normalizeImportedAddresses','releaseExpired'].includes(p.action))return allow(false);
