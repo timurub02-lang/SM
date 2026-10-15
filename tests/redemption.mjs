@@ -31,7 +31,8 @@ try{
  await assert.rejects(edit(admin,{action:'nd',result:'none'},new Date('2026-10-15T17:00:00Z')),/закрыт/);
  await syncRedemption(d,new Date('2026-10-16T09:00:00Z'));assert.equal((await row()).result,'');assert(inWorkday(await row(),'2026-10-16'));
  assert.equal((await d.prepare('SELECT data FROM redemption_archives').first()).data,snapshot);
- await edit(op,{action:'nd',result:'to_return'});
+ await assert.rejects(edit(op,{action:'nd',result:'to_return'}),/недоступен/);
+ await edit(op,{action:'refusal',result:'to_return'});
  assert(awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-15'));assert(!inWorkday(await row(),'2026-10-16'));assert(canSeeRedemption(admin,await row(),true));assert(canSeeRedemption(buyer,await row(),true));assert(!canSeeRedemption(op,await row(),true));assert(!canSeeRedemption(head,await row(),true));
  await syncRedemption(d,new Date('2026-10-16T09:00:00Z'));assert(awaitingReturn(await row()));
  await assert.rejects(edit(op,{action:'refusal',result:'delivered'}),/недоступен/);await assert.rejects(edit(admin,{action:'refusal',result:'returned'}),/недоступен/);

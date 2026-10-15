@@ -1,7 +1,7 @@
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Employee} from './crm.ts';
 export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В работе',po:'ПО'};
-export const results={date:'Дата',none:'Нет результата',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера'};
+export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера'};
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
@@ -34,7 +34,7 @@ export function allowedResults(action:string,row:any,role:string,day:string){
  const expired=row.storageUntil&&row.storageUntil<=day;
  if(expired&&!['refusal','po'].includes(action))return [];
  if(action==='date'||action==='work')return ['date'];
- if(action==='nd')return ['none','to_return'];
+ if(action==='nd')return ['none'];
  if(action==='refusal')return [...(!expired?['date']:[]),'to_return',...(role==='redemption'?['returned']:[])];
  if(action==='po')return expired?['date']:[];
  return [];
