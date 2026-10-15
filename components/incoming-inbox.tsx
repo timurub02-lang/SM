@@ -12,7 +12,8 @@ export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boo
   <button type="submit" className="primary" disabled={busy||!reason.trim()}>Сохранить итог и закрыть обращение</button>
  </form>;
 }
-export function IncomingInbox({items,clients,employee,busy,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
+export function IncomingInbox({items,clients,employees,employee,busy,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Employee[];onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
+ const [assignments,setAssignments]=useState<Record<string,string>>({});
  const [history,setHistory]=useState(false),[scope,setScope]=useState('all');
  const scopes=employee.role==='department_head'?[['all','Все доступные'],['mine','Мои'],['department','Мой отдел'],['unknown','Неизвестные клиенты']]:employee.role==='admin'?[['all','Все обращения'],['unknown','Неизвестные клиенты']]:[];
  const scoped=items.filter(i=>scope==='all'||scope==='mine'&&i.assigneeId===employee.id||scope==='unknown'&&!i.clientId||scope==='department'&&!!i.clientId&&i.assigneeId!==employee.id);
@@ -20,7 +21,7 @@ export function IncomingInbox({items,clients,employee,busy,onOpenClient,onOpen,o
  return <div className="stack">
   <p className="muted">Клиенту сообщили, что ему перезвонят. Обращение остаётся открытым до сохранения результата. Время московское.</p>
   <div className="incoming-filters">
-  {!!scopes.length&&<div className="notification-tabs">{scopes.map(([key,label])=><button type="button" key={key} className="secondary" aria-pressed={scope===key} onClick={()=>setScope(key)}>{label} · {items.filter(i=>!i.closedAt&&(key==='all'||key==='mine'&&i.assigneeId===employee.id||key==='unknown'&&!i.clientId||key==='department'&&!!i.clientId&&i.assigneeId!==employee.id)).length}</button>)}</div>}
+  {!!scopes.length&&<label className="incoming-scope"><span>Обращения</span><select aria-label="Категория входящих обращений" value={scope} onChange={e=>setScope(e.target.value)}>{scopes.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>}
   <div className="notification-tabs"><button className="secondary" aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {scoped.filter(i=>!i.closedAt).length}</button><button className="secondary" aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button></div>
   </div>
   {shown.map(item=><section className="notice stack incoming-card" key={item.id}>
@@ -30,6 +31,11 @@ export function IncomingInbox({items,clients,employee,busy,onOpenClient,onOpen,o
    {item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&<div className="action-buttons">
     <button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!)}>Карточка клиента</button>
     <CallButton target={{mode:'client',clientId:item.clientId}} disabled={busy}>Перезвонить</CallButton>
+   </div>}
+   {item.sharedQueue&&!item.closedAt&&item.clientId&&['admin','department_head'].includes(employee.role)&&<div className="action-buttons">
+    <label className="field"><span>Назначить ответственного оператора</span><select aria-label="Ответственный оператор обращения" value={assignments[item.id]||''} disabled={busy} onChange={e=>setAssignments({...assignments,[item.id]:e.target.value})}><option value="">Выберите оператора</option>{employees.filter(e=>e.role==='operator'&&(employee.role==='admin'||!!employee.department&&e.department===employee.department)).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+    <button type="button" className="primary" disabled={busy||!assignments[item.id]} onClick={()=>void onAssign(item.id,assignments[item.id])}>Передать оператору</button>
+    <small>Обращение и клиент будут переданы оператору для дальнейшей работы и оформления заказа.</small>
    </div>}
    {item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>
     {item.hasActiveOrder?<><span>Действующие заказы</span><div className="action-buttons">{item.orderIds?.map(id=><button className="primary" key={id} onClick={()=>onOpen(id,item.id)}>Открыть {id}</button>)}</div>{!item.orderIds?.length&&<p>Заказ недоступен вашей роли. Обратитесь к администратору.</p>}</>:<><span>Действующего заказа нет</span><IncomingResult item={item} busy={busy} onSave={reason=>onClose(item.id,reason)}/></>}

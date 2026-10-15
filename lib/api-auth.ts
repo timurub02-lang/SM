@@ -1,3 +1,4 @@
+import {sharedIncomingClientAccess} from './incoming';
 import {personalAuth,sessionEmployee,trustedOrigin} from './auth';
 import {db} from './db';
 import {isLogistic} from './crm';
@@ -23,7 +24,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    if(orderId&&(!crmOrderWrite||['operator','department_head'].includes(employee.role))){
     const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(orderId).first<{data:string}>();
     const staff=await db().prepare('SELECT data FROM employees').all<{data:string}>();
-    if(!row||!seesOrder(employee,JSON.parse(row.data),staff.results.map(x=>JSON.parse(x.data))))return Response.json({error:'Заказ недоступен'},{status:403});
+    if(!row||!seesOrder(employee,JSON.parse(row.data),staff.results.map(x=>JSON.parse(x.data)))&&!((url.pathname==='/api/call-history'&&!write||url.pathname==='/api/telephony'&&req.method==='POST')&&await sharedIncomingClientAccess(db(),employee,JSON.parse(row.data).clientId)))return Response.json({error:'Заказ недоступен'},{status:403});
     order=JSON.parse(row.data);
    }
    if(write&&orderId&&(isLogistic(employee.role)||order&&usesOrderLease(employee,order))&&url.pathname!=='/api/order-access'){

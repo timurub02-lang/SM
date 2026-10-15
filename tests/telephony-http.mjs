@@ -164,6 +164,41 @@ try{
  assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:unknown,reason:'Question answered'},cookies.head2)).status,200);
  for(const id of ['admin','head','head2','head0'])assert.ok(!(await state(id)).tasks.some(t=>t.incomingId===unknown),'Shared resolution '+id);
  assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:unknown,reason:'Duplicate'},cookies.head)).status,400);
+ // Known, unowned client without active orders goes to all heads, even with old call history.
+ const savedClient=db.prepare('SELECT data FROM clients WHERE id=?').get('c-one').data;
+ const savedOrder=db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data;
+ db.prepare('UPDATE clients SET data=? WHERE id=?').run(JSON.stringify({...JSON.parse(savedClient),owner:'',assignedUntil:''}),'c-one');
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...JSON.parse(savedOrder),status:'refused'}),'o-one');
+ const shared='9'.repeat(32);await incoming(shared);
+ for(const id of ['admin','head','head2','head0'])assert.ok((await state(id)).incoming.some(i=>i.id===shared&&!i.assigneeId),id+' shared known client');
+ for(const id of ['one','two','logistic','chief','redemption','courier'])assert.ok(!(await state(id)).incoming.some(i=>i.id===shared),id+' no personal assignment');
+ const sharedState=await state('head0');
+ assert.ok(sharedState.clients.some(c=>c.id==='c-one'),'Shared client card');
+ assert.ok(sharedState.orders.some(o=>o.id==='o-one'),'Shared historical orders');
+ assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.head0)).status,200);
+ assert.equal((await api('/api/call-history?orderId=o-one',undefined,cookies.head0)).status,200,db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data);
+ assert.equal((await api('/api/telephony',{mode:'client',clientId:'c-one'},cookies.head0)).status,200,'Shared client callback authorized');
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:shared,reason:'Handled shared client'},cookies.head0)).status,200);
+ assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.head0)).status,403,'Shared access ends on resolution');
+ const assignable='7'.repeat(32);await incoming(assignable);
+ assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'two'},cookies.head)).status,400,'Cannot assign another department');
+ assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'one'},cookies.one)).status,400,'Operator cannot assign');
+ assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'two'},cookies.head2)).status,200,'Head assigns own operator');
+ const assigned=await state('two');assert.ok(assigned.incoming.some(i=>i.id===assignable&&i.assigneeId==='two'&&!i.sharedQueue));
+ assert.ok(assigned.clients.some(c=>c.id==='c-one'&&c.owner==='two'),'Client transferred with request');
+ assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.two)).status,200,'Assigned operator can call and see history');
+ assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'one'},cookies.head)).status,400,'Cannot steal assigned request');
+ await api('/api/crm',{action:'closeIncoming',incomingId:assignable,reason:'Processed'},cookies.two);
+ const createdFromIncoming=await api('/api/crm',{action:'createOrder',clientId:'c-one',items:[],comment:'Incoming test',address:'',addressConfirmed:true},cookies.two);
+ assert.equal(createdFromIncoming.status,200,createdFromIncoming.text);
+ db.prepare("DELETE FROM events WHERE order_id IN (SELECT id FROM orders WHERE client_id='c-one' AND id<>'o-one')").run();
+ db.prepare("DELETE FROM orders WHERE client_id='c-one' AND id<>'o-one'").run();
+
+ db.prepare('UPDATE clients SET data=? WHERE id=?').run(JSON.stringify({...JSON.parse(savedClient),owner:'',assignedUntil:''}),'c-one');
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(savedOrder,'o-one');
+ const activeUnowned='8'.repeat(32);await incoming(activeUnowned);
+ assert.ok((await state('logistic')).incoming.some(i=>i.id===activeUnowned&&i.assigneeId==='logistic'),'Active order keeps last caller');
+ db.prepare('UPDATE clients SET data=? WHERE id=?').run(savedClient,'c-one');
  // A workflow outcome closes only the selected incoming request, never mere viewing.
  db.prepare('UPDATE phone_calls SET actor_id=? WHERE id=?').run('one',callId);
  const callback='f'.repeat(32),other='a'.repeat(32);await incoming(callback);await incoming(other);

@@ -1,3 +1,4 @@
+import {sharedIncomingClientAccess} from './incoming.ts';
 import type {ActivityDb} from './activity-store.ts';
 import {canOpenClientCard,ownsClient,seesOrder} from './permissions.ts';
 import type {Employee,Client,Order} from './crm.ts';
@@ -38,11 +39,11 @@ export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:str
 }
 export async function phoneScope(d:ActivityDb,e:Employee,scope:{clientId?:string;orderId?:string}){
  const staff=(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data) as Employee);
- if(scope.orderId){const row=await d.prepare('SELECT data FROM orders WHERE id=?').bind(scope.orderId).first();return !!row&&e.role!=='courier'&&seesOrder(e,JSON.parse(row.data),staff);}
+ if(scope.orderId){const row=await d.prepare('SELECT data FROM orders WHERE id=?').bind(scope.orderId).first();return !!row&&e.role!=='courier'&&(seesOrder(e,JSON.parse(row.data),staff)||await sharedIncomingClientAccess(d,e,JSON.parse(row.data).clientId));}
  if(!scope.clientId||e.role==='courier')return false;
  const row=await d.prepare('SELECT data FROM clients WHERE id=?').bind(scope.clientId).first();if(!row)return false;
  const c:Client=JSON.parse(row.data);if(!canOpenClientCard(e,c))return false;
- if(ownsClient(e,c,staff))return true;
+ if(ownsClient(e,c,staff)||await sharedIncomingClientAccess(d,e,c.id))return true;
  if(['operator','department_head'].includes(e.role))return false;
  const orders=(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(c.id).all()).results;
  return orders.some((r:{data:string})=>seesOrder(e,JSON.parse(r.data) as Order,staff));

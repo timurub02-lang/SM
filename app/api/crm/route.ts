@@ -56,6 +56,13 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});
  }
  const incoming=await readIncoming(db(),user.employee,state.employees,state.orders);
+ if(user.employee.role==='department_head'){
+  const sharedIds=new Set(incoming.filter(i=>!i.closedAt&&i.clientId&&i.sharedQueue).map(i=>i.clientId));
+  visible.clients.push(...state.clients.filter(c=>sharedIds.has(c.id)&&!visible.clients.some(v=>v.id===c.id)).map(c=>({...c,phone:''})));
+  visible.orders.push(...state.orders.filter(o=>sharedIds.has(o.clientId)&&!visible.orders.some(v=>v.id===o.id)).map(({paymentReceipt,...o})=>o));
+  visible.events.push(...state.events.filter(e=>sharedIds.has(e.clientId)&&!visible.events.some(v=>v.id===e.id)));
+ }
+
  return {...visible,incoming,tasks:[...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
@@ -77,6 +84,25 @@ async function handlePOST(request:Request){
  if(p.action==="readReminder"){
   if(!employee)throw Error("Требуется сотрудник");
   await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
+ }else if(p.action==="assignIncoming"){
+  if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Назначение доступно руководителю и администратору');
+  const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
+  if(!row.shared_queue||!row.client_id)throw Error('Выберите общее обращение известного клиента');
+  const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');
+  if(!target||employee.role==='department_head'&&(!employee.department||target.department!==employee.department))throw Error('Выберите оператора своего отдела');
+  const c=s.clients.find(c=>c.id===row.client_id);
+  if(!c||c.owner||s.orders.some(o=>o.clientId===c.id&&activeIncomingOrder(o)))throw Error('Клиент уже закреплён или появился действующий заказ. Обновите данные');
+  const until=new Date(Date.parse(now)+86400000).toISOString(),mutation=crypto.randomUUID();
+  const patch={owner:target.id,assignedUntil:until,assignmentStartedAt:now,trialUntil:until,trialReturnSheet:clientSheet(c)||'Т1',sheet:'К',returnSheet:clientSheet(c)||'Т1',_incomingAssignment:mutation};
+  const gate="EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._incomingAssignment')=?)";
+  const event=ev(c.id,'','Входящее обращение и клиент переданы оператору · '+target.name);
+  const result=await d.batch([
+   d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND version=? AND COALESCE(json_extract(data,'$.owner'),'')='' AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND shared_queue=1 AND closed_at IS NULL) AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=clients.id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))").bind(json(patch),c.id,c.version,row.id),
+   d.prepare("UPDATE incoming_calls SET shared_queue=0,assignee_id=?,department_id=? WHERE id=? AND closed_at IS NULL AND "+gate).bind(target.id,target.department||'',row.id,c.id,mutation),
+   d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE "+gate).bind(event.id,c.id,'',now,json(event),c.id,mutation)
+  ]);
+  if(!result[0].meta.changes)throw Error('Обращение уже назначено или клиент изменился. Обновите данные');
+  message='Обращение и клиент переданы оператору';
  }else if(p.action==="closeIncoming"||p.action==="incomingResult"){
   if(!employee||employee.role==='courier')throw Error('Обращение недоступно');
   const incomingId=z.string().min(1).max(100).parse(p.incomingId);
