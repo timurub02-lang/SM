@@ -16,15 +16,17 @@ export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boo
 export function IncomingInbox({items,clients,employees,employee,busy,onCreate,onLink,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
  const [selectedDepartments,setSelectedDepartments]=useState<Record<string,string>>({});
  const [assignments,setAssignments]=useState<Record<string,string>>({});
- const [history,setHistory]=useState(false),[scope,setScope]=useState('all');
- const scopes=employee.role==='department_head'?[['all','Все доступные'],['mine','Мои'],['department','Мой отдел'],['unknown','Неизвестные клиенты']]:employee.role==='admin'?[['all','Все обращения'],['unknown','Неизвестные клиенты']]:[];
- const scoped=items.filter(i=>scope==='all'||scope==='mine'&&i.assigneeId===employee.id||scope==='unknown'&&!i.clientId||scope==='department'&&!!i.clientId&&i.assigneeId!==employee.id);
- const shown=scoped.filter(i=>!!i.closedAt===history);
+ const [history,setHistory]=useState(false),[scope,setScope]=useState('all'),[known,setKnown]=useState(true);
+ const scopes=employee.role==='department_head'?[['all','Все доступные'],['mine','Мои'],['department','Мой отдел']]:employee.role==='admin'?[['all','Все обращения']]:[];
+ const scoped=items.filter(i=>scope==='all'||scope==='mine'&&i.assigneeId===employee.id||scope==='department'&&!!i.clientId&&i.assigneeId!==employee.id);
+ const category=scoped.filter(i=>!!i.clientId===known);
+ const shown=category.filter(i=>!!i.closedAt===history);
  return <div className="stack">
   <p className="muted">Клиенту сообщили, что ему перезвонят. Обращение остаётся открытым до сохранения результата. Время московское.</p>
   <div className="incoming-filters">
   {!!scopes.length&&<label className="incoming-scope"><span>Обращения</span><select aria-label="Категория входящих обращений" value={scope} onChange={e=>setScope(e.target.value)}>{scopes.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>}
-  <div className="notification-tabs"><button className="secondary" aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {scoped.filter(i=>!i.closedAt).length}</button><button className="secondary" aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button></div>
+  <div className="notification-tabs" role="group" aria-label="Состояние обращения"><button className="secondary" aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {category.filter(i=>!i.closedAt).length}</button><button className="secondary" aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button></div>
+  <div className="notification-tabs" role="group" aria-label="Наличие клиента в CRM"><button className="secondary" aria-pressed={known} onClick={()=>setKnown(true)}>Наши клиенты · {scoped.filter(i=>!!i.clientId&&!!i.closedAt===history).length}</button><button className="secondary" aria-pressed={!known} onClick={()=>setKnown(false)}>Неизвестные клиенты · {scoped.filter(i=>!i.clientId&&!!i.closedAt===history).length}</button></div>
   </div>
   {shown.map(item=><section className="notice stack incoming-card" key={item.id}>
    <div className="incoming-client-heading"><strong>{item.clientName||'Неизвестный клиент'}{item.phone?' · '+item.phone:''}</strong>{!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
