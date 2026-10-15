@@ -62,6 +62,6 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
 }
 export async function archiveRedemption(d:Db,now=new Date()){
  await syncRedemption(d,now);const day=dayOf(now);if(!closedTime(now))return;
- const rows=(await redemptionRows(d)).filter((r:any)=>inWorkday(r,day)||awaitingDateConfirmation(r)||awaitingReturn(r)||r.result==='returned'&&r.lastDay===day);
+ const rows=(await redemptionRows(d)).filter((r:any)=>inWorkday(r,day)||awaitingDateConfirmation(r)||awaitingReturn(r)||r.lastDay===day||r.updatedAt&&dayOf(new Date(r.updatedAt))===day);
  await d.prepare('INSERT OR IGNORE INTO redemption_archives(day,at,data) VALUES(?,?,?)').bind(day,now.toISOString(),JSON.stringify(rows)).run();
 }

@@ -88,5 +88,25 @@ try{
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'DELIVERED'}})).run();await syncRedemption(d,now);assert.equal((await row()).author,'API');assert.equal((await row()).result,'delivered');
  assert.equal(dayOf(new Date('2026-10-15T21:01:00Z')),'2026-10-16');assert(!closedTime(now));assert(closedTime(new Date('2026-10-15T16:50:00Z')));
  assert(!inWorkday({entered_at:'2026-10-15T21:01:00Z'},'2026-10-15'));
+ const archiveCases=[
+  ['confirmed',{action:'date',result:'date',resultDate:'2026-10-20',dateConfirmation:'confirmed',lastDay:'2026-10-16'}],
+  ['retry',{action:'refusal',result:'date',resultDate:'2026-10-20',refusalRetryUsed:true,lastDay:'2026-10-16'}],
+  ['confirmed-today',{action:'date',result:'date',resultDate:'2026-10-20',dateConfirmation:'confirmed',lastDay:'2026-10-15',updatedAt:'2026-10-16T10:00:00Z'}],
+  ['returned',{result:'returned',lastDay:'2026-10-16'}],
+  ['delivered',{result:'delivered',lastDay:'2026-10-16'}],
+  ['to-return',{result:'to_return',lastDay:'2026-10-15'}],
+  ['future-untouched',{action:'date',result:'date',resultDate:'2026-10-20',dateConfirmation:'confirmed',lastDay:'2026-10-15'}]
+ ];
+ for(const [id,value] of archiveCases){
+  await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind(id,'c',JSON.stringify({...order,id})).run();
+  await d.prepare('INSERT OR REPLACE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind(id,'2026-10-15T09:00:00Z',JSON.stringify(value)).run();
+ }
+ await archiveRedemption(d,new Date('2026-10-16T16:50:00Z'));
+ const endOfDay=(await d.prepare("SELECT data FROM redemption_archives WHERE day='2026-10-16'").first()).data;
+ const archived=JSON.parse(endOfDay);
+ for(const [id,value] of archiveCases){const saved=archived.find(r=>r.order_id===id);if(id==='future-untouched')assert(!saved);else{assert(saved,id+' missing from archive');assert.equal(saved.result,value.result);assert.equal(saved.resultDate,value.resultDate);}}
+ await d.prepare("UPDATE redemption_entries SET data='{}' WHERE order_id='confirmed'").run();
+ await archiveRedemption(d,new Date('2026-10-16T17:00:00Z'));
+ assert.equal((await d.prepare("SELECT data FROM redemption_archives WHERE day='2026-10-16'").first()).data,endOfDay);
  console.log('Redemption: enrollment, permissions, dates, rollover, immutable archive and API delivery passed');
 }finally{d.close();}
