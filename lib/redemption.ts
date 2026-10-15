@@ -1,6 +1,6 @@
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Employee} from './crm.ts';
-export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В работе',po:'ПО'};
+export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В работе',po:'Под ответственность'};
 export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера'};
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
