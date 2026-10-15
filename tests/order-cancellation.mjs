@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {cancellationDetails} from '../lib/order-cancellation.ts';
+const order={id:'o',status:'refused',reason:'Отказ клиента',cancelledAt:'2026-10-15T12:00:00Z'};
+assert.equal(cancellationDetails({...order,status:'shipping'},[]),null);
+assert.equal(cancellationDetails(order,[]).reason,'Отказ клиента');
+assert.equal(cancellationDetails({...order,reason:' '},[]).reason,'Причина не указана');
+const events=[{orderId:'other',text:'Заказ отменён: срок',actor:'Чужой',at:'2026-10-16'},{orderId:'o',text:'Заказ отменён: срок',actor:'Система',at:order.cancelledAt},{orderId:'o',text:'Комментарий: отмена',actor:'Поздний автор',at:'2026-10-17'}];
+assert.equal(cancellationDetails(order,events).author,'Система');
+assert.equal(cancellationDetails({...order,cancellationAuthor:{name:'Руководитель',at:'2026-10-15'}},events).author,'Руководитель');
+assert.equal(cancellationDetails({...order,cancelledAt:undefined},[]).at,'');
+console.log('Cancellation reason, explicit author, system history and missing metadata passed');
