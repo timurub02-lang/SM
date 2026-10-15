@@ -23,7 +23,7 @@ export const GET=authenticated(async req=>{try{
   await initReplacement(d);calls=(await d.prepare('SELECT c.*,a.number,a.released_at FROM replacement_calls c JOIN replacement_assignments a ON a.id=c.assignment_id WHERE c.order_id=? ORDER BY c.claimed_at DESC').bind(q.get('id')).all()).results;
   courier=await d.prepare('SELECT c.* FROM replacement_couriers c JOIN replacement_assignments a ON a.id=c.assignment_id WHERE a.order_id=? AND a.released_at IS NULL').bind(q.get('id')).first();
  }
- return Response.json({returnCount:['admin','redemption'].includes(e.role)?all.filter(awaitingReturn).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter(awaitingDateConfirmation).length:0,rows,archives,history,matches,config:cfg,day:dayOf(),closed:closedTime(),jobs,calls,courier});
+ return Response.json({workCount:all.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&inWorkday(r,dayOf())).length,returnCount:['admin','redemption'].includes(e.role)?all.filter(awaitingReturn).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter(awaitingDateConfirmation).length:0,rows,archives,history,matches,config:cfg,day:dayOf(),closed:closedTime(),jobs,calls,courier});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка загрузки'},{status:400});}});
 export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=await req.json() as any;await syncRedemption(d);
  if(p.operation==='settings'){
