@@ -1,10 +1,10 @@
 import type {ActivityDb as Db} from './activity-store.ts';
-import {archiveRedemption,redemptionRows,redemptionConfig,dayOf,dayPlus,closedTime,inWorkday,awaitingReturn} from './redemption.ts';
+import {archiveRedemption,redemptionRows,redemptionConfig,dayOf,dayPlus,closedTime,inWorkday} from './redemption.ts';
 import {normalizePhone} from './crm.ts';
 import {cdekStatuses} from './cdek-statuses.ts';
 import {skorozvonToken} from './skorozvon.ts';
 export function redemptionLeads(rows:any[],day:string,origin:string){
- return rows.filter(r=>!r.testOnly&&!['delivered','returned'].includes(r.result)&&(inWorkday(r,day)||awaitingReturn(r))).map(r=>{
+ return rows.filter(r=>!r.testOnly&&!['delivered','returned'].includes(r.result)&&inWorkday(r,day)).map(r=>{
   const phone=normalizePhone(r.phone).replace('+','');if(!/^7\d{10}$/.test(phone)||!r.track)throw Error('У заказа '+r.order_id+' нет корректного телефона или трека СДЭК');
   const link=new URL('/?redemption='+encodeURIComponent(r.order_id),origin).href;
   return {name:r.clientName,phones:[phone],external_id:r.track,comment:r.comments.map((c:any)=>c.text).join('\n'),homepage:link,custom_fields:{FIELD_50000022935:r.login,FIELD_50000022937:r.order_id,FIELD_50000022936:cdekStatuses.find(s=>s.code===r.status)?.label||r.status,FIELD_50000022933:String(r.total),FIELD_50000027175:'https://www.cdek.ru/ru/tracking/?order_id='+encodeURIComponent(r.track),FIELD_50000027174:link}};
