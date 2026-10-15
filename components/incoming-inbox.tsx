@@ -34,7 +34,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onAssign,on
    </div>}
    {item.sharedQueue&&!item.closedAt&&item.clientId&&['admin','department_head'].includes(employee.role)&&<div className="action-buttons">
     <label className="field"><span>Назначить ответственного оператора</span><select aria-label="Ответственный оператор обращения" value={assignments[item.id]||''} disabled={busy} onChange={e=>setAssignments({...assignments,[item.id]:e.target.value})}><option value="">Выберите оператора</option>{employees.filter(e=>e.role==='operator'&&(employee.role==='admin'||!!employee.department&&e.department===employee.department)).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
-    <button type="button" className="primary" disabled={busy||!assignments[item.id]} onClick={()=>void onAssign(item.id,assignments[item.id])}>Передать оператору</button>
+    <button type="button" className="primary incoming-assign-button" disabled={busy||!assignments[item.id]} onClick={()=>void onAssign(item.id,assignments[item.id])}>Передать оператору</button>
     <small>Обращение и клиент будут переданы оператору для дальнейшей работы и оформления заказа.</small>
    </div>}
    {item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>

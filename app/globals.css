@@ -116,3 +116,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 @media(max-width:600px){[data-slot=dialog-header]>.browser-call-dock{gap:8px}.browser-call-controls button{font-size:12px;padding:9px}.browser-call-summary{flex-basis:100%}}
 
 .incoming-scope{display:flex;align-items:center;gap:10px;flex-shrink:0}.incoming-scope>span{color:#6c7d8c;font-size:13px}.incoming-scope select{min-height:42px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:inherit}.incoming-card .field select{padding:10px;border:1px solid var(--border);border-radius:10px;background:#fff}
+
+.incoming-card .incoming-assign-button{align-self:flex-end;min-height:40px;height:40px;padding:8px 14px;font-size:13px;line-height:20px;border-radius:12px;white-space:nowrap}
