@@ -14,6 +14,7 @@ try{
  assert.equal(redemptionLeads([{...base,result:'date',resultDate:'2026-10-17'}],'2026-10-16','https://crm.example').length,0);
  assert.match(redemptionLeads([{...base,result:'date',resultDate:'2026-10-16'}],'2026-10-16','https://crm.example')[0].homepage,/redemption=o/);
  assert.equal(redemptionLeads([{...base,result:'to_return'}],'2026-10-16','https://crm.example').length,0);
+ const retry={...base,action:'refusal',result:'date',resultDate:'2026-10-19',lastDay:'2026-10-15',refusalRetryUsed:true};assert.equal(redemptionLeads([retry],'2026-10-16','https://crm.example').length,0);assert.equal(redemptionLeads([retry],'2026-10-19','https://crm.example').length,1);
  const scheduled={...base,result:'date',resultDate:'2026-10-18',lastDay:'2026-10-15'};
  assert.equal(redemptionLeads([{...scheduled,dateConfirmation:'pending'}],'2026-10-18','https://crm.example').length,0);
  assert.equal(redemptionLeads([{...scheduled,dateConfirmation:'confirmed'}],'2026-10-15','https://crm.example').length,0);

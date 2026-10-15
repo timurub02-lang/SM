@@ -4,6 +4,7 @@ export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В р
 export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера'};
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
+export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
 export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:false};
@@ -27,7 +28,7 @@ export async function syncRedemption(d:Db,now=new Date()){
 export function awaitingDateConfirmation(row:any){return row.dateConfirmation==='pending'&&row.result==='date';}
 export function awaitingReturn(row:any){return row.result==='to_return';}
 export function canSeeRedemption(e:Employee,row:any,headsAll:boolean){if((awaitingDateConfirmation(row)||awaitingReturn(row))&&!['admin','redemption'].includes(e.role))return false;return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&(headsAll||!!e.department&&row.department===e.department);}
-export function inWorkday(r:any,day:string){if(awaitingReturn(r)||r.result==='returned'||awaitingDateConfirmation(r))return false;if(r.dateConfirmation==='confirmed'&&r.result==='date'&&r.resultDate>day)return false;if(dayOf(new Date(r.entered_at))>day)return false;if(r.result==='delivered')return r.lastDay===day;return r.lastDay===day||!r.resultDate||r.result!=='date'||r.resultDate<=day;}
+export function inWorkday(r:any,day:string){if(awaitingReturn(r)||r.result==='returned'||awaitingDateConfirmation(r))return false;if((r.dateConfirmation==='confirmed'||r.refusalRetryUsed&&r.action==='refusal')&&r.result==='date'&&r.resultDate>day)return false;if(dayOf(new Date(r.entered_at))>day)return false;if(r.result==='delivered')return r.lastDay===day;return r.lastDay===day||!r.resultDate||r.result!=='date'||r.resultDate<=day;}
 export async function redemptionRows(d:Db){const rows=(await d.prepare(`SELECT r.*,o.data order_data,c.data client_data,e.data employee_data,s.data shipment FROM redemption_entries r JOIN orders o ON o.id=r.order_id JOIN clients c ON c.id=o.client_id LEFT JOIN employees e ON e.id=json_extract(o.data,'$.manager') LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id ORDER BY r.entered_at,r.order_id`).all()).results;return rows.map((r:any)=>{const o=JSON.parse(r.order_data),c=JSON.parse(r.client_data),e=JSON.parse(r.employee_data||'{}'),v=JSON.parse(r.data);return {order_id:r.order_id,entered_at:r.entered_at,version:r.version,...v,clientId:c.id,clientName:c.name,phone:c.phone,manager:o.manager,operator:e.name||'',login:e.login||'',department:e.department||'',status:o.cdekStatus?.code||'',track:JSON.parse(r.shipment||'{}').number||o.testTrack||'',storageUntil:o.cdekStorageUntil||v.manualStorage||'',storageSource:o.cdekStorageUntil?'СДЭК':v.manualStorage?'Вручную':'Не указан',testOnly:!!o.testOnly,total:(o.items||[]).reduce((sum:number,i:any)=>sum+i.quantity*i.price,0),comments:v.comments||[],days:v.days||{}};});}
 export function allowedResults(action:string,row:any,role:string,day:string){
  if(row.result==='to_return')return role==='redemption'?['returned']:[];
@@ -35,8 +36,8 @@ export function allowedResults(action:string,row:any,role:string,day:string){
  if(expired&&!['refusal','po'].includes(action))return [];
  if(action==='date'||action==='work')return ['date'];
  if(action==='nd')return ['none'];
- if(action==='refusal')return [...(!expired?['date']:[]),'to_return',...(role==='redemption'?['returned']:[])];
- if(action==='po')return expired?['date']:[];
+ if(action==='refusal')return row.refusalRetryUsed?['to_return']:[...(!expired&&row.storageUntil&&refusalRetryDate(day)<=row.storageUntil?['date']:[]),'to_return',...(role==='redemption'?['returned']:[])];
+ if(action==='po')return expired||row.storageUntil&&refusalRetryDate(day)>row.storageUntil?['date']:[];
  return [];
 }
 export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
@@ -52,10 +53,10 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(!(p.action in actions)||!allowedResults(p.action,row,e.role,day).includes(p.result))throw Error('Этот результат недоступен для действия или роли');
   let date='';if(p.result==='date'){
    if(!row.storageUntil&&p.action!=='po')throw Error('Сначала укажите срок хранения');
-   date=p.action==='refusal'?[dayPlus(day,5),row.storageUntil].sort()[0]:p.date;
+   date=p.action==='refusal'?refusalRetryDate(day):p.date;
    if(!validDate(date||'')||date<day||p.action!=='po'&&date>row.storageUntil)throw Error('Дата должна быть не раньше сегодня и не позже СХ');
   }
-  Object.assign(next,{dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?'pending':null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at}}});
+  Object.assign(next,{refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?'pending':null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at}}});
  }
  const result=await d.prepare('UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id=? AND version=?').bind(JSON.stringify(next),p.id,p.version).run();if(!result.meta.changes)throw Error('Заказ изменён другим сотрудником. Обновите таблицу');
 }
