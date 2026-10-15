@@ -3,7 +3,7 @@ import {initReplacement,confirmReplacementCourier} from '@/lib/phone-replacement
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
-import {syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,closedTime} from '@/lib/redemption';
+import {inRedemptionTab,syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,closedTime} from '@/lib/redemption';
 import {cdekStatuses} from '@/lib/cdek-statuses';
 import {skorozvonToken} from '@/lib/skorozvon';
 export const dynamic='force-dynamic';
@@ -13,8 +13,8 @@ export const GET=authenticated(async req=>{try{
  if(q.has('projects')){if(e.role!=='admin')return Response.json({error:'Недостаточно прав'},{status:403});const credentials=await d.prepare("SELECT data FROM settings WHERE id='skorozvon'").first<{data:string}>();if(!credentials)throw Error('Сначала подключите Скорозвон в интеграциях');const token=await skorozvonToken(JSON.parse(credentials.data));const projects=[];for(let page=1;page<=100;page++){const r=await fetch('https://api.skorozvon.ru/api/v2/call_projects?length=100&page='+page,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('Не удалось получить проекты СК');const data=await r.json() as any,part=Array.isArray(data)?data:data.data;if(!Array.isArray(part))throw Error('Неожиданный ответ СК');projects.push(...part.map((p:any)=>({id:String(p.id),title:p.title})));if(part.length<100)break;}return Response.json({projects});}
  const all=await redemptionRows(d),archives=(await d.prepare('SELECT day,at FROM redemption_archives ORDER BY day DESC').all()).results;
  const confirmation=q.get('tab')==='confirm',returns=q.get('tab')==='returns';if((confirmation||returns)&&!['admin','redemption'].includes(e.role))return Response.json({error:'Access denied'},{status:403});
- let rows=all;if(q.get('tab')==='operator')rows=all.filter(awaitingOperator);else if(returns)rows=all.filter(awaitingReturn);else if(confirmation)rows=all.filter(awaitingDateConfirmation);else if(q.get('archive')||q.get('tab')==='archive'){const a=await d.prepare('SELECT data FROM redemption_archives WHERE day=?').bind(q.get('archive')||'').first<{data:string}>();rows=JSON.parse(a?.data||'[]');}
- else if(!q.get('id'))rows=all.filter((r:any)=>!awaitingReturn(r)&&r.result!=='returned'&&!awaitingDateConfirmation(r)&&!((r.dateConfirmation==='confirmed'||r.refusalRetryUsed&&r.action==='refusal')&&r.result==='date'&&r.resultDate>dayOf())&&inWorkday(r,dayOf()));
+ let rows=all;if(q.get('tab')==='operator')rows=all.filter(awaitingOperator);else if(returns)rows=all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf()));else if(confirmation)rows=all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf()));else if(q.get('archive')||q.get('tab')==='archive'){const a=await d.prepare('SELECT data FROM redemption_archives WHERE day=?').bind(q.get('archive')||'').first<{data:string}>();rows=JSON.parse(a?.data||'[]');}
+ else if(!q.get('id'))rows=all.filter((r:any)=>inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role)));
  rows=rows.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&(!q.get('id')||r.order_id===q.get('id'))).map(({phone,...r}:any)=>r);
  const history=q.get('id')&&rows.length?(await d.prepare('SELECT at,data FROM redemption_history WHERE order_id=? ORDER BY id DESC').bind(q.get('id')).all()).results.map((r:any)=>({at:r.at,...JSON.parse(r.data)})):[];
  const matches=q.get('id')&&rows.length?(await d.prepare('SELECT day,at,data FROM redemption_archives ORDER BY day DESC').all()).results.flatMap((a:any)=>JSON.parse(a.data).filter((r:any)=>r.order_id===q.get('id')&&canSeeRedemption(e,r,cfg.headsAll)).map(({phone,...r}:any)=>({day:a.day,...r}))):[];
@@ -25,7 +25,7 @@ export const GET=authenticated(async req=>{try{
   courier=await d.prepare('SELECT c.* FROM replacement_couriers c JOIN replacement_assignments a ON a.id=c.assignment_id WHERE a.order_id=? AND a.released_at IS NULL').bind(q.get('id')).first();
  }
  const stats=await redemptionStats(d,e,q.get('archive')||dayOf(),!!q.get('archive')||q.get('tab')==='archive');
- return Response.json({stats,workCount:all.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&inWorkday(r,dayOf())).length,returnCount:['admin','redemption'].includes(e.role)?all.filter(awaitingReturn).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter(awaitingDateConfirmation).length:0,rows,archives,history,matches,config:cfg,day:dayOf(),closed:closedTime(),jobs,calls,courier});
+ return Response.json({stats,workCount:all.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role))).length,returnCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf())).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf())).length:0,rows,archives,history,matches,config:cfg,day:dayOf(),closed:closedTime(),jobs,calls,courier});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка загрузки'},{status:400});}});
 export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=await req.json() as any;await syncRedemption(d);
  if(p.operation==='settings'){

@@ -34,9 +34,10 @@ export function awaitingDateConfirmation(row:any){return !awaitingOperator(row)&
 export function awaitingReturn(row:any){return !awaitingOperator(row)&&row.result==='to_return';}
 export function canSeeRedemption(e:Employee,row:any,headsAll:boolean){if(awaitingOperator(row))return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department;if((awaitingDateConfirmation(row)||awaitingReturn(row))&&!['admin','redemption'].includes(e.role))return false;return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&(headsAll||!!e.department&&row.department===e.department);}
 export function inWorkday(r:any,day:string){if(awaitingOperator(r)||awaitingReturn(r)||r.result==='returned'||awaitingDateConfirmation(r))return false;if((r.dateConfirmation==='confirmed'||r.refusalRetryUsed&&r.action==='refusal')&&r.result==='date'&&r.resultDate>day)return false;if(dayOf(new Date(r.entered_at))>day)return false;if(r.result==='delivered')return r.lastDay===day;return r.lastDay===day||!r.resultDate||r.result!=='date'||r.resultDate<=day;}
+export function inRedemptionTab(row:any,tab:string,day:string){if(awaitingOperator(row))return (row.operatorReturn.sourceTab||'work')===tab;return tab==='confirm'?awaitingDateConfirmation(row):tab==='returns'?awaitingReturn(row):inWorkday(row,day);}
 export async function redemptionRows(d:Db){const rows=(await d.prepare(`SELECT r.*,o.data order_data,c.data client_data,e.data employee_data,s.data shipment FROM redemption_entries r JOIN orders o ON o.id=r.order_id JOIN clients c ON c.id=o.client_id LEFT JOIN employees e ON e.id=json_extract(o.data,'$.manager') LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id ORDER BY r.entered_at,r.order_id`).all()).results;return rows.map((r:any)=>{const o=JSON.parse(r.order_data),c=JSON.parse(r.client_data),e=JSON.parse(r.employee_data||'{}'),v=JSON.parse(r.data);return {order_id:r.order_id,entered_at:r.entered_at,version:r.version,...v,clientId:c.id,clientName:c.name,phone:c.phone,manager:o.manager,operator:e.name||'',login:e.login||'',department:e.department||'',status:o.cdekStatus?.code||'',track:JSON.parse(r.shipment||'{}').number||o.testTrack||'',storageUntil:o.cdekStorageUntil||v.manualStorage||'',storageSource:o.cdekStorageUntil?'СДЭК':v.manualStorage?'Вручную':'Не указан',testOnly:!!o.testOnly,total:(o.items||[]).reduce((sum:number,i:any)=>sum+i.quantity*i.price,0),comments:v.comments||[],days:v.days||{}};});}
 export function allowedResults(action:string,row:any,role:string,day:string){
- if(awaitingOperator(row))return action==='refusal'?['to_return']:action==='date'&&row.storageUntil&&row.storageUntil>day?['date']:[];
+ if(awaitingOperator(row))return action==='refusal'?['to_return']:(action==='date'&&row.storageUntil&&row.storageUntil>day||action==='po'&&row.storageUntil&&row.storageUntil<=day)?['date']:[];
  if(row.result==='to_return')return role==='redemption'?['returned']:[];
  const expired=row.storageUntil&&row.storageUntil<=day;
  if(expired&&!['refusal','po'].includes(action))return [];
@@ -49,21 +50,23 @@ export function allowedResults(action:string,row:any,role:string,day:string){
 export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  const cfg=await redemptionConfig(d),row=(await redemptionRows(d)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,cfg.headsAll))throw Error('Заказ недоступен');
  if(awaitingOperator(row)&&row.operatorReturn.deadline<=now.toISOString())throw Error('Два часа истекли. Заказ возвращён отделу выкупа; обновите список');
+ if(awaitingOperator(row)&&['admin','redemption'].includes(e.role))throw Error('Заказ находится у оператора и недоступен для изменений');
  if(closedTime(now)&&!row.testOnly&&!awaitingOperator(row))throw Error('День закрыт в 19:50. Изменения доступны завтра');
  if(['returned','delivered'].includes(row.result))throw Error('Работа с заказом завершена');
  const saved=await d.prepare('SELECT data FROM redemption_entries WHERE order_id=?').bind(p.id).first(),v=JSON.parse(saved.data),day=dayOf(now),at=now.toISOString();
  const next={...v,updatedAt:at,changedBy:e.name,changeKind:p.operation||'action'};
  if(p.operation==='return_operator'){
-  if(e.role!=='redemption'||awaitingOperator(row))throw Error('Вернуть заказ может сотрудник выкупа');
+  if(!['admin','redemption'].includes(e.role)||awaitingOperator(row))throw Error('Вернуть заказ может администратор или сотрудник выкупа');
   const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(row.manager).first();
   if(!manager||JSON.parse(manager.data).role!=='operator')throw Error('У заказа нет ответственного оператора');
   if(!returnReasons.includes(p.reason)||typeof p.comment!=='string'||p.comment.length>2000||p.reason==='Другое'&&!p.comment.trim())throw Error('Выберите причину и заполните комментарий для «Другое»');
-  Object.assign(next,{operatorReturn:{reason:p.reason,comment:p.comment.trim(),author:e.name,authorId:e.id,at,deadline:new Date(now.getTime()+2*60*60*1000).toISOString()}});
+  Object.assign(next,{operatorReturn:{sourceTab:awaitingReturn(row)?'returns':awaitingDateConfirmation(row)?'confirm':'work',reason:p.reason,comment:p.comment.trim(),author:e.name,authorId:e.id,at,deadline:new Date(now.getTime()+2*60*60*1000).toISOString()}});
  }else if(p.operation==='confirm_date'){if(!['admin','redemption'].includes(e.role)||!awaitingDateConfirmation(row)||row.resultDate<day)throw Error('Подтверждение доступно администратору и сотруднику выкупа для ожидающей даты');Object.assign(next,{dateConfirmation:'confirmed',dateConfirmedBy:e.name,dateConfirmedById:e.id,dateConfirmedAt:at});}
  else if(p.operation==='comment'){if(typeof p.text!=='string'||!p.text.trim()||p.text.length>3000)throw Error('Введите комментарий до 3000 символов');next.comments=[...(v.comments||[]),{id:crypto.randomUUID(),text:p.text.trim(),author:e.name,authorId:e.id,at}];}
  else if(p.operation==='storage'){if(row.storageSource==='СДЭК')throw Error('Срок получен из СДЭК');if(!validDate(p.date||''))throw Error('Укажите срок хранения');next.manualStorage=p.date;next.storageAuthor=e.name;}
  else {
   if(!(p.action in actions)||!allowedResults(p.action,row,e.role,day).includes(p.result))throw Error('Этот результат недоступен для действия или роли');
+  if(awaitingOperator(row)&&p.action==='po'&&p.responsibilityConfirmed!==true)throw Error('Подтвердите, что клиент точно выкупит заказ после окончания срока хранения');
   let date='';if(p.result==='date'){
    if(!row.storageUntil&&p.action!=='po')throw Error('Сначала укажите срок хранения');
    date=p.action==='refusal'?refusalRetryDate(day):p.date;

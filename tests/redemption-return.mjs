@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {initRedemption,redemptionRows,editRedemption,syncRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,canSeeRedemption,inWorkday,returnReasons} from '../lib/redemption.ts';
+import {inRedemptionTab,initRedemption,redemptionRows,editRedemption,syncRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,canSeeRedemption,inWorkday,returnReasons} from '../lib/redemption.ts';
 import {redemptionLeads} from '../lib/redemption-dispatch.ts';
 const d=openDatabase(':memory:'),now=new Date('2026-10-16T10:00:00Z');
 const op={id:'op',name:'Operator',role:'operator',department:'1'},head={id:'head',name:'Head',role:'department_head',department:'1'},buyer={id:'buyer',name:'Buyer',role:'redemption'};
@@ -15,7 +15,7 @@ try{
  const edit=async(actor,p,t=now)=>editRedemption(d,actor,{id:'o',version:(await row()).version,...p},t);
  const send={operation:'return_operator',reason:returnReasons[0],comment:''};
  await assert.rejects(edit(head,send));await assert.rejects(edit(buyer,{...send,reason:'Другое'}));
- await edit(buyer,send);assert(awaitingOperator(await row()));assert(!awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));
+ await edit({...buyer,role:'admin'},send);assert(inRedemptionTab(await row(),'returns','2026-10-16'));await assert.rejects(edit(buyer,{operation:'comment',text:'blocked'}),/у оператора/);assert(awaitingOperator(await row()));assert(!awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));
  assert(canSeeRedemption(op,await row(),false));assert(canSeeRedemption(head,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),true));assert(!canSeeRedemption({...op,id:'other'},await row(),false));
  await assert.rejects(edit(op,{action:'nd',result:'none'}));
  await edit(head,{action:'date',result:'date',date:'2026-10-20'});assert(!awaitingOperator(await row()));assert(awaitingDateConfirmation(await row()));
@@ -28,5 +28,11 @@ try{
  const version=(await row()).version;await syncRedemption(d,new Date('2026-10-16T12:01:00Z'));assert.equal((await row()).version,version);
  await edit(buyer,send);await edit(op,{action:'date',result:'date',date:'2026-10-20'});await edit(buyer,send);
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStatus.code','DELIVERED') WHERE id='o'").run();await syncRedemption(d,new Date('2026-10-16T11:00:00Z'));assert.equal((await row()).result,'delivered');assert(!awaitingOperator(await row()));
+ await d.prepare("UPDATE orders SET data=json_remove(data,'$.cdekStatus') WHERE id='o'").run();
+ await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.result','','$.manualStorage','2026-10-15') WHERE order_id='o'").run();
+ await edit(buyer,send);assert(inRedemptionTab(await row(),'work','2026-10-16'));assert(!inWorkday(await row(),'2026-10-16'));
+ await assert.rejects(edit(op,{action:'date',result:'date',date:'2026-10-20'}));
+ await assert.rejects(edit(op,{action:'po',result:'date',date:'2026-10-20'}),/Подтвердите/);
+ await edit(op,{action:'po',result:'date',date:'2026-10-20',responsibilityConfirmed:true});assert(awaitingDateConfirmation(await row()));assert.equal((await row()).authorId,op.id);assert.equal((await row()).action,'po');
  console.log('Return queue passed: scope, reasons, final results, exact two-hour deadline, no extension, timeout and SK exclusion');
 }finally{d.close();}
