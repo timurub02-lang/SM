@@ -1,6 +1,6 @@
 'use client';
 import {useState} from 'react';
-import {stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
+import {departments,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
 import {canOpenClientCard} from '@/lib/permissions';
 import {CallButton} from './browser-phone';
 
@@ -12,7 +12,8 @@ export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boo
   <button type="submit" className="primary" disabled={busy||!reason.trim()}>Сохранить итог и закрыть обращение</button>
  </form>;
 }
-export function IncomingInbox({items,clients,employees,employee,busy,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Employee[];onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
+export function IncomingInbox({items,clients,employees,employee,busy,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
+ const [selectedDepartments,setSelectedDepartments]=useState<Record<string,string>>({});
  const [assignments,setAssignments]=useState<Record<string,string>>({});
  const [history,setHistory]=useState(false),[scope,setScope]=useState('all');
  const scopes=employee.role==='department_head'?[['all','Все доступные'],['mine','Мои'],['department','Мой отдел'],['unknown','Неизвестные клиенты']]:employee.role==='admin'?[['all','Все обращения'],['unknown','Неизвестные клиенты']]:[];
@@ -33,7 +34,8 @@ export function IncomingInbox({items,clients,employees,employee,busy,onAssign,on
     <CallButton target={{mode:'client',clientId:item.clientId}} disabled={busy}>Перезвонить</CallButton>
    </div>}
    {item.sharedQueue&&!item.closedAt&&item.clientId&&['admin','department_head'].includes(employee.role)&&<div className="action-buttons">
-    <label className="field"><span>Назначить ответственного оператора</span><select aria-label="Ответственный оператор обращения" value={assignments[item.id]||''} disabled={busy} onChange={e=>setAssignments({...assignments,[item.id]:e.target.value})}><option value="">Выберите оператора</option>{employees.filter(e=>e.role==='operator'&&(employee.role==='admin'||!!employee.department&&e.department===employee.department)).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+    <label className="field"><span>Отдел</span><select aria-label="Отдел оператора обращения" value={selectedDepartments[item.id]||''} disabled={busy} onChange={e=>{setSelectedDepartments({...selectedDepartments,[item.id]:e.target.value});setAssignments({...assignments,[item.id]:''});}}><option value="">Выберите отдел</option>{Object.entries(departments).map(([id,name])=><option key={id} value={id}>{name.replace(/_$/,'')}</option>)}{employees.some(e=>!e.department)&&<option value="none">Без отдела</option>}</select></label>
+    <label className="field"><span>Назначить ответственного оператора</span><select aria-label="Ответственный оператор обращения" value={assignments[item.id]||''} disabled={busy||!selectedDepartments[item.id]} onChange={e=>setAssignments({...assignments,[item.id]:e.target.value})}><option value="">Выберите оператора</option>{employees.filter(e=>(e.department||'none')===selectedDepartments[item.id]).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
     <button type="button" className="primary incoming-assign-button" disabled={busy||!assignments[item.id]} onClick={()=>void onAssign(item.id,assignments[item.id])}>Передать оператору</button>
     <small>Обращение и клиент будут переданы оператору для дальнейшей работы и оформления заказа.</small>
    </div>}

@@ -181,9 +181,10 @@ try{
  assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:shared,reason:'Handled shared client'},cookies.head0)).status,200);
  assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.head0)).status,403,'Shared access ends on resolution');
  const assignable='7'.repeat(32);await incoming(assignable);
- assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'two'},cookies.head)).status,400,'Cannot assign another department');
+ assert.ok((await state('head')).incomingOperators.some(e=>e.id==='two'&&e.department==='2'),'Other department directory');
+ assert.ok(!(await state('head')).incomingOperators.some(e=>'salary' in e||'hasPassword' in e),'Directory contains no private staff fields');
  assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'one'},cookies.one)).status,400,'Operator cannot assign');
- assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'two'},cookies.head2)).status,200,'Head assigns own operator');
+ assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:assignable,operatorId:'two'},cookies.head)).status,200,'Head assigns another department');
  const assigned=await state('two');assert.ok(assigned.incoming.some(i=>i.id===assignable&&i.assigneeId==='two'&&!i.sharedQueue));
  assert.ok(assigned.clients.some(c=>c.id==='c-one'&&c.owner==='two'),'Client transferred with request');
  assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.two)).status,200,'Assigned operator can call and see history');

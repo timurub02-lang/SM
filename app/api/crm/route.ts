@@ -63,7 +63,8 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
   visible.events.push(...state.events.filter(e=>sharedIds.has(e.clientId)&&!visible.events.some(v=>v.id===e.id)));
  }
 
- return {...visible,incoming,tasks:[...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
+ const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
+ return {...visible,incoming,incomingOperators,tasks:[...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
 async function handlePOST(request:Request){
@@ -89,7 +90,7 @@ async function handlePOST(request:Request){
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
   if(!row.shared_queue||!row.client_id)throw Error('Выберите общее обращение известного клиента');
   const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');
-  if(!target||employee.role==='department_head'&&(!employee.department||target.department!==employee.department))throw Error('Выберите оператора своего отдела');
+  if(!target)throw Error('Выберите оператора');
   const c=s.clients.find(c=>c.id===row.client_id);
   if(!c||c.owner||s.orders.some(o=>o.clientId===c.id&&activeIncomingOrder(o)))throw Error('Клиент уже закреплён или появился действующий заказ. Обновите данные');
   const until=new Date(Date.parse(now)+86400000).toISOString(),mutation=crypto.randomUUID();

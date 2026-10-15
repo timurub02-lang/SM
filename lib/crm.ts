@@ -34,7 +34,7 @@ export type Order={confirmationAuthor?:OrderActionAuthor;cancellationAuthor?:Ord
 export type Employee={baseAccess?:"M"|"J"|"both";hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={sharedQueue?:boolean;id:string;clientId:string;at:string;text:string;source:string;clientName?:string;assigneeId?:string;assigneeName?:string;department?:string;phone?:string;calledNumber?:string;hasActiveOrder?:boolean;orderIds?:string[];closedAt?:string;closedBy?:string;reason?:string;orderId?:string};
-export type State={tasks?:Reminder[];reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
+export type State={incomingOperators?:Pick<Employee,"id"|"name"|"department">[];tasks?:Reminder[];reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
 export const money=(n:number)=>new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:0,maximumFractionDigits:2}).format(n);
 export const total=(o:Order)=>o.items.reduce((n,i)=>n+i.quantity*Math.round(i.price*100),0)/100;
 export const initials=(s:string)=>s.split(" ").slice(0,2).map(x=>x[0]).join("");
