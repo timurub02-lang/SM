@@ -3,7 +3,7 @@
 import json, os, re, sys, urllib.request
 from pathlib import Path
 CONFIG=Path(os.environ.get('CRM_PHONE_CONFIG','/etc/asterisk/crm-history.json'))
-CACHE=Path(os.environ.get('CRM_REPLACEMENT_CACHE','/var/spool/asterisk/crm-replacement.json'))
+CACHE=Path(os.environ.get('CRM_REPLACEMENT_CACHE','/var/spool/asterisk/crm-calls/replacement-pool.cache'))
 def api(payload=None):
     config=json.loads(CONFIG.read_text())
     if not config['url'].endswith('/pbx'): raise ValueError('Invalid API URL')
