@@ -24,7 +24,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onCreate,on
  return <div className="stack">
   <p className="muted">Клиенту сообщили, что ему перезвонят. Обращение остаётся открытым до сохранения результата. Время московское.</p>
   <div className="incoming-filters">
-  {!!scopes.length&&<label className="incoming-scope"><span>Обращения</span><select aria-label="Категория входящих обращений" value={scope} onChange={e=>setScope(e.target.value)}>{scopes.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>}
+  {scopes.length>1&&<label className="incoming-scope"><span>Обращения</span><select aria-label="Категория входящих обращений" value={scope} onChange={e=>setScope(e.target.value)}>{scopes.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>}
   <div className="notification-tabs" role="group" aria-label="Состояние обращения"><button className="secondary" aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {category.filter(i=>!i.closedAt).length}</button><button className="secondary" aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button></div>
   <div className="notification-tabs" role="group" aria-label="Наличие клиента в CRM"><button className="secondary" aria-pressed={known} onClick={()=>setKnown(true)}>Наши клиенты · {scoped.filter(i=>!!i.clientId&&!!i.closedAt===history).length}</button><button className="secondary" aria-pressed={!known} onClick={()=>setKnown(false)}>Неизвестные клиенты · {scoped.filter(i=>!i.clientId&&!!i.closedAt===history).length}</button></div>
   </div>
