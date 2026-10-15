@@ -118,3 +118,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .incoming-scope{display:flex;align-items:center;gap:10px;flex-shrink:0}.incoming-scope>span{color:#6c7d8c;font-size:13px}.incoming-scope select{min-height:42px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:inherit}.incoming-card .field select{padding:10px;border:1px solid var(--border);border-radius:10px;background:#fff}
 
 .incoming-card .incoming-assign-button{align-self:flex-end;min-height:40px;height:40px;padding:8px 14px;font-size:13px;line-height:20px;border-radius:12px;white-space:nowrap}
+
+.incoming-client-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.incoming-client-heading strong{font-size:16px}.incoming-client-search{padding:8px;display:inline-flex;align-items:center;justify-content:center}.incoming-client-matches{max-height:50vh;overflow:auto}.incoming-client-matches button{align-self:flex-start}

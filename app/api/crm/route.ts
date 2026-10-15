@@ -1,4 +1,4 @@
-import {readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder} from '@/lib/incoming';
+import {readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder,incomingRouting} from '@/lib/incoming';
 import {employeeTasks} from '@/lib/reminder-tasks';
 import {courierReminderStatements} from '@/lib/reminder-store';
 import {baseTypes,baseSettingsSchema,initialBaseSettings} from '@/lib/base-policy';
@@ -11,7 +11,7 @@ import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
 import {courierDoorRefusal,canHandleCourierDoor,applyCourierCommand,canEditCourierOrder,canEditRecalledCourierOrder,courierRecalledAtWarehouse,pauseCourierOperatorBudget,courierPhase,courierStage,courierDeadline,courierWarehouseReturn,cancelCourierWork,courierOutstanding} from '@/lib/courier';
 import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
-import {total,canReceivePayment,isLogistic} from '@/lib/crm';
+import {normalizePhone,total,canReceivePayment,isLogistic} from '@/lib/crm';
 import {removalPlan} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
@@ -85,6 +85,26 @@ async function handlePOST(request:Request){
  if(p.action==="readReminder"){
   if(!employee)throw Error("Требуется сотрудник");
   await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
+ }else if(p.action==="linkIncomingClient"){
+  if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Связать номер могут администратор и руководители');
+  const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
+  if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные');
+  const c=s.clients.find(c=>c.id===z.string().min(1).max(100).parse(p.clientId));if(!c)throw Error('Клиент не найден');
+  await initBaseStorage(d);
+  const phone=normalizePhone(row.phone);if(!phone)throw Error('В обращении отсутствует корректный номер');
+  const existing=await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(normalizedPhone(phone)).first<{client_id:string}>();
+  if(existing&&existing.client_id!==c.id)throw Error('Этот номер уже принадлежит другому клиенту');
+  const linkedPhones=[...new Set([...(c.linkedPhones||[]),...(normalizedPhone(c.phone)===normalizedPhone(phone)?[]:[phone])])];
+  const marker=crypto.randomUUID(),routing=await incomingRouting(d,c.id,c,row.at);
+  const gate="EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._incomingLink')=?)";
+  const event=ev(c.id,'','Номер '+phone+' добавлен из входящего обращения · '+row.id);
+  const result=await d.batch([
+   d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND client_id IS NULL AND closed_at IS NULL)").bind(json({linkedPhones,_incomingLink:marker}),c.id,c.version,row.id),
+   d.prepare("UPDATE incoming_calls SET client_id=?,assignee_id=?,department_id=?,shared_queue=? WHERE id=? AND client_id IS NULL AND closed_at IS NULL AND "+gate).bind(c.id,routing.assignee?.id||null,routing.department,routing.shared?1:0,row.id,c.id,marker),
+   d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE "+gate).bind(event.id,c.id,'',now,json(event),c.id,marker)
+  ]);
+  if(!result[0].meta.changes)throw Error('Клиент или обращение изменились. Обновите данные и повторите');
+  message='Номер соединён с клиентом '+c.name;
  }else if(p.action==="assignIncoming"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Назначение доступно руководителю и администратору');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);

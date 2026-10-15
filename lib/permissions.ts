@@ -29,7 +29,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
- if(['readReminder','closeIncoming','assignIncoming'].includes(p.action))return;
+ if(['readReminder','closeIncoming','assignIncoming','linkIncomingClient'].includes(p.action))return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
  if(['settings','import','normalizeImportedAddresses','releaseExpired'].includes(p.action))return allow(false);
@@ -61,6 +61,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;if(e.role==='admin')return true;
+ if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
  if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption'].includes(e.role);
  if(path==='/api/call-history')return ['GET','PATCH'].includes(method)&&e.role!=='courier';
  if(path==='/api/call-history/recording')return method==='GET'&&e.role!=='courier';

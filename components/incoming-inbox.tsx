@@ -3,6 +3,7 @@ import {useState} from 'react';
 import {departments,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
 import {canOpenClientCard} from '@/lib/permissions';
 import {CallButton} from './browser-phone';
+import {IncomingClientLink} from './incoming-client-link';
 
 export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boolean;onSave:(reason:string)=>Promise<boolean>}){
  const [reason,setReason]=useState('');
@@ -12,7 +13,7 @@ export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boo
   <button type="submit" className="primary" disabled={busy||!reason.trim()}>Сохранить итог и закрыть обращение</button>
  </form>;
 }
-export function IncomingInbox({items,clients,employees,employee,busy,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
+export function IncomingInbox({items,clients,employees,employee,busy,onLink,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
  const [selectedDepartments,setSelectedDepartments]=useState<Record<string,string>>({});
  const [assignments,setAssignments]=useState<Record<string,string>>({});
  const [history,setHistory]=useState(false),[scope,setScope]=useState('all');
@@ -26,7 +27,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onAssign,on
   <div className="notification-tabs"><button className="secondary" aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {scoped.filter(i=>!i.closedAt).length}</button><button className="secondary" aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button></div>
   </div>
   {shown.map(item=><section className="notice stack incoming-card" key={item.id}>
-   <strong>{item.clientName||'Неизвестный клиент'}{item.phone?' · '+item.phone:''}</strong>
+   <div className="incoming-client-heading"><strong>{item.clientName||'Неизвестный клиент'}{item.phone?' · '+item.phone:''}</strong>{!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
    <span>Входящий: {stamp(item.at,'Europe/Moscow')} МСК{item.calledNumber?' · На номер '+item.calledNumber:''}</span>
    <span>{item.assigneeName}</span>
    {item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&<div className="action-buttons">

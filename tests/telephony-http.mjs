@@ -208,6 +208,25 @@ try{
  const outcome=await api('/api/crm',{action:'contact',id:o.id,version:o.version,contact:'callback',due:new Date(Date.now()+3600000).toISOString(),reason:'Client requested callback',incomingId:callback},cookies.one);
  assert.equal(outcome.status,200,outcome.text);
  assert.ok((await state('one')).incoming.find(i=>i.id===callback).closedAt);assert.ok(!(await state('one')).incoming.find(i=>i.id===other).closedAt);
+ // Resolve an unknown caller by name or either indexed phone, without overwriting the main number.
+ const lookup='6'.repeat(32);await incoming(lookup,'79997776655');
+ db.prepare("UPDATE clients SET data=json_set(data,'$.name','Ёлкин Тимур Сергеевич') WHERE id='c-two'").run();
+ const search='/api/incoming-clients?'+new URLSearchParams({incomingId:lookup,q:'ёлкин тимур'});
+ assert.equal((await api(search,undefined,cookies.one)).status,403,'Operator cannot search global clients');
+ const names=await api(search,undefined,cookies.head0);assert.equal(names.status,200,names.text);assert.equal(names.data.matches[0].id,'c-two');assert.equal(names.data.matches[0].ownerId,'two');
+ const number=await api('/api/incoming-clients?'+new URLSearchParams({incomingId:lookup,q:'8 (999) 000-00-02'}),undefined,cookies.head);assert.equal(number.data.matches[0].id,'c-two');
+ const originalPhone=JSON.parse(db.prepare("SELECT data FROM clients WHERE id='c-two'").get().data).phone;
+ assert.equal((await api('/api/crm',{action:'linkIncomingClient',incomingId:lookup,clientId:'c-two'},cookies.one)).status,400);
+ const linked=await api('/api/crm',{action:'linkIncomingClient',incomingId:lookup,clientId:'c-two'},cookies.head0);assert.equal(linked.status,200,linked.text);
+ const linkedClient=JSON.parse(db.prepare("SELECT data FROM clients WHERE id='c-two'").get().data);assert.equal(linkedClient.phone,originalPhone);assert.ok(linkedClient.linkedPhones.includes('+79997776655'));
+ const resolved=(await state('two')).incoming.find(i=>i.id===lookup);assert.equal(resolved.clientId,'c-two');assert.equal(resolved.clientName,'Ёлкин Тимур Сергеевич');assert.equal(resolved.assigneeId,'two');
+ assert.equal((await api('/api/crm',{action:'linkIncomingClient',incomingId:lookup,clientId:'c-one'},cookies.head0)).status,400,'Cannot relink');
+ const later='5'.repeat(32);await incoming(later,'79997776655');assert.equal((await state('two')).incoming.find(i=>i.id===later).clientId,'c-two','Future calls match the extra number');
+ const duplicate='4'.repeat(32);await incoming(duplicate,'79997776644');
+ db.prepare('UPDATE incoming_calls SET phone=? WHERE id=?').run('+79990000001',duplicate);
+ assert.equal((await api('/api/crm',{action:'linkIncomingClient',incomingId:duplicate,clientId:'c-two'},cookies.head)).status,400,'Cannot attach another client phone');
+ assert.equal(db.prepare('SELECT client_id FROM incoming_calls WHERE id=?').get(duplicate).client_id,null);
+ console.log('Unknown caller search, Cyrillic names, owner labels, extra phone linking, future matching and duplicate protection passed.');
  console.log('Incoming HTTP: trusted ingress, linked phone matching, actual last caller/owner routing, role-scoped tasks, all heads unknown queue, required results, CSRF, no view closure, automatic outcome closure, shared deduplication passed.');
  console.log('Experimental classification, authorized manual correction, unchanged orders, call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and staff telephony: authentication, per-employee credentials, role and client access, CSRF, server destinations, card phone normalization, private config and no-store passed. No calls placed.');
 }catch(error){console.error(logs);throw error;}

@@ -27,16 +27,8 @@ export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumbe
  const phone=normalizePhone(p.phone),called=normalizePhone(p.calledNumber);
  const client=phone?await d.prepare('SELECT c.id,c.data FROM clients c JOIN client_phone_index i ON i.client_id=c.id WHERE i.phone=?').bind(phone.slice(1)).first():null;
  const c=client?JSON.parse(client.data):null;
- const staff:Employee[]=(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data) as Employee);
- const accounts=(await d.prepare('SELECT employee_id,enabled FROM auth_accounts').all()).results;
- const eligible=(id:string)=>staff.find(e=>e.id===id&&e.role!=='courier'&&accounts.some((a:{employee_id:string;enabled:number})=>a.employee_id===id&&a.enabled));
- // Only an attempt actually accepted by PBX counts; denied microphone access is not a call.
- const last=client?await d.prepare('SELECT actor_id FROM phone_calls WHERE client_id=? AND claimed_at<=? ORDER BY claimed_at DESC,seq DESC LIMIT 1').bind(client.id,p.at).first():null;
- const clientOrders=client&&!c?.owner?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(client.id).all()).results:[];
- const shared=!!client&&!c?.owner&&!clientOrders.some((r:{data:string})=>activeIncomingOrder(JSON.parse(r.data)));
- const assignee=shared?undefined:(last&&eligible(last.actor_id))||(c?.owner&&eligible(c.owner));
- const owner=staff.find(e=>e.id===c?.owner);
- await d.prepare('INSERT OR IGNORE INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue) VALUES(?,?,?,?,?,?,?,?)').bind(p.id,client?.id||null,assignee?.id||null,owner?.department||assignee?.department||'',p.at,phone,called,shared?1:0).run();
+ const {assignee,department,shared}=await incomingRouting(d,client?.id||'',c,p.at);
+ await d.prepare('INSERT OR IGNORE INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue) VALUES(?,?,?,?,?,?,?,?)').bind(p.id,client?.id||null,assignee?.id||null,department,p.at,phone,called,shared?1:0).run();
 }
 export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order[]):Promise<IncomingRequest[]>{
  await initIncoming(d);if(e.role==='courier')return [];
@@ -65,4 +57,17 @@ export async function sharedIncomingClientAccess(d:Db,e:Employee,clientId:string
  if(e.role!=='department_head')return false;
  await initIncoming(d);
  return !!await d.prepare('SELECT id FROM incoming_calls WHERE client_id=? AND shared_queue=1 AND closed_at IS NULL LIMIT 1').bind(clientId).first();
+}
+
+export async function incomingRouting(d:Db,clientId:string,c:{owner?:string}|null,at:string){
+ const staff:Employee[]=(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data) as Employee);
+ const accounts=(await d.prepare('SELECT employee_id,enabled FROM auth_accounts').all()).results;
+ const eligible=(id:string)=>staff.find(e=>e.id===id&&e.role!=='courier'&&accounts.some((a:{employee_id:string;enabled:number})=>a.employee_id===id&&a.enabled));
+ // Only an attempt actually accepted by PBX counts; denied microphone access is not a call.
+ const last=clientId?await d.prepare('SELECT actor_id FROM phone_calls WHERE client_id=? AND claimed_at<=? ORDER BY claimed_at DESC,seq DESC LIMIT 1').bind(clientId,at).first():null;
+ const clientOrders=clientId&&!c?.owner?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(clientId).all()).results:[];
+ const shared=!!clientId&&!c?.owner&&!clientOrders.some((r:{data:string})=>activeIncomingOrder(JSON.parse(r.data)));
+ const assignee=shared?undefined:(last&&eligible(last.actor_id))||(c?.owner&&eligible(c.owner));
+ const owner=staff.find(e=>e.id===c?.owner);
+ return {assignee,department:owner?.department||assignee?.department||'',shared};
 }
