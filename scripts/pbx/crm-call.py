@@ -87,6 +87,8 @@ def run_agi():
         status, cause = get('DIALSTATUS'), get('HANGUPCAUSE')
         payload = {'id': call_id, 'started': int(started or time.time()), 'answered': int(answered or 0),
                    'ended': int(time.time()), 'status': status, 'cause': cause}
+        if get('CRM_REPLACEMENT') == '1':
+            payload['event'] = 'replacement'
         path = ROOT / (call_id + '.json')
         temp = path.with_suffix('.tmp')
         temp.write_text(json.dumps(payload))
@@ -114,7 +116,7 @@ def upload_one(path):
             return
         audio = ROOT / (payload['id'] + '.wav')
         remote = ROOT / (payload['id'] + '-remote.wav')
-        if payload['answered'] and 'analysis' not in payload:
+        if payload['answered'] and 'analysis' not in payload and payload.get('event') != 'replacement':
             payload['analysis'] = classify_remote(remote)
             temp = path.with_suffix('.tmp')
             temp.write_text(json.dumps(payload))

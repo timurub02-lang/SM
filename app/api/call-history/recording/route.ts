@@ -8,8 +8,10 @@ export const dynamic='force-dynamic';
 export const GET=authenticated(async req=>{
  const id=new URL(req.url).searchParams.get('id')||'',e=(await getChatGPTUser())?.employee;
  if(!e||!/^[a-f0-9]{32}$/.test(id))return new Response(null,{status:404});
- await initPhone(db());const c=await db().prepare('SELECT * FROM phone_calls WHERE id=?').bind(id).first<PhoneCall>();
- if(!c||!c.recording||!(await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
+ const masked=new URL(req.url).searchParams.get('masked')==='1';
+ if(masked&&!['admin','redemption'].includes(e.role))return new Response(null,{status:403});
+ await initPhone(db());const c=await db().prepare(masked?'SELECT * FROM replacement_calls WHERE id=?':'SELECT * FROM phone_calls WHERE id=?').bind(id).first<PhoneCall>();
+ if(!c||!c.recording||!masked&&!(await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
  try{
   const audio=await readFile(join(process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings',id+'.wav'));
   const headers:Record<string,string>={'Content-Type':'audio/wav','Cache-Control':'private, no-store','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff','Content-Disposition':`inline; filename="call-${id}.wav"`};

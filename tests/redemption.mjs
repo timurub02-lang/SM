@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+const d=openDatabase(':memory:'),now=new Date('2026-10-15T12:00:00Z');
+const admin={id:'a',name:'Админ',role:'admin'},buyer={id:'b',name:'Выкуп',role:'redemption'},op={id:'op',name:'Оператор',role:'operator',department:'1'},head={id:'h',role:'department_head',department:'1'};
+try{
+ await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)'].map(s=>d.prepare(s)));
+ await initRedemption(d);
+ await d.prepare('INSERT INTO settings VALUES(?,?)').bind('redemption-config',JSON.stringify({statuses:['ACCEPTED_AT_DELIVERY_WAREHOUSE']})).run();
+ await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({id:'c',name:'Тест',phone:'+70000000001'})).run();
+ await d.prepare('INSERT INTO employees VALUES(?,?)').bind(op.id,JSON.stringify(op)).run();
+ const order={id:'o',manager:op.id,delivery:'cdek_pickup',cdekStatus:{code:'ACCEPTED_AT_DELIVERY_WAREHOUSE'},items:[]};
+ await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('o','c',JSON.stringify(order)).run();
+ await d.prepare('UPDATE redemption_entries SET entered_at=?').bind(now.toISOString()).run();
+ let row=async()=>(await redemptionRows(d))[0];
+ assert.equal((await row()).order_id,'o');
+ await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'CREATED'}})).run();await syncRedemption(d,now);
+ assert.equal((await row()).entered_at,now.toISOString());
+ assert(canSeeRedemption(op,await row(),false));assert(canSeeRedemption(head,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),false));assert(canSeeRedemption({...head,department:'2'},await row(),true));assert(!canSeeRedemption({...op,id:'other'},await row(),true));
+ async function edit(actor,p,t=now){await editRedemption(d,actor,{id:'o',version:(await row()).version,...p},t);}
+ await assert.rejects(edit(admin,{action:'date',result:'date',date:'2026-10-20'}),/срок хранения/);
+ await edit(admin,{operation:'storage',date:'2026-10-18'});
+ await edit(op,{action:'refusal',result:'date'});assert.equal((await row()).resultDate,'2026-10-18');
+ await assert.rejects(edit(op,{action:'date',result:'date',date:'2026-10-19'}),/Дата/);
+ await assert.rejects(edit(op,{action:'po',result:'date',date:'2026-10-19'}),/недоступен/);
+ await assert.rejects(edit(admin,{action:'refusal',result:'returned'}),/недоступен/);
+ await assert.rejects(edit(buyer,{action:'nd',result:'returned'}),/недоступен/);
+ await edit(op,{action:'nd',result:'none'});
+ await archiveRedemption(d,new Date('2026-10-15T16:50:00Z'));
+ const snapshot=(await d.prepare('SELECT data FROM redemption_archives').first()).data;assert.equal(JSON.parse(snapshot)[0].result,'none');
+ await assert.rejects(edit(admin,{action:'nd',result:'none'},new Date('2026-10-15T17:00:00Z')),/закрыт/);
+ await syncRedemption(d,new Date('2026-10-16T09:00:00Z'));assert.equal((await row()).result,'');assert(inWorkday(await row(),'2026-10-16'));
+ assert.equal((await d.prepare('SELECT data FROM redemption_archives').first()).data,snapshot);
+ await edit(op,{action:'nd',result:'to_return'});
+ await assert.rejects(edit(op,{action:'refusal',result:'delivered'}),/недоступен/);await assert.rejects(edit(admin,{action:'refusal',result:'returned'}),/недоступен/);
+ await edit(buyer,{action:'refusal',result:'returned'});assert(!inWorkday(await row(),'2026-10-16'));
+ assert.deepEqual(allowedResults('date',{storageUntil:'2026-10-15'},'redemption','2026-10-15'),[]);
+ assert.deepEqual(allowedResults('refusal',{storageUntil:'2026-10-15'},'operator','2026-10-15'),['to_return']);
+ assert.deepEqual(allowedResults('po',{storageUntil:'2026-10-15'},'operator','2026-10-15'),['date']);
+ await d.prepare("UPDATE redemption_entries SET data='{}'").run();
+ await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'DELIVERED'}})).run();await syncRedemption(d,now);assert.equal((await row()).author,'API');assert.equal((await row()).result,'delivered');
+ assert.equal(dayOf(new Date('2026-10-15T21:01:00Z')),'2026-10-16');assert(!closedTime(now));assert(closedTime(new Date('2026-10-15T16:50:00Z')));
+ assert(!inWorkday({entered_at:'2026-10-15T21:01:00Z'},'2026-10-15'));
+ console.log('Redemption: enrollment, permissions, dates, rollover, immutable archive and API delivery passed');
+}finally{d.close();}

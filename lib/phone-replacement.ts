@@ -16,6 +16,10 @@ export async function initReplacement(d:Db){
   d.prepare('CREATE TABLE IF NOT EXISTS replacement_assignments(id TEXT PRIMARY KEY,number TEXT NOT NULL REFERENCES replacement_numbers(number),order_id TEXT NOT NULL,client_id TEXT NOT NULL,client_name TEXT NOT NULL,assigned_at TEXT NOT NULL,released_at TEXT,release_reason TEXT,connected INTEGER NOT NULL DEFAULT 0)'),
   d.prepare('CREATE TABLE IF NOT EXISTS replacement_callbacks(assignment_id TEXT PRIMARY KEY REFERENCES replacement_assignments(id) ON DELETE CASCADE,phone TEXT NOT NULL,at TEXT NOT NULL)'),
   d.prepare(`CREATE TRIGGER IF NOT EXISTS replacement_callback_release AFTER UPDATE OF released_at ON replacement_assignments WHEN NEW.released_at IS NOT NULL BEGIN DELETE FROM replacement_callbacks WHERE assignment_id=NEW.id; END`),
+  d.prepare('CREATE TABLE IF NOT EXISTS replacement_calls(id TEXT PRIMARY KEY,assignment_id TEXT NOT NULL,order_id TEXT NOT NULL,caller_number TEXT NOT NULL,destination TEXT NOT NULL,direction TEXT NOT NULL,claimed_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT "dialing",detail TEXT,answered_at TEXT,ended_at TEXT,duration INTEGER,bill_seconds INTEGER,recording INTEGER NOT NULL DEFAULT 0,provider_at TEXT)'),
+  d.prepare('CREATE INDEX IF NOT EXISTS replacement_calls_order ON replacement_calls(order_id,claimed_at)'),
+  d.prepare('CREATE TABLE IF NOT EXISTS replacement_couriers(assignment_id TEXT PRIMARY KEY REFERENCES replacement_assignments(id) ON DELETE CASCADE,call_id TEXT NOT NULL REFERENCES replacement_calls(id),phone TEXT NOT NULL,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,at TEXT NOT NULL)'),
+  d.prepare(`CREATE TRIGGER IF NOT EXISTS replacement_courier_release AFTER UPDATE OF released_at ON replacement_assignments WHEN NEW.released_at IS NOT NULL BEGIN DELETE FROM replacement_couriers WHERE assignment_id=NEW.id; END`),
   d.prepare('CREATE UNIQUE INDEX IF NOT EXISTS replacement_active_number ON replacement_assignments(number) WHERE released_at IS NULL'),
   d.prepare('CREATE UNIQUE INDEX IF NOT EXISTS replacement_active_order ON replacement_assignments(order_id) WHERE released_at IS NULL'),
   d.prepare('CREATE INDEX IF NOT EXISTS replacement_history ON replacement_assignments(number,assigned_at)'),
@@ -73,7 +77,7 @@ export async function replacementRoute(d:Db,number:string,caller=''){
  const calling=normalizePhone(caller).replace('+',''),client=row.client_data?JSON.parse(row.client_data):{};
  const clientPhones=[row.phone,...(Array.isArray(client.linkedPhones)?client.linkedPhones:[])].map(n=>normalizePhone(String(n||'')).replace('+','')).filter(Boolean);
  const returning=!!calling&&clientPhones.includes(calling);
- const previous=returning?await d.prepare('SELECT phone FROM replacement_callbacks WHERE assignment_id=?').bind(row.id).first():null;
+ const previous=returning?await d.prepare('SELECT phone FROM replacement_couriers WHERE assignment_id=? UNION ALL SELECT phone FROM replacement_callbacks WHERE assignment_id=? LIMIT 1').bind(row.id,row.id).first():null;
  if(returning&&(!previous||clientPhones.includes(previous.phone)))return waiting;
  const destination=returning?previous.phone:normalizeOutgoingNumber(row.phone||'');if(!destination)throw Error('Нет корректного номера получателя');
  if(await d.prepare('SELECT number FROM replacement_numbers WHERE number=?').bind(destination).first())throw Error('Нельзя соединять подменные номера между собой');
@@ -93,4 +97,13 @@ export async function replacementTasks(d:Db){
  if(!health?.at||Date.now()-Date.parse(health.at)>180000)tasks.push({...base,id:'replacement:offline',title:'Сбой сервиса замены телефона',text:'Выгрузка с подменой остановлена. Проверьте новую АТС.'});
  const failure=await d.prepare("SELECT data FROM settings WHERE id='phone-replacement-error'").first();if(failure)tasks.push({...base,id:'replacement:error',title:'Ошибка замены телефона',...JSON.parse(failure.data)});
  return tasks;
+}
+
+export async function confirmReplacementCourier(d:Db,actor:{id:string;name:string;role:string},callId:string){
+ if(!['admin','redemption'].includes(actor.role))throw Error('Недостаточно прав');
+ await initReplacement(d);
+ const call=await d.prepare("SELECT c.*,a.released_at FROM replacement_calls c JOIN replacement_assignments a ON a.id=c.assignment_id WHERE c.id=?").bind(callId).first();
+ if(!call||call.released_at||call.direction!=='to_client'||!call.recording||!call.answered_at)throw Error('Нужна запись входящего разговора по действующему закреплению');
+ const saved=await d.prepare(`INSERT INTO replacement_couriers(assignment_id,call_id,phone,actor_id,actor_name,at) SELECT id,?,?,?,?,? FROM replacement_assignments WHERE id=? AND released_at IS NULL ON CONFLICT(assignment_id) DO UPDATE SET call_id=excluded.call_id,phone=excluded.phone,actor_id=excluded.actor_id,actor_name=excluded.actor_name,at=excluded.at`).bind(call.id,normalizePhone(call.caller_number).replace('+',''),actor.id,actor.name,new Date().toISOString(),call.assignment_id).run();
+ if(!saved.meta.changes)throw Error('Номер уже освобождён');
 }

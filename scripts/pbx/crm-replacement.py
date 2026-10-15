@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """Dedicated delivery numbers never enter the ordinary callback queue while assigned."""
-import json, os, re, sys, urllib.request
+import hashlib, json, os, re, sys, urllib.request
 from pathlib import Path
 CONFIG=Path(os.environ.get('CRM_PHONE_CONFIG','/etc/asterisk/crm-history.json'))
 CACHE=Path(os.environ.get('CRM_REPLACEMENT_CACHE','/var/spool/asterisk/crm-calls/replacement-pool.cache'))
@@ -28,13 +28,16 @@ def run():
     if number not in json.loads(CACHE.read_text()).get('numbers',[]): return
     agi('SET VARIABLE CRM_MASK_MODE error')
     try:
-        result=api({'number':number,'caller':env.get('agi_callerid','')[:40]})
+        call_id=hashlib.sha256(('replacement:'+env.get('agi_uniqueid','')).encode()).hexdigest()[:32]
+        result=api({'number':number,'caller':env.get('agi_callerid','')[:40],'callId':call_id})
         mode=result['mode']
         if mode in ('free','regular'): agi('SET VARIABLE CRM_MASK_MODE regular')
         elif mode=='wait': agi('SET VARIABLE CRM_MASK_MODE wait')
         elif mode=='connect' and re.fullmatch(r'7\d{10}',result['destination']) and result['callerId']==number:
             agi('SET VARIABLE CRM_MASK_DEST '+result['destination'])
             agi('SET VARIABLE CRM_MASK_CALLER '+number)
+            agi('SET VARIABLE CRM_CALL_ID '+call_id)
+            agi('SET VARIABLE CRM_REPLACEMENT 1')
             agi('SET VARIABLE CRM_MASK_MODE connect')
     except Exception: print('Delivery number route unavailable',file=sys.stderr)
 if __name__=='__main__':

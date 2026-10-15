@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {runRedemptionDay,redemptionLeads} from '../lib/redemption-dispatch.ts';
+const d=openDatabase(':memory:');
+try{
+ await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)'].map(s=>d.prepare(s)));
+ let network=0;const forbidden=async()=>{network++;throw Error('Unexpected external request');};
+ await runRedemptionDay(d,new Date('2026-10-15T17:00:00Z'),forbidden);assert.equal(network,0);assert.equal((await d.prepare('SELECT state FROM redemption_dispatch').first()).state,'prepared');
+ await d.prepare("INSERT INTO settings VALUES('redemption-config',?)").bind(JSON.stringify({automatic:true,projectId:''})).run();
+ await runRedemptionDay(d,new Date('2026-10-16T17:00:00Z'),forbidden);assert.equal(network,0);
+ const base={order_id:'o',entered_at:'2026-10-15T12:00:00Z',phone:'+79990000000',track:'123',clientName:'Test',comments:[],login:'op',status:'CREATED',total:100};
+ assert.equal(redemptionLeads([{...base,testOnly:true}],'2026-10-16','https://crm.example').length,0);
+ assert.equal(redemptionLeads([{...base,result:'delivered'}],'2026-10-16','https://crm.example').length,0);
+ assert.equal(redemptionLeads([{...base,result:'date',resultDate:'2026-10-17'}],'2026-10-16','https://crm.example').length,0);
+ assert.match(redemptionLeads([{...base,result:'date',resultDate:'2026-10-16'}],'2026-10-16','https://crm.example')[0].homepage,/redemption=o/);
+ await d.prepare("UPDATE settings SET data=? WHERE id='redemption-config'").bind(JSON.stringify({automatic:true,projectId:'123'})).run();
+ await d.prepare("INSERT INTO settings VALUES('skorozvon','{}')").run();
+ let imported=[],posts=[];
+ const fake=async(url,opts={})=>{let value;if(url.includes('/oauth/token'))value={access_token:'fake'};else if(url.includes('/call_projects'))value=[{id:123}];else if(url.includes('leads?call_project_id'))value=imported;else if(url.endsWith('leads/import')){posts.push(JSON.parse(opts.body));imported=posts.at(-1).data.map((r,i)=>({...r,id:i+1}));value={id:1};}else if(url.includes('leads/import/'))value={state:'loaded'};else throw Error('Unexpected path '+url);return new Response(JSON.stringify(value),{status:200});};
+ await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({id:'c',name:'Test',phone:base.phone})).run();
+ await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('o','c',JSON.stringify({manager:'op',testTrack:'123',items:[]})).run();
+ await d.prepare('INSERT INTO redemption_entries VALUES(?,?,?,1)').bind('o','2026-10-17T12:00:00Z','{}').run();
+ await runRedemptionDay(d,new Date('2026-10-17T17:00:00Z'),fake,async()=>{});assert.equal(posts.length,1);assert.equal((await d.prepare("SELECT state FROM redemption_dispatch WHERE day='2026-10-18'").first()).state,'done');
+ await runRedemptionDay(d,new Date('2026-10-17T17:05:00Z'),fake,async()=>{});assert.equal(posts.length,1);
+ console.log('Dispatch: default zero network, empty project blocked, tests excluded, due date queue, mocked import verified and never repeated');
+}finally{d.close();}
