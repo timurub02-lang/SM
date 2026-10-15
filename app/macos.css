@@ -129,7 +129,8 @@ button:focus-visible,a:focus-visible { outline: 3px solid #007aff70; outline-off
 .card-bottom b { color: #647b9b; }
 .bottom-note { color: #8997ac; }
 .table-panel,.settings-card { background: #ffffffdc; border: 1px solid #fff; border-radius: 19px; box-shadow: 0 4px 15px #273b6108, 0 0 0 1px #30456c0a; }
-.table-panel th { background: #edf1f785; color: #66758a; font-size: 13px; }
+.table-panel th, .redemption-grid th { background: #edf1f785; color: #66758a; font-size: 13px; font-weight: 500; }
+.redemption-grid th { padding: 17px 6px; line-height: 20px; }
 .table-panel td { color: #43516a; border-color: #4053710e; }
 .table-link { color: #34445f; }
 .table-link:hover b { color: #087afa; }
