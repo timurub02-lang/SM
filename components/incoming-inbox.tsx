@@ -16,20 +16,17 @@ export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boo
 export function IncomingInbox({items,clients,employees,employee,busy,onCreate,onLink,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string)=>Promise<boolean>}){
  const [selectedDepartments,setSelectedDepartments]=useState<Record<string,string>>({});
  const [assignments,setAssignments]=useState<Record<string,string>>({});
- const [history,setHistory]=useState(false),[scope,setScope]=useState('all'),[known,setKnown]=useState(true);
+ const [tab,setTab]=useState('open'),[scope,setScope]=useState('all');
+ const history=tab==='closed';
  const scopes=employee.role==='department_head'?[['all','Все доступные'],['mine','Мои'],['department','Мой отдел']]:employee.role==='admin'?[['all','Все обращения']]:[];
  const scoped=items.filter(i=>scope==='all'||scope==='mine'&&i.assigneeId===employee.id||scope==='department'&&!!i.clientId&&i.assigneeId!==employee.id);
- const category=scoped.filter(i=>!!i.clientId===known);
- const shown=category.filter(i=>!!i.closedAt===history);
+ const shown=scoped.filter(i=>tab==='closed'?!!i.closedAt:!i.closedAt&&(tab==='open'||(tab==='known'?!!i.clientId:!i.clientId)));
  return <div className="stack">
   <p className="muted">Клиенту сообщили, что ему перезвонят. Обращение остаётся открытым до сохранения результата. Время московское.</p>
   <div className="incoming-filters">
   {scopes.length>1&&<label className="incoming-scope"><span>Обращения</span><select aria-label="Категория входящих обращений" value={scope} onChange={e=>setScope(e.target.value)}>{scopes.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>}
   <div className="tabs-line incoming-tabs" role="group" aria-label="Фильтры входящих обращений">
-   <button type="button" data-state={!history?'active':'inactive'} aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {category.filter(i=>!i.closedAt).length}</button>
-   <button type="button" data-state={known?'active':'inactive'} aria-pressed={known} onClick={()=>setKnown(true)}>Наши клиенты · {scoped.filter(i=>!!i.clientId&&!!i.closedAt===history).length}</button>
-   <button type="button" data-state={!known?'active':'inactive'} aria-pressed={!known} onClick={()=>setKnown(false)}>Неизвестные клиенты · {scoped.filter(i=>!i.clientId&&!!i.closedAt===history).length}</button>
-   <button type="button" data-state={history?'active':'inactive'} aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button>
+   {[{id:'open',label:'Требуют действия',count:scoped.filter(i=>!i.closedAt).length},{id:'known',label:'Наши клиенты',count:scoped.filter(i=>!i.closedAt&&!!i.clientId).length},{id:'unknown',label:'Неизвестные клиенты',count:scoped.filter(i=>!i.closedAt&&!i.clientId).length},{id:'closed',label:'Закрытые',count:scoped.filter(i=>!!i.closedAt).length}].map(t=><button type="button" key={t.id} data-state={tab===t.id?'active':'inactive'} aria-pressed={tab===t.id} onClick={()=>setTab(t.id)}>{t.label} · {t.count}</button>)}
   </div>
   </div>
   {shown.map(item=><section className="notice stack incoming-card" key={item.id}>
