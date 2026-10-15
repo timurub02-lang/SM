@@ -103,7 +103,7 @@ export async function confirmReplacementCourier(d:Db,actor:{id:string;name:strin
  if(!['admin','redemption'].includes(actor.role))throw Error('Недостаточно прав');
  await initReplacement(d);
  const call=await d.prepare("SELECT c.*,a.released_at FROM replacement_calls c JOIN replacement_assignments a ON a.id=c.assignment_id WHERE c.id=?").bind(callId).first();
- if(!call||call.released_at||call.direction!=='to_client'||!call.recording||!call.answered_at)throw Error('Нужна запись входящего разговора по действующему закреплению');
+ if(!call||!normalizeOutgoingNumber(call.caller_number)||call.released_at||call.direction!=='to_client'||!call.recording||!call.answered_at)throw Error('Нужна запись входящего разговора по действующему закреплению');
  const saved=await d.prepare(`INSERT INTO replacement_couriers(assignment_id,call_id,phone,actor_id,actor_name,at) SELECT id,?,?,?,?,? FROM replacement_assignments WHERE id=? AND released_at IS NULL ON CONFLICT(assignment_id) DO UPDATE SET call_id=excluded.call_id,phone=excluded.phone,actor_id=excluded.actor_id,actor_name=excluded.actor_name,at=excluded.at`).bind(call.id,normalizePhone(call.caller_number).replace('+',''),actor.id,actor.name,new Date().toISOString(),call.assignment_id).run();
  if(!saved.meta.changes)throw Error('Номер уже освобождён');
 }
