@@ -148,4 +148,4 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 
 .redemption-result-value{display:inline-block;border-radius:6px;color:inherit;cursor:default}
 
-.redemption-grid tr.redemption-held td{background:#e5e7eb;color:#89919e}.redemption-held button,.redemption-held .redemption-action,.redemption-held .redemption-result{color:inherit;background:transparent;box-shadow:none;cursor:default}.redemption-held-label{display:block;font-size:11px;margin-top:3px}
+.redemption .redemption-grid tr.redemption-held td{background:#e5e7eb!important;color:#89919e}.redemption-held button,.redemption-held .redemption-action,.redemption-held .redemption-result{color:inherit;background:transparent;box-shadow:none;cursor:default}.redemption-held-label{display:block;font-size:11px;margin-top:3px}
