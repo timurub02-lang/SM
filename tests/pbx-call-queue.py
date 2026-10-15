@@ -69,3 +69,22 @@ with tempfile.TemporaryDirectory() as root:
         module.run_agi()
     assert not agi.called, 'Never promise registration if durable write failed'
 print('Incoming AGI: durable capture, original DID, retry deduplication, offline retention, no false success passed.')
+
+# A batch of 25 completed calls is uploaded without losing or duplicating results.
+with tempfile.TemporaryDirectory() as root:
+    module.ROOT=Path(root)
+    ids={format(n,'032x') for n in range(25)}
+    for call_id in ids:
+        (module.ROOT/(call_id+'.json')).write_text(json.dumps({'id':call_id,'answered':0}))
+    with patch.object(module,'api',return_value={'ok':True}) as send:
+        module.upload()
+        assert {c.kwargs['payload']['id'] for c in send.call_args_list}==ids
+    assert not list(module.ROOT.glob('*.json'))
+print('25-call queue batch passed.')
+
+# The identity comes from the authenticated PJSIP endpoint, never a browser header.
+with patch.object(module.sys,'stdin',io.StringIO('agi_arg_1: prepare\nagi_arg_2: '+'a'*32+'\nagi_arg_3: crm-personal\n\n')), patch.object(module,'api',return_value={'callerId':'79000000000','destination':'79990000001'}) as api, patch.object(module,'agi') as agi:
+    module.run_agi()
+    api.assert_called_once_with('GET','a'*32,endpoint='crm-personal')
+    assert any(c.args[0]=='SET VARIABLE CRM_DESTINATION 79990000001' for c in agi.call_args_list)
+print('AGI personal endpoint and destination passed.')

@@ -61,6 +61,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;if(e.role==='admin')return true;
+ if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption'].includes(e.role);
  if(path==='/api/call-history')return ['GET','PATCH'].includes(method)&&e.role!=='courier';
  if(path==='/api/call-history/recording')return method==='GET'&&e.role!=='courier';
  if(path==='/api/order-access')return (isLogistic(e.role)||['operator','department_head'].includes(e.role))&&method==='POST';

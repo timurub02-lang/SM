@@ -10,19 +10,20 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(os.environ.get('CRM_PHONE_SPOOL', '/var/spool/asterisk/crm-calls'))
 CONFIG = Path(os.environ.get('CRM_PHONE_CONFIG', '/etc/asterisk/crm-history.json'))
 
-def api(method, call_id='', payload=None):
+def api(method, call_id='', payload=None, endpoint='', accounts=False):
     config = json.loads(CONFIG.read_text())
     url = config['url']
     if payload and payload.get('event') == 'incoming':
         if not url.endswith('/pbx'):
             raise ValueError('Unexpected PBX result URL')
         url = url[:-4] + '/incoming'
-    req = urllib.request.Request(url + ('?callId=' + call_id if call_id else ''),
+    req = urllib.request.Request(url + ('?accounts=1' if accounts else '?'+urllib.parse.urlencode({'callId':call_id,'endpoint':endpoint}) if call_id else ''),
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={'X-CRM-PBX-Key': config['key'], 'Content-Type': 'application/json'}, method=method)
     with urllib.request.urlopen(req, timeout=10) as response:
@@ -68,10 +69,14 @@ def run_agi():
         return
     if mode == 'prepare':
         try:
-            data = api('GET', call_id)
+            data = api('GET', call_id, endpoint=env.get('agi_arg_3', ''))
             caller = data['callerId']
             if caller and not re.fullmatch(r'7\d{10}', caller):
                 return
+            destination = data['destination']
+            if destination != 'echo' and not re.fullmatch(r'7\d{10}', destination):
+                return
+            agi('SET VARIABLE CRM_DESTINATION '+destination)
             agi('SET VARIABLE CRM_OUTBOUND "' + caller + '"')
             agi('SET VARIABLE CRM_CALL_OK 1')
         except Exception:
@@ -98,33 +103,38 @@ def classify_remote(path):
     except Exception:
         return {'kind': 'unknown', 'reason': 'analysis_error', 'method': 'local-asr-v1'}
 
-def upload():
-    # Failed uploads remain queued, including their audio, until CRM acknowledges them.
-    for path in sorted(ROOT.glob('*.json'), key=lambda p: (not p.name.startswith('incoming-'), p.name))[:10]:
-        try:
-            payload = json.loads(path.read_text())
-            if not re.fullmatch(r'[a-f0-9]{32}', payload['id']):
-                continue
-            if payload.get('event') == 'incoming':
-                if api('POST', payload=payload).get('ok'):
-                    path.unlink()
-                continue
-            audio = ROOT / (payload['id'] + '.wav')
-            remote = ROOT / (payload['id'] + '-remote.wav')
-            if payload['answered'] and 'analysis' not in payload:
-                payload['analysis'] = classify_remote(remote)
-                temp = path.with_suffix('.tmp')
-                temp.write_text(json.dumps(payload))
-                temp.replace(path)
-            if payload['answered'] and audio.exists() and 44 < audio.stat().st_size <= 4*1024*1024:
-                payload['audio'] = base64.b64encode(audio.read_bytes()).decode('ascii')
-            response = api('POST', payload=payload)
-            if response.get('ok'):
+def upload_one(path):
+    try:
+        payload = json.loads(path.read_text())
+        if not re.fullmatch(r'[a-f0-9]{32}', payload['id']):
+            return
+        if payload.get('event') == 'incoming':
+            if api('POST', payload=payload).get('ok'):
                 path.unlink()
-                audio.unlink(missing_ok=True)
-                remote.unlink(missing_ok=True)
-        except Exception as error:
-            print('CRM call result pending: ' + type(error).__name__, file=sys.stderr)
+            return
+        audio = ROOT / (payload['id'] + '.wav')
+        remote = ROOT / (payload['id'] + '-remote.wav')
+        if payload['answered'] and 'analysis' not in payload:
+            payload['analysis'] = classify_remote(remote)
+            temp = path.with_suffix('.tmp')
+            temp.write_text(json.dumps(payload))
+            temp.replace(path)
+        if payload['answered'] and audio.exists() and 44 < audio.stat().st_size <= 32*1024*1024:
+            payload['audio'] = base64.b64encode(audio.read_bytes()).decode('ascii')
+        response = api('POST', payload=payload)
+        if response.get('ok'):
+            path.unlink()
+            audio.unlink(missing_ok=True)
+            remote.unlink(missing_ok=True)
+    except Exception as error:
+        print('CRM call result pending: ' + type(error).__name__, file=sys.stderr)
+
+def upload():
+    # Independent calls do not wait for another call's speech analysis or network retry.
+    from concurrent.futures import ThreadPoolExecutor
+    paths=sorted(ROOT.glob('*.json'), key=lambda p: (not p.name.startswith('incoming-'), p.name))[:100]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(upload_one, paths))
 
 if __name__ == '__main__':
     os.umask(0o077)

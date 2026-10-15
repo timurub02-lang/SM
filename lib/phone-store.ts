@@ -9,6 +9,7 @@ export async function initPhone(d:ActivityDb,caller=''){
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_calls(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,client_id TEXT REFERENCES clients(id) ON DELETE CASCADE,order_id TEXT REFERENCES orders(id) ON DELETE CASCADE,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,caller_number TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,detail TEXT NOT NULL DEFAULT '',duration INTEGER NOT NULL DEFAULT 0,bill_seconds INTEGER NOT NULL DEFAULT 0,provider_at TEXT,recording INTEGER NOT NULL DEFAULT 0,claimed_at TEXT)`),
   d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_caller ON phone_calls(caller_number,seq)'),
   d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_client ON phone_calls(client_id,seq)'),d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_order ON phone_calls(order_id,seq)'),
+  d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_targets(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,destination TEXT NOT NULL,sip_user TEXT NOT NULL)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_analysis(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,auto_kind TEXT,auto_reason TEXT,analyzed_at TEXT,manual_kind TEXT,manual_actor TEXT,manual_name TEXT,manual_at TEXT)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_numbers(number TEXT PRIMARY KEY,state TEXT NOT NULL CHECK(state IN ('available','active','completed')),added_at TEXT NOT NULL,activated_at TEXT,completed_at TEXT,exported_at TEXT)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_pool(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL DEFAULT 0,mutation TEXT NOT NULL DEFAULT '')`),d.prepare('INSERT OR IGNORE INTO phone_pool(id) VALUES(1)'),
@@ -26,12 +27,13 @@ export async function replacePhonePool(d:ActivityDb,count:number,version:number,
  ]);
  if(!r[0].meta.changes)throw Error('Недостаточно новых номеров или список уже изменился. Обновите данные.');
 }
-export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:string|null;orderId:string|null;actor:Employee;echo:boolean}){
+export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:string|null;orderId:string|null;actor:Employee;echo:boolean;destination?:string;sipUser?:string}){
  const {id,clientId,orderId,actor,echo}=input,now=new Date().toISOString();
  // One INSERT selects the least recently used active number; concurrent calls cannot select stale state.
  const r=await d.prepare(`INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status)
  SELECT ?,?,?,?,?,${echo?"''":"number"},?,'preparing' ${echo?'':"FROM phone_numbers n WHERE state='active' ORDER BY COALESCE((SELECT MAX(seq) FROM phone_calls c WHERE c.caller_number=n.number),0),number LIMIT 1"}`).bind(id,clientId,orderId,actor.id,actor.name,now).run();
  if(!r.meta.changes)throw Error('Нет включённых исходящих номеров. Настройте интеграцию Билайн АТС.');
+ if(input.destination&&input.sipUser)await d.prepare('INSERT INTO phone_call_targets(call_id,destination,sip_user) VALUES(?,?,?)').bind(id,input.destination,input.sipUser).run();
  return d.prepare('SELECT * FROM phone_calls WHERE id=?').bind(id).first() as Promise<PhoneCall>;
 }
 export async function phoneScope(d:ActivityDb,e:Employee,scope:{clientId?:string;orderId?:string}){
@@ -46,6 +48,6 @@ export async function phoneScope(d:ActivityDb,e:Employee,scope:{clientId?:string
  return orders.some((r:{data:string})=>seesOrder(e,JSON.parse(r.data) as Order,staff));
 }
 export function displayPhoneCall(c:PhoneCall,now=Date.now()){
- const stale=!c.provider_at&&['preparing','dialing','connected'].includes(c.status)&&now-Date.parse(c.started_at)>5*60000;
+ const stale=!c.provider_at&&['preparing','dialing','connected'].includes(c.status)&&now-Date.parse(c.started_at)>32*60000;
  return {...c,status:stale?'unknown':c.status,detail:stale?'АТС ещё не передала итог. История обновится после получения результата.':c.detail};
 }

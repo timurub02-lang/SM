@@ -2,26 +2,30 @@ import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {z} from 'zod';
-import {createPhoneCall,initPhone} from '@/lib/phone-store';
+import {createPhoneCall,initPhone,phoneScope,normalizeOutgoingNumber} from '@/lib/phone-store';
 
+import {phoneAccount,phoneRoles} from '@/lib/phone-accounts';
 export const dynamic='force-dynamic';
 const input=z.discriminatedUnion('mode',[
  z.object({mode:z.literal('test')}),z.object({mode:z.literal('echo')}),
  z.object({mode:z.literal('client'),clientId:z.string().min(1)}),
  z.object({mode:z.literal('order'),orderId:z.string().min(1)})
 ]);
-function config(){return {username:process.env.CRM_PHONE_USER||'',password:process.env.CRM_PHONE_PASSWORD||'',phone:process.env.CRM_PHONE_TEST_NUMBER||'',callerId:process.env.CRM_PHONE_CALLER_ID||''};}
-// shortcut: admin-only pilot; add individual phone accounts before staff rollout.
-async function allowed(){const user=await getChatGPTUser();return user?.employee?.role==='admin'&&user.employee.id===process.env.CRM_PHONE_EMPLOYEE;}
+function config(){return {phone:process.env.CRM_PHONE_TEST_NUMBER||'',callerId:process.env.CRM_PHONE_CALLER_ID||''};}
+async function allowed(){const user=await getChatGPTUser();return process.env.CRM_PHONE_STAFF_ENABLED==='1'&&!!user?.employee&&phoneRoles.includes(user.employee.role);}
 export const GET=authenticated(async()=>{
- if(!await allowed())return Response.json({error:'Тест телефонии пока доступен администратору'},{status:403});
- const c=config();return Response.json({configured:!!c.username&&!!c.password,phone:c.phone,callerId:c.callerId,testMode:true,lines:25,cps:5},{headers:{'Cache-Control':'no-store'}});
+ if(!await allowed())return Response.json({error:'Телефония недоступна для этой роли'},{status:403});
+ const c=config();return Response.json({configured:!!process.env.CRM_PHONE_RESULT_KEY,phone:c.phone,callerId:c.callerId,testMode:false,lines:25,cps:5},{headers:{'Cache-Control':'no-store'}});
 });
 export const POST=authenticated(async(req:Request)=>{
- if(!await allowed())return Response.json({error:'Тест телефонии пока доступен администратору'},{status:403});
+ if(!await allowed())return Response.json({error:'Телефония недоступна для этой роли'},{status:403});
  try{
   const p=input.parse(await req.json()),c=config();
-  if(!c.username||!c.password||!/^7\d{10}$/.test(c.phone))throw Error('Телефония ещё не подключена');
+  const actor=(await getChatGPTUser())!.employee!;
+  const account=phoneAccount(actor.id);
+  if(['test','echo'].includes(p.mode)&&actor.role!=='admin')throw Error('Тестовые звонки доступны администратору');
+  if(p.mode==='client'&&!await phoneScope(db(),actor,{clientId:p.clientId})||p.mode==='order'&&!await phoneScope(db(),actor,{orderId:p.orderId}))throw Error('Нет доступа к этому клиенту или заказу');
+  let destination=p.mode==='echo'?'echo':normalizeOutgoingNumber(c.phone);
   let clientId=p.mode==='client'?p.clientId:'';
   if(p.mode==='order'){
    const order=await db().prepare('SELECT client_id FROM orders WHERE id=?').bind(p.orderId).first<{client_id:string}>();
@@ -30,13 +34,12 @@ export const POST=authenticated(async(req:Request)=>{
   if(clientId){
    const row=await db().prepare('SELECT phone FROM clients WHERE id=?').bind(clientId).first<{phone:string}>();
    if(!row)throw Error('Клиент не найден');
-   let phone=row.phone.replace(/\D/g,'');if(phone.length===11&&phone.startsWith('8'))phone='7'+phone.slice(1);
-   if(phone!==c.phone)throw Error('Сейчас разрешён только звонок на согласованный тестовый номер. Звонки клиентам включим после проверки звука.');
+   destination=normalizeOutgoingNumber(row.phone);
   }
+  if(!destination)throw Error('У клиента не указан корректный российский номер телефона');
   await initPhone(db(),c.callerId);
-  const call=await createPhoneCall(db(),{id:crypto.randomUUID().replaceAll('-',''),clientId:clientId||null,orderId:p.mode==='order'?p.orderId:null,actor:(await getChatGPTUser())!.employee!,echo:p.mode==='echo'});
-  // The PBX independently permits only these two destinations during the pilot.
-  return Response.json({callId:call.id,username:c.username,password:c.password,destination:p.mode==='echo'?'echo':'test',label:p.mode==='echo'?'Проверка микрофона — эхо':`Тестовый звонок · +${c.phone}`},{headers:{'Cache-Control':'no-store'}});
+  const call=await createPhoneCall(db(),{id:crypto.randomUUID().replaceAll('-',''),clientId:clientId||null,orderId:p.mode==='order'?p.orderId:null,actor,echo:p.mode==='echo',destination,sipUser:account.username});
+  return Response.json({callId:call.id,...account,destination:p.mode==='echo'?'echo':'call',label:p.mode==='echo'?'Проверка микрофона — эхо':'Звонок клиенту'},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте параметры звонка':e instanceof Error?e.message:'Не удалось подготовить звонок'},{status:400});}
 });
 

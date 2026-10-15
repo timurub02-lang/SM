@@ -7,6 +7,7 @@ import {join,resolve} from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {authSchema} from '../lib/auth-schema.ts';
+import {createHmac} from 'node:crypto';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-auth-')), db=new DatabaseSync(join(dir,'test.sqlite'));
 const password='test-password-only-123',pbxKey='fixture-pbx-result-key-not-a-real-secret';
@@ -25,7 +26,7 @@ try{
   const o={id:'o-'+id,clientId:c.id,manager:id,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,version:1};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
  }
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_RESULT_KEY:pbxKey,CRM_PHONE_RECORDINGS_DIR:join(dir,'recordings'),CRM_PHONE_USER:'pilot-test',CRM_PHONE_PASSWORD:'fixture-secret',CRM_PHONE_TEST_NUMBER:'79990000001',CRM_PHONE_CALLER_ID:'79000000000',CRM_PHONE_EMPLOYEE:'admin',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_STAFF_ENABLED:'1',CRM_PHONE_RESULT_KEY:pbxKey,CRM_PHONE_RECORDINGS_DIR:join(dir,'recordings'),CRM_PHONE_USER:'pilot-test',CRM_PHONE_PASSWORD:'fixture-secret',CRM_PHONE_TEST_NUMBER:'79990000001',CRM_PHONE_CALLER_ID:'79000000000',CRM_PHONE_EMPLOYEE:'admin',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(ready,'Server failed to start');
@@ -33,22 +34,27 @@ try{
  async function login(name,pw=password){return call('/api/auth/login',{body:{login:name,password:pw}});}
  const cookies={};for(const {id} of staff){const r=await login(id);assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
  assert.equal((await call('/api/telephony')).status,401);
- for(const id of ['one','head'])for(const body of [undefined,{mode:'test'}])assert.equal((await call('/api/telephony',{cookie:cookies[id],body})).status,403);
+ for(const id of ['one','head','logistic','chief','redemption'])assert.equal((await call('/api/telephony',{cookie:cookies[id]})).status,200);
+ assert.equal((await call('/api/telephony',{cookie:cookies.courier})).status,403);
+ for(const id of ['one','head'])assert.equal((await call('/api/telephony',{cookie:cookies[id],body:{mode:'test'}})).status,400);
+ assert.equal((await call('/api/telephony',{cookie:cookies.one,body:{mode:'client',clientId:'c-two'}})).status,400);
+ const ownCall=await call('/api/telephony',{cookie:cookies.one,body:{mode:'client',clientId:'c-one'}});assert.equal(ownCall.status,200);
+ const headCall=await call('/api/telephony',{cookie:cookies.head,body:{mode:'order',orderId:'o-one'}});assert.equal(headCall.status,200);assert.notEqual(headCall.data.username,ownCall.data.username);
  const status=await call('/api/telephony',{cookie:cookies.admin});assert.equal(status.data.configured,true);assert.ok(!status.text.includes('fixture-secret'));assert.ok(!status.text.includes('pilot-test'));assert.equal(status.headers.get('cache-control'),'no-store');
  const dial=body=>call('/api/telephony',{cookie:cookies.admin,body});
  for(const body of [{mode:'test'},{mode:'echo'},{mode:'client',clientId:'c-one'},{mode:'order',orderId:'o-one'}]){
-  const r=await dial(body);assert.equal(r.status,200,r.text);assert.equal(r.data.destination,body.mode==='echo'?'echo':'test');assert.equal(r.headers.get('cache-control'),'no-store');
+  const r=await dial(body);assert.equal(r.status,200,r.text);assert.equal(r.data.destination,body.mode==='echo'?'echo':'call');assert.equal(r.headers.get('cache-control'),'no-store');
  }
- for(const body of [{mode:'client',clientId:'c-two'},{mode:'order',orderId:'o-two'},{mode:'client',clientId:'missing'},{mode:'number',phone:'79990000001'}])assert.equal((await dial(body)).status,400);
+ for(const body of [{mode:'client',clientId:'missing'},{mode:'number',phone:'79990000001'}])assert.equal((await dial(body)).status,400);
  assert.equal((await dial({mode:'order',orderId:'missing'})).status,403);
- assert.equal((await dial({mode:'test',phone:'79999999999',destination:'arbitrary'})).data.destination,'test');
+ assert.equal((await dial({mode:'test',phone:'79999999999',destination:'arbitrary'})).data.destination,'call');
  assert.equal((await dial({mode:'test',actorId:'one'})).status,403);
  assert.equal((await call('/api/telephony',{cookie:cookies.admin,body:{mode:'test'},headers:{Origin:'https://evil.test'}})).status,403);
  db.prepare('UPDATE clients SET phone=? WHERE id=?').run('8 (999) 000-00-01','c-one');
  assert.equal((await dial({mode:'client',clientId:'c-one'})).status,200);
 
  const api=(path,body,cookie=cookies.admin,method)=>call(path,{cookie,body,method});
- const pbx=(method,id,body,key=pbxKey)=>call('/api/telephony/pbx'+(id?'?callId='+id:''),{method,body,headers:{'X-CRM-PBX-Key':key}});
+ const pbx=(method,id,body,key=pbxKey)=>call('/api/telephony/pbx'+(id?'?callId='+id+'&endpoint=crm-'+createHmac('sha256',pbxKey).update('username:admin').digest('hex').slice(0,24):''),{method,body,headers:{'X-CRM-PBX-Key':key}});
  const attempt=await dial({mode:'order',orderId:'o-one'}),callId=attempt.data.callId;assert.match(callId,/^[a-f0-9]{32}$/);
  assert.equal((await api('/api/call-history?orderId=o-one')).data.calls[0].id,callId);
  assert.equal((await call('/api/call-history?orderId=o-one')).status,401);
@@ -56,7 +62,10 @@ try{
  assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies.two)).status,403);
  for(const id of ['admin','one','head'])assert.equal((await api('/api/call-history?clientId=c-one',undefined,cookies[id])).status,200);
  assert.equal((await pbx('GET',callId,undefined,'wrong-key')).status,403);
- assert.equal((await pbx('GET',callId)).status,200);
+ assert.equal((await call('/api/telephony/pbx?callId='+callId+'&endpoint='+ownCall.data.username,{headers:{'X-CRM-PBX-Key':pbxKey}})).status,403,'Cannot use another employee call token');
+ const claimed=await pbx('GET',callId);assert.equal(claimed.status,200);assert.equal(claimed.data.destination,'79990000001');
+ const accounts=await call('/api/telephony/pbx?accounts=1',{headers:{'X-CRM-PBX-Key':pbxKey}});assert.equal(accounts.data.accounts.length,9);
+ assert.equal((await call('/api/telephony/pbx?accounts=1')).status,403);
  assert.equal((await pbx('GET',callId)).status,409,'Same call ID cannot dial twice');
  const epoch=Math.floor(Date.now()/1000),audio=Buffer.alloc(16044);audio.write('RIFF');audio.writeUInt32LE(audio.length-8,4);audio.write('WAVEfmt ',8);audio.writeUInt32LE(16,16);audio.writeUInt16LE(1,20);audio.writeUInt16LE(1,22);audio.writeUInt32LE(8000,24);audio.writeUInt32LE(16000,28);audio.writeUInt16LE(2,32);audio.writeUInt16LE(16,34);audio.write('data',36);audio.writeUInt32LE(audio.length-44,40);
  const orderBefore=db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data;
@@ -109,7 +118,7 @@ try{
  assert.equal((await api('/api/call-history?orderId=o-one',undefined,cookies.one)).status,200);
  assert.equal((await api(recording,undefined,cookies.two)).status,200,'New client owner can hear client history');
  db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify({...staff[1],role:'admin'}),'one');
- assert.equal((await call('/api/telephony',{cookie:cookies.one,body:{mode:'test'}})).status,403);
+ assert.equal((await call('/api/telephony',{cookie:cookies.one,body:{mode:'test'}})).status,200);
 
  // Incoming callbacks: the production endpoint, persisted visibility and closure.
  db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify(staff[1]),'one');
@@ -164,6 +173,6 @@ try{
  assert.equal(outcome.status,200,outcome.text);
  assert.ok((await state('one')).incoming.find(i=>i.id===callback).closedAt);assert.ok(!(await state('one')).incoming.find(i=>i.id===other).closedAt);
  console.log('Incoming HTTP: trusted ingress, linked phone matching, actual last caller/owner routing, role-scoped tasks, all heads unknown queue, required results, CSRF, no view closure, automatic outcome closure, shared deduplication passed.');
- console.log('Experimental classification, authorized manual correction, unchanged orders, call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and telephony pilot: authentication, dedicated admin, CSRF, fixed destinations, card phone normalization, private config and no-store passed. No calls placed.');
+ console.log('Experimental classification, authorized manual correction, unchanged orders, call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and staff telephony: authentication, per-employee credentials, role and client access, CSRF, server destinations, card phone normalization, private config and no-store passed. No calls placed.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
