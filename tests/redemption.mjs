@@ -39,6 +39,7 @@ try{
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'DELIVERED'}})).run();await syncRedemption(d,now);assert(awaitingReturn(await row()));
  await edit(buyer,{action:'refusal',result:'returned'});await syncRedemption(d,now);assert.equal((await row()).result,'returned');
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify(order)).run();assert(!inWorkday(await row(),'2026-10-16'));assert(!inWorkday(await row(),'2026-10-15'));assert(!awaitingReturn(await row()));
+ assert.deepEqual(allowedResults('work',{storageUntil:'2026-10-18'},'operator','2026-10-15'),['date']);
  assert.deepEqual(allowedResults('date',{storageUntil:'2026-10-15'},'redemption','2026-10-15'),[]);
  assert.deepEqual(allowedResults('refusal',{storageUntil:'2026-10-15'},'operator','2026-10-15'),['to_return']);
  assert.deepEqual(allowedResults('po',{storageUntil:'2026-10-15'},'operator','2026-10-15'),['date']);

@@ -33,7 +33,7 @@ export function allowedResults(action:string,row:any,role:string,day:string){
  if(row.result==='to_return')return role==='redemption'?['returned']:[];
  const expired=row.storageUntil&&row.storageUntil<=day;
  if(expired&&!['refusal','po'].includes(action))return [];
- if(action==='date'||action==='work')return action==='work'?['date','courier']:['date'];
+ if(action==='date'||action==='work')return ['date'];
  if(action==='nd')return ['none','to_return'];
  if(action==='refusal')return [...(!expired?['date']:[]),'to_return',...(role==='redemption'?['returned']:[])];
  if(action==='po')return expired?['date']:[];
