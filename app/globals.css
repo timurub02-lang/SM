@@ -143,3 +143,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-edit-dialog{max-height:calc(100dvh - 32px);overflow-y:auto}.redemption-day-history{border-top:1px solid #e1e7f0;padding-top:14px}.redemption-day-history h3{font-size:13px;font-weight:600;margin:0 0 10px;color:#71809a}.redemption-day-history article{display:grid;grid-template-columns:90px 1fr;gap:10px;align-items:start;padding:9px 0;border-bottom:1px solid #e8edf5;font-size:12px}.redemption-day-history article>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.redemption-day-history .redemption-action{padding:3px 7px;font-size:12px}.redemption-day-history small{flex-basis:100%;color:#71809a}.redemption-day-history p{font-size:12px;margin:0}
 
 .redemption-tabs{display:flex;gap:8px;flex-wrap:wrap}.redemption-tabs button{min-height:32px;padding:6px 12px;border-radius:9px;font-size:12px}
+
+.redemption .storage-due{background:#fee2e2!important;color:#b91c1c;font-weight:600}.redemption .storage-due input{color:#b91c1c;background:#fff1f2}
