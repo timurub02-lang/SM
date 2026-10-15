@@ -13,6 +13,11 @@ try{
  assert.equal(redemptionLeads([{...base,result:'delivered'}],'2026-10-16','https://crm.example').length,0);
  assert.equal(redemptionLeads([{...base,result:'date',resultDate:'2026-10-17'}],'2026-10-16','https://crm.example').length,0);
  assert.match(redemptionLeads([{...base,result:'date',resultDate:'2026-10-16'}],'2026-10-16','https://crm.example')[0].homepage,/redemption=o/);
+ const scheduled={...base,result:'date',resultDate:'2026-10-18',lastDay:'2026-10-15'};
+ assert.equal(redemptionLeads([{...scheduled,dateConfirmation:'pending'}],'2026-10-18','https://crm.example').length,0);
+ assert.equal(redemptionLeads([{...scheduled,dateConfirmation:'confirmed'}],'2026-10-15','https://crm.example').length,0);
+ assert.equal(redemptionLeads([{...scheduled,dateConfirmation:'confirmed'}],'2026-10-17','https://crm.example').length,0);
+ assert.equal(redemptionLeads([{...scheduled,dateConfirmation:'confirmed'}],'2026-10-18','https://crm.example').length,1);
  await d.prepare("UPDATE settings SET data=? WHERE id='redemption-config'").bind(JSON.stringify({automatic:true,projectId:'123'})).run();
  await d.prepare("INSERT INTO settings VALUES('skorozvon','{}')").run();
  let imported=[],posts=[];
