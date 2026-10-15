@@ -25,8 +25,12 @@ export function IncomingInbox({items,clients,employees,employee,busy,onCreate,on
   <p className="muted">Клиенту сообщили, что ему перезвонят. Обращение остаётся открытым до сохранения результата. Время московское.</p>
   <div className="incoming-filters">
   {scopes.length>1&&<label className="incoming-scope"><span>Обращения</span><select aria-label="Категория входящих обращений" value={scope} onChange={e=>setScope(e.target.value)}>{scopes.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>}
-  <div className="notification-tabs" role="group" aria-label="Состояние обращения"><button className="secondary" aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {category.filter(i=>!i.closedAt).length}</button><button className="secondary" aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button></div>
-  <div className="notification-tabs" role="group" aria-label="Наличие клиента в CRM"><button className="secondary" aria-pressed={known} onClick={()=>setKnown(true)}>Наши клиенты · {scoped.filter(i=>!!i.clientId&&!!i.closedAt===history).length}</button><button className="secondary" aria-pressed={!known} onClick={()=>setKnown(false)}>Неизвестные клиенты · {scoped.filter(i=>!i.clientId&&!!i.closedAt===history).length}</button></div>
+  <div className="tabs-line incoming-tabs" role="group" aria-label="Фильтры входящих обращений">
+   <button type="button" data-state={!history?'active':'inactive'} aria-pressed={!history} onClick={()=>setHistory(false)}>Требуют действия · {category.filter(i=>!i.closedAt).length}</button>
+   <button type="button" data-state={known?'active':'inactive'} aria-pressed={known} onClick={()=>setKnown(true)}>Наши клиенты · {scoped.filter(i=>!!i.clientId&&!!i.closedAt===history).length}</button>
+   <button type="button" data-state={!known?'active':'inactive'} aria-pressed={!known} onClick={()=>setKnown(false)}>Неизвестные клиенты · {scoped.filter(i=>!i.clientId&&!!i.closedAt===history).length}</button>
+   <button type="button" data-state={history?'active':'inactive'} aria-pressed={history} onClick={()=>setHistory(true)}>Закрытые</button>
+  </div>
   </div>
   {shown.map(item=><section className="notice stack incoming-card" key={item.id}>
    <div className="incoming-client-heading"><strong>{item.clientName||'Неизвестный клиент'}{item.phone?' · '+item.phone:''}</strong>{!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
