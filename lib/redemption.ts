@@ -57,6 +57,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  const next={...v,updatedAt:at,changedBy:e.name,changeKind:p.operation||'action'};
  if(p.operation==='return_operator'){
   if(!['admin','redemption'].includes(e.role)||awaitingOperator(row))throw Error('Вернуть заказ может администратор или сотрудник выкупа');
+  if(awaitingDateConfirmation(row)||awaitingReturn(row))throw Error('Из вкладок подтверждения нельзя вернуть заказ оператору');
   const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(row.manager).first();
   if(!manager||JSON.parse(manager.data).role!=='operator')throw Error('У заказа нет ответственного оператора');
   if(!returnReasons.includes(p.reason)||typeof p.comment!=='string'||p.comment.length>2000||p.reason==='Другое'&&!p.comment.trim())throw Error('Выберите причину и заполните комментарий для «Другое»');
