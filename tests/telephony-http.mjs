@@ -42,6 +42,13 @@ try{
  assert.equal((await call('/api/phone-replacement',{cookie:cookies.admin,body:{action:'import',numbers:['79000000000']}})).status,400);
  assert.equal((await call('/api/telephony/replacement',{body:{number:'79000000099'}})).status,401);
  assert.equal((await call('/api/telephony/replacement',{headers:{'x-crm-pbx-key':pbxKey},body:{number:'79000000099'}})).data.mode,'free');
+
+ db.prepare("UPDATE clients SET data=json_set(data,'$.linkedPhones',json(?)) WHERE id='c-one'").run(JSON.stringify(['+79990000777']));
+ const phoneVersion=()=>db.prepare("SELECT version FROM clients WHERE id='c-one'").get().version;
+ assert.equal((await call('/api/crm',{cookie:cookies.one,body:{action:'swapClientPhone',id:'c-one',version:phoneVersion(),phone:'+79990000777'}})).status,400);
+ const switched=await call('/api/crm',{cookie:cookies.admin,body:{action:'swapClientPhone',id:'c-one',version:phoneVersion(),phone:'+79990000777'}});assert.equal(switched.status,200,switched.text);assert.equal(db.prepare("SELECT phone FROM clients WHERE id='c-one'").get().phone,'+79990000777');
+ assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'swapClientPhone',id:'c-one',version:phoneVersion(),phone:'+79990000001'}})).status,200);
+ db.prepare("UPDATE clients SET data=json_remove(data,'$.linkedPhones') WHERE id='c-one'").run();
  assert.equal((await call('/api/telephony')).status,401);
  for(const id of ['one','head','logistic','chief','redemption'])assert.equal((await call('/api/telephony',{cookie:cookies[id]})).status,200);
  assert.equal((await call('/api/telephony',{cookie:cookies.courier})).status,403);
