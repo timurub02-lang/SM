@@ -41,14 +41,15 @@ try{
  await edit(admin,{operation:'storage',date:'2026-10-20'});
  await edit(op,{action:'date',result:'date',date:'2026-10-18'});
  assert.equal((await row()).dateConfirmation,'pending');
- for(const actor of [admin,op,head]){
+ for(const actor of [op,head]){
   assert(!canSeeRedemption(actor,await row(),true));
   await assert.rejects(edit(actor,{operation:'confirm_date'}),/недоступен/);
  }
  assert(canSeeRedemption(buyer,await row(),false));
  assert(!inWorkday(await row(),'2026-10-18'));
- await edit(buyer,{operation:'confirm_date'});
- assert.equal((await row()).dateConfirmedBy,buyer.name);
+ assert(canSeeRedemption(admin,await row(),false));
+ await edit(admin,{operation:'confirm_date'});
+ assert.equal((await row()).dateConfirmedBy,admin.name);
  assert.equal((await row()).author,op.name);
  assert(!inWorkday(await row(),'2026-10-15'));
  assert(!inWorkday(await row(),'2026-10-17'));
@@ -63,6 +64,10 @@ try{
  const confirmHistory=JSON.parse((await d.prepare("SELECT data FROM redemption_history WHERE json_extract(data,'$.changeKind')='confirm_date' ORDER BY id DESC LIMIT 1").first()).data);
  assert.equal(confirmHistory.dateConfirmedById,buyer.id);
  await d.prepare("UPDATE redemption_entries SET data='{}'").run();
+ await d.prepare('UPDATE redemption_entries SET data=?').bind(JSON.stringify({action:'date',result:'date',resultDate:'2026-10-17',author:'Legacy'})).run();
+ await syncRedemption(d,now);assert.equal((await row()).dateConfirmation,'pending');assert.equal((await row()).resultDate,'2026-10-17');assert.equal((await row()).author,'Legacy');
+ const migratedVersion=(await row()).version;await syncRedemption(d,now);assert.equal((await row()).version,migratedVersion);
+ await edit(admin,{operation:'confirm_date'});await syncRedemption(d,now);assert.equal((await row()).dateConfirmation,'confirmed');
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'DELIVERED'}})).run();await syncRedemption(d,now);assert.equal((await row()).author,'API');assert.equal((await row()).result,'delivered');
  assert.equal(dayOf(new Date('2026-10-15T21:01:00Z')),'2026-10-16');assert(!closedTime(now));assert(closedTime(new Date('2026-10-15T16:50:00Z')));
  assert(!inWorkday({entered_at:'2026-10-15T21:01:00Z'},'2026-10-15'));
