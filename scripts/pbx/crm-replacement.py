@@ -22,6 +22,7 @@ def run():
         if not line.strip(): break
         key,_,value=line.rstrip().partition(': ');env[key]=value
     number=env.get('agi_arg_1','').lstrip('+')
+    if re.fullmatch(r'\d{10}',number): number='7'+number
     if re.fullmatch(r'8\d{10}',number): number='7'+number[1:]
     if not CACHE.exists(): return
     if number not in json.loads(CACHE.read_text()).get('numbers',[]): return

@@ -11,7 +11,9 @@ with tempfile.TemporaryDirectory() as root:
   finally:sys.stdin=previous
   return output.getvalue()
  assert run('79000000002',{})==''
- assert 'CRM_MASK_MODE wait' in run('79000000001',{'mode':'wait'})
+ for number in ['79000000001','9000000001','+79000000001','89000000001']:
+  assert 'CRM_MASK_MODE wait' in run(number,{'mode':'wait'})
+  assert 'CRM_MASK_MODE connect' in run(number,{'mode':'connect','destination':'79990000000','callerId':'79000000001'})
  assert 'CRM_MASK_MODE regular' in run('79000000001',{'mode':'free'})
  connected=run('79000000001',{'mode':'connect','destination':'79990000000','callerId':'79000000001'})
  assert 'CRM_MASK_MODE connect' in connected and 'CRM_MASK_DEST 79990000000' in connected
