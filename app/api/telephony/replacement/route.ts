@@ -12,6 +12,7 @@ export async function POST(req:Request){
  await db().prepare("INSERT INTO settings(id,data) VALUES('phone-replacement-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({at:new Date().toISOString(),numbers})).run();return Response.json({ok:true});
  }
  if(typeof p.number!=='string'||!/^\+?7\d{10}$/.test(p.number))throw Error('Некорректный номер');
- return Response.json(await replacementRoute(db(),p.number));
+ if(p.caller!==undefined&&(typeof p.caller!=='string'||p.caller.length>40))throw Error('Некорректный звонящий');
+ return Response.json(await replacementRoute(db(),p.number,p.caller||''));
  }catch{return Response.json({error:'Соединение временно недоступно'},{status:503});}
 }

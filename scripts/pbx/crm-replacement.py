@@ -28,7 +28,7 @@ def run():
     if number not in json.loads(CACHE.read_text()).get('numbers',[]): return
     agi('SET VARIABLE CRM_MASK_MODE error')
     try:
-        result=api({'number':number})
+        result=api({'number':number,'caller':env.get('agi_callerid','')[:40]})
         mode=result['mode']
         if mode in ('free','regular'): agi('SET VARIABLE CRM_MASK_MODE regular')
         elif mode=='wait': agi('SET VARIABLE CRM_MASK_MODE wait')

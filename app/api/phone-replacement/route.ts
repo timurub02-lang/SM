@@ -2,9 +2,9 @@ import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {initPhone,normalizeOutgoingNumber} from '@/lib/phone-store';
-import {replacementConfig,replacementSchema,replacementHealth} from '@/lib/phone-replacement';
+import {replacementConfig,replacementSchema,replacementHealth,replacementDecision} from '@/lib/phone-replacement';
 export const dynamic='force-dynamic';
-async function state(){const d=db(),config=await replacementConfig(d);return {config,health:await replacementHealth(d),numbers:(await d.prepare('SELECT n.*,a.order_id,a.client_name,a.connected FROM replacement_numbers n LEFT JOIN replacement_assignments a ON a.number=n.number AND a.released_at IS NULL ORDER BY n.uses,n.number').all()).results,history:(await d.prepare('SELECT * FROM replacement_assignments ORDER BY assigned_at DESC LIMIT 1000').all()).results};}
+async function state(){const d=db(),config=await replacementConfig(d);return {config,health:await replacementHealth(d),numbers:(await d.prepare('SELECT n.*,a.order_id,a.client_name,a.connected,o.data order_data FROM replacement_numbers n LEFT JOIN replacement_assignments a ON a.number=n.number AND a.released_at IS NULL LEFT JOIN orders o ON o.id=a.order_id ORDER BY n.uses,n.number').all()).results.map(({order_data,...n}:any)=>({...n,connected:order_data&&replacementDecision(config,JSON.parse(order_data))==='enable'?1:0})),history:(await d.prepare('SELECT * FROM replacement_assignments ORDER BY assigned_at DESC LIMIT 1000').all()).results};}
 export const GET=authenticated(async()=> (await getChatGPTUser())?.employee?.role==='admin'?Response.json(await state()):Response.json({error:'Только для администратора'},{status:403}));
 export const POST=authenticated(async req=>{
  if((await getChatGPTUser())?.employee?.role!=='admin')return Response.json({error:'Только для администратора'},{status:403});
