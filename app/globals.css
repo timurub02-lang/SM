@@ -149,3 +149,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-result-value{display:inline-block;border-radius:6px;color:inherit;cursor:default}
 
 .redemption .redemption-grid tr.redemption-held td{background:#e5e7eb!important;color:#89919e}.redemption-held button,.redemption-held .redemption-action,.redemption-held .redemption-result{color:inherit;background:transparent;box-shadow:none;cursor:default}.redemption-held-label{display:block;font-size:11px;margin-top:3px}
+
+.redemption-return-reasons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.redemption-return-reasons .redemption-choice{text-align:left;min-height:64px}@media(max-width:540px){.redemption-return-reasons{grid-template-columns:1fr}}
