@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {initRedemption,redemptionRows,editRedemption,syncRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,canSeeRedemption,inWorkday,returnReasons} from '../lib/redemption.ts';
+import {redemptionLeads} from '../lib/redemption-dispatch.ts';
+const d=openDatabase(':memory:'),now=new Date('2026-10-16T10:00:00Z');
+const op={id:'op',name:'Operator',role:'operator',department:'1'},head={id:'head',name:'Head',role:'department_head',department:'1'},buyer={id:'buyer',name:'Buyer',role:'redemption'};
+try{
+ await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)'].map(s=>d.prepare(s)));
+ await initRedemption(d);
+ await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({id:'c',phone:'+79990000001'})).run();
+ await d.prepare('INSERT INTO employees VALUES(?,?)').bind(op.id,JSON.stringify(op)).run();
+ await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('o','c',JSON.stringify({manager:'op',items:[],testTrack:'TEST'})).run();
+ await d.prepare('INSERT INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind('o',now.toISOString(),JSON.stringify({manualStorage:'2026-10-25',action:'refusal',result:'to_return'})).run();
+ const row=async()=>(await redemptionRows(d))[0];
+ const edit=async(actor,p,t=now)=>editRedemption(d,actor,{id:'o',version:(await row()).version,...p},t);
+ const send={operation:'return_operator',reason:returnReasons[0],comment:''};
+ await assert.rejects(edit(head,send));await assert.rejects(edit(buyer,{...send,reason:'Другое'}));
+ await edit(buyer,send);assert(awaitingOperator(await row()));assert(!awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));
+ assert(canSeeRedemption(op,await row(),false));assert(canSeeRedemption(head,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),true));assert(!canSeeRedemption({...op,id:'other'},await row(),false));
+ await assert.rejects(edit(op,{action:'nd',result:'none'}));
+ await edit(head,{action:'date',result:'date',date:'2026-10-20'});assert(!awaitingOperator(await row()));assert(awaitingDateConfirmation(await row()));
+ await edit(buyer,send);await edit(op,{action:'refusal',result:'to_return'});assert(awaitingReturn(await row()));
+ await edit(buyer,send);const deadline=(await row()).operatorReturn.deadline;assert.equal(deadline,'2026-10-16T12:00:00.000Z');
+ await edit(op,{operation:'comment',text:'working'},new Date('2026-10-16T11:00:00Z'));assert.equal((await row()).operatorReturn.deadline,deadline);
+ await syncRedemption(d,new Date('2026-10-16T11:59:59Z'));assert(awaitingOperator(await row()));
+ await assert.rejects(edit(op,{action:'refusal',result:'to_return'},new Date(deadline)),/Два часа/);
+ await syncRedemption(d,new Date(deadline));assert(!awaitingOperator(await row()));assert.equal((await row()).result,'to_return');assert(awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));assert(!canSeeRedemption(head,await row(),true));assert.equal((await row()).operatorReturn.outcome,'Оператор не проработал заказ');assert(canSeeRedemption(buyer,await row(),false));assert(!canSeeRedemption(op,await row(),false));assert.equal(redemptionLeads([await row()],'2026-10-17','https://example.test').length,0);
+ const version=(await row()).version;await syncRedemption(d,new Date('2026-10-16T12:01:00Z'));assert.equal((await row()).version,version);
+ await edit(buyer,send);await edit(op,{action:'date',result:'date',date:'2026-10-20'});await edit(buyer,send);
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStatus.code','DELIVERED') WHERE id='o'").run();await syncRedemption(d,new Date('2026-10-16T11:00:00Z'));assert.equal((await row()).result,'delivered');assert(!awaitingOperator(await row()));
+ console.log('Return queue passed: scope, reasons, final results, exact two-hour deadline, no extension, timeout and SK exclusion');
+}finally{d.close();}
