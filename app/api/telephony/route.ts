@@ -1,3 +1,5 @@
+import {createHmac} from 'node:crypto';
+import type {Employee} from '@/lib/crm';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -8,13 +10,25 @@ import {phoneAccount,phoneRoles} from '@/lib/phone-accounts';
 export const dynamic='force-dynamic';
 const input=z.discriminatedUnion('mode',[
  z.object({mode:z.literal('test')}),z.object({mode:z.literal('echo')}),
- z.object({mode:z.literal('client'),clientId:z.string().min(1)}),
- z.object({mode:z.literal('order'),orderId:z.string().min(1)})
+ z.object({mode:z.literal('client'),clientId:z.string().min(1),phoneKey:z.string().max(64).optional()}),
+ z.object({mode:z.literal('order'),orderId:z.string().min(1),phoneKey:z.string().max(64).optional()})
 ]);
+async function clientPhones(actor:Employee,p:z.infer<typeof input>){
+ if(p.mode!=='client'&&p.mode!=='order')throw Error('Выберите клиента или заказ');
+ if(!await phoneScope(db(),actor,p))throw Error('Нет доступа к этому клиенту или заказу');
+ const clientId=p.mode==='client'?p.clientId:(await db().prepare('SELECT client_id FROM orders WHERE id=?').bind(p.orderId).first<{client_id:string}>())?.client_id;
+ if(!clientId)throw Error('Заказ не найден');
+ const row=await db().prepare('SELECT phone,data FROM clients WHERE id=?').bind(clientId).first<{phone:string;data:string}>();if(!row)throw Error('Клиент не найден');
+ const linked=JSON.parse(row.data).linkedPhones||[];
+ const numbers=[...new Set([row.phone,...linked].map(normalizeOutgoingNumber).filter((number):number is string=>!!number))];
+ return {clientId,phones:numbers.map((number,index)=>({number,key:createHmac('sha256',process.env.CRM_PHONE_RESULT_KEY||'').update(clientId+':'+number).digest('hex'),label:(normalizeOutgoingNumber(row.phone)===number?'Основной':'Дополнительный '+index)+' · '+(['operator','department_head'].includes(actor.role)?'••• '+number.slice(-4):'+'+number)}))};
+}
 function config(){return {phone:process.env.CRM_PHONE_TEST_NUMBER||'',callerId:process.env.CRM_PHONE_CALLER_ID||''};}
 async function allowed(){const user=await getChatGPTUser();return process.env.CRM_PHONE_STAFF_ENABLED==='1'&&!!user?.employee&&phoneRoles.includes(user.employee.role);}
-export const GET=authenticated(async()=>{
+export const GET=authenticated(async(req:Request)=>{
  if(!await allowed())return Response.json({error:'Телефония недоступна для этой роли'},{status:403});
+ const url=new URL(req.url);
+ if(url.searchParams.has('mode')){try{const p=input.parse(Object.fromEntries(url.searchParams)),result=await clientPhones((await getChatGPTUser())!.employee!,p);return Response.json({phones:result.phones.map(({key,label})=>({key,label}))},{headers:{'Cache-Control':'no-store'}});}catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось получить номера'},{status:400});}}
  const c=config();return Response.json({configured:!!process.env.CRM_PHONE_RESULT_KEY,phone:c.phone,callerId:c.callerId,testMode:false,lines:25,cps:5},{headers:{'Cache-Control':'no-store'}});
 });
 export const POST=authenticated(async(req:Request)=>{
@@ -24,17 +38,12 @@ export const POST=authenticated(async(req:Request)=>{
   const actor=(await getChatGPTUser())!.employee!;
   const account=phoneAccount(actor.id);
   if(['test','echo'].includes(p.mode)&&actor.role!=='admin')throw Error('Тестовые звонки доступны администратору');
-  if(p.mode==='client'&&!await phoneScope(db(),actor,{clientId:p.clientId})||p.mode==='order'&&!await phoneScope(db(),actor,{orderId:p.orderId}))throw Error('Нет доступа к этому клиенту или заказу');
-  let destination=p.mode==='echo'?'echo':normalizeOutgoingNumber(c.phone);
-  let clientId=p.mode==='client'?p.clientId:'';
-  if(p.mode==='order'){
-   const order=await db().prepare('SELECT client_id FROM orders WHERE id=?').bind(p.orderId).first<{client_id:string}>();
-   if(!order)throw Error('Заказ не найден');clientId=order.client_id;
-  }
-  if(clientId){
-   const row=await db().prepare('SELECT phone FROM clients WHERE id=?').bind(clientId).first<{phone:string}>();
-   if(!row)throw Error('Клиент не найден');
-   destination=normalizeOutgoingNumber(row.phone);
+  let destination=p.mode==='echo'?'echo':normalizeOutgoingNumber(c.phone),clientId='';
+  if(p.mode==='client'||p.mode==='order'){
+   const result=await clientPhones(actor,p);clientId=result.clientId;
+   const selected=p.phoneKey?result.phones.find(n=>n.key===p.phoneKey):result.phones[0];
+   if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');
+   destination=selected.number;
   }
   if(!destination)throw Error('У клиента не указан корректный российский номер телефона');
   await initPhone(db(),c.callerId);

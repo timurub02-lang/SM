@@ -240,6 +240,15 @@ try{
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(newRequest.clientId).data).owner,'one');
  assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:other,operatorId:'two'},cookies.admin)).status,400,'Active order blocks reassignment');
  assert.equal((await api('/api/crm',{...create,incomingId:duplicate},cookies.admin)).status,400,'Existing phone blocks new client');
+ const choices=await api('/api/telephony?mode=client&clientId=c-two',undefined,cookies.two);assert.equal(choices.status,200,choices.text);assert.equal(choices.data.phones.length,2);assert.ok(!choices.text.includes('79997776655'),'Operator sees masked labels');
+ const orderChoices=await api('/api/telephony?mode=order&orderId=o-two',undefined,cookies.admin);assert.equal(orderChoices.status,200,orderChoices.text);assert.deepEqual(orderChoices.data.phones.map(p=>p.key),choices.data.phones.map(p=>p.key));
+ assert.equal((await api('/api/telephony?mode=client&clientId=c-two',undefined,cookies.one)).status,400,'No phone choices for inaccessible client');
+ const extraCall=await api('/api/telephony',{mode:'client',clientId:'c-two',phoneKey:choices.data.phones[1].key},cookies.two);assert.equal(extraCall.status,200,extraCall.text);assert.equal(db.prepare('SELECT destination FROM phone_call_targets WHERE call_id=?').get(extraCall.data.callId).destination,'79997776655');
+ const orderExtra=await api('/api/telephony',{mode:'order',orderId:'o-two',phoneKey:choices.data.phones[1].key},cookies.admin);assert.equal(orderExtra.status,200,orderExtra.text);assert.equal(db.prepare('SELECT destination FROM phone_call_targets WHERE call_id=?').get(orderExtra.data.callId).destination,'79997776655');
+ assert.equal((await api('/api/telephony',{mode:'client',clientId:'c-one',phoneKey:choices.data.phones[1].key},cookies.admin)).status,400,'Cannot select another client phone');
+ db.prepare("UPDATE clients SET data=json_set(data,'$.linkedPhones',json('[]')) WHERE id='c-two'").run();
+ assert.equal((await api('/api/telephony',{mode:'client',clientId:'c-two',phoneKey:choices.data.phones[1].key},cookies.two)).status,400,'Removed phone is not dialled');
+ console.log('Primary and additional phone selection, client/order targets, masked labels, authorization and stale selection passed.');
  console.log('Unknown client creation, cross-department assignment, reassignment, validation and active-order protection passed.');
  console.log('Unknown caller search, Cyrillic names, owner labels, extra phone linking, future matching and duplicate protection passed.');
  console.log('Incoming HTTP: trusted ingress, linked phone matching, actual last caller/owner routing, role-scoped tasks, all heads unknown queue, required results, CSRF, no view closure, automatic outcome closure, shared deduplication passed.');

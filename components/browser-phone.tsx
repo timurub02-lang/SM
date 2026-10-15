@@ -2,10 +2,12 @@
 import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {Phone,PhoneOff,Mic,MicOff} from 'lucide-react';
 import {createPortal} from 'react-dom';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
+import {toast} from 'sonner';
 import {PhoneNumbers} from './phone-numbers';
 import type {SimpleUser} from 'sip.js/lib/platform/web';
 
-type Target={mode:'test'|'echo'}|{mode:'client';clientId:string}|{mode:'order';orderId:string};
+type Target={mode:'test'|'echo'}|{mode:'client';clientId:string;phoneKey?:string}|{mode:'order';orderId:string;phoneKey?:string};
 type CallConfig={callId:string;username:string;password:string;destination:string;label:string;error?:string};
 type StatusConfig={configured:boolean;phone:string;callerId:string;error?:string};
 const PhoneContext=createContext<{start:(target:Target)=>void;busy:boolean;enabled:boolean}|null>(null);
@@ -26,7 +28,7 @@ export function BrowserPhone({admin,actorId,children}:{admin:boolean;actorId:str
  async function report(id:string,status:string,detail=''){try{await fetch('/api/telephony',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status,detail}),keepalive:true});}finally{window.dispatchEvent(new Event('crm-call-updated'));}}
  const audio=useRef<HTMLAudioElement>(null),phone=useRef<SimpleUser|null>(null),running=useRef(false),generation=useRef(0);
 
- async function finish(text:string,result='unknown'){const call=attempt.current;attempt.current=null;if(call)void report(call.id,result,text).catch(()=>{});generation.current++;running.current=false;setBusy(false);setMuted(false);setMessage(text);const current=phone.current;phone.current=null;try{await current?.disconnect();}catch{}}
+ async function finish(text:string,result='unknown'){const call=attempt.current;attempt.current=null;if(call)void report(call.id,result,text).catch(()=>{});generation.current++;running.current=false;setBusy(false);setMuted(false);setMessage(text);if(text==='Звонок завершён')setOpen(false);const current=phone.current;phone.current=null;try{await current?.disconnect();}catch{}}
  async function stop(){const call=attempt.current;if(call)void report(call.id,call.answered?'unknown':'cancelled',call.answered?'Ожидаем итог и запись от АТС.':'Звонок завершён сотрудником до соединения.').catch(()=>{});const current=phone.current;try{await current?.hangup();}catch{}await finish('Звонок завершён');}
  useEffect(()=>()=>{generation.current++;running.current=false;void phone.current?.disconnect().catch(()=>{});phone.current=null;},[actorId]);
  useEffect(()=>{if(!busy)return;const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[busy]);
@@ -56,8 +58,16 @@ export function BrowserPhone({admin,actorId,children}:{admin:boolean;actorId:str
  return <PhoneContext.Provider value={{start:target=>void start(target),busy,enabled}}>{children}<audio ref={audio} autoPlay/>{open&&dockHost&&createPortal(<section className="browser-call-dock" aria-label="Управление звонком"><div className="browser-call-summary"><strong><Phone size={16}/>{title}{connectedAt!==null&&<time aria-label="Длительность разговора">{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</time>}</strong><span role="status">{message}</span></div><div className="browser-call-controls">{busy&&soundBlocked&&<button type="button" className="secondary" onClick={()=>{void audio.current?.play().then(()=>setSoundBlocked(false)).catch(()=>setMessage("Браузер блокирует звук. Разрешите воспроизведение для CRM."));}}>Включить звук</button>}{busy?<><button type="button" className="secondary" aria-label={muted?'Включить микрофон':'Выключить микрофон'} aria-pressed={muted} onClick={()=>{const p=phone.current;if(!p)return;if(muted)p.unmute();else p.mute();setMuted(!muted);}}>{muted?<MicOff size={18}/>:<Mic size={18}/>}<span>{muted?'Включить микрофон':'Выключить микрофон'}</span></button><button type="button" className="primary phone-hangup" onClick={()=>void stop()}><PhoneOff size={18}/><span>Завершить звонок</span></button></>:<button type="button" className="secondary" onClick={()=>setOpen(false)}>Скрыть звонок</button>}</div></section>,dockHost)}</PhoneContext.Provider>;
 }
 export function CallButton({target,disabled=false,children='Позвонить',className=''}:{target:Target;disabled?:boolean;children?:ReactNode;className?:string}){
- const phone=useContext(PhoneContext);if(!phone)return null;
- return <button type="button" className={`secondary browser-call-button ${className}`} disabled={disabled||phone.busy||!phone.enabled} title={phone.enabled?'Позвонить через браузер':'Телефония недоступна'} onClick={()=>phone.start(target)}><Phone size={17}/>{children}</button>;
+ const phone=useContext(PhoneContext),[choices,setChoices]=useState<{key:string;label:string}[]>([]),[loading,setLoading]=useState(false);
+ if(!phone)return null;
+ async function choose(){
+  if(!phone||loading)return;
+  if(target.mode!=='client'&&target.mode!=='order'){phone.start(target);return;}
+  setLoading(true);
+  try{const query=new URLSearchParams(target),r=await fetch('/api/telephony?'+query,{cache:'no-store'}),data=await r.json() as {phones:{key:string;label:string}[];error?:string};if(!r.ok)throw Error(data.error||'Не удалось получить номера');if(!data.phones.length)throw Error('У клиента нет корректного номера телефона');if(data.phones.length===1)phone.start({...target,phoneKey:data.phones[0].key});else setChoices(data.phones);}catch(e){toast.error(e instanceof Error?e.message:'Не удалось получить номера');}finally{setLoading(false);}
+ }
+ return <><button type="button" className={`secondary browser-call-button ${className}`} disabled={disabled||loading||phone.busy||!phone.enabled} title={phone.enabled?'Позвонить через браузер':'Телефония недоступна'} onClick={()=>void choose()}><Phone size={17}/>{loading?'Загрузка…':children}</button><Dialog open={choices.length>0} onOpenChange={open=>{if(!open)setChoices([]);}}><DialogContent className="form-dialog"><DialogHeader><DialogTitle>На какой номер позвонить?</DialogTitle><DialogDescription>Выберите номер клиента — после нажатия начнётся звонок.</DialogDescription></DialogHeader><div className="stack">{choices.map(choice=><button type="button" className="secondary" key={choice.key} disabled={disabled||phone.busy} onClick={()=>{setChoices([]);if(target.mode==='client'||target.mode==='order')phone.start({...target,phoneKey:choice.key});}}><Phone size={17}/>{choice.label}</button>)}</div></DialogContent></Dialog></>;
+
 }
 export function TelephonySettings(){
  const [config,setConfig]=useState<StatusConfig|null>(null),[error,setError]=useState('');
