@@ -145,3 +145,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-tabs{display:flex;gap:8px;flex-wrap:wrap}.redemption-tabs button{min-height:32px;padding:6px 12px;border-radius:9px;font-size:12px}
 
 .redemption .storage-due{background:#fee2e2!important;color:#b91c1c;font-weight:600}.redemption .storage-due input{color:#b91c1c;background:#fff1f2}
+
+.redemption-result-value{display:inline-block;border-radius:6px;color:inherit;cursor:default}
