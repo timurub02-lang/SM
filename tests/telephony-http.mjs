@@ -33,6 +33,15 @@ try{
  async function call(path,{cookie,body,headers={},method}={}){const r=await fetch(base+path,{method:method||(body?'POST':'GET'),redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}return {status:r.status,data,headers:r.headers,text};}
  async function login(name,pw=password){return call('/api/auth/login',{body:{login:name,password:pw}});}
  const cookies={};for(const {id} of staff){const r=await login(id);assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
+
+ assert.equal((await call('/api/phone-replacement')).status,401);
+ assert.equal((await call('/api/phone-replacement',{cookie:cookies.one})).status,403);
+ const maskingPool=await call('/api/phone-replacement',{cookie:cookies.admin});assert.equal(maskingPool.status,200,maskingPool.text);
+ assert.equal((await call('/api/phone-replacement',{cookie:cookies.admin,body:{action:'import',numbers:['79000000099']}})).status,200);
+ assert.equal((await call('/api/telephony/numbers',{cookie:cookies.admin,body:{action:'import',numbers:['79000000099']}})).status,400);
+ assert.equal((await call('/api/phone-replacement',{cookie:cookies.admin,body:{action:'import',numbers:['79000000000']}})).status,400);
+ assert.equal((await call('/api/telephony/replacement',{body:{number:'79000000099'}})).status,401);
+ assert.equal((await call('/api/telephony/replacement',{headers:{'x-crm-pbx-key':pbxKey},body:{number:'79000000099'}})).data.mode,'free');
  assert.equal((await call('/api/telephony')).status,401);
  for(const id of ['one','head','logistic','chief','redemption'])assert.equal((await call('/api/telephony',{cookie:cookies[id]})).status,200);
  assert.equal((await call('/api/telephony',{cookie:cookies.courier})).status,403);

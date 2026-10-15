@@ -1,3 +1,4 @@
+import {replacementPhone} from '@/lib/phone-replacement';
 import {applyCdekDeletion} from '@/lib/cdek-deletion';
 import {orderRouting,assertRoutingSlot,routingReservationGuard} from '@/lib/cdek-routing-store';
 import {authenticated} from '@/lib/api-auth';
@@ -103,9 +104,14 @@ async function handlePOST(req:Request){
     if(side==='recipient'&&(payload.packages[0].items.some(x=>x.payment.value>0)||form.deliveryCost>0)&&point.allowed_cod===false)throw Error('ПВЗ не принимает наложенный платёж');
    }
    const routing=await orderRouting(c.order);assertRoutingSlot(routing,t.slot);const guard=routingReservationGuard(routing,c.order);
-   const shipment:Shipment={recipientPhone:payload.recipient.phones[0].number,routingAmountCents:routing.amountCents,routingRuleId:routing.choice?.ruleId,routingReason:routing.choice?.reason,attempt:crypto.randomUUID(),slot:t.slot,account:t.account,state:'sending',createdAt:new Date().toISOString(),form};const pending=JSON.stringify(shipment);
+   const shipment:Shipment={recipientPhone:payload.recipient.phones[0].number,routingAmountCents:routing.amountCents,routingRuleId:routing.choice?.ruleId,routingReason:routing.choice?.reason,attempt:crypto.randomUUID(),slot:t.slot,account:t.account,state:'sending',createdAt:new Date().toISOString(),form};let pending=JSON.stringify(shipment);
    const lock=c.record?await d.prepare(`UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?) AND ${guard.sql}`).bind(pending,c.key,c.record.data,p.orderId,p.version!,...guard.values).run():await d.prepare(`INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?) AND ${guard.sql}`).bind(c.key,pending,p.orderId,p.version!,...guard.values).run();
    if(!lock.meta.changes)throw Error('Заказ, правила или лимит изменились. Обновите карточку и пересчитайте доставку');
+   try{
+    const masked=await replacementPhone(d,c.order,payload.recipient.phones[0].number);
+    payload.recipient.phones[0].number=masked.phone;shipment.recipientPhone=masked.phone;shipment.replacementAssignmentId=masked.assignmentId;shipment.replacementFallback=masked.fallback;await save(shipment,pending);pending=JSON.stringify(shipment);await d.prepare("DELETE FROM settings WHERE id='phone-replacement-error' AND json_extract(data,'$.orderId')=?").bind(c.order.id).run();
+   }catch(e){shipment.state='invalid';shipment.error=e instanceof Error?e.message:'Ошибка подмены телефона';await save(shipment,pending);await d.prepare("INSERT INTO settings(id,data) VALUES('phone-replacement-error',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({at:new Date().toISOString(),text:shipment.error,orderId:c.order.id})).run();throw e;}
+
    try{
     const response=await api('/orders',payload);const data=await response.json() as any;
     const result=shipmentResult(data);

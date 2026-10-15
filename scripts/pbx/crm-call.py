@@ -130,6 +130,10 @@ def upload_one(path):
         print('CRM call result pending: ' + type(error).__name__, file=sys.stderr)
 
 def upload():
+    try:
+        subprocess.run(['/usr/local/lib/sm-crm/crm-replacement.py','--sync'],check=False,timeout=25)
+    except Exception:
+        print('Delivery pool synchronization pending',file=sys.stderr)
     # Independent calls do not wait for another call's speech analysis or network retry.
     from concurrent.futures import ThreadPoolExecutor
     paths=sorted(ROOT.glob('*.json'), key=lambda p: (not p.name.startswith('incoming-'), p.name))[:100]

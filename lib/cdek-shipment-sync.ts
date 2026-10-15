@@ -1,3 +1,4 @@
+import {initReplacement} from './phone-replacement.ts';
 import {z} from 'zod';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {statuses,type Order} from './crm.ts';
@@ -29,7 +30,8 @@ export async function applyCdekShipment(d:Db,order:Order,stored:Shipment,previou
 
 export async function syncCdekShipments(d:Db,request:typeof fetch=fetch){
  // A bounded oldest-first queue limits load and gives failures a turn again next cycle.
- const rows=(await d.prepare("SELECT s.id,s.data shipment,o.data order_data,o.version FROM settings s JOIN orders o ON s.id='cdek-shipment-' || o.id WHERE json_extract(s.data,'$.uuid') IS NOT NULL AND json_extract(s.data,'$.state') IN ('sending','pending','ready','unknown') AND json_extract(o.data,'$.status') NOT IN ('redeemed','returned','refused') AND COALESCE(json_extract(o.data,'$.testOnly'),0)<>1 ORDER BY COALESCE(json_extract(s.data,'$.checkedAt'),''),s.id LIMIT 200").all()).results;
+ await initReplacement(d);
+ const rows=(await d.prepare("SELECT s.id,s.data shipment,o.data order_data,o.version FROM settings s JOIN orders o ON s.id='cdek-shipment-' || o.id WHERE json_extract(s.data,'$.uuid') IS NOT NULL AND json_extract(s.data,'$.state') IN ('sending','pending','ready','unknown') AND (json_extract(o.data,'$.status') NOT IN ('redeemed','returned','refused') OR EXISTS(SELECT 1 FROM replacement_assignments a WHERE a.order_id=o.id AND a.released_at IS NULL)) AND COALESCE(json_extract(o.data,'$.testOnly'),0)<>1 ORDER BY COALESCE(json_extract(s.data,'$.checkedAt'),''),s.id LIMIT 200").all()).results;
  const tokens=new Map<number,Promise<string>>(),pausedSlots=new Set<number>();
  const counts={checked:0,changed:0,failed:0};let cursor=0;
  async function work(){

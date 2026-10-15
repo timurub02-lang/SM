@@ -1,3 +1,4 @@
+import {initReplacement} from './phone-replacement.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Order} from './crm.ts';
 import type {Reminder} from './reminders.ts';
@@ -35,10 +36,12 @@ export async function applyCdekDeletion(d:Db,order:Order,stored:Shipment,previou
   text:(deleted?'Вернули из СДЭК · удалена накладная № ':'Удаление из СДЭК отклонено · накладная № ')+(shipment.number||'—')+' · UUID '+shipment.uuid+' · '+shipment.account+' · Причина запроса: '+shipment.deletion.reason+(deleted?'':' · Ответ СДЭК: '+(result.error||'заказ нельзя удалить'))};
  const failed:Shipment={...shipment,state:'ready',deletion:undefined,error:'Удаление отклонено СДЭК: '+(result.error||'заказ нельзя удалить')};
  const changed="EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)";
- await initReminderStore(d);
+ await initReminderStore(d);await initReplacement(d);
+ const maskRule=(action:string)=>`EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.${action}.cdek') WHERE settings.id='phone-replacement' AND value='REMOVED') OR EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.${action}.crm') WHERE settings.id='phone-replacement' AND value=json_extract((SELECT data FROM orders WHERE id=replacement_assignments.order_id),'$.status'))`;
  const writes=[
   d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)').bind(JSON.stringify(next),order.id,order.version,key,previous),
   ...(deleted?[
+   d.prepare(`UPDATE replacement_assignments SET connected=CASE WHEN (${maskRule('release')}) OR (${maskRule('disable')}) THEN 0 WHEN (${maskRule('enable')}) THEN 1 ELSE connected END,released_at=CASE WHEN (${maskRule('release')}) THEN ? ELSE NULL END,release_reason=CASE WHEN (${maskRule('release')}) THEN 'СДЭК: REMOVED; CRM: '||json_extract((SELECT data FROM orders WHERE id=replacement_assignments.order_id),'$.status') ELSE release_reason END WHERE order_id=? AND released_at IS NULL AND `+changed).bind(at,order.id,order.id,mutation),
    d.prepare('INSERT INTO settings(id,data) SELECT ?,? WHERE '+changed).bind('cdek-archive-'+shipment.attempt,JSON.stringify({...shipment,state:'deleted',deletedAt:at}),order.id,mutation),
    d.prepare('DELETE FROM settings WHERE id=? AND data=? AND '+changed).bind(key,previous,order.id,mutation)
   ]:[d.prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND '+changed).bind(JSON.stringify(failed),key,previous,order.id,mutation)]),

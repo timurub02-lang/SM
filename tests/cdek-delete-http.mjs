@@ -84,8 +84,16 @@ try{
  // Admin edits the returned basket; logistics retains its established no-basket-edit permission.
  r=await call('/api/crm','chief_logistic',{action:'updateOrder',id:f.order.id,version:returned.version,items:[{name:product.name,quantity:2,price:100}],addressConfirmed:true});assert.equal(r.status,400);
  r=await call('/api/crm','admin',{action:'updateOrder',id:f.order.id,version:returned.version,items:returned.items,address:client.address,comment:'Corrected',addressConfirmed:true});assert.equal(r.status,200,r.text);
+
+ await call('/api/phone-replacement');
+ db.prepare("UPDATE settings SET data=? WHERE id='phone-replacement'").run(JSON.stringify({enabled:true,threshold:500,enable:{crm:['shipping'],cdek:[]},disable:{crm:[],cdek:[]},release:{crm:['refused'],cdek:['REMOVED']}}));
+ db.prepare('INSERT INTO replacement_numbers(number,added_at) VALUES(?,?)').run('79000000098',new Date().toISOString());
+ const outage=await call(path,'admin',{action:'create',orderId:f.order.id,version:readOrder(f.order.id).version,form:JSON.parse(archived[0].data).form});assert.equal(outage.status,400,outage.text);
+ assert.equal(upstream().calls.filter(x=>x.path==='/v2/orders'&&x.method==='POST').length,0,'Masking outage must block CDEK create');
+ db.prepare("INSERT INTO settings VALUES('phone-replacement-health',?)").run(JSON.stringify({at:new Date().toISOString(),numbers:['79000000098']}));
  const corrected=readOrder(f.order.id);r=await call(path,'admin',{action:'create',orderId:f.order.id,version:corrected.version,form:JSON.parse(archived[0].data).form});assert.equal(r.status,200,r.text);assert.equal(r.data.shipment.state,'ready');assert.notEqual(r.data.shipment.uuid,f.uuid);assert.equal(r.data.shipment.printId,undefined);assert.equal(r.data.shipment.downloadedAt,undefined);
- const created=upstream().calls.find(x=>x.path==='/v2/orders'&&x.method==='POST');assert.equal(created.body.number,f.order.id,'Reuse CRM number after confirmed deletion');
+ const created=upstream().calls.find(x=>x.path==='/v2/orders'&&x.method==='POST');assert.equal(created.body.number,f.order.id,'Reuse CRM number after confirmed deletion');assert.equal(created.body.recipient.phones[0].number,'+79000000098');assert.equal(shipment(f.order.id).recipientPhone,'+79000000098');assert.equal(db.prepare('SELECT uses FROM replacement_numbers').get().uses,1);
+ db.prepare("UPDATE settings SET data=json_set(data,'$.enabled',json('false')) WHERE id='phone-replacement'").run();
  // CDEK refusal leaves the order, invoice and stock unchanged.
  const reject=fixture('SM-REJECT');change(s=>s.mode='reject');r=await remove(reject.order.id);assert.equal(r.data.shipment.state,'ready');assert.match(r.data.shipment.error,/Warehouse/);assert.equal(readOrder(reject.order.id).status,'shipping');assert.equal(readOrder(reject.order.id).cdekReturnedAt,undefined);assert.equal(notices(reject.order.id).length,2);assert.match(JSON.parse(notices(reject.order.id)[0].data).text,/Warehouse/);
  const moved=fixture('SM-MOVED');change(s=>s.orders[moved.uuid].status='RECEIVED_AT_SHIPMENT_WAREHOUSE');const callsBefore=upstream().calls.filter(x=>x.method==='DELETE').length;r=await remove(moved.order.id);assert.equal(r.status,400);assert.equal(upstream().calls.filter(x=>x.method==='DELETE').length,callsBefore);

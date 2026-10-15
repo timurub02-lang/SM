@@ -1,3 +1,4 @@
+import {initReplacement} from '@/lib/phone-replacement';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -20,6 +21,7 @@ export const POST=authenticated(async req=>{
    const values=z.array(z.string().max(200)).min(1).max(10000).parse(p.numbers),seen=new Set<string>(),invalid:{row:number;value:string;reason:string}[]=[];let duplicates=0;
    values.forEach((value,i)=>{const phone=normalizeOutgoingNumber(value);if(!phone)invalid.push({row:i+1,value,reason:'Нужен российский номер из 11 цифр, начинающийся с 7 или 8'});else if(seen.has(phone))duplicates++;else seen.add(phone);});
    const existing=new Set((await db().prepare('SELECT number FROM phone_numbers').all()).results.map((x:any)=>x.number));
+   await initReplacement(db());const masked=new Set((await db().prepare('SELECT number FROM replacement_numbers').all()).results.map((n:any)=>n.number));if([...seen].some(n=>masked.has(n)))throw Error('Номер находится в пуле «Замена телефона»');
    const fresh=[...seen].filter(n=>!existing.has(n));duplicates+=seen.size-fresh.length;
    const results=await db().batch(fresh.map(n=>db().prepare("INSERT OR IGNORE INTO phone_numbers(number,state,added_at) VALUES(?,'available',?)").bind(n,now)));
    const added=results.reduce((sum:number,r:any)=>sum+(r.meta.changes||0),0);duplicates+=fresh.length-added;

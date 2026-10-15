@@ -1,3 +1,4 @@
+import {replacementTasks} from '@/lib/phone-replacement';
 import {readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder,incomingRouting} from '@/lib/incoming';
 import {employeeTasks} from '@/lib/reminder-tasks';
 import {courierReminderStatements} from '@/lib/reminder-store';
@@ -64,7 +65,7 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
  }
 
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
- return {...visible,incoming,incomingOperators,tasks:[...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
+ return {...visible,incoming,incomingOperators,tasks:[...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
 async function handlePOST(request:Request){
@@ -181,6 +182,13 @@ async function handlePOST(request:Request){
    const c:Client={...data,baseType,sheet:firstSheet,id:id("C-"),assignedUntil:"",createdAt:now,version:1,...trial};
    await d.batch([d.prepare("INSERT INTO clients(id,phone,data) VALUES(?,?,?)").bind(c.id,c.phone,json(c)),eventSQL(ev(c.id,"","Клиент добавлен в базу"))]);message="Клиент добавлен";
   }
+ }else if(p.action==="swapClientPhone"){
+  if(employee?.role!=="admin")throw Error("Только администратор может менять основной номер");
+  const c=s.clients.find(c=>c.id===p.id);if(!c||!c.linkedPhones?.includes(p.phone))throw Error("Дополнительный номер не найден");
+  const mutation=id("M-"),next={...c,phone:p.phone,linkedPhones:c.linkedPhones.map(n=>n===p.phone?c.phone:n),_mutation:mutation};
+  const e=ev(c.id,"","Основной и дополнительный телефоны поменяны местами");
+  const result=await d.batch([d.prepare("UPDATE clients SET phone=?,data=?,version=version+1 WHERE id=? AND version=?").bind(next.phone,json(next),c.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),c.id,mutation)]);
+  if(!result[0].meta.changes)throw Error("Карточка уже изменена. Обновите страницу");
  }else if(p.action==="updateClient"){
   const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(user.employee&&["operator","department_head"].includes(employee!.role)?{...p.client,phone:c.phone}:p.client);if(employee?.role==="operator")data.owner=c.owner;ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
   const firstSheet=s.clients.map(c=>sourceSheet(c.source)).find(x=>x&&x!=="К")||"Т1";
