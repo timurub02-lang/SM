@@ -11,6 +11,7 @@ export const defaults={statuses:[] as string[],projectId:'',automatic:false,head
 export async function initRedemption(d:Db){await d.batch([
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_entries(order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,entered_at TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)`),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_history(id INTEGER PRIMARY KEY AUTOINCREMENT,order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,at TEXT NOT NULL,data TEXT NOT NULL)`),
+ d.prepare('CREATE INDEX IF NOT EXISTS redemption_history_at ON redemption_history(at)'),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_archives(day TEXT PRIMARY KEY,at TEXT NOT NULL,data TEXT NOT NULL)`),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_dispatch(day TEXT PRIMARY KEY,state TEXT NOT NULL,data TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL)`),
  d.prepare(`CREATE TRIGGER IF NOT EXISTS redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`),
@@ -56,7 +57,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
    date=p.action==='refusal'?refusalRetryDate(day):p.date;
    if(!validDate(date||'')||date<day||p.action!=='po'&&date>row.storageUntil)throw Error('Дата должна быть не раньше сегодня и не позже СХ');
   }
-  Object.assign(next,{refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?'pending':null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at}}});
+  Object.assign(next,{refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?'pending':null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,authorRole:e.role,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at}}});
  }
  const result=await d.prepare('UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id=? AND version=?').bind(JSON.stringify(next),p.id,p.version).run();if(!result.meta.changes)throw Error('Заказ изменён другим сотрудником. Обновите таблицу');
 }
