@@ -104,7 +104,7 @@ try{
  assert.equal((await pbx('GET',callId,undefined,'wrong-key')).status,403);
  assert.equal((await call('/api/telephony/pbx?callId='+callId+'&endpoint='+ownCall.data.username,{headers:{'X-CRM-PBX-Key':pbxKey}})).status,403,'Cannot use another employee call token');
  const claimed=await pbx('GET',callId);assert.equal(claimed.status,200);assert.equal(claimed.data.destination,'79990000001');
- const accounts=await call('/api/telephony/pbx?accounts=1',{headers:{'X-CRM-PBX-Key':pbxKey}});assert.equal(accounts.data.accounts.length,9);
+ const accounts=await call('/api/telephony/pbx?accounts=1',{headers:{'X-CRM-PBX-Key':pbxKey}});assert.equal(accounts.data.accounts.length,10);
  assert.equal((await call('/api/telephony/pbx?accounts=1')).status,403);
  assert.equal((await pbx('GET',callId)).status,409,'Same call ID cannot dial twice');
  const epoch=Math.floor(Date.now()/1000),audio=Buffer.alloc(16044);audio.write('RIFF');audio.writeUInt32LE(audio.length-8,4);audio.write('WAVEfmt ',8);audio.writeUInt32LE(16,16);audio.writeUInt16LE(1,20);audio.writeUInt16LE(1,22);audio.writeUInt32LE(8000,24);audio.writeUInt32LE(16000,28);audio.writeUInt16LE(2,32);audio.writeUInt16LE(16,34);audio.write('data',36);audio.writeUInt32LE(audio.length-44,40);
