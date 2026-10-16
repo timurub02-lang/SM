@@ -120,5 +120,15 @@ try{
  await d.prepare("UPDATE redemption_entries SET data='{}' WHERE order_id='confirmed'").run();
  await archiveRedemption(d,new Date('2026-10-16T17:00:00Z'));
  assert.equal((await d.prepare("SELECT data FROM redemption_archives WHERE day='2026-10-16'").first()).data,endOfDay);
+ await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('client-delivered','c',JSON.stringify({...order,id:'client-delivered'})).run();
+ await d.prepare('INSERT OR REPLACE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind('client-delivered',now.toISOString(),JSON.stringify({manualStorage:'2026-10-14'})).run();
+ const reported=async()=>(await redemptionRows(d)).find(r=>r.order_id==='client-delivered');
+ await editRedemption(d,op,{id:'client-delivered',version:(await reported()).version,action:'client_delivered',result:'client_delivered',comment:'Клиент подтвердил получение'},now);
+ await syncRedemption(d,new Date('2026-10-16T10:00:00Z'));
+ assert.equal((await reported()).result,'client_delivered');assert(inWorkday(await reported(),'2026-10-16'));assert(inWorkday(await reported(),'2026-10-17'));
+ assert(!allowedResults('client_delivered',await reported(),'operator','2026-10-16').includes('delivered'));
+ await d.prepare('UPDATE orders SET data=? WHERE id=?').bind(JSON.stringify({...order,id:'client-delivered',cdekStatus:{code:'DELIVERED'}}),'client-delivered').run();
+ await syncRedemption(d,new Date('2026-10-16T10:00:00Z'));
+ assert.equal((await reported()).result,'delivered');assert.equal((await reported()).author,'API');assert(inWorkday(await reported(),'2026-10-16'));assert(!inWorkday(await reported(),'2026-10-17'));
  console.log('Redemption: enrollment, permissions, dates, rollover, immutable archive and API delivery passed');
 }finally{d.close();}

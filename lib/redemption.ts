@@ -1,7 +1,7 @@
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Employee} from './crm.ts';
-export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В работе',courier:'У курьера',po:'Под ответственность'};
-export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера'};
+export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В работе',courier:'У курьера',client_delivered:'Вручен со слов клиента',po:'Под ответственность'};
+export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера',client_delivered:'Вручен со слов клиента'};
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
@@ -42,6 +42,7 @@ export async function redemptionRows(d:Db){const rows=(await d.prepare(`SELECT r
 export function allowedResults(action:string,row:any,role:string,day:string){
  if(awaitingOperator(row))return action==='refusal'?['to_return']:(action==='date'&&row.storageUntil&&row.storageUntil>day||action==='po'&&row.storageUntil&&row.storageUntil<=day)?['date']:[];
  if(row.result==='to_return')return role==='redemption'?['returned']:[];
+ if(action==='client_delivered')return ['client_delivered'];
  const expired=row.storageUntil&&row.storageUntil<=day;
  if(expired&&!['refusal','po'].includes(action))return [];
  if(action==='date'||action==='work')return ['date'];
