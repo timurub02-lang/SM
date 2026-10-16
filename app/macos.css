@@ -486,3 +486,5 @@ body:has(.courier-design-aurora){background:#191a1e}
 .redemption-grid .redemption-result-value.result-none{background:#fff0c7;color:#8b6724}
 .redemption-grid .redemption-result-value.result-to_return{background:#ffe0dd;color:#ae4335}
 .redemption-grid .redemption-held .redemption-result-value.result-returned{opacity:.55;filter:saturate(.65)}
+
+.redemption-grid .redemption-held button.primary.redemption-result{background:linear-gradient(#3095ff,#0978f5);border:1px solid #167ced;color:#fff;cursor:pointer}

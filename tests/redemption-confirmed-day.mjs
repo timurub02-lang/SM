@@ -19,3 +19,5 @@ const returned={...row,result:'returned',returnConfirmedAt:'2026-10-16T20:59:59Z
 
 assert(!inRedemptionTab({...row,dateVerifiedAt:'2026-10-16T20:59:59Z'},'confirm','2026-10-16'));
 assert(inWorkday({...row,dateVerifiedAt:'2026-10-16T20:59:59Z'},'2026-10-20'));
+
+assert(!inRedemptionTab({...returned,returnVerifiedAt:'2026-10-16T20:59:59Z'},'returns','2026-10-16'));
