@@ -69,6 +69,8 @@ try{
  assert(!inWorkday(await row(),'2026-10-17'));
  assert(inWorkday(await row(),'2026-10-18'));assert(inWorkday(await row(),'2026-10-19'));
  await assert.rejects(edit(buyer,{operation:'confirm_date'}),/Подтверждение/);
+ await assert.rejects(edit(buyer,{action:'work',result:'date',date:'2026-10-19'}),/Подтверждение/);
+ await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.dateConfirmedAt','2026-10-14T10:00:00Z')").run();
  await edit(buyer,{action:'work',result:'date',date:'2026-10-19'});
  assert.equal((await row()).dateConfirmation,'pending');assert.equal((await row()).dateConfirmedAt,null);
  await edit(buyer,{operation:'storage',date:'2026-10-15'});
