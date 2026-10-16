@@ -130,5 +130,10 @@ try{
  await d.prepare('UPDATE orders SET data=? WHERE id=?').bind(JSON.stringify({...order,id:'client-delivered',cdekStatus:{code:'DELIVERED'}}),'client-delivered').run();
  await syncRedemption(d,new Date('2026-10-16T10:00:00Z'));
  assert.equal((await reported()).result,'delivered');assert.equal((await reported()).author,'API');assert(inWorkday(await reported(),'2026-10-16'));assert(!inWorkday(await reported(),'2026-10-17'));
+ await d.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').bind(JSON.stringify({result:'date',resultDate:'2026-10-20',dateConfirmation:'confirmed',dateConfirmedAt:now.toISOString()}),'client-delivered').run();
+ const verify={id:'client-delivered',version:(await reported()).version,operation:'verify_date'};
+ await assert.rejects(editRedemption(d,op,verify,now),/сотрудник выкупа/);
+ await editRedemption(d,buyer,verify,now);assert.equal((await reported()).dateVerifiedById,buyer.id);
+ await assert.rejects(editRedemption(d,buyer,{...verify,version:(await reported()).version},now),/сотрудник выкупа/);
  console.log('Redemption: enrollment, permissions, dates, rollover, immutable archive and API delivery passed');
 }finally{d.close();}
