@@ -26,7 +26,7 @@ def api(method, call_id='', payload=None, endpoint='', accounts=False):
     req = urllib.request.Request(url + ('?accounts=1' if accounts else '?'+urllib.parse.urlencode({'callId':call_id,'endpoint':endpoint}) if call_id else ''),
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={'X-CRM-PBX-Key': config['key'], 'Content-Type': 'application/json'}, method=method)
-    with urllib.request.urlopen(req, timeout=10) as response:
+    with urllib.request.urlopen(req, timeout=3 if payload and payload.get('phase') == 'guard' else 10) as response:
         return json.loads(response.read())
 
 def agi(command):
@@ -43,6 +43,24 @@ def run_agi():
         key, _, value = line.rstrip().partition(': ')
         env[key] = value
     mode, call_id = env.get('agi_arg_1', ''), env.get('agi_arg_2', '')
+    if mode == 'incoming-guard':
+        try:
+            unique = env.get('agi_uniqueid', '')
+            if not unique:
+                return
+            call_id = hashlib.sha256(('incoming:' + unique).encode()).hexdigest()[:32]
+            result = api('POST', payload={'event': 'incoming', 'phase': 'guard', 'id': call_id,
+                         'phone': env.get('agi_callerid', '')[:40],
+                         'calledNumber': env.get('agi_arg_2', '')[:40],
+                         'at': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')})
+            decision = result.get('decision', 'challenge')
+            if decision not in ('allow', 'challenge', 'block'):
+                decision = 'challenge'
+            agi('SET VARIABLE CRM_INCOMING_GATE ' + decision)
+        except Exception:
+            # Fail to screening, not to a flood of unverified callbacks.
+            agi('SET VARIABLE CRM_INCOMING_GATE challenge')
+        return
     if mode == 'incoming':
         try:
             unique = env.get('agi_uniqueid', '')
@@ -53,6 +71,9 @@ def run_agi():
                        'phone': env.get('agi_callerid', '')[:40],
                        'calledNumber': env.get('agi_arg_2', env.get('agi_extension', ''))[:40],
                        'at': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}
+            screening = env.get('agi_arg_3', '')
+            if screening in ('passed', 'failed', 'blocked'):
+                payload['screening'] = screening
             path = ROOT / ('incoming-' + call_id + '.json')
             if not path.exists():
                 temp = path.with_suffix('.tmp')

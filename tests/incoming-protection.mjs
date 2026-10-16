@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {openDatabase} from '../server/sqlite.ts';
+import {receiveIncoming,readIncoming,incomingCloseStatement,incomingForAction} from '../lib/incoming.ts';
+import {incomingGate,moderateIncoming,protectionSchema} from '../lib/incoming-protection.ts';
+const d=openDatabase(':memory:'),admin={id:'a',role:'admin'},op={id:'o',role:'operator'};
+const now=new Date(),at=now.toISOString(),phone='+79991234567';
+const call=(id,p=phone,screening)=>({id,phone:p,calledNumber:'+79990000000',at,screening});
+try{
+ for(const sql of readFileSync('drizzle/0000_cynical_monster_badoon.sql','utf8').split('--> statement-breakpoint'))await d.prepare(sql).run();
+ await d.prepare('CREATE TABLE auth_accounts(employee_id TEXT,enabled INTEGER)').run();
+ await receiveIncoming(d,call('one'));
+ await Promise.all(Array.from({length:3},(_,i)=>receiveIncoming(d,call('repeat-'+i))));
+ await receiveIncoming(d,call('repeat-1'));
+ let rows=await readIncoming(d,admin,[],[]);
+ assert.equal(rows.length,1);assert.equal(rows[0].callCount,4);
+ await incomingCloseStatement(d,'one','a',at,'Готово',null).run();
+ // Closing does not suppress a later call; it is a new request.
+ await receiveIncoming(d,call('after-close',phone,'passed'));
+ rows=await readIncoming(d,admin,[],[]);assert.equal(rows.length,2);assert.equal(rows.find(x=>!x.closedAt).callCount,1);
+ assert.equal(await incomingGate(d,call('six')), 'challenge');
+ await receiveIncoming(d,call('six',phone,'failed'));
+ rows=await readIncoming(d,admin,[],[]);assert(rows.find(x=>x.id==='after-close').spam);
+ assert.equal((await readIncoming(d,op,[],[])).length,0);
+ await assert.rejects(incomingForAction(d,'after-close',admin,[]),/спама/);
+ await assert.rejects(moderateIncoming(d,op,{id:'after-close',operation:'restore'}));
+ await moderateIncoming(d,admin,{id:'after-close',operation:'restore'});
+ assert.equal(await incomingGate(d,call('allowed')),'allow');
+ await moderateIncoming(d,admin,{id:'after-close',operation:'block'});
+ assert.equal(await incomingGate(d,call('blocked')),'block');
+ await receiveIncoming(d,call('blocked',phone,'passed'));
+ assert((await readIncoming(d,admin,[],[])).find(x=>x.id==='after-close').blocked);
+ await moderateIncoming(d,admin,{id:'after-close',operation:'unblock'});
+ assert.equal(await incomingGate(d,call('unblocked')),'challenge');
+ await d.prepare('DELETE FROM incoming_attempts').run();
+ for(let i=0;i<19;i++)assert.equal(await incomingGate(d,call('burst-'+i,'+7999100'+String(i).padStart(4,'0'))),'allow');
+ assert.equal(await incomingGate(d,call('burst-19','+79991000019')),'challenge');
+ assert.equal(await incomingGate(d,call('burst-next','+79991000020')),'challenge');
+ assert.equal(await incomingGate(d,call('later','+79991000021'),new Date(now.getTime()+11*60000)),'allow');
+ await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind('known','+79998887766',JSON.stringify({id:'known',phone:'+79998887766'})).run();
+ assert.equal(await incomingGate(d,call('known','+79998887766')),'allow');
+ assert.equal(await incomingGate(d,call('unknown-phone','')),'challenge');
+ for(let i=0;i<110;i++)await receiveIncoming(d,call('spam-load-'+i,'+7999200'+String(i).padStart(4,'0'),'failed'));
+ assert.equal((await readIncoming(d,admin,[],[])).filter(i=>i.spam).length,100);
+ assert.equal((await readIncoming(d,op,[],[])).filter(i=>i.spam).length,0);
+ assert(!protectionSchema.safeParse({repeatLimit:1,burstLimit:1,challengeMinutes:0}).success);
+ console.log('Incoming protection: concurrent merge, retry idempotency, reopen after closure, screening, scope, restore/block/unblock, burst and expiry passed');
+}finally{d.close();}

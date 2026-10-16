@@ -88,3 +88,20 @@ with patch.object(module.sys,'stdin',io.StringIO('agi_arg_1: prepare\nagi_arg_2:
     api.assert_called_once_with('GET','a'*32,endpoint='crm-personal')
     assert any(c.args[0]=='SET VARIABLE CRM_DESTINATION 79990000001' for c in agi.call_args_list)
 print('AGI personal endpoint and destination passed.')
+
+for decision in ('allow', 'challenge', 'block'):
+    env = 'agi_arg_1: incoming-guard\nagi_arg_2: 79000000000\nagi_uniqueid: 123.456\nagi_callerid: +79990000001\n\n'
+    with patch.object(module.sys, 'stdin', io.StringIO(env)), patch.object(module, 'api', return_value={'decision':decision}) as api, patch.object(module, 'agi') as agi:
+        module.run_agi()
+        agi.assert_called_once_with('SET VARIABLE CRM_INCOMING_GATE '+decision)
+        assert api.call_args.kwargs['payload']['phase'] == 'guard'
+with patch.object(module.sys, 'stdin', io.StringIO(env)), patch.object(module, 'api', side_effect=OSError('offline')), patch.object(module, 'agi') as agi:
+    module.run_agi()
+    agi.assert_called_once_with('SET VARIABLE CRM_INCOMING_GATE challenge')
+with tempfile.TemporaryDirectory() as root:
+    module.ROOT = Path(root)
+    env = 'agi_arg_1: incoming\nagi_arg_2: 79000000000\nagi_arg_3: failed\nagi_uniqueid: 456.789\nagi_callerid: +79990000001\n\n'
+    with patch.object(module.sys, 'stdin', io.StringIO(env)), patch.object(module, 'agi'):
+        module.run_agi()
+    assert json.loads(next(module.ROOT.glob('incoming-*.json')).read_text())['screening'] == 'failed'
+print('Incoming screening: allow/challenge/block, offline fallback and failed challenge capture passed.')

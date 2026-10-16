@@ -194,6 +194,7 @@ try{
  assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:unknown,reason:'Question answered'},cookies.head2)).status,200);
  for(const id of ['admin','head','head2','head0'])assert.ok(!(await state(id)).tasks.some(t=>t.incomingId===unknown),'Shared resolution '+id);
  assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:unknown,reason:'Duplicate'},cookies.head)).status,400);
+ assert.equal((await api('/api/crm',{action:'incomingResult',incomingId:logisticsId,id:'o-one',reason:'Resolved'},cookies.logistic)).status,200);
  // Known, unowned client without active orders goes to all heads, even with old call history.
  const savedClient=db.prepare('SELECT data FROM clients WHERE id=?').get('c-one').data;
  const savedOrder=db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data;
@@ -230,14 +231,15 @@ try{
  const activeUnowned='8'.repeat(32);await incoming(activeUnowned);
  assert.ok((await state('logistic')).incoming.some(i=>i.id===activeUnowned&&i.assigneeId==='logistic'),'Active order keeps last caller');
  db.prepare('UPDATE clients SET data=? WHERE id=?').run(savedClient,'c-one');
- // A workflow outcome closes only the selected incoming request, never mere viewing.
+ assert.equal((await api('/api/crm',{action:'incomingResult',incomingId:activeUnowned,id:'o-one',reason:'Resolved'},cookies.logistic)).status,200);
+ // A workflow outcome closes the merged request, never mere viewing.
  db.prepare('UPDATE phone_calls SET actor_id=? WHERE id=?').run('one',callId);
- const callback='f'.repeat(32),other='a'.repeat(32);await incoming(callback);await incoming(other);
- let current=await state('one');assert.equal(current.incoming.filter(i=>!i.closedAt).length,2);
+ const callback='f'.repeat(32),other='1'.repeat(32);await incoming(callback);await incoming('2'.repeat(32));
+ let current=await state('one');assert.equal(current.incoming.filter(i=>!i.closedAt).length,1);
  const o=current.orders.find(o=>o.id==='o-one');
  const outcome=await api('/api/crm',{action:'contact',id:o.id,version:o.version,contact:'callback',due:new Date(Date.now()+3600000).toISOString(),reason:'Client requested callback',incomingId:callback},cookies.one);
  assert.equal(outcome.status,200,outcome.text);
- assert.ok((await state('one')).incoming.find(i=>i.id===callback).closedAt);assert.ok(!(await state('one')).incoming.find(i=>i.id===other).closedAt);
+ assert.ok((await state('one')).incoming.find(i=>i.id===callback).closedAt);await incoming(other);assert.ok(!(await state('one')).incoming.find(i=>i.id===other).closedAt);
  // Resolve an unknown caller by name or either indexed phone, without overwriting the main number.
  const lookup='6'.repeat(32);await incoming(lookup,'79997776655');
  db.prepare("UPDATE clients SET data=json_set(data,'$.name','Ёлкин Тимур Сергеевич') WHERE id='c-two'").run();
@@ -251,7 +253,7 @@ try{
  const linkedClient=JSON.parse(db.prepare("SELECT data FROM clients WHERE id='c-two'").get().data);assert.equal(linkedClient.phone,originalPhone);assert.ok(linkedClient.linkedPhones.includes('+79997776655'));
  const resolved=(await state('two')).incoming.find(i=>i.id===lookup);assert.equal(resolved.clientId,'c-two');assert.equal(resolved.clientName,'Ёлкин Тимур Сергеевич');assert.equal(resolved.assigneeId,'two');
  assert.equal((await api('/api/crm',{action:'linkIncomingClient',incomingId:lookup,clientId:'c-one'},cookies.head0)).status,400,'Cannot relink');
- const later='5'.repeat(32);await incoming(later,'79997776655');assert.equal((await state('two')).incoming.find(i=>i.id===later).clientId,'c-two','Future calls match the extra number');
+ const later='5'.repeat(32);await incoming(later,'79997776655');assert.equal((await state('two')).incoming.find(i=>i.id===lookup).clientId,'c-two','Future calls match the extra number');
  const duplicate='4'.repeat(32);await incoming(duplicate,'79997776644');
  db.prepare('UPDATE incoming_calls SET phone=? WHERE id=?').run('+79990000001',duplicate);
  assert.equal((await api('/api/crm',{action:'linkIncomingClient',incomingId:duplicate,clientId:'c-two'},cookies.head)).status,400,'Cannot attach another client phone');
@@ -278,6 +280,23 @@ try{
  assert.equal((await api('/api/telephony',{mode:'client',clientId:'c-one',phoneKey:choices.data.phones[1].key},cookies.admin)).status,400,'Cannot select another client phone');
  db.prepare("UPDATE clients SET data=json_set(data,'$.linkedPhones',json('[]')) WHERE id='c-two'").run();
  assert.equal((await api('/api/telephony',{mode:'client',clientId:'c-two',phoneKey:choices.data.phones[1].key},cookies.two)).status,400,'Removed phone is not dialled');
+
+ assert.equal((await call('/api/incoming-protection')).status,401);
+ assert.equal((await api('/api/incoming-protection',undefined,cookies.one)).status,403);
+ assert.equal((await api('/api/incoming-protection',undefined,cookies.admin)).status,200);
+ const spamId='0'.repeat(32),spamPhone='+79991112233';
+ const screened=await call('/api/telephony/incoming',{headers:{'X-CRM-PBX-Key':pbxKey},body:{id:spamId,phone:spamPhone,calledNumber:'79000000000',at:new Date().toISOString(),screening:'failed'}});
+ assert.equal(screened.status,200);
+ assert((await state('admin')).incoming.find(i=>i.id===spamId).spam);
+ assert(!(await state('head')).incoming.some(i=>i.id===spamId));
+ assert(!(await state('admin')).tasks.some(i=>i.incomingId===spamId));
+ assert.equal((await api('/api/incoming-protection',{id:spamId,operation:'restore'},cookies.head)).status,403);
+ assert.equal((await api('/api/incoming-protection',{id:spamId,operation:'restore'},cookies.admin)).status,200);
+ assert((await state('head')).incoming.some(i=>i.id===spamId&&!i.spam));
+ assert.equal((await api('/api/incoming-protection',{id:spamId,operation:'block'},cookies.admin)).status,200);
+ const gate=await call('/api/telephony/incoming',{headers:{'X-CRM-PBX-Key':pbxKey},body:{id:'ab'.repeat(16),phone:spamPhone,calledNumber:'79000000000',at:new Date().toISOString(),phase:'guard'}});
+ assert.equal(gate.data.decision,'block');
+ console.log('Incoming protection HTTP: admin scope, spam hidden from tasks, restore and PBX preflight passed.');
  console.log('Primary and additional phone selection, client/order targets, masked labels, authorization and stale selection passed.');
  console.log('Unknown client creation, cross-department assignment, reassignment, validation and active-order protection passed.');
  console.log('Unknown caller search, Cyrillic names, owner labels, extra phone linking, future matching and duplicate protection passed.');
