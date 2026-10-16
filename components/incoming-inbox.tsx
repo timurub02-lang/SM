@@ -1,6 +1,7 @@
 'use client';
 import {useState} from 'react';
-import {departments,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
+import {departments,initials,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
+import {PhoneIncoming,ChevronRight} from 'lucide-react';
 import {canOpenClientCard} from '@/lib/permissions';
 import {CallButton} from './browser-phone';
 import {IncomingClientLink} from './incoming-client-link';
@@ -43,8 +44,17 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    <div className="action-buttons"><button className="primary" disabled={protecting}>Сохранить</button><button className="secondary" type="button" onClick={()=>setSettings(null)}>Закрыть</button></div>
   </form>}
   {tab==='spam'&&<p className="muted">Последние 100 подозрительных обращений. Они не создают задачи сотрудникам. «Вернуть в работу» также исключит номер из автоматической проверки; «Снять блокировку» снова включает обычную проверку.</p>}
-  {shown.map(item=><section className="notice stack incoming-card" key={item.id}>
-   <div className="incoming-client-heading"><strong>{item.clientName||'Неизвестный клиент'}{item.phone?' · '+item.phone:''}</strong>{!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
+  <div className="incoming-card-grid">{shown.map(item=><details className="incoming-card" key={item.id}>
+   <summary className="incoming-card-summary">
+    <div className="incoming-card-top"><span>Входящий · {new Date(item.at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}</span><PhoneIncoming size={20}/></div>
+    <div className="incoming-card-person"><span className="avatar">{item.clientId?initials(item.clientName||'Клиент'):'?'}</span><strong>{item.clientName||'Неизвестный клиент'}</strong></div>
+    <p className="incoming-card-contact">{item.phone||'Номер скрыт'} · {item.clientId?'Наш клиент':'Неизвестный клиент'}</p>
+    <div className="incoming-card-stats"><div><strong>{item.callCount||1}</strong><span>звонков</span></div>{[[item.at,'первый звонок'],[item.lastAt||item.at,'последний звонок']].map(([at,label])=><div key={label} title={stamp(at,'Europe/Moscow')+' МСК'}><strong>{new Date(at).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'})}</strong><span>{label}</span></div>)}</div>
+    <div className="incoming-card-status"><span className={'badge '+(item.spam?'rose':item.closedAt?'mint':'amber')}>{item.spam?'Возможный спам':item.closedAt?'Закрыто':'Требует действия'}</span><ChevronRight size={22}/></div>
+    <div className="incoming-card-footer"><span>Ответственный</span><strong>{item.assigneeName||'Не назначен'}</strong></div>
+   </summary>
+   <div className="incoming-card-body stack">
+   <div className="incoming-client-heading">{!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
    <span>Входящий: {stamp(item.at,'Europe/Moscow')} МСК{item.calledNumber?' · На номер '+item.calledNumber:''}</span>
    <span>{item.assigneeName}</span>
    <span>Звонков: {item.callCount||1}{(item.callCount||1)>1&&' · Последний: '+stamp(item.lastAt||item.at,'Europe/Moscow')+' МСК'}</span>
@@ -69,7 +79,8 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    {!item.spam&&(item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>
     {item.hasActiveOrder?<><span>Действующие заказы</span><div className="action-buttons">{item.orderIds?.map(id=><button className="primary" key={id} onClick={()=>onOpen(id,item.id)}>Открыть {id}</button>)}</div>{!item.orderIds?.length&&<p>Заказ недоступен вашей роли. Обратитесь к администратору.</p>}</>:<><span>Действующего заказа нет</span><IncomingResult item={item} busy={busy} onSave={reason=>onClose(item.id,reason)}/></>}
    </>)}
-  </section>)}
+   </div>
+  </details>)}</div>
   {!shown.length&&<p className="muted">{history?'Закрытых обращений пока нет.':'Нет обращений, требующих действия.'}</p>}
   {history&&<small className="muted">Показаны последние 50 закрытых обращений, доступных вам.</small>}
  </div>;
