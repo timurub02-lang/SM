@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+import {operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
 const d=openDatabase(':memory:'),now=new Date('2026-10-15T12:00:00Z');
 const admin={id:'a',name:'Админ',role:'admin'},buyer={id:'b',name:'Выкуп',role:'redemption'},op={id:'op',name:'Оператор',role:'operator',department:'1'},head={id:'h',role:'department_head',department:'1'};
 try{
@@ -24,9 +24,13 @@ try{
  assert.equal(refusalRetryDate('2026-10-15'),'2026-10-19');assert.equal(refusalRetryDate('2026-10-16'),'2026-10-20');assert.equal(refusalRetryDate('2026-10-19'),'2026-10-21');
  assert.deepEqual(allowedResults('po',await row(),'operator','2026-10-15'),['date']);
  await edit(admin,{operation:'storage',date:'2026-10-22'});
- await edit(op,{action:'refusal',result:'date'});assert.equal((await row()).resultDate,'2026-10-19');assert.equal((await row()).refusalRetryUsed,true);assert(!inWorkday(await row(),'2026-10-15'));assert(!inWorkday(await row(),'2026-10-18'));assert(inWorkday(await row(),'2026-10-19'));
- await assert.rejects(edit(op,{action:'refusal',result:'date'},new Date('2026-10-19T12:00:00Z')),/недоступен/);
+ await edit(op,{action:'refusal',result:'date'});assert.equal((await row()).resultDate,'2026-10-19');assert.equal((await row()).refusalRetryUsed,true);assert(!inWorkday(await row(),'2026-10-15'));assert(!inWorkday(await row(),'2026-10-18'));assert(!inWorkday(await row(),'2026-10-19'));assert(awaitingOperator(await row()));assert(operatorReturnScheduled(await row(),now));assert.equal((await row()).operatorReturn.startsAt,'2026-10-19T06:00:00.000Z');assert.equal((await row()).operatorReturn.deadline,'2026-10-19T08:00:00.000Z');
+ await assert.rejects(edit(op,{action:'refusal',result:'to_return'},new Date('2026-10-19T05:59:59Z')),/09:00/);assert(!operatorReturnScheduled(await row(),new Date('2026-10-19T06:00:00Z')));
+ await assert.rejects(edit(op,{action:'refusal',result:'date'},new Date('2026-10-19T06:00:00Z')),/недоступен/);
  assert.deepEqual(allowedResults('refusal',await row(),'redemption','2026-10-19'),['to_return']);
+ await syncRedemption(d,new Date('2026-10-19T07:59:59Z'));assert(awaitingOperator(await row()));
+ await syncRedemption(d,new Date('2026-10-19T08:00:00Z'));assert(awaitingReturn(await row()));assert.equal((await row()).operatorReturn.outcome,'Оператор не проработал заказ');
+ await d.prepare("UPDATE redemption_entries SET data=json_remove(json_set(data,'$.result',''),'$.operatorReturn')").run();
  await edit(admin,{operation:'storage',date:'2026-10-18'});
  await assert.rejects(edit(op,{action:'date',result:'date',date:'2026-10-19'}),/Дата/);
  assert.deepEqual(allowedResults('po',{storageUntil:'2026-10-22'},'operator','2026-10-15'),[]);

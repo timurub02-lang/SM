@@ -30,6 +30,7 @@ export async function syncRedemption(d:Db,now=new Date()){
 }
 export const returnReasons=['Уточнить дату доставки','Получить окончательное решение клиента','Отработать отказ','Другое'];
 export function awaitingOperator(row:any){return !!row.operatorReturn&&!row.operatorReturn.resolvedAt;}
+export function operatorReturnScheduled(row:any,now=new Date()){return awaitingOperator(row)&&!!row.operatorReturn.startsAt&&row.operatorReturn.startsAt>now.toISOString();}
 export function awaitingDateConfirmation(row:any){return !awaitingOperator(row)&&row.dateConfirmation==='pending'&&row.result==='date';}
 export function awaitingReturn(row:any){return !awaitingOperator(row)&&row.result==='to_return';}
 export function canSeeRedemption(e:Employee,row:any,headsAll:boolean){if(awaitingOperator(row))return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department;if((awaitingDateConfirmation(row)||awaitingReturn(row))&&!['admin','redemption'].includes(e.role))return false;return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&(headsAll||!!e.department&&row.department===e.department);}
@@ -51,6 +52,7 @@ export function allowedResults(action:string,row:any,role:string,day:string){
 }
 export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  const cfg=await redemptionConfig(d),row=(await redemptionRows(d)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,cfg.headsAll))throw Error('Заказ недоступен');
+ if(operatorReturnScheduled(row,now))throw Error('Заказ доступен для обработки в назначенный день с 09:00 МСК');
  if(awaitingOperator(row)&&row.operatorReturn.deadline<=now.toISOString())throw Error('Два часа истекли. Заказ возвращён отделу выкупа; обновите список');
  if(awaitingOperator(row)&&['admin','redemption'].includes(e.role))throw Error('Заказ находится у оператора и недоступен для изменений');
  if(dateConfirmedToday(row,dayOf(now))&&row.resultDate>dayOf(now))throw Error('Подтверждение уже выполнено. Заказ доступен для работы в назначенную дату');
@@ -75,6 +77,11 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
    if(!row.storageUntil&&p.action!=='po')throw Error('Сначала укажите срок хранения');
    date=p.action==='refusal'?refusalRetryDate(day):p.date;
    if(!validDate(date||'')||date<day||p.action!=='po'&&date>row.storageUntil)throw Error('Дата должна быть не раньше сегодня и не позже СХ');
+  }
+  if(p.action==='refusal'&&p.result==='date'){
+   const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(row.manager).first();
+   if(!manager||JSON.parse(manager.data).role!=='operator')throw Error('У заказа нет ответственного оператора');
+   next.operatorReturn={sourceTab:'work',reason:'Отработать отказ',comment:'Повторная обработка после отказа: +2 рабочих дня',author:e.name,authorId:e.id,at,startsAt:date+'T06:00:00.000Z',deadline:date+'T08:00:00.000Z'};
   }
   if(awaitingOperator(row))next.operatorReturn={...v.operatorReturn,resolvedAt:at,resolvedBy:e.name,resolvedById:e.id};
   Object.assign(next,{refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?'pending':null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,authorRole:e.role,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at}}});
