@@ -487,3 +487,7 @@ body:has(.courier-design-aurora){background:#191a1e}
 .redemption-grid .redemption-result-value.result-to_return{background:#ffe0dd;color:#ae4335}
 
 .redemption-grid .redemption-held button.primary.redemption-result{background:linear-gradient(#3095ff,#0978f5);border:1px solid #167ced;color:#fff;cursor:pointer}
+.redemption-grid th:first-child,.redemption-grid td:first-child{min-width:140px;width:140px;max-width:140px}
+.redemption-grid td:first-child .link{display:block;max-width:128px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.redemption-grid .redemption-comments{min-width:180px;width:220px;max-width:220px}
+.redemption-grid .redemption-comment-preview{max-width:186px}
