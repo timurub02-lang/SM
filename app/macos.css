@@ -485,3 +485,4 @@ body:has(.courier-design-aurora){background:#191a1e}
 .redemption-choice.action-courier{--choice-color:#0f766e;--choice-bg:#ccfbf1}
 .redemption-grid .redemption-result-value.result-none{background:#fff0c7;color:#8b6724}
 .redemption-grid .redemption-result-value.result-to_return{background:#ffe0dd;color:#ae4335}
+.redemption-grid .redemption-held .redemption-result-value.result-returned{opacity:.55;filter:saturate(.65)}
