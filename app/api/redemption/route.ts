@@ -16,6 +16,11 @@ export const GET=authenticated(async req=>{try{
  let rows=all;if(q.get('tab')==='operator')rows=all.filter(awaitingOperator);else if(returns)rows=all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf()));else if(confirmation)rows=all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf()));else if(q.get('archive')||q.get('tab')==='archive'){const a=await d.prepare('SELECT data FROM redemption_archives WHERE day=?').bind(q.get('archive')||'').first<{data:string}>();rows=JSON.parse(a?.data||'[]');}
  else if(!q.get('id'))rows=all.filter((r:any)=>inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role)));
  rows=rows.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&(!q.get('id')||r.order_id===q.get('id'))).map(({phone,...r}:any)=>r);
+ if(q.get('id')&&rows.length){
+  const order=await d.prepare('SELECT data FROM orders WHERE id=?').bind(q.get('id')).first<{data:string}>();
+  const created=await d.prepare("SELECT data FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Создан заказ%' ORDER BY at LIMIT 1").bind(q.get('id')).first<{data:string}>();
+  const o=JSON.parse(order?.data||'{}');rows[0]={...rows[0],items:o.items||[],orderCreatedAt:o.createdAt,orderCreatedBy:created?JSON.parse(created.data).actor:o.testOnly?'Тестовые данные':'Не указан'};
+ }
  const history=q.get('id')&&rows.length?(await d.prepare('SELECT at,data FROM redemption_history WHERE order_id=? ORDER BY id DESC').bind(q.get('id')).all()).results.map((r:any)=>({at:r.at,...JSON.parse(r.data)})):[];
  const matches=q.get('id')&&rows.length?(await d.prepare('SELECT day,at,data FROM redemption_archives ORDER BY day DESC').all()).results.flatMap((a:any)=>JSON.parse(a.data).filter((r:any)=>r.order_id===q.get('id')&&canSeeRedemption(e,r,cfg.headsAll)).map(({phone,...r}:any)=>({day:a.day,...r}))):[];
  const jobs=['admin','redemption'].includes(e.role)?(await d.prepare('SELECT day,state,error,updated_at FROM redemption_dispatch ORDER BY day DESC LIMIT 10').all()).results:[];
