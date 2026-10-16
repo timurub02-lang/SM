@@ -39,6 +39,9 @@ try{
  assert.equal(await incomingGate(d,call('later','+79991000021'),new Date(now.getTime()+11*60000)),'allow');
  await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind('known','+79998887766',JSON.stringify({id:'known',phone:'+79998887766'})).run();
  assert.equal(await incomingGate(d,call('known','+79998887766')),'allow');
+ await d.prepare("UPDATE clients SET phone='8 (999) 888-77-66',data=json_set(data,'$.linkedPhones',json(?)) WHERE id='known'").bind(JSON.stringify(["+79998887755"])).run();
+ assert.equal(await incomingGate(d,call('known-formatted','+79998887766')),'allow');
+ assert.equal(await incomingGate(d,call('known-linked','+79998887755')),'allow');
  assert.equal(await incomingGate(d,call('unknown-phone','')),'challenge');
  for(let i=0;i<110;i++)await receiveIncoming(d,call('spam-load-'+i,'+7999200'+String(i).padStart(4,'0'),'failed'));
  assert.equal((await readIncoming(d,admin,[],[])).filter(i=>i.spam).length,100);

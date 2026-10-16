@@ -1,3 +1,4 @@
+import {initBaseStorage} from './base-storage.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {normalizePhone,type Employee} from './crm.ts';
 import {z} from 'zod';
@@ -19,11 +20,11 @@ export async function protectionConfig(d:Db){
  return protectionSchema.parse({...protectionDefaults,...JSON.parse(row?.data||'{}')});
 }
 export async function incomingGate(d:Db,p:{id:string;phone:string},now=new Date()){
- await initProtection(d);
+ await initProtection(d);await initBaseStorage(d);
  const existing=await d.prepare('SELECT decision FROM incoming_attempts WHERE id=?').bind(p.id).first();
  if(existing)return existing.decision as string;
  const phone=normalizePhone(p.phone),at=now.toISOString(),cfg=await protectionConfig(d);
- const known=phone?await d.prepare("SELECT id FROM clients WHERE phone=? OR phone=? OR EXISTS(SELECT 1 FROM json_each(COALESCE(json_extract(data,'$.linkedPhones'),'[]')) WHERE value=? OR value=?) LIMIT 1").bind(phone,phone.slice(1),phone,phone.slice(1)).first():null;
+ const known=phone?await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(phone.slice(1)).first():null;
  const minute=new Date(now.getTime()-60000).toISOString(),five=new Date(now.getTime()-300000).toISOString(),until=new Date(now.getTime()+cfg.challengeMinutes*60000).toISOString();
  await d.batch([
   d.prepare('INSERT OR IGNORE INTO incoming_attempts(id,phone,at,known) VALUES(?,?,?,?)').bind(p.id,phone,at,known?1:0),
