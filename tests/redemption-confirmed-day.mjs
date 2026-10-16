@@ -14,3 +14,5 @@ console.log('Confirmed dates: visible today, hidden tomorrow, due-day return and
 assert.deepEqual(allowedResults('courier',{storageUntil:'2026-10-20'},'operator','2026-10-16'),['courier']);
 assert.deepEqual(allowedResults('courier',{storageUntil:'2026-10-15'},'operator','2026-10-16'),[]);
 assert.deepEqual(allowedResults('courier',{operatorReturn:{deadline:'2026-10-16T13:00:00Z'}},'operator','2026-10-16'),[]);
+
+const returned={...row,result:'returned',returnConfirmedAt:'2026-10-16T20:59:59Z',returnWaybill:'TEST-123'};assert(inRedemptionTab(returned,'returns','2026-10-16'));assert(!inRedemptionTab(returned,'returns','2026-10-17'));assert(!inWorkday(returned,'2026-10-16'));

@@ -49,7 +49,7 @@ try{
  await assert.rejects(edit(op,{action:'refusal',result:'delivered'}),/недоступен/);await assert.rejects(edit(admin,{action:'refusal',result:'returned'}),/недоступен/);
  await assert.rejects(edit(buyer,{action:'refusal',result:'delivered'}),/недоступен/);
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'DELIVERED'}})).run();await syncRedemption(d,now);assert(awaitingReturn(await row()));
- await edit(buyer,{action:'refusal',result:'returned'});await syncRedemption(d,now);assert.equal((await row()).result,'returned');
+ await assert.rejects(edit(buyer,{action:'refusal',result:'returned'}),/накладной/);await edit(buyer,{action:'refusal',result:'returned',returnWaybill:'TEST-RETURN-123'});assert.equal((await row()).returnWaybill,'TEST-RETURN-123');await syncRedemption(d,now);assert.equal((await row()).result,'returned');
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify(order)).run();assert(!inWorkday(await row(),'2026-10-16'));assert(!inWorkday(await row(),'2026-10-15'));assert(!awaitingReturn(await row()));
  assert.deepEqual(allowedResults('work',{storageUntil:'2026-10-18'},'operator','2026-10-15'),['date']);
  assert.deepEqual(allowedResults('date',{storageUntil:'2026-10-15'},'redemption','2026-10-15'),[]);
