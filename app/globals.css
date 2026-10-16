@@ -153,3 +153,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-return-reasons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.redemption-return-reasons .redemption-choice{text-align:left;min-height:64px}@media(max-width:540px){.redemption-return-reasons{grid-template-columns:1fr}}
 
 .redemption-held button:not(:disabled){cursor:pointer}
+
+.redemption-card-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
