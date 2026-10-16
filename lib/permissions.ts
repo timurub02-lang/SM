@@ -14,6 +14,7 @@ export function seesOrder(e:Employee,o:Order,staff:Employee[]){
 }
 export function visibleState(s:State,e:Employee):State{
  if(e.role==='admin')return s;
+ if(e.role==='purchasing')return {clients:[],orders:[],employees:[e],events:[],incoming:[],settings:{retentionDays:0}};
  if(e.role==='courier'){
   const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)).map(o=>({...o,paymentReceipt:undefined,manager:'',logistic:'',paymentReceivedBy:undefined}));
   return {orders,clients:s.clients.filter(c=>orders.some(o=>o.clientId===c.id)).map(c=>({id:c.id,name:c.name,phone:c.phone,city:c.city,address:c.address,source:'',owner:'',assignedUntil:'',createdAt:c.createdAt,version:c.version})),employees:[e],events:[],incoming:[],settings:{retentionDays:0,orderPolicy:s.settings?.orderPolicy}};
@@ -28,6 +29,7 @@ export function visibleState(s:State,e:Employee):State{
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
+ if(e.role==='purchasing')return allow(false);
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
  if(['readReminder','closeIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
@@ -60,7 +62,9 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  }
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
- const path=url.pathname;if(path==='/api/redemption')return ['GET','POST'].includes(method)&&['admin','operator','department_head','redemption'].includes(e.role);if(e.role==='admin')return true;
+ const path=url.pathname;
+ if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&method==='GET'&&!url.searchParams.has('points');
+ if(path==='/api/redemption')return ['GET','POST'].includes(method)&&['admin','operator','department_head','redemption'].includes(e.role);if(e.role==='admin')return true;
  if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
  if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption'].includes(e.role);
  if(path==='/api/call-history')return ['GET','PATCH'].includes(method)&&e.role!=='courier';

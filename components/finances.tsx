@@ -6,7 +6,7 @@ import {useState} from "react";
 import {deliveryLabels,money,stamp,type Order,type Employee} from "@/lib/crm";
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from "@/components/ui/table";
 
-export function Finances({orders,employee}:{orders:Order[];employee:Employee}){return <div className="stack">{employee.role==="admin"&&<EmployeeCash/>}{hasCash(employee.role)&&<Cash key={employee.id} actorId={employee.id}/>}{employee.role!=="department_head"&&<DeliveryFinances orders={orders}/>}</div>;}
+export function Finances({orders,employee}:{orders:Order[];employee:Employee}){return <div className="stack">{employee.role==="admin"&&<EmployeeCash/>}{hasCash(employee.role)&&<Cash key={employee.id} actorId={employee.id}/>}{!["department_head","purchasing"].includes(employee.role)&&<DeliveryFinances orders={orders}/>}</div>;}
 function DeliveryFinances({orders}:{orders:Order[]}){
  const [from,setFrom]=useState("");const [to,setTo]=useState("");
  const rows=orders.filter(o=>{

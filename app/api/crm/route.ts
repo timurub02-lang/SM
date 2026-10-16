@@ -52,6 +52,7 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
 async function responseState(user:Awaited<ReturnType<typeof identity>>){
  const state=await readState();await saveReminders(state);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
+ if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
  if(['admin','department_head','chief_logistic'].includes(user.employee.role)){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});

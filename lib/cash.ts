@@ -11,7 +11,7 @@ export const cashSpendPurposes:readonly string[]=[
  'Мобильная связь',
  'Комиссии за переводы',
 ];
-export const hasCash=(role:string)=>['admin','department_head','chief_logistic'].includes(role);
+export const hasCash=(role:string)=>['admin','department_head','chief_logistic','purchasing'].includes(role);
 export const cashSchema=[
  `CREATE TABLE IF NOT EXISTS cash_operations(id TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('add','spend','transfer','receipt')),sender TEXT,recipient TEXT,amount INTEGER NOT NULL CHECK(amount>0),purpose TEXT NOT NULL,date TEXT NOT NULL,created_at TEXT NOT NULL,accepted_at TEXT,actor TEXT NOT NULL,sender_name TEXT NOT NULL,recipient_name TEXT NOT NULL,order_id TEXT UNIQUE)`,
  `CREATE VIEW IF NOT EXISTS cash_balances AS SELECT employee,SUM(amount) AS balance FROM (SELECT sender AS employee,-amount AS amount FROM cash_operations WHERE sender IS NOT NULL UNION ALL SELECT recipient AS employee,amount FROM cash_operations WHERE recipient IS NOT NULL AND accepted_at IS NOT NULL) GROUP BY employee`,
