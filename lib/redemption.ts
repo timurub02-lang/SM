@@ -73,6 +73,8 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  else if(p.operation==='storage'){if(row.storageSource==='СДЭК')throw Error('Срок получен из СДЭК');if(!validDate(p.date||''))throw Error('Укажите срок хранения');next.manualStorage=p.date;next.storageAuthor=e.name;}
  else {
   if(!(p.action in actions)||!allowedResults(p.action,row,e.role,day).includes(p.result))throw Error('Этот результат недоступен для действия или роли');
+  if(typeof p.comment!=='string'||!p.comment.trim()||p.comment.length>3000)throw Error('Укажите комментарий к действию (до 3000 символов)');
+  next.comments=[...(v.comments||[]),{id:crypto.randomUUID(),text:p.comment.trim(),author:e.name,authorId:e.id,at}];
   if(p.result==='returned'){if(typeof p.returnWaybill!=='string'||!p.returnWaybill.trim()||p.returnWaybill.trim().length>100)throw Error('Укажите номер возвратной накладной (до 100 символов)');Object.assign(next,{returnWaybill:p.returnWaybill.trim(),returnConfirmedAt:at});}
   if(awaitingOperator(row)&&p.action==='po'&&p.responsibilityConfirmed!==true)throw Error('Подтвердите, что клиент точно выкупит заказ после окончания срока хранения');
   let date='';if(p.result==='date'){

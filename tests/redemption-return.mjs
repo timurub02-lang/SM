@@ -12,7 +12,7 @@ try{
  await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('o','c',JSON.stringify({manager:'op',items:[],testTrack:'TEST'})).run();
  await d.prepare('INSERT INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind('o',now.toISOString(),JSON.stringify({manualStorage:'2026-10-25'})).run();
  const row=async()=>(await redemptionRows(d))[0];
- const edit=async(actor,p,t=now)=>editRedemption(d,actor,{id:'o',version:(await row()).version,...p},t);
+ const edit=async(actor,p,t=now)=>editRedemption(d,actor,{id:'o',version:(await row()).version,comment:'Комментарий к действию',...p},t);
  const send={operation:'return_operator',reason:returnReasons[0],comment:''};
  await assert.rejects(edit(head,send));await assert.rejects(edit(buyer,{...send,reason:'Другое'}));
  await edit({...buyer,role:'admin'},send);assert(inRedemptionTab(await row(),'work','2026-10-16'));await assert.rejects(edit(buyer,{operation:'comment',text:'blocked'}),/у оператора/);assert(awaitingOperator(await row()));assert(!awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));

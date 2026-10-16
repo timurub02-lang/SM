@@ -17,13 +17,19 @@ try{
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'CREATED'}})).run();await syncRedemption(d,now);
  assert.equal((await row()).entered_at,now.toISOString());
  assert(canSeeRedemption(op,await row(),false));assert(canSeeRedemption(head,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),false));assert(canSeeRedemption({...head,department:'2'},await row(),true));assert(!canSeeRedemption({...op,id:'other'},await row(),true));
- async function edit(actor,p,t=now){await editRedemption(d,actor,{id:'o',version:(await row()).version,...p},t);}
+ async function edit(actor,p,t=now){await editRedemption(d,actor,{id:'o',version:(await row()).version,comment:'Комментарий к действию',...p},t);}
  await assert.rejects(edit(admin,{action:'date',result:'date',date:'2026-10-20'}),/срок хранения/);
  await edit(admin,{operation:'storage',date:'2026-10-18'});
  await assert.rejects(edit(op,{action:'refusal',result:'date'}),/недоступен/);
  assert.equal(refusalRetryDate('2026-10-15'),'2026-10-19');assert.equal(refusalRetryDate('2026-10-16'),'2026-10-20');assert.equal(refusalRetryDate('2026-10-19'),'2026-10-21');
  assert.deepEqual(allowedResults('po',await row(),'operator','2026-10-15'),['date']);
  await edit(admin,{operation:'storage',date:'2026-10-22'});
+ const beforeCommentCheck=await row();
+ await assert.rejects(edit(admin,{action:'nd',result:'none',comment:'  '}),/комментарий/);
+ assert.equal((await row()).version,beforeCommentCheck.version);
+ await edit(admin,{action:'nd',result:'none',comment:'  Проверочный комментарий  '});
+ assert.equal((await row()).comments.at(-1).text,'Проверочный комментарий');
+ assert.equal((await row()).comments.at(-1).authorId,admin.id);
  await edit(op,{action:'refusal',result:'date'});assert.equal((await row()).resultDate,'2026-10-19');assert.equal((await row()).refusalRetryUsed,true);assert(!inWorkday(await row(),'2026-10-15'));assert(!inWorkday(await row(),'2026-10-18'));assert(!inWorkday(await row(),'2026-10-19'));assert(awaitingOperator(await row()));assert(operatorReturnScheduled(await row(),now));assert.equal((await row()).operatorReturn.startsAt,'2026-10-19T06:00:00.000Z');assert.equal((await row()).operatorReturn.deadline,'2026-10-19T08:00:00.000Z');
  await assert.rejects(edit(op,{action:'refusal',result:'to_return'},new Date('2026-10-19T05:59:59Z')),/09:00/);assert(!operatorReturnScheduled(await row(),new Date('2026-10-19T06:00:00Z')));
  await assert.rejects(edit(op,{action:'refusal',result:'date'},new Date('2026-10-19T06:00:00Z')),/недоступен/);
