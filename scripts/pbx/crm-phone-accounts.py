@@ -24,6 +24,7 @@ allow=alaw,ulaw
 auth={user}
 aors={user}
 webrtc=yes
+inband_progress=yes
 dtls_auto_generate_cert=yes
 direct_media=no
 rtp_symmetric=yes
