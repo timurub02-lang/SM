@@ -478,13 +478,12 @@ body:has(.courier-design-aurora){background:#191a1e}
 .redemption-card-toolbar .browser-call-button:hover:not(:disabled){background:linear-gradient(#2789f1,#066ae0)}
 
 .redemption-grid .redemption-result-value.result-delivered{background:#166534;color:#fff;font-weight:600}
-.redemption-grid .redemption-result-value.result-returned{background:#991b1b;color:#fff;font-weight:600}
+.redemption-grid .redemption-result-value.result-returned{background:#eadbd3;color:#86523b;font-weight:500}
 .redemption-action.action-client_delivered,.redemption-grid .redemption-result-value.result-client_delivered{background:#e2f3e5;color:#41734c}
 .redemption-choice.action-client_delivered{--choice-color:#41734c;--choice-bg:#e2f3e5}
 .redemption-action.action-courier,.redemption-grid .redemption-result-value.result-courier{background:#ccfbf1;color:#0f766e}
 .redemption-choice.action-courier{--choice-color:#0f766e;--choice-bg:#ccfbf1}
 .redemption-grid .redemption-result-value.result-none{background:#fff0c7;color:#8b6724}
 .redemption-grid .redemption-result-value.result-to_return{background:#ffe0dd;color:#ae4335}
-.redemption-grid .redemption-held .redemption-result-value.result-returned{opacity:.55;filter:saturate(.65)}
 
 .redemption-grid .redemption-held button.primary.redemption-result{background:linear-gradient(#3095ff,#0978f5);border:1px solid #167ced;color:#fff;cursor:pointer}
