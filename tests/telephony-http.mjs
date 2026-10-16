@@ -65,7 +65,17 @@ try{
  await call('/api/phone-replacement',{cookie:cookies.admin,body:{action:'save',config:{...originalMasking,revision:masking.config.revision}}});
  assert.equal((await call('/api/telephony')).status,401);
  for(const id of ['one','head','logistic','chief','redemption'])assert.equal((await call('/api/telephony',{cookie:cookies[id]})).status,200);
- assert.equal((await call('/api/telephony',{cookie:cookies.courier})).status,403);
+ assert.equal((await call('/api/telephony',{cookie:cookies.courier})).status,200);
+ for(const body of [{mode:'test'},{mode:'echo'},{mode:'client',clientId:'c-one'}])assert.equal((await call('/api/telephony',{cookie:cookies.courier,body})).status,400);
+ assert.equal((await call('/api/telephony',{cookie:cookies.courier,body:{mode:'order',orderId:'o-one'}})).status,403);
+ const courierOrder={id:'courier-phone-order',clientId:'c-one',manager:'one',status:'shipping',delivery:'moscow_courier',items:[],courier:{id:'courier'}};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(courierOrder.id,'c-one',JSON.stringify(courierOrder));
+ assert.equal((await call('/api/telephony',{cookie:cookies.courier,body:{mode:'order',orderId:courierOrder.id}})).status,400);
+ courierOrder.courier.acceptedAt=new Date().toISOString();db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(courierOrder),courierOrder.id);
+ const courierCall=await call('/api/telephony',{cookie:cookies.courier,body:{mode:'order',orderId:courierOrder.id}});assert.equal(courierCall.status,200,courierCall.text);
+ assert.equal(db.prepare('SELECT actor_id FROM phone_calls WHERE id=?').get(courierCall.data.callId).actor_id,'courier');
+ assert.ok((await call('/api/call-history?orderId='+courierOrder.id,{cookie:cookies.admin})).data.calls.some(c=>c.id===courierCall.data.callId));
+ db.prepare('DELETE FROM phone_calls WHERE id=?').run(courierCall.data.callId);db.prepare('DELETE FROM orders WHERE id=?').run(courierOrder.id);
  for(const id of ['one','head'])assert.equal((await call('/api/telephony',{cookie:cookies[id],body:{mode:'test'}})).status,400);
  assert.equal((await call('/api/telephony',{cookie:cookies.one,body:{mode:'client',clientId:'c-two'}})).status,400);
  const ownCall=await call('/api/telephony',{cookie:cookies.one,body:{mode:'client',clientId:'c-one'}});assert.equal(ownCall.status,200);

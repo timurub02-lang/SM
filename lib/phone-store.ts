@@ -39,7 +39,7 @@ export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:str
 }
 export async function phoneScope(d:ActivityDb,e:Employee,scope:{clientId?:string;orderId?:string}){
  const staff=(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data) as Employee);
- if(scope.orderId){const row=await d.prepare('SELECT data FROM orders WHERE id=?').bind(scope.orderId).first();return !!row&&e.role!=='courier'&&(seesOrder(e,JSON.parse(row.data),staff)||await sharedIncomingClientAccess(d,e,JSON.parse(row.data).clientId));}
+ if(scope.orderId){const row=await d.prepare('SELECT data FROM orders WHERE id=?').bind(scope.orderId).first();if(!row)return false;const order=JSON.parse(row.data);if(e.role==='courier')return seesOrder(e,order,staff)&&!!order.courier?.acceptedAt;return seesOrder(e,order,staff)||await sharedIncomingClientAccess(d,e,order.clientId);}
  if(!scope.clientId||e.role==='courier')return false;
  const row=await d.prepare('SELECT data FROM clients WHERE id=?').bind(scope.clientId).first();if(!row)return false;
  const c:Client=JSON.parse(row.data);if(!canOpenClientCard(e,c))return false;

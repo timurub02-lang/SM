@@ -66,7 +66,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&method==='GET'&&!url.searchParams.has('points');
  if(path==='/api/redemption')return ['GET','POST'].includes(method)&&['admin','operator','department_head','redemption'].includes(e.role);if(e.role==='admin')return true;
  if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
- if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption'].includes(e.role);
+ if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption','courier'].includes(e.role);
  if(path==='/api/call-history')return ['GET','PATCH'].includes(method)&&e.role!=='courier';
  if(path==='/api/call-history/recording')return method==='GET'&&e.role!=='courier';
  if(path==='/api/order-access')return (isLogistic(e.role)||['operator','department_head'].includes(e.role))&&method==='POST';
