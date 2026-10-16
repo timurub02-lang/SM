@@ -1,3 +1,4 @@
+import {redemptionDayCounts} from '@/lib/redemption-day-counts';
 import {redemptionStats} from '@/lib/redemption-stats';
 import {initReplacement,confirmReplacementCourier} from '@/lib/phone-replacement';
 import {authenticated} from '@/lib/api-auth';
@@ -31,7 +32,8 @@ export const GET=authenticated(async req=>{try{
  }
  const stats=await redemptionStats(d,e,q.get('archive')||dayOf(),!!q.get('archive')||q.get('tab')==='archive');
  const workRows=all.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role)));
- return Response.json({stats,workCount:workRows.length,withoutAuthorCount:workRows.filter((r:any)=>!r.author?.trim()).length,returnCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf())).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf())).length:0,rows,archives,history,matches,config:cfg,day:dayOf(),closed:closedTime(),jobs,calls,courier});
+ const dayCounts=await redemptionDayCounts(d,all,e,cfg.headsAll);
+ return Response.json({stats,dayCounts,workCount:workRows.length,returnCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf())).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf())).length:0,rows,archives,history,matches,config:cfg,day:dayOf(),closed:closedTime(),jobs,calls,courier});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка загрузки'},{status:400});}});
 export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=await req.json() as any;await syncRedemption(d);
  if(p.operation==='settings'){
