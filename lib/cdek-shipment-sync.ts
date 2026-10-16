@@ -20,7 +20,7 @@ export async function applyCdekShipment(d:Db,order:Order,stored:Shipment,previou
  if(patch)statements.push(d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)').bind(JSON.stringify({...order,...patch,updatedAt:at,_mutation:mutation}),order.id,order.version,key,previous));
  statements.push(d.prepare(`UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?${patch?" AND json_extract(data,'$._mutation')=?":""})`).bind(next,key,previous,order.id,order.version+(patch?1:0),...(patch?[mutation]:[])));
  if(patch){
-  const event={id:mutation,clientId:order.clientId,orderId:order.id,at,actor:'СДЭК',text:patch.status?`СДЭК: ${patch.cdekStatus?.code} → ${statuses[patch.status]}`:patch.cdekStatus?`Обновлён статус СДЭК: ${patch.cdekStatus.code}`:'Уточнена дата регистрации отправления в СДЭК'};
+  const event={id:mutation,clientId:order.clientId,orderId:order.id,at,actor:'СДЭК',text:patch.status?`СДЭК: ${patch.cdekStatus?.code} → ${statuses[patch.status]}`:patch.cdekStatus?`Обновлён статус СДЭК: ${patch.cdekStatus.code}`:patch.cdekStorageUntil?'Обновлён срок бесплатного хранения СДЭК: '+patch.cdekStorageUntil:'Уточнена дата регистрации отправления в СДЭК'};
   statements.push(d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,event.clientId,event.orderId,at,JSON.stringify(event),order.id,mutation));
  }
  const result=await d.batch(statements);

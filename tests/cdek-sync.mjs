@@ -10,3 +10,13 @@ assert.equal(cdekStatusPatch(order,entity,{},'r1').status,undefined);
 assert.equal(cdekStatusPatch({...order,cdekTransferredAt:p.cdekTransferredAt,cdekStatus:{at:'2026-10-01T00:00:00Z'}},entity,{CREATED:'sent'},'r1'),null);
 assert.deepEqual(cdekStatusPatch({...order,cdekStatus:{at:'2026-10-01T00:00:00Z'}},entity,{CREATED:'sent'},'r1'),{cdekTransferredAt:p.cdekTransferredAt},'Backfill the transfer date without reverting to an older status');
 console.log('CDEK mapping, dates, duplicates and stale events passed');
+
+const stable={...order,...p};
+const storageEntity={...entity,keep_free_until:'2026-10-16T16:59:59Z'};
+assert.deepEqual(cdekStatusPatch(stable,storageEntity,{},'r1'),{cdekStorageUntil:'2026-10-16'});
+const withStorage={...stable,cdekStorageUntil:'2026-10-16'};
+assert.equal(cdekStatusPatch(withStorage,storageEntity,{},'r1'),null);
+assert.deepEqual(cdekStatusPatch(withStorage,{...storageEntity,keep_free_until:'2026-10-18T21:30:00Z'}, {},'r1'),{cdekStorageUntil:'2026-10-19'});
+for(const value of [undefined,null,'bad','2026-10-18T21:30:00'])assert.equal(cdekStatusPatch(withStorage,{...entity,keep_free_until:value},{},'r1'),null);
+assert.equal(cdekStatusPatch(stable,{...storageEntity,is_return:true},{},'r1'),null);
+console.log('Storage updates independently of status, Moscow date, missing/invalid values and return isolation passed');

@@ -29,7 +29,7 @@ async function request(url,options){
  if(mode==='outage')return Response.json({errors:[{message:'Outage'}]},{status:503});
  if(mode==='throttle')return Response.json({errors:[{message:'Limit'}]},{status:429});
  if(race){const fn=race;race=undefined;await fn();}
- return Response.json({entity:{uuid,number:mode==='identity'?'OTHER':rec.id,cdek_number:'S-'+rec.id,...(mode==='return-label'?{is_return:true}:{}),statuses:[{code:rec.status,date_time:at}]},requests:[{type:'CREATE',state:'SUCCESSFUL'}]});
+ return Response.json({entity:{uuid,keep_free_until:rec.storage,number:mode==='identity'?'OTHER':rec.id,cdek_number:'S-'+rec.id,...(mode==='return-label'?{is_return:true}:{}),statuses:[{code:rec.status,date_time:at}]},requests:[{type:'CREATE',state:'SUCCESSFUL'}]});
 }
 try{
  for(const sql of readFileSync('drizzle/0000_cynical_monster_badoon.sql','utf8').split('--> statement-breakpoint'))await db.prepare(sql).run();
@@ -50,6 +50,13 @@ try{
  await syncCdekShipments(db,request);assert.equal((await row('UNKNOWN')).status,'shipping');assert.equal((await row('UNKNOWN')).cdekStatus.code,'NOT_DELIVERED');
  const events=(await db.prepare('SELECT COUNT(*) n FROM events').first()).n;
  assert.equal((await syncCdekShipments(db,request)).changed,0);assert.equal((await db.prepare('SELECT COUNT(*) n FROM events').first()).n,events);
+ records.get(unknown.s.uuid).storage='2026-10-16T16:59:59Z';
+ assert.equal((await syncCdekShipments(db,request)).changed,1);
+ assert.equal((await row('UNKNOWN')).cdekStorageUntil,'2026-10-16');
+ assert.equal((await row('UNKNOWN')).status,'shipping');
+ assert.equal((await syncCdekShipments(db,request)).changed,0);
+ records.get(unknown.s.uuid).storage=undefined;
+ await syncCdekShipments(db,request);assert.equal((await row('UNKNOWN')).cdekStorageUntil,'2026-10-16');
  await reset();await fixture('RETRY');mode='outage';assert.equal((await syncCdekShipments(db,request)).failed,1);assert.equal((await row('RETRY')).status,'shipping');assert.ok((await shipment('RETRY')).syncError);
  mode='identity';assert.equal((await syncCdekShipments(db,request)).failed,1);assert.equal((await row('RETRY')).status,'shipping');
  mode='return-label';assert.equal((await syncCdekShipments(db,request)).changed,0);assert.equal((await row('RETRY')).status,'shipping');

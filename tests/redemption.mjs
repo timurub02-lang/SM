@@ -14,16 +14,20 @@ try{
  await d.prepare('UPDATE redemption_entries SET entered_at=?').bind(now.toISOString()).run();
  let row=async()=>(await redemptionRows(d))[0];
  assert.equal((await row()).order_id,'o');
+ await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.manualStorage','2026-10-30') WHERE order_id='o'").run();
+ assert.equal((await row()).storageUntil,'','Legacy manual dates are not used for real orders');
+
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'CREATED'}})).run();await syncRedemption(d,now);
  assert.equal((await row()).entered_at,now.toISOString());
  assert(canSeeRedemption(op,await row(),false));assert(canSeeRedemption(head,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),false));assert(canSeeRedemption({...head,department:'2'},await row(),true));assert(!canSeeRedemption({...op,id:'other'},await row(),true));
  async function edit(actor,p,t=now){await editRedemption(d,actor,{id:'o',version:(await row()).version,comment:'Комментарий к действию',...p},t);}
+ await assert.rejects(edit(admin,{operation:'storage',date:'2026-10-18'}),/автоматически/);
  await assert.rejects(edit(admin,{action:'date',result:'date',date:'2026-10-20'}),/срок хранения/);
- await edit(admin,{operation:'storage',date:'2026-10-18'});
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-18').run();
  await assert.rejects(edit(op,{action:'refusal',result:'date'}),/недоступен/);
  assert.equal(refusalRetryDate('2026-10-15'),'2026-10-19');assert.equal(refusalRetryDate('2026-10-16'),'2026-10-20');assert.equal(refusalRetryDate('2026-10-19'),'2026-10-21');
  assert.deepEqual(allowedResults('po',await row(),'operator','2026-10-15'),['date']);
- await edit(admin,{operation:'storage',date:'2026-10-22'});
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-22').run();
  const beforeCommentCheck=await row();
  await assert.rejects(edit(admin,{action:'nd',result:'none',comment:'  '}),/комментарий/);
  assert.equal((await row()).version,beforeCommentCheck.version);
@@ -37,7 +41,7 @@ try{
  await syncRedemption(d,new Date('2026-10-19T07:59:59Z'));assert(awaitingOperator(await row()));
  await syncRedemption(d,new Date('2026-10-19T08:00:00Z'));assert(awaitingReturn(await row()));assert.equal((await row()).operatorReturn.outcome,'Оператор не проработал заказ');
  await d.prepare("UPDATE redemption_entries SET data=json_remove(json_set(data,'$.result',''),'$.operatorReturn')").run();
- await edit(admin,{operation:'storage',date:'2026-10-18'});
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-18').run();
  await assert.rejects(edit(op,{action:'date',result:'date',date:'2026-10-19'}),/Дата/);
  assert.deepEqual(allowedResults('po',{storageUntil:'2026-10-22'},'operator','2026-10-15'),[]);
  await assert.rejects(edit(admin,{action:'refusal',result:'returned'}),/недоступен/);
@@ -62,7 +66,7 @@ try{
  assert.deepEqual(allowedResults('refusal',{storageUntil:'2026-10-15'},'operator','2026-10-15'),['to_return']);
  assert.deepEqual(allowedResults('po',{storageUntil:'2026-10-15'},'operator','2026-10-15'),['date']);
  await d.prepare("UPDATE redemption_entries SET data='{}'").run();
- await edit(admin,{operation:'storage',date:'2026-10-20'});
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-20').run();
  await edit(op,{action:'date',result:'date',date:'2026-10-18'});
  assert.equal((await row()).dateConfirmation,'pending');
  for(const actor of [op,head]){
@@ -83,7 +87,7 @@ try{
  await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.dateConfirmedAt','2026-10-14T10:00:00Z')").run();
  await edit(buyer,{action:'work',result:'date',date:'2026-10-19'});
  assert.equal((await row()).dateConfirmation,'pending');assert.equal((await row()).dateConfirmedAt,null);
- await edit(buyer,{operation:'storage',date:'2026-10-15'});
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-15').run();
  await edit(buyer,{action:'po',result:'date',date:'2026-10-25'});
  assert.equal((await row()).dateConfirmation,'pending');
  await edit(buyer,{operation:'confirm_date'});
@@ -120,7 +124,7 @@ try{
  await d.prepare("UPDATE redemption_entries SET data='{}' WHERE order_id='confirmed'").run();
  await archiveRedemption(d,new Date('2026-10-16T17:00:00Z'));
  assert.equal((await d.prepare("SELECT data FROM redemption_archives WHERE day='2026-10-16'").first()).data,endOfDay);
- await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('client-delivered','c',JSON.stringify({...order,id:'client-delivered'})).run();
+ await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('client-delivered','c',JSON.stringify({...order,id:'client-delivered',cdekStorageUntil:'2026-10-14'})).run();
  await d.prepare('INSERT OR REPLACE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind('client-delivered',now.toISOString(),JSON.stringify({manualStorage:'2026-10-14'})).run();
  const reported=async()=>(await redemptionRows(d)).find(r=>r.order_id==='client-delivered');
  await editRedemption(d,op,{id:'client-delivered',version:(await reported()).version,action:'client_delivered',result:'client_delivered',comment:'Клиент подтвердил получение'},now);

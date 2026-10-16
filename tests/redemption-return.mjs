@@ -10,6 +10,7 @@ try{
  await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({id:'c',phone:'+79990000001'})).run();
  await d.prepare('INSERT INTO employees VALUES(?,?)').bind(op.id,JSON.stringify(op)).run();
  await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('o','c',JSON.stringify({manager:'op',items:[],testTrack:'TEST'})).run();
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-25')").run();
  await d.prepare('INSERT INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind('o',now.toISOString(),JSON.stringify({manualStorage:'2026-10-25'})).run();
  const row=async()=>(await redemptionRows(d))[0];
  const edit=async(actor,p,t=now)=>editRedemption(d,actor,{id:'o',version:(await row()).version,comment:'Комментарий к действию',...p},t);
@@ -33,6 +34,7 @@ try{
  await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.result','') WHERE order_id='o'").run();await edit(buyer,send);await edit(op,{action:'date',result:'date',date:'2026-10-20'});await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.dateConfirmation','confirmed') WHERE order_id='o'").run();await edit(buyer,send);
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStatus.code','DELIVERED') WHERE id='o'").run();await syncRedemption(d,new Date('2026-10-16T11:00:00Z'));assert.equal((await row()).result,'delivered');assert(!awaitingOperator(await row()));
  await d.prepare("UPDATE orders SET data=json_remove(data,'$.cdekStatus') WHERE id='o'").run();
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-15')").run();
  await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.result','','$.manualStorage','2026-10-15') WHERE order_id='o'").run();
  await edit(buyer,send);assert(inRedemptionTab(await row(),'work','2026-10-16'));assert(!inWorkday(await row(),'2026-10-16'));
  await assert.rejects(edit(op,{action:'date',result:'date',date:'2026-10-20'}));
