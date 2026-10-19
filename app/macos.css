@@ -514,3 +514,17 @@ body:has(.courier-design-aurora){background:#191a1e}
 .order-data-form{display:grid!important;grid-template-columns:1fr 1fr;align-items:start}.order-data-form>[data-order-field=delivery],.order-data-form>.field,.order-data-form>button{grid-column:1/-1}.order-data-form>[data-order-field=address]{grid-column:1}.order-data-form>[data-order-field=basket]{grid-column:2}
 @media(max-width:1100px){.order-main-actions:not([hidden]),.order-data-form{display:flex!important;flex-direction:column}.order-main-actions>.order-note{position:static;width:100%}.order-data-form>*{width:100%}.order-workspace{grid-template-columns:minmax(220px,0.8fr) minmax(0,1.5fr)}}
 @media(max-width:760px){.client-detail-dialog.order-detail-dialog{width:calc(100vw - 16px);height:calc(100dvh - 24px);max-height:calc(100dvh - 24px)}.order-detail-body{padding:12px}.order-workspace{grid-template-columns:1fr;gap:16px}.order-overview{padding:12px!important}.order-detail-dialog .order-detail-tabs [role=tablist]{max-width:100%}}
+
+/* Personal readable order cards; applies to portalled dialogs too. */
+.large-order-text :is(.order-detail-dialog,.redemption-edit-dialog){font-size:18px;line-height:1.5}
+.large-order-text :is(.order-detail-dialog,.redemption-edit-dialog) :is(p,small,label,input,textarea,select,button,dt,dd,legend,.muted,.item-read,.notice,.badge,.contact-summary,.order-overview-comment,.redemption-action,.redemption-result){font-size:18px;line-height:1.5}
+.large-order-text :is(.order-detail-dialog,.redemption-edit-dialog) :is(h3,.delivery-brand,.basket-total){font-size:20px}
+.large-order-text .order-detail-dialog .order-header-client{font-size:20px}
+.large-order-text .order-detail-dialog .order-overview .basket-total b{font-size:26px}
+.large-order-text .order-detail-dialog .order-detail-tabs [role=tablist]{height:auto;flex-wrap:wrap}
+.large-order-text .order-detail-dialog .order-detail-tabs [role=tab]{height:auto;white-space:normal}
+.large-order-text .order-detail-dialog .order-main-actions:not([hidden]){display:flex;flex-direction:column}
+.large-order-text .order-detail-dialog .order-main-actions>*{width:100%}
+.large-order-text .order-detail-dialog .order-main-actions>.order-note{position:static}
+.large-order-text :is(.order-detail-dialog,.redemption-edit-dialog) :is(input,select,button){min-height:44px}
+.large-order-text .order-detail-dialog button[aria-label=Close]{min-height:32px}
