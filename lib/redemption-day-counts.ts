@@ -1,6 +1,6 @@
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Employee} from './crm.ts';
-import {canSeeRedemption,dayOf,dayPlus,inRedemptionTab} from './redemption.ts';
+import {redemptionDayAuthor,canSeeRedemption,dayOf,dayPlus,inRedemptionTab} from './redemption.ts';
 
 // Keep membership after a result moves an order out of the work tab.
 export async function redemptionDayCounts(d:Db,rows:any[],actor:Employee,headsAll:boolean,day=dayOf()){
@@ -23,7 +23,7 @@ export async function redemptionDayCounts(d:Db,rows:any[],actor:Employee,headsAl
   const morning=row.entered_at<start&&initial!==undefined&&inRedemptionTab(state(initial),'work',day);
   const visited=morning||inRedemptionTab(row,'work',day)||changes.some(v=>inRedemptionTab(state(v),'work',day))||changes.some(v=>v.changeKind==='action'&&v.result!=='returned')||row.entered_at>=start;
   if(!visited)continue;
-  const snapshot={order_id:row.order_id,manager:row.manager,department:row.department,author:row.author};
+  const snapshot={order_id:row.order_id,manager:row.manager,department:row.department,author:row.author,lastDay:row.lastDay};
   writes.push(d.prepare('INSERT OR IGNORE INTO redemption_workday_orders(day,order_id,morning,data) VALUES(?,?,?,?)').bind(day,row.order_id,morning?1:0,JSON.stringify(snapshot)));
  }
  if(writes.length)await d.batch(writes);
@@ -31,5 +31,5 @@ export async function redemptionDayCounts(d:Db,rows:any[],actor:Employee,headsAl
  const current=new Map(rows.map(r=>[r.order_id,r]));
  const visible=saved.filter((r:any)=>canSeeRedemption(actor,JSON.parse(r.data),headsAll));
  const morning=visible.filter((r:any)=>r.morning).length;
- return {total:visible.length,morning,added:visible.length-morning,withoutAuthor:visible.filter((r:any)=>!(current.get(r.order_id)||JSON.parse(r.data)).author?.trim()).length};
+ return {total:visible.length,morning,added:visible.length-morning,withoutAuthor:visible.filter((r:any)=>!redemptionDayAuthor(current.get(r.order_id)||JSON.parse(r.data),day).trim()).length};
 }

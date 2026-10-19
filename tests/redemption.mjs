@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+import {redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+assert.equal(redemptionDayAuthor({author:'Иван',lastDay:'2026-10-18'},'2026-10-19'),'');
+assert.equal(redemptionDayAuthor({author:'Мария',lastDay:'2026-10-19'},'2026-10-19'),'Мария');
+assert.equal(redemptionDayAuthor({author:'API',lastDay:'2026-10-19'},'2026-10-19'),'API');
 const d=openDatabase(':memory:'),now=new Date('2026-10-15T12:00:00Z');
 const admin={id:'a',name:'Админ',role:'admin'},buyer={id:'b',name:'Выкуп',role:'redemption'},op={id:'op',name:'Оператор',role:'operator',department:'1'},head={id:'h',role:'department_head',department:'1'};
 try{
@@ -131,6 +134,10 @@ try{
  await syncRedemption(d,new Date('2026-10-16T10:00:00Z'));
  assert.equal((await reported()).result,'client_delivered');assert(inWorkday(await reported(),'2026-10-16'));assert(inWorkday(await reported(),'2026-10-17'));
  assert(!allowedResults('client_delivered',await reported(),'operator','2026-10-16').includes('delivered'));
+ await archiveRedemption(d,new Date('2026-10-17T17:00:00Z'));
+ const nextArchive=JSON.parse((await d.prepare("SELECT data FROM redemption_archives WHERE day='2026-10-17'").first()).data);
+ assert.equal(nextArchive.find(r=>r.order_id==='client-delivered').author,'');
+ assert.equal((await reported()).author,op.name,'Prior author remains available in source and history');
  await d.prepare('UPDATE orders SET data=? WHERE id=?').bind(JSON.stringify({...order,id:'client-delivered',cdekStatus:{code:'DELIVERED'}}),'client-delivered').run();
  await syncRedemption(d,new Date('2026-10-16T10:00:00Z'));
  assert.equal((await reported()).result,'delivered');assert.equal((await reported()).author,'API');assert(inWorkday(await reported(),'2026-10-16'));assert(!inWorkday(await reported(),'2026-10-17'));

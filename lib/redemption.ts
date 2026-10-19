@@ -5,6 +5,7 @@ export const results={date:'Дата',none:'НД',to_return:'На возврат
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
+export function redemptionDayAuthor(row:{author?:string;lastDay?:string},day:string){return row.lastDay===day?row.author||'':'';}
 export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:false};
@@ -98,5 +99,5 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
 export async function archiveRedemption(d:Db,now=new Date()){
  await syncRedemption(d,now);const day=dayOf(now);if(!closedTime(now))return;
  const rows=(await redemptionRows(d)).filter((r:any)=>inWorkday(r,day)||awaitingDateConfirmation(r)||awaitingReturn(r)||awaitingOperator(r)||r.lastDay===day||r.updatedAt&&dayOf(new Date(r.updatedAt))===day);
- await d.prepare('INSERT OR IGNORE INTO redemption_archives(day,at,data) VALUES(?,?,?)').bind(day,now.toISOString(),JSON.stringify(rows)).run();
+ await d.prepare('INSERT OR IGNORE INTO redemption_archives(day,at,data) VALUES(?,?,?)').bind(day,now.toISOString(),JSON.stringify(rows.map((r:any)=>inRedemptionTab(r,'work',day)?{...r,author:redemptionDayAuthor(r,day)}:r))).run();
 }
