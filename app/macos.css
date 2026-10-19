@@ -528,3 +528,5 @@ body:has(.courier-design-aurora){background:#191a1e}
 .large-order-text .order-detail-dialog .order-main-actions>.order-note{position:static}
 .large-order-text :is(.order-detail-dialog,.redemption-edit-dialog) :is(input,select,button){min-height:44px}
 .large-order-text .order-detail-dialog button[aria-label=Close]{min-height:32px}
+
+@media(min-width:761px){.large-order-text .client-detail-dialog.order-detail-dialog{width:96vw;max-width:2000px!important;height:94dvh}}
