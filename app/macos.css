@@ -497,3 +497,20 @@ body:has(.courier-design-aurora){background:#191a1e}
 .redemption-grid .redemption-operator-return{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left}.redemption-operator-plus{font-size:17px;line-height:22px;min-width:22px;text-align:center}
 
 .replacement-status-tabs>[data-slot="tabs-list"]{height:auto;width:100%;flex-wrap:wrap}.replacement-status-tabs [data-slot="tabs-trigger"]{white-space:normal;min-height:40px;padding:10px 14px}.replacement-status-tabs .replacement-status-list{height:auto;overflow:visible}
+
+/* Keep the order context beside the existing role-specific workflow. */
+.client-detail-dialog.order-detail-dialog{width:90vw;max-width:1800px!important;height:90dvh;max-height:calc(100dvh - 32px)}
+.order-detail-dialog>[data-slot=dialog-header]{padding-top:18px;padding-bottom:16px}
+.order-detail-body{padding:16px 24px}.order-detail-content{gap:12px}
+.order-workspace{display:grid;grid-template-columns:minmax(240px,0.8fr) minmax(0,2fr);gap:24px;align-items:start}
+.order-overview{background:#edf2fa;border:1px solid #dfe6f0!important;border-radius:16px;padding:16px!important;gap:14px!important}
+.order-overview .contact-summary{padding:0;background:transparent}.order-overview .notice{margin:0;padding:10px}
+.order-overview h3{font-size:14px;margin:0}.order-overview .item-read{font-size:13px;margin-top:10px}.order-overview .basket-total{margin-top:12px;padding-top:10px}.order-overview .basket-total b{font-size:20px}
+.order-overview-meta{display:grid;gap:10px;font-size:13px}.order-overview-meta dt{color:#748199;font-size:12px}.order-overview-meta dd{margin:2px 0 0;overflow-wrap:anywhere}.order-overview-comment{font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px}
+.order-work-area{min-width:0}.order-work-area>.order-fields{gap:0}.order-work-area .notice{margin:0;padding:12px 14px}.order-work-area .stack{gap:12px}.order-work-area .action-section{padding-top:12px;gap:12px}.order-work-area .packing-guide{margin:0;padding:14px}.order-work-area .packing-guide p{margin:8px 0}
+.order-main-actions:not([hidden]){display:grid;grid-template-columns:minmax(0,1.3fr) minmax(220px,0.8fr);align-items:start;gap:16px}
+.order-main-actions>*{grid-column:1}.order-main-actions>.order-note{grid-column:2;grid-row:1;position:sticky;top:65px;padding:14px;border:1px solid #dfe6f0;border-radius:12px;background:#fff9}
+.order-main-actions>.packing-guide{grid-column:1/-1}.order-main-actions:has(>.packing-guide)>.order-note{grid-row:2}
+.order-data-form{display:grid!important;grid-template-columns:1fr 1fr;align-items:start}.order-data-form>[data-order-field=delivery],.order-data-form>.field,.order-data-form>button{grid-column:1/-1}.order-data-form>[data-order-field=address]{grid-column:1}.order-data-form>[data-order-field=basket]{grid-column:2}
+@media(max-width:1100px){.order-main-actions:not([hidden]),.order-data-form{display:flex!important;flex-direction:column}.order-main-actions>.order-note{position:static;width:100%}.order-data-form>*{width:100%}.order-workspace{grid-template-columns:minmax(220px,0.8fr) minmax(0,1.5fr)}}
+@media(max-width:760px){.client-detail-dialog.order-detail-dialog{width:calc(100vw - 16px);height:calc(100dvh - 24px);max-height:calc(100dvh - 24px)}.order-detail-body{padding:12px}.order-workspace{grid-template-columns:1fr;gap:16px}.order-overview{padding:12px!important}.order-detail-dialog .order-detail-tabs [role=tablist]{max-width:100%}}
