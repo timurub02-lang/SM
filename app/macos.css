@@ -495,3 +495,5 @@ body:has(.courier-design-aurora){background:#191a1e}
 .redemption-stats-group{display:flex;flex-direction:column;gap:8px;flex:1;min-width:250px}.redemption-toolbar>.redemption-day-counts{font-size:13px;margin-left:auto;padding-left:2px}
 
 .redemption-grid .redemption-operator-return{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left}.redemption-operator-plus{font-size:17px;line-height:22px;min-width:22px;text-align:center}
+
+.replacement-status-tabs>[data-slot="tabs-list"]{height:auto;width:100%;flex-wrap:wrap}.replacement-status-tabs [data-slot="tabs-trigger"]{white-space:normal;min-height:40px;padding:10px 14px}.replacement-status-tabs .replacement-status-list{height:auto;overflow:visible}
