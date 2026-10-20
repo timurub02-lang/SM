@@ -530,3 +530,7 @@ body:has(.courier-design-aurora){background:#191a1e}
 .large-order-text .order-detail-dialog button[aria-label=Close]{min-height:32px}
 
 @media(min-width:761px){.large-order-text .client-detail-dialog.order-detail-dialog{width:96vw;max-width:2000px!important;height:94dvh}}
+
+.courier-app .courier-phone{align-self:stretch;width:100%;min-height:52px;padding:12px 15px;font-size:14px;line-height:20px;box-sizing:border-box}
+.courier-app .secondary.courier-return{background:#f5dfdd;border-color:#dfb6b1;color:#9b4741;box-shadow:none}
+.courier-app .secondary.courier-return:hover:not(:disabled){background:#eed0cc;border-color:#d29d97}

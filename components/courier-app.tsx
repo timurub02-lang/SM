@@ -88,7 +88,7 @@ function CourierActions({order:o,busy,mutate}:Pick<Props,'busy'|'mutate'>&{order
   </form>;
  }
  return <div className="courier-buttons">
- {stage==='confirmation'?<><button className="primary courier-wide" disabled={busy} onClick={()=>void send({action:'courierWorkflow',operation:'confirm'})}>Подтвердить — клиент ожидает заказ</button><button className="secondary" disabled={busy} onClick={()=>choose('missed')}>Недозвон</button><button className="secondary" disabled={busy} onClick={()=>choose('callback')}>Перезвон</button></>:<><button className="primary" disabled={busy} onClick={()=>choose('redeemed')}>Оплачен</button><button className="secondary" disabled={busy} onClick={()=>choose('returned')}>Возврат</button></>}
+ {stage==='confirmation'?<><button className="primary courier-wide" disabled={busy} onClick={()=>void send({action:'courierWorkflow',operation:'confirm'})}>Подтвердить — клиент ожидает заказ</button><button className="secondary" disabled={busy} onClick={()=>choose('missed')}>Недозвон</button><button className="secondary" disabled={busy} onClick={()=>choose('callback')}>Перезвон</button></>:<><button className="primary" disabled={busy} onClick={()=>choose('redeemed')}>Оплачен</button><button className="secondary courier-return" disabled={busy} onClick={()=>choose('returned')}>Возврат</button></>}
  {stage==='delivery'&&<button className="primary courier-wide courier-door-button" disabled={busy} onClick={()=>choose('doorRefusal')}>Клиент отказывается у двери</button>}
  <button className="secondary courier-wide" disabled={busy} onClick={()=>choose('toOperator')}>Передать в работу оператору</button>
  </div>;
