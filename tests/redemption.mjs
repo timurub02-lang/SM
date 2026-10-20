@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+import {redemptionNdCount,compareRedemptionRows,redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
 assert.equal(redemptionDayAuthor({author:'Иван',lastDay:'2026-10-18'},'2026-10-19'),'');
 assert.equal(redemptionDayAuthor({author:'Мария',lastDay:'2026-10-19'},'2026-10-19'),'Мария');
 assert.equal(redemptionDayAuthor({author:'API',lastDay:'2026-10-19'},'2026-10-19'),'API');
@@ -37,6 +37,16 @@ try{
  await edit(admin,{action:'nd',result:'none',comment:'  Проверочный комментарий  '});
  assert.equal((await row()).comments.at(-1).text,'Проверочный комментарий');
  assert.equal((await row()).comments.at(-1).authorId,admin.id);
+ assert.equal(redemptionNdCount(await row(),'2026-10-15'),1);
+ for(let count=2;count<=5;count++){await edit(count%2?admin:op,{action:'nd',result:'none'});assert.equal(redemptionNdCount(await row(),'2026-10-15'),count);}
+ const stale=await row();await edit(admin,{action:'nd',result:'none'});
+ await assert.rejects(editRedemption(d,admin,{id:'o',version:stale.version,action:'nd',result:'none',comment:'Повтор запроса'},now),/изменён/);
+ assert.equal(redemptionNdCount(await row(),'2026-10-15'),6);
+ assert.equal(redemptionNdCount(await row(),'2026-10-16'),0);
+ const nd=n=>({result:'none',days:{'2026-10-15':{action:'nd',ndCount:n}}});
+ const sorted=[{id:'held',operatorReturn:{}},{id:'nd5',...nd(5)},{id:'done',result:'delivered'},{id:'nd1',...nd(1)},{id:'fresh'},{id:'nd2',...nd(2)}].sort((a,b)=>compareRedemptionRows(a,b,'work','2026-10-15'));
+ assert.deepEqual(sorted.map(r=>r.id),['fresh','nd1','nd2','nd5','done','held']);
+ assert.equal(redemptionNdCount({lastDay:'2026-10-15',action:'nd'},'2026-10-15'),1);
  await edit(op,{action:'refusal',result:'date'});assert.equal((await row()).resultDate,'2026-10-19');assert.equal((await row()).refusalRetryUsed,true);assert(!inWorkday(await row(),'2026-10-15'));assert(!inWorkday(await row(),'2026-10-18'));assert(!inWorkday(await row(),'2026-10-19'));assert(awaitingOperator(await row()));assert(operatorReturnScheduled(await row(),now));assert.equal((await row()).operatorReturn.startsAt,'2026-10-19T06:00:00.000Z');assert.equal((await row()).operatorReturn.deadline,'2026-10-19T08:00:00.000Z');
  await assert.rejects(edit(op,{action:'refusal',result:'to_return'},new Date('2026-10-19T05:59:59Z')),/09:00/);assert(!operatorReturnScheduled(await row(),new Date('2026-10-19T06:00:00Z')));
  await assert.rejects(edit(op,{action:'refusal',result:'date'},new Date('2026-10-19T06:00:00Z')),/недоступен/);
