@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {emptyDemo,checkDemoRows,demoRows,queueDemo,connectDemo,finishDemo,demoProjects} from '../lib/oktell-demo.ts';
+import {emptyDemo,checkDemoRows,demoRows,queueDemo,connectDemo,finishDemo,demoProjects,saveProject,readyClients,projectBlock,localClock,demoShift} from '../lib/oktell-demo.ts';
 let s=emptyDemo();const check=checkDemoRows(demoRows);assert.equal(check.accepted.length,7);assert.equal(check.issues.length,2);
 assert.equal(checkDemoRows([['+79999999999','Real','М','Т1','']]).accepted.length,0);
 s.clients=check.accepted;s=queueDemo(s,demoProjects[0],100);
@@ -22,3 +22,29 @@ const source=readFileSync(new URL('../components/oktell-demo.tsx',import.meta.ur
 assert.doesNotMatch(source,/\bfetch\s*\(|\bWebSocket\s*\(|getUserMedia|\/api\/|sip\.js|BrowserPhone/);
 const config=readFileSync(new URL('../next.config.ts',import.meta.url),'utf8');assert.match(config,/connect-src 'none'/);
 console.log('Demo checks passed: synthetic-only import, duplicates, reservations, rights, outcomes, repeat safety, no telephony/network clients.');
+
+const p=demoProjects[0];
+function fresh(){let x=emptyDemo();x.clients=checkDemoRows(demoRows).accepted;return {...queueDemo(x,p,100),ready:true};}
+let x=fresh(),cfg=structuredClone(x.settings[p.id]);
+cfg.running=false;x=saveProject(x,p,cfg);assert.match(projectBlock(x,p),/паузе/);assert.throws(()=>connectDemo(x,p,p.operators[0]));
+cfg.running=true;cfg.start='12:00';x=saveProject(x,p,cfg);assert.match(projectBlock(x,p),/расписания/);
+cfg.start='09:00';cfg.clientStart='12:00';x=saveProject(x,p,cfg);assert.equal(readyClients(x,p).length,0);
+cfg.clientStart='09:00';cfg.rules['Нет ответа']={action:'transfer',minutes:30,target:'demo-m-return'};
+x=saveProject(x,p,cfg);x=connectDemo(x,p,p.operators[0]);const id=x.active,firstCaller=x.activeCaller;
+assert.throws(()=>saveProject(x,p,cfg));x=finishDemo(x,'Нет ответа','','');
+let c=x.clients.find(c=>c.id===id);assert.equal(c.project,'demo-m-return');assert.equal(c.attempts,1);assert.equal(c.owner,'');
+assert.equal(readyClients(x,demoProjects[2]).length,0);x={...x,now:x.now+30*60000};assert.equal(readyClients(x,demoProjects[2]).length,1);
+x=connectDemo(x,demoProjects[2],p.operators[0]);assert.notEqual(x.activeCaller,firstCaller);x=finishDemo(x,'Отказ','','');
+assert.equal(x.clients.find(c=>c.id===id).state,'done');
+x=fresh();cfg=structuredClone(x.settings[p.id]);cfg.maxAttempts=1;x=saveProject(x,p,cfg);x=connectDemo(x,p,p.operators[0]);const exhausted=x.active;x=finishDemo(x,'Занято','','');
+assert.equal(x.clients.find(c=>c.id===exhausted).state,'done');
+x=fresh();cfg=structuredClone(x.settings[p.id]);cfg.operators=[p.operators[1]];x=saveProject(x,p,cfg);assert.throws(()=>connectDemo(x,p,p.operators[0]));
+assert.throws(()=>saveProject(x,p,{...cfg,days:[]}));assert.throws(()=>saveProject(x,p,{...cfg,channels:21}));assert.throws(()=>saveProject(x,p,{...cfg,end:'08:00'}));
+assert.throws(()=>saveProject(x,p,{...cfg,rules:{...cfg.rules,'Ошибка':{action:'transfer',minutes:1,target:'demo-j'}}}));
+x=fresh();x=connectDemo(x,p,p.operators[0]);const callbackId=x.active;x=finishDemo(x,'Перезвон','',localClock(x.now+3600000));
+x={...x,now:x.now+3600000};assert.ok(readyClients(x,p,p.operators[0]).some(c=>c.id===callbackId));assert.ok(!readyClients(x,p,p.operators[1]).some(c=>c.id===callbackId));
+x=fresh();x={...x,now:Date.parse('2026-10-22T20:00:00+03:00')};assert.equal(readyClients(x,p).length,0);
+x=fresh();x={...x,now:Date.parse('2026-10-24T11:00:00+03:00')};assert.match(projectBlock(x,p),/расписания/);
+const shift=demoShift();assert.ok(shift.active);assert.equal(shift.calls.length,3);assert.ok(shift.clients.some(c=>c.state==='callback'));assert.ok(shift.clients.some(c=>c.nextAt>shift.now&&c.state==='queued'));
+for(const file of ['components/oktell-demo-management.tsx','lib/oktell-demo.ts'])assert.doesNotMatch(readFileSync(new URL('../'+file,import.meta.url),'utf8'),/\bfetch\s*\(|\bWebSocket\s*\(|getUserMedia|\/api\/|sip\.js|BrowserPhone/);
+console.log('Project checks passed: pause, both schedules, boundaries/weekend, retries, attempt limit, transfer/reservation, caller rotation, callback ownership, disabled operators, validation, supervisor fixture.');
