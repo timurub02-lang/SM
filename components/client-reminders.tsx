@@ -1,0 +1,12 @@
+'use client';
+import {useState} from 'react';
+import {Bell} from 'lucide-react';
+import type {ClientReminder} from '@/lib/client-reminders';
+export function ClientReminders({clientId,rows,busy,mutate}:{clientId:string;rows:ClientReminder[];busy:boolean;mutate:(p:any)=>Promise<boolean>}){
+ const [open,setOpen]=useState(false),[due,setDue]=useState(''),[text,setText]=useState(''),[reminderId,setReminderId]=useState(()=>crypto.randomUUID());
+ const stamp=(value:string)=>new Date(value).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',dateStyle:'medium',timeStyle:'short'});
+ return <section className="stack"><div className="section-title"><h3>Мои напоминания</h3><button type="button" className="secondary" onClick={()=>setOpen(!open)}><Bell size={16}/>Напомнить</button></div>
+ {open&&<form className="stack" onSubmit={async e=>{e.preventDefault();if(await mutate({action:'createClientReminder',clientId,reminderId,due:new Date(due+':00+03:00').toISOString(),text})){setOpen(false);setDue('');setText('');setReminderId(crypto.randomUUID());}}}><label className="field"><span>Дата и время · Москва</span><input type="datetime-local" required value={due} onChange={e=>setDue(e.target.value)} disabled={busy}/></label><label className="field"><span>О чём напомнить</span><textarea required maxLength={1000} rows={2} value={text} onChange={e=>setText(e.target.value)} placeholder="Например: договорились созвониться через 5 дней" disabled={busy}/></label><p className="muted">В назначенное время появится в ваших «Требуют действия». Напоминание не продлевает закрепление клиента.</p><div className="action-buttons"><button className="primary" disabled={busy||!due||!text.trim()}>Сохранить напоминание</button><button type="button" className="secondary" onClick={()=>setOpen(false)} disabled={busy}>Отмена</button></div></form>}
+ {rows.filter(r=>r.clientId===clientId).map(r=><div className="notice" key={r.id}><div><strong>{stamp(r.due)} МСК</strong><p>{r.text}</p><div className="action-buttons"><button type="button" className="primary" disabled={busy} onClick={()=>void mutate({action:'closeClientReminder',clientId,reminderId:r.id,resolution:'done'})}>Выполнено</button><button type="button" className="secondary" disabled={busy} onClick={()=>void mutate({action:'closeClientReminder',clientId,reminderId:r.id,resolution:'cancelled'})}>Отменить напоминание</button></div></div></div>)}
+ </section>;
+}

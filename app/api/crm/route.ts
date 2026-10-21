@@ -1,3 +1,4 @@
+import {personalClientReminders,clientReminderTasks,changeClientReminder} from '@/lib/client-reminders';
 import {replacementTasks} from '@/lib/phone-replacement';
 import {readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder,incomingRouting} from '@/lib/incoming';
 import {employeeTasks} from '@/lib/reminder-tasks';
@@ -65,8 +66,9 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
   visible.events.push(...state.events.filter(e=>sharedIds.has(e.clientId)&&!visible.events.some(v=>v.id===e.id)));
  }
 
+ const clientReminders=await personalClientReminders(db(),state,user.employee);
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
- return {...visible,incoming,incomingOperators,tasks:[...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
+ return {...visible,incoming,incomingOperators,clientReminders,tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
 async function handlePOST(request:Request){
@@ -84,7 +86,10 @@ async function handlePOST(request:Request){
  const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
  const assignedUntil=()=>"";
  await saveReminders(s);
- if(p.action==="readReminder"){
+ if(["createClientReminder","closeClientReminder"].includes(p.action)){
+  if(!employee)throw Error("Требуется сотрудник");
+  await changeClientReminder(d,s,employee,p,now);message=p.action==="createClientReminder"?"Напоминание сохранено":"Напоминание закрыто";
+ }else if(p.action==="readReminder"){
   if(!employee)throw Error("Требуется сотрудник");
   await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
  }else if(p.action==="createIncomingClient"){

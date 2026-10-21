@@ -38,6 +38,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='deleteEmployee')return allow(e.role==='department_head'&&!!e.department);
  if(p.action==='saveEmployee')return allow(e.role==='chief_logistic'||e.role==='department_head'&&!!e.department);
  if(p.action==='createClient')return allow(e.role==='department_head');
+ if(['createClientReminder','closeClientReminder'].includes(p.action))return allow(!!client&&canOpenClientCard(e,client)&&visibleState(s,e).clients.some(c=>c.id===client.id));
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
