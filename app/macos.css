@@ -534,3 +534,5 @@ body:has(.courier-design-aurora){background:#191a1e}
 .courier-app .courier-phone{align-self:stretch;width:100%;min-height:52px;padding:12px 15px;font-size:14px;line-height:20px;box-sizing:border-box}
 .courier-app .secondary.courier-return{background:#f5dfdd;border-color:#dfb6b1;color:#9b4741;box-shadow:none}
 .courier-app .secondary.courier-return:hover:not(:disabled){background:#eed0cc;border-color:#d29d97}
+
+.sk-order-pending{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px;border:1px solid #d4d7df;border-radius:16px;background:#e6e7ec;color:#687387}.sk-order-pending p{margin:6px 0}.sk-order-pending small{color:#758095}@media(max-width:700px){.sk-order-pending{align-items:stretch;flex-direction:column}.sk-order-pending .heading-actions{flex-wrap:wrap}}
