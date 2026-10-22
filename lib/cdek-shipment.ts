@@ -6,7 +6,7 @@ export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(25
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
 export type ShipmentDeletion={at:string;reason:string;actor:string;requestId?:string;previousRequests:string[]};
 export type Shipment={replacementAssignmentId?:string;replacementFallback?:boolean;checkedAt?:string;syncError?:string;deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
-export function shipmentPayload(order:Order,client:Client,products:Product[],form:ShipmentForm){
+export function shipmentPayload(order:Order,client:Client,products:Product[],form:ShipmentForm,senderAlias?:string){
  const recipientPhone=normalizePhone(client.phone||'');if(!recipientPhone)throw Error('Укажите корректный телефон в карточке клиента перед выгрузкой в СДЭК');
  const tariff=order.cdekTariff;if(!tariff||tariff.params.delivery!==order.delivery)throw Error('Сначала сохраните тариф доставки');
  if(!['packing','phone'].includes(order.status))throw Error('Выгрузка доступна на упаковке или подготовке отправления');
@@ -23,7 +23,7 @@ export function shipmentPayload(order:Order,client:Client,products:Product[],for
  });
  if(new Set(items.map(i=>i.ware_key)).size!==items.length)throw Error('Объедините одинаковые товары в одну строку корзины');
  if(items.reduce((n,i)=>n+i.weight*i.amount,0)>Math.ceil(p.weight*1000))throw Error('Вес посылки меньше суммарного веса товаров. Пересчитайте доставку');
- return {type:1,number:order.id,tariff_code:tariff.code,recipient:{name:client.name,phones:[{number:recipientPhone}]},
+ return {...(senderAlias?{sender:{name:senderAlias,company:senderAlias},seller:{name:senderAlias}}:{}),type:1,number:order.id,tariff_code:tariff.code,recipient:{name:client.name,phones:[{number:recipientPhone}]},
   ...(p.originMode==='warehouse'?{shipment_point:form.shipmentPoint}:{from_location:{country_code:'RU',postal_code:p.originPostalCode,address:form.senderAddress}}),
   ...(order.delivery==='cdek_pickup'?{delivery_point:form.deliveryPoint}:{to_location:{country_code:'RU',postal_code:order.addressParts?.postalCode,address:order.address}}),
   delivery_recipient_cost:{value:form.deliveryCost},packages:[{number:'1',weight:Math.ceil(p.weight*1000),length:p.length,width:p.width,height:p.height,items}]};

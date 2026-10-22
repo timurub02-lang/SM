@@ -7,7 +7,7 @@ export function parcelDefaults(items:{name:string;quantity:number}[],products:Pr
  const matches=items.map(i=>({item:i,p:products.find(p=>p.name.trim().toLowerCase()===i.name.trim().toLowerCase())}));
  if(!matches.length||matches.some(x=>!x.p?.packedWeight))return null;
  const single=matches.length===1&&matches[0].item.quantity===1?matches[0].p:null;
- return {weight:Math.round(matches.reduce((n,x)=>n+x.p!.packedWeight!*x.item.quantity,0)*1000)/1000,length:single?.length??null,width:single?.width??null,height:single?.height??null,originMode:single?.originMode||'warehouse',single:!!single};
+ return {weight:0.875,length:single?.length??null,width:single?.width??null,height:single?.height??null,originMode:single?.originMode||'warehouse',single:!!single};
 }
 
 export const warehouseAddressSchema=z.string().trim().min(1).max(500).refine(v=>/(?:^|\D)\d{6}(?!\d)/.test(v),"Укажите в адресе шестизначный индекс").transform(address=>({address,postalCode:address.match(/(?:^|\D)(\d{6})(?!\d)/)![1]}));

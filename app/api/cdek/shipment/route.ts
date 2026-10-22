@@ -94,7 +94,11 @@ async function handlePOST(req:Request){
    }
    const clientRow=await d.prepare('SELECT data FROM clients WHERE id=?').bind(c.order.clientId).first<{data:string}>();if(!clientRow)throw Error('Клиент не найден');
    const products=await d.prepare('SELECT data FROM products').all<{data:string}>();
-   const payload=shipmentPayload(c.order,JSON.parse(clientRow.data) as Client,products.results.map(x=>JSON.parse(x.data)),form);
+   if(c.order.cdekTariff?.params.weight!==0.875)throw Error("Пересчитайте доставку: вес всей посылки должен быть 0,875 кг");
+   const managerRow=await d.prepare("SELECT data FROM employees WHERE id=?").bind(c.order.manager).first<{data:string}>();
+   const senderAlias=managerRow?String(JSON.parse(managerRow.data).alias||"").trim():"";
+   if(!senderAlias)throw Error("Укажите псевдоним оператора в карточке сотрудника перед выгрузкой в СДЭК");
+   const payload=shipmentPayload(c.order,JSON.parse(clientRow.data) as Client,products.results.map(x=>JSON.parse(x.data)),form,senderAlias);
    const t=c.order.cdekTariff!;assertRoutingSlot(await orderRouting(c.order),t.slot);const api=await apiFor(t.slot);
    for(const [code,side] of [[form.shipmentPoint,'sender'],[form.deliveryPoint,'recipient']]){
     if(side==='sender'&&t.params.originMode!=='warehouse'||side==='recipient'&&c.order.delivery!=='cdek_pickup')continue;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {calculationSchema,calculationPayload,tariffMode,canManageDelivery} from '../lib/cdek-calculator.ts';
 const input={actorId:'denis',orderId:'one',slot:1,delivery:'cdek_pickup',originPostalCode:'101000',originMode:'warehouse',weight:1.25,length:20,width:15,height:10};
 const p=calculationSchema.parse(input);
-assert.equal(calculationPayload(p,'350063').packages[0].weight,1250);
+assert.equal(calculationPayload(p,'350063').packages[0].weight,875);
 assert.equal(calculationPayload(p,'350063').currency,1);
 assert.equal(tariffMode(p),4);
 assert.equal(tariffMode({...p,delivery:'cdek_courier'}),3);

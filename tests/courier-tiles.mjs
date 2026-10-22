@@ -9,3 +9,5 @@ assert.equal(courierTile({...o,status:'returned'}),'return');
 assert.equal(courierTile({...o,status:'returned',warehouseReturnedAt:'now'}),'settled');
 assert.equal(courierTile({...o,delivery:'cdek_pickup'}),'none');
 console.log('Courier tiles: retries, outstanding cash, returns and settled orders passed');
+
+assert.equal(courierTile({...o,courier:{id:'courier',assignedAt:'2026-10-22T09:00:00Z'}}),'pending');

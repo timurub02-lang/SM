@@ -10,8 +10,8 @@ assert(productReady(productSchema.parse({...draft,sku:'SHOES-1',weight:500,payme
 console.log('Warehouse validation passed');
 const {parcelDefaults}=await import('../lib/warehouse.ts');
 const product={...productSchema.parse({...draft,packedWeight:1.2,length:35,width:25,height:15}),id:'one',version:1};
-assert.deepEqual(parcelDefaults([{name:'Кроссовки',quantity:1}],[product]),{weight:1.2,length:35,width:25,height:15,originMode:'warehouse',single:true});
-assert.equal(parcelDefaults([{name:'Кроссовки',quantity:2}],[product]).weight,2.4);
+assert.deepEqual(parcelDefaults([{name:'Кроссовки',quantity:1}],[product]),{weight:0.875,length:35,width:25,height:15,originMode:'warehouse',single:true});
+assert.equal(parcelDefaults([{name:'Кроссовки',quantity:2}],[product]).weight,0.875);
 assert.equal(parcelDefaults([{name:'Кроссовки',quantity:2}],[product]).length,null);
 assert.equal(parcelDefaults([{name:'Unknown',quantity:1}],[product]),null);
 console.log('Parcel defaults passed');

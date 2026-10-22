@@ -51,3 +51,6 @@ assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state:'SUCCESSFUL'
 assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state:'INVALID',request_uuid:'new-delete',errors:[{message:'Parcel moved'}]}]},deletion).state,'rejected');
 for(const state of ['ACCEPTED','WAITING'])assert.equal(shipmentDeletionResult({requests:[{type:'DELETE',state,request_uuid:'new-delete'}]},deletion).state,'pending');
 console.log('CDEK asynchronous deletion request identity and confirmation checks passed');
+
+const named=shipmentPayload(order,client,products,form,'Псевдоним');
+assert.equal(named.sender.company,'Псевдоним');assert.equal(named.sender.name,'Псевдоним');assert.equal(named.seller.name,'Псевдоним');

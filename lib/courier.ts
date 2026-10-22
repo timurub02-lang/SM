@@ -237,6 +237,6 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
 
 export function courierTile(o:Order){
  const stage=courierStage(o);
- if(['none','settled','money','return','waiting'].includes(stage))return stage;
+ if(['none','settled','money','return','waiting','pending'].includes(stage))return stage;
  return ['missed','callback'].includes(o.contact)?'calls':'active';
 }
