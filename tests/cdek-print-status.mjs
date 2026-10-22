@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {cdekPrintStatus} from '../lib/cdek-print-status.ts';
+const statuses=['ACCEPTED','PROCESSING','READY'].map(code=>({code,date_time:'2026-10-22T13:11:34+0000'}));
+assert.equal(cdekPrintStatus(statuses),'READY');
+assert.equal(statuses[0].code,'ACCEPTED');
+assert.equal(cdekPrintStatus([...statuses,{code:'REMOVED',date_time:'2026-10-22T13:12:00+0000'}]),'REMOVED');
+assert.equal(cdekPrintStatus([statuses[2],{code:'PROCESSING',date_time:'2026-10-22T13:10:00+0000'}]),'READY');
+assert.equal(cdekPrintStatus([]),undefined);
+assert.equal(cdekPrintStatus([{code:'ACCEPTED',date_time:'x'},{code:'INVALID',date_time:'x'}]),'INVALID');
+console.log('CDEK print status: tied timestamps, latest state and failure states passed');

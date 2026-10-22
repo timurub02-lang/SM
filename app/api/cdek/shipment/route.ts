@@ -1,3 +1,4 @@
+import {cdekPrintStatus} from "@/lib/cdek-print-status";
 import {replacementPhone} from '@/lib/phone-replacement';
 import {applyCdekDeletion} from '@/lib/cdek-deletion';
 import {orderRouting,assertRoutingSlot,routingReservationGuard} from '@/lib/cdek-routing-store';
@@ -143,7 +144,7 @@ async function handlePOST(req:Request){
    if(cdekErrors(data))throw Error(cdekErrors(data));shipment.printId=uuidSchema.parse(data.entity?.uuid);shipment.printAt=new Date().toISOString();await save(shipment,c.record!.data);
   }
   const printId=uuidSchema.parse(shipment.printId);const data=await json(await api(`/print/orders/${printId}`));
-  const latest=[...(data.entity?.statuses||[])].sort((a:any,b:any)=>String(b.date_time).localeCompare(String(a.date_time)))[0]?.code;
+  const latest=cdekPrintStatus(data.entity?.statuses);
   if(latest==='INVALID'||latest==='REMOVED'||cdekErrors(data)){const prev=JSON.stringify(shipment);delete shipment.printId;delete shipment.printAt;await save(shipment,prev);throw Error(cdekErrors(data)||'СДЭК не сформировал PDF. Повторите получение накладной');}
   if(latest!=='READY')return Response.json({pending:true,message:'СДЭК формирует накладную. Нажмите скачать ещё раз через несколько секунд.'},{status:202});
   const pdf=await api(`/print/orders/${printId}.pdf`);if(!pdf.ok)throw Error('Не удалось скачать PDF из СДЭК');
