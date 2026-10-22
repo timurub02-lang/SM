@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {appendOrderComment,orderComments} from '../lib/order-comments.ts';
+const old={comment:'Позвонить после 12'};
+const next=appendOrderComment(old,' Новый адрес уточнён ',{id:'op',name:'Оператор'},'2026-10-22T12:00:00Z');
+assert.equal(next.operatorComments.length,2);
+assert.equal(next.operatorComments[0].text,old.comment);
+assert.equal(next.operatorComments[0].at,undefined);
+assert.equal(next.operatorComments[1].at,'2026-10-22T12:00:00Z');
+assert.equal(next.comment,'Новый адрес уточнён');
+assert.equal(orderComments(next).length,2);
+assert.equal(appendOrderComment(next,next.comment,{id:'op',name:'Оператор'},'2026-10-23T12:00:00Z').operatorComments.length,3);
+assert.throws(()=>appendOrderComment(old,' ',{id:'op',name:'Оператор'},''));
+assert.equal(old.comment,'Позвонить после 12');
+console.log('Order comments preserve history, author, timestamps and repeated entries');
