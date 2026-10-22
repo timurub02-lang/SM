@@ -39,3 +39,11 @@ assert.equal(internalWaybill({id:'test',items:[]},{name:'Клиент',phone:''}
 
 assert.equal(data.comment,internalWaybill({items:[],logisticComment:data.comment,waybillComment:"old"},{}).comment);
 assert.equal(internalWaybill({items:[],waybillComment:"old",comment:"operator"},{}).comment,"—");
+
+const {selectedPackingOrders}=await import("../lib/internal-waybill.ts");
+const calculated={id:"a",status:"packing",delivery:"cdek_courier",cdekTariff:{}};
+const waiting={...calculated,id:"b",cdekTariff:{needsConfirmation:true}};
+const printed={...calculated,id:"c",packingWaybillAt:"2026-10-22"};
+assert.deepEqual(selectedPackingOrders([calculated,waiting,printed],[]),[]);
+assert.deepEqual(selectedPackingOrders([calculated,waiting,printed],["a","a","b","c","missing"]).map(o=>o.id),["a"]);
+assert.deepEqual(selectedPackingOrders([calculated,{...calculated,id:"d"}],["d"]).map(o=>o.id),["d"]);

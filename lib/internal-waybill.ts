@@ -1,4 +1,4 @@
-import type {Order,Client,Employee} from './crm.ts';
+import {packingStage,type Order,type Client,type Employee} from './crm.ts';
 
 export function internalWaybill(order:Order,client:Client,manager?:Employee,callbacks?:{printBoth?:boolean;phones:string[];departments:Record<string,string>}){
  return {
@@ -13,3 +13,7 @@ export function internalWaybill(order:Order,client:Client,manager?:Employee,call
  };
 }
 export type WaybillData=ReturnType<typeof internalWaybill>;
+
+export function selectedPackingOrders(orders:Order[],ids:string[]){
+ return orders.filter(order=>ids.includes(order.id)&&packingStage(order)==="calculated");
+}
