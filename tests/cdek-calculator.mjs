@@ -19,3 +19,6 @@ const {calculationError}=await import('../lib/cdek-calculator.ts');
 assert.match(calculationError(400,[{code:'v2_sender_location_not_recognized'}]),/индекс отправления/);
 assert.match(calculationError(429),/слишком много/);
 assert(!calculationError(400,[{code:'<private detail>'}]).includes('private'));
+
+for(const role of ['admin','logistic','chief_logistic'])for(const status of ['confirm','extra'])assert(canManageDelivery(role,status));
+for(const status of ['confirm','extra'])assert(!canManageDelivery('operator',status));

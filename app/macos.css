@@ -527,7 +527,7 @@ body:has(.courier-design-aurora){background:#191a1e}
 .large-order-text .order-detail-dialog .order-main-actions>*{width:100%}
 .large-order-text .order-detail-dialog .order-main-actions>.order-note{position:static}
 .large-order-text :is(.order-detail-dialog,.redemption-edit-dialog) :is(input,select,button){min-height:44px}
-.large-order-text .order-detail-dialog button[aria-label=Close]{min-height:32px}
+.large-order-text :is(.order-detail-dialog,.redemption-edit-dialog) [data-slot=dialog-close]{width:44px;height:44px;min-width:44px;min-height:44px;padding:0;line-height:1;border-radius:50%;flex-shrink:0}
 
 @media(min-width:761px){.large-order-text .client-detail-dialog.order-detail-dialog{width:96vw;max-width:2000px!important;height:94dvh}}
 
