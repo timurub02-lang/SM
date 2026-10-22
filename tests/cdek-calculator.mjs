@@ -22,3 +22,16 @@ assert(!calculationError(400,[{code:'<private detail>'}]).includes('private'));
 
 for(const role of ['admin','logistic','chief_logistic'])for(const status of ['confirm','extra'])assert(canManageDelivery(role,status));
 for(const status of ['confirm','extra'])assert(!canManageDelivery('operator',status));
+
+const {confirmSavedTariff}=await import('../lib/cdek-calculator.ts');
+const {packingStage}=await import('../lib/crm.ts');
+const pending={status:'packing',delivery:'cdek_courier',cdekTariff:{code:137,amount:450,needsConfirmation:true,params:{delivery:'cdek_courier',weight:.875}}};
+assert.equal(packingStage(pending),'new');
+const confirmed=confirmSavedTariff(pending);
+assert.equal(confirmed.amount,450);
+assert.equal(confirmed.code,137);
+assert.equal(confirmed.needsConfirmation,false);
+assert.equal(pending.cdekTariff.needsConfirmation,true);
+assert.equal(packingStage({...pending,cdekTariff:confirmed}),'calculated');
+for(const patch of [{status:'confirm'},{status:'shipping'},{delivery:'cdek_pickup'},{cdekTariff:undefined},{cdekTariff:{...pending.cdekTariff,params:{delivery:'cdek_courier',weight:1}}}])assert.throws(()=>confirmSavedTariff({...pending,...patch}));
+console.log('Saved tariff confirmation and packing stages passed');

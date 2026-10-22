@@ -14,3 +14,9 @@ export function calculationError(status:number,errors?:{code?:string}[]){
  const safeCode=typeof code==='string'&&/^[a-zA-Z0-9_]{1,100}$/.test(code)?code:'';
  return `СДЭК: ${messages[safeCode]||(status===429?'слишком много запросов. Повторите позже':status>=500?'временная ошибка сервиса. Повторите позже':'расчёт отклонён. Проверьте индексы и параметры посылки')}${safeCode?` (${safeCode})`:` (HTTP ${status})`}.`;
 }
+
+export function confirmSavedTariff(order:import("./crm.ts").Order){
+ const tariff=order.cdekTariff;
+ if(!["packing","phone"].includes(order.status)||!tariff?.needsConfirmation||tariff.params.delivery!==order.delivery||tariff.params.weight!==0.875)throw Error("Нет сохранённого расчёта для подтверждения");
+ return {...tariff,needsConfirmation:false};
+}

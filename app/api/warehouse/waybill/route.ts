@@ -10,6 +10,7 @@ async function handleGET(req:Request){
  const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(q.get('orderId')||'').first<{data:string}>();
  if(!row)return Response.json({error:'Заказ не найден'},{status:404});
  const order=JSON.parse(row.data);
+ if(order.cdekTariff?.needsConfirmation)return Response.json({error:"Сначала подтвердите ранее рассчитанную доставку"},{status:409});
  const client=await db().prepare('SELECT data FROM clients WHERE id=?').bind(order.clientId).first<{data:string}>();
  if(!client)return Response.json({error:'Клиент не найден'},{status:404});
  const manager=await db().prepare('SELECT data FROM employees WHERE id=?').bind(order.manager).first<{data:string}>();

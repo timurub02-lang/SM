@@ -561,3 +561,21 @@ body:has(.courier-design-aurora){background:#191a1e}
 
 .call-comments{border-top:1px solid #30456c14;margin-top:16px;padding-top:16px;gap:12px}
 .client-card .card-bottom{flex-wrap:wrap;gap:8px}
+
+.order-detail-dialog.has-header-call>[data-slot=dialog-header]:has(.order-header-actions){display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:24px;align-items:center;padding-right:64px}
+.order-detail-dialog [data-slot=dialog-header]:has(.order-header-actions)>[data-slot=dialog-title]{grid-column:1;grid-row:1;overflow-wrap:anywhere}
+.order-detail-dialog [data-slot=dialog-header]:has(.order-header-actions)>[data-slot=dialog-description]{grid-column:1;grid-row:2}
+.order-header-actions{grid-column:2;grid-row:1/3;display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+.order-detail-dialog .order-header-actions .browser-call-button.card-header-call{position:static;align-self:center;min-height:46px;margin:0}
+.order-followup-segment{display:flex;align-items:stretch;padding:5px;gap:4px;background:#e8edf5;border:1px solid #dce3ef;border-radius:17px;box-shadow:inset 0 1px 3px #33415508}
+.order-followup-segment button{border:1px solid transparent;border-radius:12px;padding:11px 15px;min-height:44px;font-size:14px;font-weight:550;line-height:1.25;color:#43516a;cursor:pointer}
+.order-followup-segment .followup-waiting{background:#fff;color:#293b56;border-color:#f0f3f8;box-shadow:0 2px 5px #3341550c}
+.order-followup-segment .followup-edit{background:#dfe5ee;color:#4e5b70}
+.order-followup-segment button:hover:not(:disabled){border-color:#b3c1d5;box-shadow:0 2px 7px #33415514}
+.order-followup-segment button:focus-visible{outline:2px solid #4187d9;outline-offset:2px}
+.order-followup-segment button:disabled{opacity:.5;cursor:default}
+.order-detail-dialog [data-slot=dialog-header]>.browser-call-dock{grid-column:1/-1}
+.return-operator-button.secondary{background:linear-gradient(#ece9e5,#dfdbd5);border:1px solid #c9c3bb;color:#5d554d;box-shadow:inset 0 1px 0 #fff8,0 2px 5px #554b3d0a}
+.return-operator-button.secondary:hover:not(:disabled){background:#d8d2cb;border-color:#b9b0a5;color:#463e36}
+@media(max-width:1100px){.order-detail-dialog.has-header-call>[data-slot=dialog-header]:has(.order-header-actions){grid-template-columns:minmax(0,1fr)}.order-header-actions{grid-column:1;grid-row:3;justify-content:flex-start;margin-top:12px}}
+@media(max-width:600px){.order-followup-segment{flex-wrap:wrap;width:100%}.order-followup-segment button{flex:1;font-size:13px}.order-header-actions{gap:8px}}

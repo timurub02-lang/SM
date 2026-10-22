@@ -94,6 +94,7 @@ async function handlePOST(req:Request){
    }
    const clientRow=await d.prepare('SELECT data FROM clients WHERE id=?').bind(c.order.clientId).first<{data:string}>();if(!clientRow)throw Error('Клиент не найден');
    const products=await d.prepare('SELECT data FROM products').all<{data:string}>();
+   if(c.order.cdekTariff?.needsConfirmation)throw Error("Сначала подтвердите ранее рассчитанную доставку");
    if(c.order.cdekTariff?.params.weight!==0.875)throw Error("Пересчитайте доставку: вес всей посылки должен быть 0,875 кг");
    const managerRow=await d.prepare("SELECT data FROM employees WHERE id=?").bind(c.order.manager).first<{data:string}>();
    const senderAlias=managerRow?String(JSON.parse(managerRow.data).alias||"").trim():"";
