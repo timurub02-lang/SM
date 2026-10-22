@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {initPhone,createPhoneCall,replacePhonePool,normalizeOutgoingNumber,phoneScope,displayPhoneCall} from '../lib/phone-store.ts';
+import {addCallComment,initPhone,createPhoneCall,replacePhonePool,normalizeOutgoingNumber,phoneScope,displayPhoneCall} from '../lib/phone-store.ts';
 const d=openDatabase(':memory:');
 try{
  await d.batch(['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(sql=>d.prepare(sql)));
@@ -28,5 +28,19 @@ try{
  await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify({...client,owner:'two'}),'client').run();
  assert.equal(await phoneScope(d,staff[1],{clientId:'client'}),false);assert.equal(await phoneScope(d,staff[1],{orderId:'order'}),true);
  assert.equal(displayPhoneCall({...calls[0],started_at:'2026-01-01',status:'dialing'},Date.now()).status,'unknown');
+ const noteId=crypto.randomUUID();
+ await addCallComment(d,staff[1],calls[0].id,'  Клиент ждёт завтра  ',noteId);
+ await addCallComment(d,staff[1],calls[0].id,'Клиент ждёт завтра',noteId);
+ const notes=(await d.prepare('SELECT * FROM phone_call_comments WHERE call_id=?').bind(calls[0].id).all()).results;
+ assert.equal(notes.length,1);assert.equal(notes[0].text,'Клиент ждёт завтра');assert.equal(notes[0].actor_id,'one');assert.ok(notes[0].at);
+ await assert.rejects(addCallComment(d,staff[1],calls[0].id,' ',crypto.randomUUID()));
+ await assert.rejects(addCallComment(d,staff[1],calls[0].id,'x'.repeat(3001),crypto.randomUUID()));
+ await assert.rejects(addCallComment(d,staff[4],calls[0].id,'Недоступно',crypto.randomUUID()));
+ await assert.rejects(addCallComment(d,staff[1],'missing','Нет звонка',crypto.randomUUID()));
+ await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify({...client,owner:'one'}),'client').run();
+ await assert.rejects(addCallComment(d,staff[2],calls[0].id,'Чужой клиент',crypto.randomUUID()));
+ const fromClient=await createPhoneCall(d,{id:crypto.randomUUID().replaceAll('-',''),clientId:'client',orderId:null,actor:staff[1],echo:true});
+ await addCallComment(d,staff[1],fromClient.id,'Из карточки клиента',crypto.randomUUID());
+ console.log('Call comments: persistence, author, retry deduplication, validation and access passed');
  console.log('Phone store: 1000 → active 100 → replace with 20 → export 100 → remaining 900; round-robin, conflict rollback, authorization and stale calls passed.');
 }finally{d.close();}

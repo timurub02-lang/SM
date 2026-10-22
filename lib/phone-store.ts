@@ -11,6 +11,8 @@ export async function initPhone(d:ActivityDb,caller=''){
   d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_caller ON phone_calls(caller_number,seq)'),
   d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_client ON phone_calls(client_id,seq)'),d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_order ON phone_calls(order_id,seq)'),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_targets(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,destination TEXT NOT NULL,sip_user TEXT NOT NULL)`),
+  d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_comments(id TEXT PRIMARY KEY,call_id TEXT NOT NULL REFERENCES phone_calls(id) ON DELETE CASCADE,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,text TEXT NOT NULL,at TEXT NOT NULL)`),
+  d.prepare('CREATE INDEX IF NOT EXISTS phone_call_comments_call ON phone_call_comments(call_id,at)'),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_analysis(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,auto_kind TEXT,auto_reason TEXT,analyzed_at TEXT,manual_kind TEXT,manual_actor TEXT,manual_name TEXT,manual_at TEXT)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_numbers(number TEXT PRIMARY KEY,state TEXT NOT NULL CHECK(state IN ('available','active','completed')),added_at TEXT NOT NULL,activated_at TEXT,completed_at TEXT,exported_at TEXT)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_pool(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL DEFAULT 0,mutation TEXT NOT NULL DEFAULT '')`),d.prepare('INSERT OR IGNORE INTO phone_pool(id) VALUES(1)'),
@@ -51,4 +53,12 @@ export async function phoneScope(d:ActivityDb,e:Employee,scope:{clientId?:string
 export function displayPhoneCall(c:PhoneCall,now=Date.now()){
  const stale=!c.provider_at&&['preparing','dialing','connected'].includes(c.status)&&now-Date.parse(c.started_at)>32*60000;
  return {...c,status:stale?'unknown':c.status,detail:stale?'АТС ещё не передала итог. История обновится после получения результата.':c.detail};
+}
+
+export async function addCallComment(d:ActivityDb,e:Employee,id:string,text:string,commentId:string){
+ text=text.trim();
+ if(!text||text.length>3000)throw Error('Укажите комментарий до 3000 символов');
+ const c=await d.prepare('SELECT * FROM phone_calls WHERE id=?').bind(id).first() as PhoneCall|null;
+ if(!c||e.role==='courier'||!((c.order_id&&await phoneScope(d,e,{orderId:c.order_id}))||(c.client_id&&await phoneScope(d,e,{clientId:c.client_id}))))throw Error('Звонок недоступен');
+ await d.prepare('INSERT OR IGNORE INTO phone_call_comments(id,call_id,actor_id,actor_name,text,at) VALUES(?,?,?,?,?,?)').bind(commentId,c.id,e.id,e.name,text,new Date().toISOString()).run();
 }

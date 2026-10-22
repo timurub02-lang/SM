@@ -558,3 +558,6 @@ body:has(.courier-design-aurora){background:#191a1e}
 .client-detail-dialog.client-profile-dialog{height:calc(100dvh - 48px)}
 .client-profile-dialog>.sheet-body{flex:1;overflow-y:auto;scrollbar-gutter:stable}
 .courier-tile.tile-delivery{background:linear-gradient(135deg,#b5a6d6,#9e8bc4);color:#35284e}
+
+.call-comments{border-top:1px solid #30456c14;margin-top:16px;padding-top:16px;gap:12px}
+.client-card .card-bottom{flex-wrap:wrap;gap:8px}

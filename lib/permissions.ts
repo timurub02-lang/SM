@@ -71,7 +71,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/sk-orders')return method==='GET'&&['operator','department_head'].includes(e.role)||method==='POST'&&e.role==='department_head';
  if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
  if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption','courier'].includes(e.role);
- if(path==='/api/call-history')return ['GET','PATCH'].includes(method)&&e.role!=='courier';
+ if(path==='/api/call-history')return ['GET','PATCH','POST'].includes(method)&&e.role!=='courier';
  if(path==='/api/call-history/recording')return method==='GET'&&e.role!=='courier';
  if(path==='/api/order-access')return (isLogistic(e.role)||['operator','department_head'].includes(e.role))&&method==='POST';
  if(path==='/api/cash')return ['department_head','chief_logistic'].includes(e.role);
