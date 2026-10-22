@@ -1,4 +1,4 @@
-import type {Employee,Order} from './crm.ts';
+import {canOperatorAmendMissed,type Employee,type Order} from './crm.ts';
 
 export const isDepartmentOrder=(e:Pick<Employee,'role'|'department'>,o:Pick<Order,'manager'>,staff:Employee[])=>
  e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&x.department===e.department);
@@ -7,7 +7,7 @@ export const departmentWorkStage=(o:Pick<Order,'status'|'courier'|'cdekExported'
 export function usesOrderLease(e:Pick<Employee,'id'|'role'>,o:Order){
  if(['logistic','chief_logistic'].includes(e.role))return true;
  if(o.courier?.doorRefusal&&!o.courier.doorRefusal.resolvedAt)return false; // Urgent doorstep takeover keeps its existing claim protocol.
- return e.role==='department_head'?departmentWorkStage(o):e.role==='operator'&&o.manager===e.id&&['draft','rework'].includes(o.status);
+ return e.role==='department_head'?departmentWorkStage(o):e.role==='operator'&&o.manager===e.id&&(['draft','rework'].includes(o.status)||canOperatorAmendMissed(e,o));
 }
 export type OrderActionAuthor={id:string;name:string;role:Employee['role'];at:string};
 export function headOrderMarks(o:Order){

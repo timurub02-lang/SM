@@ -1,10 +1,12 @@
 'use client';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import type {Employee,Order} from '@/lib/crm';
+import {canOperatorAmendMissed,type Employee,type Order} from '@/lib/crm';
 import {usesOrderLease} from '@/lib/department-orders';
 
-export function OrderAccess({order,employee,onAvailable,children}:{order:Order;employee:Employee;onAvailable:()=>void;children:(readOnly:boolean)=>ReactNode}){
- const orderId=order.id,enabled=usesOrderLease(employee,order);
+export function OrderAccess({order,employee,onAvailable,children}:{order:Order;employee:Employee;onAvailable:()=>void;children:(readOnly:boolean,beginFollowup:()=>void,followupEditing:boolean)=>ReactNode}){
+ const [followupRequested,setFollowupRequested]=useState(false);
+ const followup=canOperatorAmendMissed(employee,order);
+ const orderId=order.id,enabled=usesOrderLease(employee,order)&&(!followup||followupRequested);
  const [access,setAccess]=useState<{editable:boolean;holder?:string;until:number;error?:string}>({editable:false,until:0});
  const [now,setNow]=useState(Date.now);
  const onAvailableRef=useRef(onAvailable);onAvailableRef.current=onAvailable;
@@ -34,5 +36,5 @@ export function OrderAccess({order,employee,onAvailable,children}:{order:Order;e
   return()=>{stopped=true;clearInterval(heartbeat);clearInterval(clock);window.removeEventListener('focus',focus);window.removeEventListener('pagehide',release);release();};
  },[orderId,employee.id,enabled]);
  const readOnly=enabled&&(!access.editable||access.until<=now);
- return <>{readOnly&&<aside className="notice amber" role="status"><div><strong>{access.holder&&!access.editable?`Заказ обрабатывает: ${access.holder}`:'Проверяем доступ к заказу'}</strong><p>{access.error||'Только просмотр. Изменения и действия станут доступны, когда коллега закроет карточку.'}</p><button type="button" className="secondary" onClick={()=>retry.current()}>Проверить доступ</button></div></aside>}{children(readOnly)}</>;
+ return <>{readOnly&&<aside className="notice amber" role="status"><div><strong>{access.holder&&!access.editable?`Заказ обрабатывает: ${access.holder}`:'Проверяем доступ к заказу'}</strong><p>{access.error||'Только просмотр. Изменения и действия станут доступны, когда коллега закроет карточку.'}</p><button type="button" className="secondary" onClick={()=>retry.current()}>Проверить доступ</button></div></aside>}{children(readOnly,()=>setFollowupRequested(true),followup&&followupRequested)}</>;
 }
