@@ -184,7 +184,7 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"operator",department:actor.department});
 }
 
-export const packingStage=(order:Order)=>order.status==='rework'&&courierRecalledAtWarehouse(order)?'operator':order.courier?.phase==='recall_returned'?"new":["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):courierWarehouseReturn(order)?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.cdekExported||order.delivery==="moscow_courier"&&!!order.courier||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff&&!order.cdekTariff.needsConfirmation)?"calculated":"new";
+export const packingStage=(order:Order)=>!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?"completed":order.status==='rework'&&courierRecalledAtWarehouse(order)?'operator':order.courier?.phase==='recall_returned'?"new":["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?(order.paymentReceivedAt?"payment_received":"paid"):courierWarehouseReturn(order)?(order.warehouseReturnedAt?"warehouse_returned":"returned"):order.cdekExported&&order.cdekWaybillReceived?"dispatched":(order.cdekExported||order.delivery==="moscow_courier"&&!!order.courier||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff&&!order.cdekTariff.needsConfirmation)?"calculated":"new";
 
 export const waitingForLogistic=(o:Order)=>["confirm","extra"].includes(o.status)&&!o.courier;
 export const canOperatorReachClient=(e:Pick<Employee,"id"|"role">,o:Order)=>e.role==="operator"&&o.manager===e.id&&waitingForLogistic(o)&&o.contact==="missed"&&!o.cdekDeleting&&!o.clientWaiting;
@@ -211,7 +211,7 @@ export const extraCheckLabel=(order:Pick<Order,"extra"|"status">)=>!order.extra?
 
 export const hideClientPhone=(role?:string)=>role==="operator"||role==="department_head";
 
-export const deliveryQueue=(order:Order,view:string)=>view==="moscow"?order.delivery==="moscow_courier":view==="post"?order.delivery==="russian_post":view==="shipping"?!["moscow_courier","russian_post"].includes(order.delivery||""):true;
+export const deliveryQueue=(order:Order,view:string)=>view==="moscow"?order.delivery==="moscow_courier":view==="post"?order.delivery==="russian_post":view==="shipping"?order.status!=="redeemed"&&!["moscow_courier","russian_post"].includes(order.delivery||""):true;
 
 export function callTimeClass(due:string,now:number){
  const elapsed=now-Date.parse(due);

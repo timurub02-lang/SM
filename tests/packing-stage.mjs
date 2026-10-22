@@ -53,3 +53,19 @@ for(const delivery of ['moscow_courier','russian_post']){
 }
 assert.deepEqual(allowedOrderTransitions({status:'shipping',delivery:'russian_post'},'logistic'),['redeemed','returned']);
 assert.deepEqual(allowedOrderTransitions({status:'shipping',delivery:'moscow_courier'},'logistic'),[]);
+
+// CDEK printing queues: downloading moves work forward; payment leaves logistics.
+for(const delivery of ['cdek_pickup','cdek_courier']){
+ const exported={delivery,status:'shipping',cdekExported:true};
+ assert.equal(packingStage(exported),'exported');
+ const printed={...exported,cdekWaybillReceived:true};
+ assert.equal(packingStage(printed),'dispatched');
+ assert.equal(packingStage({...printed,status:'pickup'}),'dispatched');
+ assert.equal(packingStage({...printed,status:'redeemed'}),'completed');
+ assert.equal(deliveryQueue({...printed,status:'redeemed'},'shipping'),false);
+ assert.equal(deliveryQueue({...printed,status:'redeemed'},'orders'),true);
+ assert.equal(deliveryQueue({...printed,status:'returned'},'shipping'),true);
+ assert.equal(packingStage({...printed,status:'returned'}),'returned');
+ assert.equal(packingStage({...printed,status:'returned',warehouseReturnedAt:'now'}),'warehouse_returned');
+}
+console.log('CDEK queues: awaiting PDF, printed, pickup, payment and returns passed');
