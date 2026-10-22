@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {internalWaybill} from '../lib/internal-waybill.ts';
 import {waybillPdf} from '../lib/waybill-pdf.ts';
-const data=internalWaybill({id:'1172222',address:'Россия, Санкт-Петербург, Сестрорецк, ул. Токарева, д. 6, кв. 20',waybillComment:'Курьер СДЭК',items:[{name:'Курс',quantity:1,price:11250},{name:'Фури',quantity:3,price:0}]},{name:'Кутюгин Юрий Николаевич',phone:'79213030782',address:'Старый адрес'},{login:'operator-login'});
+const data=internalWaybill({id:'1172222',address:'Россия, Санкт-Петербург, Сестрорецк, ул. Токарева, д. 6, кв. 20',logisticComment:'Курьер СДЭК',items:[{name:'Курс',quantity:1,price:11250},{name:'Фури',quantity:3,price:0}]},{name:'Кутюгин Юрий Николаевич',phone:'79213030782',address:'Старый адрес'},{login:'operator-login'});
 assert.equal(data.operator,'operator-login');
 assert(!data.address.includes('Старый'));
 assert.equal(data.callbackPhone,'—');
@@ -36,3 +36,6 @@ assert.equal(internalWaybill({id:'test',items:[]},{name:'Клиент',phone:''}
 console.log('Department callback selection and unassigned fallback passed');
 
 assert.equal(internalWaybill({id:'test',items:[]},{name:'Клиент',phone:''},undefined,{...callbacks,printBoth:true}).callbackPhone,'88001112233 · 88004445566');
+
+assert.equal(data.comment,internalWaybill({items:[],logisticComment:data.comment,waybillComment:"old"},{}).comment);
+assert.equal(internalWaybill({items:[],waybillComment:"old",comment:"operator"},{}).comment,"—");

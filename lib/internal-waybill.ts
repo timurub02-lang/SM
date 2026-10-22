@@ -8,7 +8,7 @@ export function internalWaybill(order:Order,client:Client,manager?:Employee,call
   phone:client.phone,
   address:order.address??client.address,
   callbackPhone:callbacks?.printBoth?(callbacks.phones.filter(Boolean).join(' · ')||'—'):(manager?.department&&callbacks?.phones[Number(callbacks.departments[manager.department])-1])||'—',
-  comment:order.waybillComment||'—',
+  comment:order.logisticComment||'—',
   items:order.items.map(({name,quantity,price})=>({name,quantity,price})),
  };
 }
