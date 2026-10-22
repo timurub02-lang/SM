@@ -34,3 +34,5 @@ for(const [department,expected] of [['1','88001112233'],['2','88004445566'],['3'
 }
 assert.equal(internalWaybill({id:'test',items:[]},{name:'Клиент',phone:''},{department:'2'},{...callbacks,departments:{'2':''}}).callbackPhone,'—');
 console.log('Department callback selection and unassigned fallback passed');
+
+assert.equal(internalWaybill({id:'test',items:[]},{name:'Клиент',phone:''},undefined,{...callbacks,printBoth:true}).callbackPhone,'88001112233 · 88004445566');
