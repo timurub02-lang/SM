@@ -14,11 +14,12 @@ export function waybillPdf(input:WaybillData|WaybillData[],fonts:{regular:string
  }
  doc.setProperties({title:'Накладные на сборку'});
  const half=doc.internal.pageSize.getHeight()/2;
- for(const [index,data] of list.entries()){
- if(index)doc.addPage();
+ for(let index=0;index<list.length;index+=2){
+ if(index){doc.setPage(doc.getNumberOfPages());doc.addPage();}
  const firstPage=doc.getNumberOfPages();
- // Each copy has its own half-page margins, including continuation pages.
- for(const offset of [0,half]){
+ // Each order keeps its own half of the sheet, including continuation pages.
+ for(const [slot,data] of list.slice(index,index+2).entries()){
+ const offset=slot*half;
  doc.setPage(firstPage);
  const margin={left:10,right:10,top:offset+8,bottom:half-offset+8};
  autoTable(doc,{

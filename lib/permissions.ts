@@ -42,6 +42,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
+ if(p.action==='updateLogisticComment')return allow(isLogistic(e.role));
  if(p.action==='clientWaiting')return allow(canOperatorReachClient(e,order));
  if(p.action==='incomingResult')return;
  if(e.role==='department_head'){
