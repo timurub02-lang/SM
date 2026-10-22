@@ -581,3 +581,5 @@ body:has(.courier-design-aurora){background:#191a1e}
 @media(max-width:600px){.order-followup-segment{flex-wrap:wrap;width:100%}.order-followup-segment button{flex:1;font-size:13px}.order-header-actions{gap:8px}}
 
 .order-quick-buttons .order-check-action{border-radius:11px}
+
+.courier-operator-return{display:inline-flex;align-items:center;justify-self:start;align-self:flex-start;padding:5px 9px;border:1px solid #c9bee7;border-radius:9px;background:#eee8f7;color:#594578;font-size:12px;font-weight:600;line-height:1.4}
