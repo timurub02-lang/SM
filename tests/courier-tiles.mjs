@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import {courierTile,courierStage} from '../lib/courier.ts';
 const o={delivery:'moscow_courier',status:'shipping',contact:'none',courier:{id:'courier',acceptedAt:'2026-10-22T09:00:00Z',confirmedAt:'2026-10-22T10:00:00Z'}};
-assert.equal(courierTile(o),'active');
+assert.equal(courierTile(o),'delivery');
+assert.equal(courierTile({...o,courier:{...o.courier,phase:'confirmation',confirmedAt:undefined}}),'active');
+assert.equal(courierTile({...o,courier:{...o.courier,phase:'resume'}}),'pending');
 for(const contact of ['missed','callback'])assert.equal(courierTile({...o,contact}),'calls');
 assert.equal(courierTile({...o,status:'redeemed'}),'money');
 assert.equal(courierTile({...o,status:'redeemed',paymentReceivedAt:'now'}),'settled');

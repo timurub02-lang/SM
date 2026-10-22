@@ -554,3 +554,7 @@ body:has(.courier-design-aurora){background:#191a1e}
 .order-data-form .basket-row .product-choice-trigger,.order-data-form .basket-row .field input:not(.product-choice-validation){min-height:60px;height:60px;margin-top:auto}
 .order-data-form .basket-row>.icon-button{height:60px;min-height:60px}
 .large-order-text .order-data-form [data-order-field=basket] .section-title h3{font-size:18px}
+
+.client-detail-dialog.client-profile-dialog{height:calc(100dvh - 48px)}
+.client-profile-dialog>.sheet-body{flex:1;overflow-y:auto;scrollbar-gutter:stable}
+.courier-tile.tile-delivery{background:linear-gradient(135deg,#b5a6d6,#9e8bc4);color:#35284e}
