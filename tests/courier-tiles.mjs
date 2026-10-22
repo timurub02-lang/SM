@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {courierTile,courierStage} from '../lib/courier.ts';
+const o={delivery:'moscow_courier',status:'shipping',contact:'none',courier:{id:'courier',acceptedAt:'2026-10-22T09:00:00Z',confirmedAt:'2026-10-22T10:00:00Z'}};
+assert.equal(courierTile(o),'active');
+for(const contact of ['missed','callback'])assert.equal(courierTile({...o,contact}),'calls');
+assert.equal(courierTile({...o,status:'redeemed'}),'money');
+assert.equal(courierTile({...o,status:'redeemed',paymentReceivedAt:'now'}),'settled');
+assert.equal(courierTile({...o,status:'returned'}),'return');
+assert.equal(courierTile({...o,status:'returned',warehouseReturnedAt:'now'}),'settled');
+assert.equal(courierTile({...o,delivery:'cdek_pickup'}),'none');
+console.log('Courier tiles: retries, outstanding cash, returns and settled orders passed');

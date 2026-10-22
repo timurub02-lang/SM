@@ -234,3 +234,9 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
  }else throw Error('Неизвестное действие курьера');
  return {order:o,text};
 }
+
+export function courierTile(o:Order){
+ const stage=courierStage(o);
+ if(['none','settled','money','return','waiting'].includes(stage))return stage;
+ return ['missed','callback'].includes(o.contact)?'calls':'active';
+}
