@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import JSZip from 'jszip';
+import {collectCdekWaybills} from '../lib/cdek-batch-print.ts';
+const calls=[],progress=[];
+const result=await collectCdekWaybills('actor',['one','pending','two','one','broken','denied'],(done,total)=>progress.push([done,total]),async body=>{
+ calls.push(body);
+ if(body.orderId==='pending')return Response.json({message:'Ещё готовится'},{status:202});
+ if(body.orderId==='denied')return Response.json({error:'Нет доступа'},{status:403});
+ return new Response(body.orderId==='broken'?'invalid':'%PDF-'+body.orderId,{headers:{'Content-Type':'application/pdf'}});
+});
+assert.deepEqual(result.completed,['one','two']);assert.equal(result.errors.length,3);
+assert.deepEqual(calls.map(x=>x.orderId),['one','pending','two','broken','denied']);
+assert.ok(calls.every(x=>x.actorId==='actor'));
+assert.deepEqual(progress.at(-1),[5,5]);
+const zip=await JSZip.loadAsync(result.bytes);
+assert.equal(await zip.file('СДЭК-one.pdf').async('string'),'%PDF-one');
+assert.equal(await zip.file('СДЭК-two.pdf').async('string'),'%PDF-two');
+assert.match(await zip.file('Не получены.txt').async('string'),/pending: Ещё готовится/);
+assert.equal((await collectCdekWaybills('actor',['fail'],()=>{},async()=>{throw Error('Network');})).bytes,null);
+assert.equal((await collectCdekWaybills('actor',[],()=>{})).bytes,null);
+console.log('CDEK batch: exact selection, duplicates, PDFs, partial errors, denied access and empty result passed');

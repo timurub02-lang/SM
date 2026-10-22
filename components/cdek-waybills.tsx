@@ -1,12 +1,23 @@
 'use client';
-import {requestCdekPrint} from '@/lib/cdek-print-client';
-import {useEffect,useState} from 'react';
+import {useState} from 'react';
 import {ArrowDownToLine} from 'lucide-react';
-import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
-import type {Order,Client} from '@/lib/crm';
-export function CdekWaybills({actorId,orders,clients}:{actorId:string;orders:Order[];clients:Client[]}){
- const [open,setOpen]=useState(false),[list,setList]=useState<{id:string;number:string;downloadedAt?:string}[]>([]),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
- useEffect(()=>{if(!open)return;let cancelled=false;setBusy(true);setMessage('');Promise.all(orders.map(async o=>{const r=await fetch(`/api/cdek/shipment?${new URLSearchParams({actorId,orderId:o.id})}`);const d=await r.json() as {shipment?:{state:string;number?:string;downloadedAt?:string};error?:string};if(!r.ok)throw Error(d.error||'Не удалось загрузить накладные');return d.shipment?.state==='ready'&&d.shipment.number?{id:o.id,number:d.shipment.number,downloadedAt:d.shipment.downloadedAt}:null;})).then(rows=>{if(!cancelled)setList(rows.filter((x):x is NonNullable<typeof x>=>!!x));}).catch(e=>{if(!cancelled)setMessage(e.message);}).finally(()=>{if(!cancelled)setBusy(false);});return()=>{cancelled=true;};},[open,actorId,orders]);
- async function download(id:string,number:string){setBusy(true);setMessage('');try{const r=await requestCdekPrint({actorId,orderId:id});if(r.headers.get('content-type')?.includes('application/pdf')&&r.ok){const url=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=url;a.download=`СДЭК-${number}.pdf`;a.click();setList(rows=>rows.map(x=>x.id===id?{...x,downloadedAt:new Date().toISOString()}:x));window.dispatchEvent(new Event("crm-refresh"));setTimeout(()=>URL.revokeObjectURL(url),1000);}else{const d=await r.json() as {message?:string;error?:string};setMessage(d.error||d.message||'Не удалось скачать накладную');}}catch{setMessage('Не удалось скачать накладную. Попробуйте ещё раз.');}finally{setBusy(false);}}
- return <><button className="primary cdek-button" onClick={()=>setOpen(true)}><ArrowDownToLine size={17}/>Накладная СДЭК</button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="form-dialog"><DialogHeader><DialogTitle>Накладные СДЭК</DialogTitle><DialogDescription>Выберите зарегистрированное отправление для скачивания PDF.</DialogDescription></DialogHeader><div className="stack">{list.map(x=><button className={x.downloadedAt?"secondary waybill-received":"primary cdek-button"} disabled={busy} key={x.id} onClick={()=>download(x.id,x.number)}><ArrowDownToLine size={17}/><span>№ {x.number} · {clients.find(c=>c.id===orders.find(o=>o.id===x.id)?.clientId)?.name||x.id}</span></button>)}{busy&&<p role="status">Подготовка…</p>}{!busy&&!list.length&&!message&&<p>Зарегистрированных отправлений пока нет. После выгрузки обновите статус отправления в карточке заказа.</p>}{message&&<p role="status">{message}</p>}</div></DialogContent></Dialog></>;
+import type {Order} from '@/lib/crm';
+export function CdekWaybills({actorId,orders,disabled,onBusy,onDownloaded}:{actorId:string;orders:Order[];disabled:boolean;onBusy:(busy:boolean)=>void;onDownloaded:(ids:string[])=>void}){
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[errors,setErrors]=useState<string[]>([]);
+ async function download(){
+  if(busy||disabled||!orders.length)return;
+  setBusy(true);onBusy(true);setErrors([]);setMessage(`Получаем накладные: 0 из ${orders.length}`);
+  try{
+   const {collectCdekWaybills}=await import('@/lib/cdek-batch-print');
+   const result=await collectCdekWaybills(actorId,orders.map(o=>o.id),(done,total)=>setMessage(`Получаем накладные: ${done} из ${total}`));
+   if(result.bytes){
+    const url=URL.createObjectURL(new Blob([result.bytes],{type:'application/zip'}));
+    const a=document.createElement('a');a.href=url;a.download='Накладные-СДЭК.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    onDownloaded(result.completed);
+   }
+   setErrors(result.errors);setMessage(`Получено: ${result.completed.length} из ${orders.length}.${result.errors.length?' Не полученные заказы остались выбранными.':''}`);
+  }catch{setMessage('Не удалось подготовить архив. Повторите скачивание.');}
+  finally{setBusy(false);onBusy(false);window.dispatchEvent(new Event('crm-refresh'));}
+ }
+ return <div><button className="primary cdek-button" disabled={disabled||busy||!orders.length} aria-busy={busy} onClick={()=>void download()}><ArrowDownToLine size={17}/>{busy?'Подготовка накладных…':`Скачать накладные СДЭК (${orders.length})`}</button>{message&&<p role="status">{message}</p>}{errors.length>0&&<details><summary>Не удалось получить: {errors.length}</summary>{errors.map((error,i)=><p key={i}>{error}</p>)}</details>}</div>;
 }
