@@ -163,7 +163,7 @@ try{
  // Incoming callbacks: the production endpoint, persisted visibility and closure.
  db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify(staff[1]),'one');
  detached.owner='one';detached.linkedPhones=['+79990000003'];db.prepare('UPDATE clients SET data=? WHERE id=?').run(JSON.stringify(detached),'c-one');
- const incoming=(id,phone='+79990000001',key=pbxKey)=>call('/api/telephony/incoming',{body:{id,phone,calledNumber:'79000000000',at:new Date().toISOString()},headers:{'X-CRM-PBX-Key':key}});
+ const incoming=(id,phone='+79990000001',key=pbxKey)=>call('/api/telephony/incoming',{body:{id,phone,calledNumber:'79000000000',at:new Date().toISOString(),screening:'passed'},headers:{'X-CRM-PBX-Key':key}});
  const state=async id=>{const r=await api('/api/crm',undefined,cookies[id]);assert.equal(r.status,200,r.text);return r.data;};
  assert.equal((await incoming('a'.repeat(32),undefined,'wrong')).status,403);
  assert.equal((await incoming('invalid')).status,400);
@@ -297,13 +297,17 @@ try{
  const spamId='0'.repeat(32),spamPhone='+79991112233';
  const screened=await call('/api/telephony/incoming',{headers:{'X-CRM-PBX-Key':pbxKey},body:{id:spamId,phone:spamPhone,calledNumber:'79000000000',at:new Date().toISOString(),screening:'failed'}});
  assert.equal(screened.status,200);
- assert((await state('admin')).incoming.find(i=>i.id===spamId).spam);
+ assert(!(await state('admin')).incoming.some(i=>i.id===spamId));
+ assert.equal(db.prepare('SELECT applied FROM incoming_attempts WHERE id=?').get(spamId).applied,1);
+ await incoming(spamId.replaceAll('0','7'),spamPhone);
+ const restoredId=spamId.replaceAll('0','7');
+ assert.equal((await api('/api/incoming-protection',{id:restoredId,operation:'spam'},cookies.admin)).status,200);
  assert(!(await state('head')).incoming.some(i=>i.id===spamId));
  assert(!(await state('admin')).tasks.some(i=>i.incomingId===spamId));
- assert.equal((await api('/api/incoming-protection',{id:spamId,operation:'restore'},cookies.head)).status,403);
- assert.equal((await api('/api/incoming-protection',{id:spamId,operation:'restore'},cookies.admin)).status,200);
- assert((await state('head')).incoming.some(i=>i.id===spamId&&!i.spam));
- assert.equal((await api('/api/incoming-protection',{id:spamId,operation:'block'},cookies.admin)).status,200);
+ assert.equal((await api('/api/incoming-protection',{id:restoredId,operation:'restore'},cookies.head)).status,403);
+ assert.equal((await api('/api/incoming-protection',{id:restoredId,operation:'restore'},cookies.admin)).status,200);
+ assert((await state('head')).incoming.some(i=>i.id===restoredId&&!i.spam));
+ assert.equal((await api('/api/incoming-protection',{id:restoredId,operation:'block'},cookies.admin)).status,200);
  const gate=await call('/api/telephony/incoming',{headers:{'X-CRM-PBX-Key':pbxKey},body:{id:'ab'.repeat(16),phone:spamPhone,calledNumber:'79000000000',at:new Date().toISOString(),phase:'guard'}});
  assert.equal(gate.data.decision,'block');
  console.log('Incoming protection HTTP: admin scope, spam hidden from tasks, restore and PBX preflight passed.');

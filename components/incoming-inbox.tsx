@@ -36,14 +36,13 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
   </div>
   {employee.role==='admin'&&<button className="secondary" type="button" onClick={()=>void openProtection()}>Защита от спама</button>}
   {protectionError&&<p role="alert">{protectionError}</p>}
-  {settings&&<form className="notice stack" onSubmit={async e=>{e.preventDefault();if(await protection({operation:'settings',config:settings.config}))setSettings(null);}}>
-   <strong>Защита входящих</strong><p>Повторные звонки объединяются только в открытое обращение. После закрытия следующий звонок создаёт новое. Подозрительные звонки сохраняются отдельно, без уведомлений сотрудникам.</p>
-   <p>При всплеске неизвестным звонящим предлагается нажать 1. Известные клиенты проходят без проверки, кроме явно заблокированных номеров.</p>
-   {([['repeatLimit','Звонков с одного неизвестного номера за 5 минут',3,100],['burstLimit','Разных неизвестных номеров за минуту',5,500],['challengeMinutes','Длительность проверки при всплеске, минут',1,60]] as const).map(([key,label,min,max])=><label className="field" key={key}>{label}<input type="number" required min={min} max={max} value={settings.config[key]} onChange={e=>setSettings({...settings,config:{...settings.config,[key]:Number(e.target.value)}})}/></label>)}
-   <span>{settings.state?.until_at&&Date.parse(settings.state.until_at)>Date.now()?'Проверка активна до '+stamp(settings.state.until_at,'Europe/Moscow')+' МСК':'Сейчас обычный режим'}</span>
-   <div className="action-buttons"><button className="primary" disabled={protecting}>Сохранить</button><button className="secondary" type="button" onClick={()=>setSettings(null)}>Закрыть</button></div>
-  </form>}
-  {tab==='spam'&&<p className="muted">Последние 100 подозрительных обращений. Они не создают задачи сотрудникам. «Вернуть в работу» также исключит номер из автоматической проверки; «Снять блокировку» снова включает обычную проверку.</p>}
+  {settings&&<div className="notice stack">
+   <strong>Защита входящих</strong>
+   <p>Каждый неизвестный номер должен нажать 1. Известные клиенты проходят без проверки, кроме заблокированных номеров.</p>
+   <p>Без нажатия 1 обращение не создаётся: попытка остаётся в техническом журнале. Повторные подтверждённые звонки объединяются в открытое обращение. После закрытия создаётся новое.</p>
+   <button className="secondary" type="button" onClick={()=>setSettings(null)}>Закрыть</button>
+  </div>}
+  {tab==='spam'&&<p className="muted">Последние 100 обращений, отмеченных как спам. «Вернуть в работу» восстановит обращение, но неизвестному номеру при следующем звонке всё равно нужно нажать 1.</p>}
   <div className="incoming-card-grid">{shown.map(item=><details className="incoming-card" key={item.id}>
    <summary className="incoming-card-summary">
     <div className="incoming-card-top"><span>Входящий · {new Date(item.at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}</span><PhoneIncoming size={20}/></div>

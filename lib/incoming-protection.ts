@@ -23,13 +23,12 @@ export async function incomingGate(d:Db,p:{id:string;phone:string},now=new Date(
  await initProtection(d);await initBaseStorage(d);
  const existing=await d.prepare('SELECT decision FROM incoming_attempts WHERE id=?').bind(p.id).first();
  if(existing)return existing.decision as string;
- const phone=normalizePhone(p.phone),at=now.toISOString(),cfg=await protectionConfig(d);
+ const phone=normalizePhone(p.phone),at=now.toISOString();
  const known=phone?await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(phone.slice(1)).first():null;
- const minute=new Date(now.getTime()-60000).toISOString(),five=new Date(now.getTime()-300000).toISOString(),until=new Date(now.getTime()+cfg.challengeMinutes*60000).toISOString();
  await d.batch([
   d.prepare('INSERT OR IGNORE INTO incoming_attempts(id,phone,at,known) VALUES(?,?,?,?)').bind(p.id,phone,at,known?1:0),
-  d.prepare("UPDATE incoming_protection_state SET until_at=? WHERE id=1 AND (SELECT COUNT(DISTINCT phone) FROM incoming_attempts WHERE at>=? AND known=0 AND phone<>'' AND phone NOT IN (SELECT phone FROM incoming_phone_policy WHERE policy='allow'))>=?").bind(until,minute,cfg.burstLimit),
-  d.prepare("UPDATE incoming_attempts SET decision=CASE WHEN phone IN (SELECT phone FROM incoming_phone_policy WHERE policy='block') THEN 'block' WHEN phone IN (SELECT phone FROM incoming_phone_policy WHERE policy='allow') THEN 'allow' WHEN known=0 AND (phone='' OR (SELECT until_at FROM incoming_protection_state WHERE id=1)>? OR (SELECT COUNT(*) FROM incoming_attempts a WHERE a.phone=incoming_attempts.phone AND a.at>=?)>=?) THEN 'challenge' ELSE 'allow' END WHERE id=? AND applied=0").bind(at,five,cfg.repeatLimit,p.id)
+  // Restoring an old request does not exempt an unknown number from verification.
+  d.prepare("UPDATE incoming_attempts SET decision=CASE WHEN phone IN (SELECT phone FROM incoming_phone_policy WHERE policy='block') THEN 'block' WHEN known=0 THEN 'challenge' ELSE 'allow' END WHERE id=? AND applied=0").bind(p.id)
  ]);
  return (await d.prepare('SELECT decision FROM incoming_attempts WHERE id=?').bind(p.id).first())!.decision as string;
 }

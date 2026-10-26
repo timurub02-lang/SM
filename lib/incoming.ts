@@ -37,7 +37,12 @@ export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumbe
  const {assignee,department,shared}=await incomingRouting(d,client?.id||'',c,p.at);
  const blocked=await d.prepare("SELECT phone FROM incoming_phone_policy WHERE phone=? AND policy='block'").bind(phone).first();
  const spam=!!blocked||p.screening==='blocked'||p.screening==='failed'||decision==='block'||decision==='challenge'&&p.screening!=='passed';
- const reason=blocked||decision==='block'?'Заблокированный номер':spam?'Не пройдена проверка звонка':'';
+ // Failed verification stays in the attempt journal and must not create or hide a request.
+ if(spam){
+  await d.prepare('UPDATE incoming_attempts SET applied=1 WHERE id=?').bind(p.id).run();
+  return;
+ }
+ const reason='';
  // One transaction assigns a new call to an open request and counts its ID only once.
  await d.batch([
   d.prepare("INSERT OR IGNORE INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue,call_count,spam,spam_reason) SELECT ?,?,?,?,?,?,?,?,0,?,? WHERE EXISTS(SELECT 1 FROM incoming_attempts WHERE id=? AND applied=0) AND NOT EXISTS(SELECT 1 FROM incoming_calls WHERE phone=? AND closed_at IS NULL)").bind(p.id,client?.id||null,assignee?.id||null,department,p.at,phone,called,shared?1:0,spam?1:0,reason,p.id,phone),
