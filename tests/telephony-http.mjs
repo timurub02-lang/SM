@@ -299,8 +299,8 @@ try{
  assert.equal(screened.status,200);
  assert(!(await state('admin')).incoming.some(i=>i.id===spamId));
  assert.equal(db.prepare('SELECT applied FROM incoming_attempts WHERE id=?').get(spamId).applied,1);
- await incoming(spamId.replaceAll('0','7'),spamPhone);
- const restoredId=spamId.replaceAll('0','7');
+ await incoming('ac'.repeat(16),spamPhone);
+ const restoredId='ac'.repeat(16);
  assert.equal((await api('/api/incoming-protection',{id:restoredId,operation:'spam'},cookies.admin)).status,200);
  assert(!(await state('head')).incoming.some(i=>i.id===spamId));
  assert(!(await state('admin')).tasks.some(i=>i.incomingId===spamId));
