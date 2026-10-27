@@ -1,0 +1,80 @@
+name: CRM build and release
+
+on:
+  push:
+    branches: [main, 'deploy/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CRM_RUNTIME: miran
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - run: npm ci --include=dev --include=optional --no-audit --no-fund
+      - run: npx next build --webpack
+      - run: npx tsc --noEmit
+      - name: Verify authentication and both calling routes without real calls
+        run: |
+          node --experimental-strip-types tests/auth-http.mjs
+          node --experimental-strip-types tests/telephony-http.mjs
+          node --experimental-strip-types tests/oktell-browser-http.mjs
+          node --experimental-strip-types tests/operator-state-http.mjs
+          node --experimental-strip-types tests/oktell-provisioning.mjs
+          python3 tests/deployment.py
+      - name: Package standalone runtime
+        run: python3 scripts/package-crm.py "$GITHUB_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: crm-${{ github.sha }}
+          path: |
+            dist/crm-runtime.tgz
+            dist/SHA256SUMS
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Publish verified runtime for the server
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+          RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$RUN" -n "crm-$COMMIT" -D runtime
+          cd runtime
+          sha256sum -c SHA256SUMS
+          if gh release view "crm-$COMMIT" >/dev/null 2>&1; then
+            echo 'This commit already has an immutable runtime release.'
+            exit 0
+          fi
+          gh release create "crm-$COMMIT" crm-runtime.tgz SHA256SUMS \
+            --target "$COMMIT" --title "CRM ${COMMIT:0:12}" \
+            --notes "Verified standalone build. Source: $COMMIT. Run: $RUN." --latest

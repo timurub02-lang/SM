@@ -1,4 +1,4 @@
-import {sharedIncomingClientAccess} from './incoming.ts';
+import {incomingForAction,sharedIncomingClientAccess} from './incoming.ts';
 import type {ActivityDb} from './activity-store.ts';
 import {canOpenClientCard,ownsClient,seesOrder} from './permissions.ts';
 import type {Employee,Client,Order} from './crm.ts';
@@ -8,9 +8,14 @@ export type PhoneCall={id:string;client_id:string|null;order_id:string|null;acto
 export async function initPhone(d:ActivityDb,caller=''){
  await d.batch([
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_calls(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,client_id TEXT REFERENCES clients(id) ON DELETE CASCADE,order_id TEXT REFERENCES orders(id) ON DELETE CASCADE,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,caller_number TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,detail TEXT NOT NULL DEFAULT '',duration INTEGER NOT NULL DEFAULT 0,bill_seconds INTEGER NOT NULL DEFAULT 0,provider_at TEXT,recording INTEGER NOT NULL DEFAULT 0,claimed_at TEXT)`),
+  // Atomic across routes/tabs; unused attempts expire with the existing 120-second PBX claim window.
+  d.prepare(`CREATE TRIGGER IF NOT EXISTS phone_calls_irina_one_active BEFORE INSERT ON phone_calls
+   WHEN NEW.actor_id='E-43a21d76-351' AND EXISTS(SELECT 1 FROM phone_calls WHERE actor_id=NEW.actor_id AND ended_at IS NULL AND ((status='preparing' AND julianday(started_at)>julianday('now','-2 minutes')) OR (status IN ('dialing','connected') AND julianday(started_at)>julianday('now','-32 minutes'))))
+   BEGIN SELECT RAISE(ABORT,'Завершите текущий звонок перед новым вызовом'); END`),
   d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_caller ON phone_calls(caller_number,seq)'),
   d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_client ON phone_calls(client_id,seq)'),d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_order ON phone_calls(order_id,seq)'),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_targets(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,destination TEXT NOT NULL,sip_user TEXT NOT NULL)`),
+  d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_incoming(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,incoming_id TEXT NOT NULL)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_comments(id TEXT PRIMARY KEY,call_id TEXT NOT NULL REFERENCES phone_calls(id) ON DELETE CASCADE,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,text TEXT NOT NULL,at TEXT NOT NULL)`),
   d.prepare('CREATE INDEX IF NOT EXISTS phone_call_comments_call ON phone_call_comments(call_id,at)'),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_analysis(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,auto_kind TEXT,auto_reason TEXT,analyzed_at TEXT,manual_kind TEXT,manual_actor TEXT,manual_name TEXT,manual_at TEXT)`),
@@ -30,13 +35,14 @@ export async function replacePhonePool(d:ActivityDb,count:number,version:number,
  ]);
  if(!r[0].meta.changes)throw Error('Недостаточно новых номеров или список уже изменился. Обновите данные.');
 }
-export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:string|null;orderId:string|null;actor:Employee;echo:boolean;destination?:string;sipUser?:string}){
+export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:string|null;orderId:string|null;actor:Employee;echo:boolean;destination?:string;sipUser?:string;incomingId?:string}){
  const {id,clientId,orderId,actor,echo}=input,now=new Date().toISOString();
  // One INSERT selects the least recently used active number; concurrent calls cannot select stale state.
  const r=await d.prepare(`INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status)
  SELECT ?,?,?,?,?,${echo?"''":"number"},?,'preparing' ${echo?'':"FROM phone_numbers n WHERE state='active' ORDER BY COALESCE((SELECT MAX(seq) FROM phone_calls c WHERE c.caller_number=n.number),0),number LIMIT 1"}`).bind(id,clientId,orderId,actor.id,actor.name,now).run();
  if(!r.meta.changes)throw Error('Нет включённых исходящих номеров. Настройте интеграцию Билайн АТС.');
  if(input.destination&&input.sipUser)await d.prepare('INSERT INTO phone_call_targets(call_id,destination,sip_user) VALUES(?,?,?)').bind(id,input.destination,input.sipUser).run();
+ if(input.incomingId)await d.prepare('INSERT INTO phone_call_incoming(call_id,incoming_id) VALUES(?,?)').bind(id,input.incomingId).run();
  return d.prepare('SELECT * FROM phone_calls WHERE id=?').bind(id).first() as Promise<PhoneCall>;
 }
 export async function phoneScope(d:ActivityDb,e:Employee,scope:{clientId?:string;orderId?:string}){
@@ -61,4 +67,14 @@ export async function addCallComment(d:ActivityDb,e:Employee,id:string,text:stri
  const c=await d.prepare('SELECT * FROM phone_calls WHERE id=?').bind(id).first() as PhoneCall|null;
  if(!c||e.role==='courier'||!((c.order_id&&await phoneScope(d,e,{orderId:c.order_id}))||(c.client_id&&await phoneScope(d,e,{clientId:c.client_id}))))throw Error('Звонок недоступен');
  await d.prepare('INSERT OR IGNORE INTO phone_call_comments(id,call_id,actor_id,actor_name,text,at) VALUES(?,?,?,?,?,?)').bind(commentId,c.id,e.id,e.name,text,new Date().toISOString()).run();
+}
+
+export async function incomingCallTarget(d:ActivityDb,e:Employee,id:string){
+ if(!['admin','department_head','operator'].includes(e.role))throw Error('Звонок из обращения недоступен');
+ const row=await incomingForAction(d,id,e,[]);
+ if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные и звоните из карточки клиента');
+ const phone=normalizeOutgoingNumber(row.phone);
+ if(!phone)throw Error('В обращении нет корректного номера телефона');
+ if(await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(phone).first())throw Error('Клиент с этим номером уже появился. Попросите руководителя связать обращение с клиентом');
+ return phone;
 }

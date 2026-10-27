@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for a verified CRM release every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=15s
+Unit=sm-crm-deploy.service
+
+[Install]
+WantedBy=timers.target

@@ -8,6 +8,6 @@ export async function POST(req:Request){
   const result=await login(p.login.trim().toLowerCase(),p.password,req.headers.get('x-real-ip')||'unknown');
   if(result&&'limited' in result)return Response.json({error:'Слишком много попыток. Повторите через 15 минут.'},{status:429,headers:{'Retry-After':'900','Cache-Control':'no-store'}});
   if(!result)return Response.json({error:'Неверный логин или пароль либо вход отключён'},{status:401});
-  return Response.json({ok:true},{headers:{'Cache-Control':'no-store','Set-Cookie':`${sessionCookie}=${result.token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${sessionLifetime}`}});
+  return Response.json({ok:true,redirect:result.redirect},{headers:{'Cache-Control':'no-store','Set-Cookie':`${sessionCookie}=${result.token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${sessionLifetime}`}});
  }catch{return Response.json({error:'Не удалось войти. Проверьте логин и пароль.'},{status:400});}
 }

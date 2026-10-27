@@ -1,3 +1,7 @@
+import {prepareOktellLink} from "@/lib/oktell-provisioning";
+import {readRedemptionSummaries} from '@/lib/redemption-summary';
+import {redemptionConfig} from '@/lib/redemption';
+import {incomingClientWorkStatements,readClientWork,saveClientWork} from '@/lib/client-work-store';
 import {appendOrderComment} from "@/lib/order-comments";
 import {confirmSavedTariff} from "@/lib/cdek-calculator";
 import {operatorFollowup} from '@/lib/operator-followup';
@@ -35,8 +39,8 @@ export const dynamic="force-dynamic";
 const json=JSON.stringify;
 async function identity(){const u=await getChatGPTUser();if(!u)throw new Error("Требуется вход в CRM");return u;}
 async function readState(reconcile=true,extraClientId='',includeFree=false):Promise<State>{
- await initInventory();const d=db();await initBaseStorage(d);const tables=await Promise.all([d.prepare("SELECT data,version FROM clients WHERE ?=1 OR id=? OR COALESCE(json_extract(data,'$.owner'),'')<>'' OR EXISTS(SELECT 1 FROM orders WHERE orders.client_id=clients.id) ORDER BY id").bind(includeFree?1:0,extraClientId).all(),d.prepare("SELECT o.data,o.version,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting') AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='deleting') AS cdek_deleting,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
- const state:State={clients:tables[0].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),orders:tables[1].results.map((r:any)=>({...JSON.parse(r.data),version:r.version,cdekExported:!!r.cdek_exported||(JSON.parse(r.data).testOnly===true&&JSON.parse(r.data).cdekExported===true),cdekDeleting:!!r.cdek_deleting,cdekWaybillReceived:!!r.cdek_waybill_received})),employees:tables[2].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),events:tables[3].results.map((r:any)=>JSON.parse(r.data)),settings:tables[4]?JSON.parse(tables[4].data):{retentionDays:30}};
+ await initInventory();const d=db();await initBaseStorage(d);const tables=await Promise.all([d.prepare("SELECT data,version FROM clients WHERE ?=1 OR id=? OR COALESCE(json_extract(data,'$.owner'),'')<>'' OR EXISTS(SELECT 1 FROM orders WHERE orders.client_id=clients.id) ORDER BY id").bind(includeFree?1:0,extraClientId).all(),d.prepare("SELECT o.data,o.version,(SELECT json_extract(s.data,'$.number') FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting')) AS cdek_tracking_number,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting') AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='deleting') AS cdek_deleting,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
+ const state:State={clients:tables[0].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),orders:tables[1].results.map((r:any)=>({...JSON.parse(r.data),version:r.version,cdekTrackingNumber:r.cdek_tracking_number?String(r.cdek_tracking_number):undefined,cdekExported:!!r.cdek_exported||(JSON.parse(r.data).testOnly===true&&JSON.parse(r.data).cdekExported===true),cdekDeleting:!!r.cdek_deleting,cdekWaybillReceived:!!r.cdek_waybill_received})),employees:tables[2].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),events:tables[3].results.map((r:any)=>JSON.parse(r.data)),settings:tables[4]?JSON.parse(tables[4].data):{retentionDays:30}};
  state.settings.orderPolicy=(await orderSettings()).policy;
  if(reconcile){
   if(await reconcileOrderTimers(d,state.orders,state.events))return readState(true,extraClientId,includeFree);
@@ -71,7 +75,7 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
 
  const clientReminders=await personalClientReminders(db(),state,user.employee);
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
- return {...visible,incoming,incomingOperators,clientReminders,tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
+ return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
 async function handlePOST(request:Request){
@@ -89,7 +93,10 @@ async function handlePOST(request:Request){
  const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
  const assignedUntil=()=>"";
  await saveReminders(s);
- if(["createClientReminder","closeClientReminder"].includes(p.action)){
+ if(p.action==="saveClientWork"){
+  if(!employee)throw Error("Требуется сотрудник");
+  await saveClientWork(d,s,employee,p,now);message="Результат работы сохранён";
+ }else if(["createClientReminder","closeClientReminder"].includes(p.action)){
   if(!employee)throw Error("Требуется сотрудник");
   await changeClientReminder(d,s,employee,p,now);message=p.action==="createClientReminder"?"Напоминание сохранено":"Напоминание закрыто";
  }else if(p.action==="readReminder"){
@@ -140,9 +147,17 @@ async function handlePOST(request:Request){
  }else if(p.action==="assignIncoming"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Назначение доступно руководителю и администратору');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
-  if(!row.client_id)throw Error('Сначала найдите или создайте клиента');
   const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');
   if(!target)throw Error('Выберите оператора');
+  if(!row.client_id){
+   const event=ev('','','Входящее обращение '+row.id+' передано оператору · '+target.name+' · Без создания клиента');
+   const result=await d.batch([
+    d.prepare("UPDATE incoming_calls SET assignee_id=?,department_id=?,shared_queue=0 WHERE id=? AND client_id IS NULL AND closed_at IS NULL AND spam=0 AND COALESCE(assignee_id,'')=?").bind(target.id,target.department||'',row.id,row.assignee_id||''),
+    d.prepare('INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE changes()>0').bind(event.id,'','',now,json(event))
+   ]);
+   if(!result[0].meta.changes)throw Error('Обращение изменилось. Обновите данные');
+   message='Обращение передано оператору. Клиент не создан';
+  }else{
   const c=s.clients.find(c=>c.id===row.client_id);
   if(!c||s.orders.some(o=>o.clientId===c.id&&activeIncomingOrder(o)))throw Error('У клиента появился действующий заказ. Обновите данные');
   if(c.owner===target.id&&row.assignee_id===target.id)throw Error('Этот оператор уже назначен');
@@ -158,6 +173,7 @@ async function handlePOST(request:Request){
   ]);
   if(!result[0].meta.changes)throw Error('Обращение уже назначено или клиент изменился. Обновите данные');
   message='Обращение и клиент переданы оператору';
+  }
  }else if(p.action==="closeIncoming"||p.action==="incomingResult"){
   if(!employee||employee.role==='courier')throw Error('Обращение недоступно');
   const incomingId=z.string().min(1).max(100).parse(p.incomingId);
@@ -168,7 +184,9 @@ async function handlePOST(request:Request){
   if(!order&&s.orders.some(o=>o.clientId===row.client_id&&activeIncomingOrder(o)))throw Error('Откройте действующий заказ и сохраните итог обращения в нём');
   const e=row.client_id?ev(row.client_id,order?.id||'','Входящее обращение · '+reason):undefined;
   if(e)e.id='INCOMING-'+incomingId;
-  const results=await d.batch([incomingCloseStatement(d,incomingId,employee.id,now,reason,order?.id||null),...(e?[d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_by=? AND closed_at=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),incomingId,employee.id,now)]:[])]);
+  const client=s.clients.find(c=>c.id===row.client_id);
+  const workStatements=client?.owner&&!s.orders.some(o=>o.clientId===client.id&&activeIncomingOrder(o))?await incomingClientWorkStatements(d,client.id,client.owner,employee,incomingId,now,reason):[];
+  const results=await d.batch([incomingCloseStatement(d,incomingId,employee.id,now,reason,order?.id||null),...(e?[d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_by=? AND closed_at=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),incomingId,employee.id,now)]:[]),...workStatements]);
   if(!results[0].meta.changes)throw Error('Обращение уже обработано или появился действующий заказ. Обновите данные');
   message='Обращение закрыто';
  }else if(p.action==="createClient"){
@@ -280,6 +298,7 @@ async function handlePOST(request:Request){
    if(!canManageDelivery(employee.role,o.status)||!["moscow_courier","russian_post"].includes(o.delivery||""))throw Error("Стоимость доступна логисту для курьера Москвы и Почты России до отправки");
    next.manualDeliveryCost=z.number().finite().min(0).max(1000000).parse(p.amount);text="Сохранена стоимость доставки: "+next.manualDeliveryCost+" ₽";
   }else if(p.action==="returnToWarehouse"){
+   if(o.legacyLv)throw Error("Возврат тестового заказа из ЛВ учитывается на складе в ЛВ");
    if(!["admin","logistic","chief_logistic"].includes(employee.role))throw Error("Возврат на склад подтверждают администратор и логист");
    if(!courierWarehouseReturn(o))throw Error("Заказ должен ожидать физического возврата на склад");
    if(o.warehouseReturnedAt)throw Error("Товар уже возвращён на склад");
@@ -484,7 +503,8 @@ async function handlePOST(request:Request){
    if(p.employee.password)passwordHash=await hashPassword(p.employee.password);
    if(enabled&&!account&&!passwordHash)throw Error("Задайте пароль для включения входа сотрудника");
   }
-  const saved=json({...data,id:eid,...(!p.id?{version:1}:{})});
+  const oktell=prepareOktellLink(employee,data,existing,p.employee.oktellRequested);
+  const saved=json({...data,...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
   const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?").bind(saved,eid,p.version):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
   const guard="EXISTS(SELECT 1 FROM employees WHERE id=? AND data=? AND version=?)";
   const args=[eid,saved,p.id?p.version+1:1];

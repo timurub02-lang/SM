@@ -148,7 +148,8 @@ try{
   assert.equal(r.status,['redeemed','returned'].includes(status)?400:200,status+': '+r.text);
   const saved=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);
   assert.deepEqual(saved.items,[]);
-  if(r.status===200){assert.equal(saved.address,body.address);assert.equal(saved.comment,body.comment);assert.equal(saved.status,status);}
+  // Logistics may correct delivery details, but must preserve the operator's comment.
+  if(r.status===200){assert.equal(saved.address,body.address);assert.equal(saved.comment,'Original comment');assert.equal(saved.status,status);}
  }
  const noticeId='one-o-packing';
  const savedOrder=()=>JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(noticeId).data);

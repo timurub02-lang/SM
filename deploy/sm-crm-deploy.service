@@ -1,0 +1,10 @@
+[Unit]
+Description=Install verified SM CRM release from GitHub
+After=network-online.target sm-crm.service sm-oktell-bridge.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/deploy-sm-crm
+TimeoutStartSec=5min
+UMask=0077

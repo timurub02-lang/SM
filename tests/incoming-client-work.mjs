@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {initIncoming,incomingCloseStatement} from '../lib/incoming.ts';
+import {incomingClientWorkStatements} from '../lib/client-work-store.ts';
+import {clientWorkStatus} from '../lib/client-work.ts';
+const d=openDatabase(':memory:'),at='2026-10-27T12:00:00Z',e={id:'op',role:'operator',name:'Operator'};
+await d.batch(['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(s=>d.prepare(s)));
+await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({id:'c',owner:'op',assignedUntil:'2026-11-01T12:00:00Z'})).run();
+await initIncoming(d);
+await d.prepare("INSERT INTO incoming_calls(id,client_id,assignee_id,at,phone,called_number) VALUES('i','c','op',?,'1','2')").bind(at).run();
+const statements=()=>incomingClientWorkStatements(d,'c','op',e,'i',at,'Ответили на вопросы');
+// Merely opening/calling does not mark work; only a successful closure does.
+await d.batch(await statements());assert.equal((await d.prepare('SELECT COUNT(*) n FROM client_work').first()).n,0);
+await d.prepare("INSERT INTO client_reminders(id,employee_id,client_id,due,text,created_at) VALUES('due','op','c','2026-10-27T11:00:00Z','Call',?),('future','op','c','2026-10-29T11:00:00Z','Call',?)").bind(at,at).run();
+const work=await statements();await d.batch([incomingCloseStatement(d,'i','op',at,'Ответили',null),...work]);
+const saved=await d.prepare('SELECT data,version FROM client_work').first(),v=JSON.parse(saved.data);
+assert.equal(v.source,'incoming');assert.equal(v.comment,'Ответили на вопросы');assert.equal(v.author,'Operator');
+assert.equal(clientWorkStatus({id:'c'},v,[],Date.parse(at)).group,'done');
+assert.equal((await d.prepare("SELECT completed_at FROM client_reminders WHERE id='due'").first()).completed_at,at);
+assert.equal((await d.prepare("SELECT completed_at FROM client_reminders WHERE id='future'").first()).completed_at,null);
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='c'").first()).data).assignedUntil,'2026-11-01T12:00:00Z');
+// A different closure timestamp cannot reuse a previous successful closure.
+await d.batch(await incomingClientWorkStatements(d,'c','op',e,'i','2026-10-27T12:01:00Z','Repeat'));
+assert.equal((await d.prepare('SELECT version FROM client_work').first()).version,saved.version);
+await d.prepare("UPDATE incoming_calls SET closed_at=NULL WHERE id='i'").run();
+await d.prepare("INSERT INTO orders VALUES('active','c',?)").bind(JSON.stringify({status:'shipping'})).run();
+await d.batch([incomingCloseStatement(d,'i','op',at,'Ответили',null),...await statements()]);
+assert.equal((await d.prepare('SELECT version FROM client_work').first()).version,saved.version);
+await d.prepare("DELETE FROM orders").run();
+await d.prepare("UPDATE clients SET data=json_set(data,'$.owner','other')").run();
+await d.batch([incomingCloseStatement(d,'i','op',at,'Ответили',null),...await statements()]);
+assert.equal((await d.prepare('SELECT version FROM client_work').first()).version,saved.version);
+d.close();console.log('Incoming client work: atomic closure, today status, due/future reminders, active order and ownership guards passed');

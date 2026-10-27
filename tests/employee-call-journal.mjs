@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {initPhone} from '../lib/phone-store.ts';
+import {employeeCallJournal} from '../lib/employee-call-journal.ts';
+const d=openDatabase(':memory:');
+await d.batch(['CREATE TABLE clients(id TEXT PRIMARY KEY)','CREATE TABLE orders(id TEXT PRIMARY KEY)','INSERT INTO clients VALUES(\'c\')','INSERT INTO orders VALUES(\'o\')'].map(s=>d.prepare(s)));
+await initPhone(d);
+for(const [id,actor,client,order,status] of [['1','irina','c',null,'completed'],['2','irina','c','o','no_answer'],['3','other','c',null,'busy'],['4','irina',null,null,'completed']])await d.prepare('INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status) VALUES(?,?,?,?,?,?,?,?)').bind(id,client,order,actor,'Name','secret','2026-10-27T12:00:0'+id+'Z',status).run();
+const rows=await employeeCallJournal(d,{role:'admin'},'irina');
+assert.deepEqual(rows.map(x=>x.id),['call:2','call:1']);assert.equal(rows[0].target,'o');assert.equal(rows[1].target,'c');assert.match(rows[0].text,/Нет ответа/);assert.match(rows[1].text,/Соединение состоялось/);assert.ok(!JSON.stringify(rows).includes('secret'));
+await assert.rejects(()=>employeeCallJournal(d,{role:'operator'},'irina'));
+assert.deepEqual(await employeeCallJournal(d,{role:'admin'},"' OR 1=1 --"),[]);
+console.log('Employee call journal: existing calls, attribution, targets, no echo/number leakage, admin guard passed');

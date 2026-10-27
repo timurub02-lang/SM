@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {prepareOktellLink} from '../lib/oktell-provisioning.ts';
+const admin={id:'admin',role:'admin'},op={id:'op',role:'operator',login:'SKP_Test.01'};
+assert.equal(prepareOktellLink(admin,op,undefined,false),undefined);
+const pending=prepareOktellLink(admin,op,undefined,true);assert.equal(pending.status,'pending');assert.equal(pending.login,op.login);
+const existing={...op,oktell:pending};assert.deepEqual(prepareOktellLink(admin,op,existing,true),pending);
+assert.equal(prepareOktellLink(admin,op,existing,false).requested,false);
+assert.throws(()=>prepareOktellLink(op,op,undefined,true),/администратор/);
+assert.throws(()=>prepareOktellLink(admin,{...op,role:'admin'},undefined,true),/Оператор/);
+assert.throws(()=>prepareOktellLink(admin,{...op,login:'x'.repeat(51)},undefined,true),/50/);
+assert.throws(()=>prepareOktellLink(admin,{...op,login:'changed'},existing,true),/логин/);
+const linked={...existing,oktell:{...pending,status:'linked',userId:'uuid'}};assert.equal(prepareOktellLink(admin,op,linked,false).userId,'uuid');
+assert.deepEqual(prepareOktellLink(op,op,linked,undefined),linked.oktell);
+assert.notEqual(prepareOktellLink(admin,op,{...existing,oktell:{...pending,status:'error'}},true).requestId,pending.requestId);
+console.log('Oktell opt-in: admin scope, explicit switch, login, retries, duplicate prevention and preserved linkage passed');

@@ -4,6 +4,9 @@ const c={id:'c',owner:'e',sheet:'К',returnSheet:'ТК',assignedUntil:'',importR
 const o={clientId:'c',manager:'e',status:'redeemed',createdAt:'2026-08-01T00:00:00.000Z',redeemedAt:'2026-08-31T21:00:00.000Z'} as Order;
 assert.equal(applyRetention(c,[o],Date.parse('2026-10-10')).assignedUntil,c.importRetentionUntil);
 assert.equal(applyRetention(c,[o],Date.parse('2026-10-30')).owner,'');
+assert.equal(applyRetention(c,[],Date.parse('2026-10-10')).assignedUntil,c.importRetentionUntil,'Paid LV clients need no synthetic paid orders');
+assert.equal(applyRetention(c,[],Date.parse('2026-10-30')).owner,'','Imported retention must expire without orders');
+assert.equal(applyRetention(c,[{...o,status:'shipping'}],Date.parse('2026-10-30')).owner,'e','An active shipment keeps ownership after the paid timer');
 assert.equal(clientAssignment(c,'other','2026-10-01T00:00:00Z').importRetentionUntil,undefined);
 assert.equal(clientAssignment(c,'','2026-10-01T00:00:00Z').importRetentionUntil,undefined);
 assert.equal(applyRetention({...c,importRetentionUntil:undefined},[o],Date.parse('2026-10-10')).owner,'');

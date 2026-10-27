@@ -10,7 +10,7 @@ import {shipmentResult,cdekErrors,type Shipment} from './cdek-shipment.ts';
 export async function applyCdekShipment(d:Db,order:Order,stored:Shipment,previous:string,data:any,uuid=stored.uuid){
  if(stored.state==='deleting')throw Error('СДЭК обрабатывает удаление');
  if(!uuid||data.entity?.uuid!==uuid)throw Error('СДЭК вернул другой идентификатор отправления');
- if(data.entity?.number!==order.id)throw Error('СДЭК не подтвердил номер заказа');
+ if(data.entity?.number!==(order.legacyLv?.cdekOrderNumber||order.id))throw Error('СДЭК не подтвердил номер заказа');
  const rules=await d.prepare("SELECT data FROM settings WHERE id='cdek-status-mapping'").first();
  const config=rules?JSON.parse(rules.data):{mapping:{},revision:''};
  const patch=cdekStatusPatch(order,data.entity,config.mapping,config.revision);

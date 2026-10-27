@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {setCallMicrophoneMuted} from '../lib/call-microphone.ts';
+let established=false,muted=false;
+const tracks=[{enabled:true,readyState:'live'},{enabled:true,readyState:'live'}];
+const phone={localMediaStream:{getAudioTracks:()=>tracks},mute(){if(established)muted=true;},unmute(){if(established)muted=false;},isMuted:()=>muted};
+assert.throws(()=>setCallMicrophoneMuted(phone,true));assert(tracks.every(t=>t.enabled));
+established=true;
+assert.equal(setCallMicrophoneMuted(phone,true),true);assert(tracks.every(t=>!t.enabled));
+assert.equal(setCallMicrophoneMuted(phone,false),false);assert(tracks.every(t=>t.enabled));
+assert.throws(()=>setCallMicrophoneMuted({...phone,localMediaStream:undefined},true));
+tracks.forEach(t=>t.readyState='ended');assert.throws(()=>setCallMicrophoneMuted(phone,true));
+console.log('Microphone: ignored pre-answer mute, all live audio tracks, unmute and missing/ended media passed');

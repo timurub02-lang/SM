@@ -10,11 +10,12 @@ export function ensureAuth(){return ready??=db().batch([
  ...authSchema.map(sql=>db().prepare(sql)),
 ]).catch(error=>{ready=undefined;throw error;});}
 export function cookieToken(h:Headers){return (h.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(sessionCookie+'='))?.slice(sessionCookie.length+1)||'';}
-export async function sessionEmployee(h:Headers):Promise<Employee|null>{
+export async function sessionEmployee(h:Headers,allowTestAccount=false):Promise<(Employee&{testOnly?:boolean})|null>{
  const token=cookieToken(h);if(!/^[a-f0-9]{64}$/.test(token))return null;
  await ensureAuth();
- const row=await db().prepare('SELECT e.data,e.version FROM auth_sessions s JOIN auth_accounts a ON a.employee_id=s.employee_id JOIN employees e ON e.id=s.employee_id WHERE s.token_hash=? AND s.expires_at>? AND a.enabled=1').bind(tokenHash(token),Date.now()).first<{data:string;version:number}>();
- return row?{...JSON.parse(row.data),version:row.version}:null;
+ const row=await db().prepare('SELECT e.data,e.version,t.employee_id AS test_id FROM auth_sessions s JOIN auth_accounts a ON a.employee_id=s.employee_id JOIN employees e ON e.id=s.employee_id LEFT JOIN auth_test_accounts t ON t.employee_id=e.id WHERE s.token_hash=? AND s.expires_at>? AND a.enabled=1').bind(tokenHash(token),Date.now()).first<{data:string;version:number;test_id:string|null}>();
+ if(!row||(row.test_id&&!allowTestAccount))return null;
+ return {...JSON.parse(row.data),version:row.version,testOnly:!!row.test_id};
 }
 export function trustedOrigin(h:Headers){return h.get('origin')===process.env.CRM_ORIGIN&&h.get('sec-fetch-site')!=='cross-site';}
 export async function login(login:string,password:string,ip:string){
@@ -25,7 +26,7 @@ export async function login(login:string,password:string,ip:string){
   const r=await db().prepare('SELECT attempts FROM auth_attempts WHERE key=?').bind(key).first<{attempts:number}>();
   if(r!.attempts>limit)return {limited:true} as const;
  }
- const row=await db().prepare("SELECT a.employee_id,a.password_hash,a.enabled FROM auth_accounts a JOIN employees e ON e.id=a.employee_id WHERE lower(trim(json_extract(e.data,'$.login')))=?").bind(login).first<{employee_id:string;password_hash:string;enabled:number}>();
+ const row=await db().prepare("SELECT a.employee_id,a.password_hash,a.enabled,t.employee_id AS test_id FROM auth_accounts a JOIN employees e ON e.id=a.employee_id LEFT JOIN auth_test_accounts t ON t.employee_id=e.id WHERE lower(trim(json_extract(e.data,'$.login')))=?").bind(login).first<{employee_id:string;password_hash:string;enabled:number;test_id:string|null}>();
  // Run the password KDF even for an unknown login.
  const valid=await verifyPassword(password,row?.password_hash||'scrypt:00000000000000000000000000000000:'+ '00'.repeat(64));
  if(!row||!row.enabled||!valid)return null;
@@ -34,5 +35,5 @@ export async function login(login:string,password:string,ip:string){
   db().prepare("INSERT INTO auth_sessions(token_hash,employee_id,expires_at) SELECT ?,a.employee_id,? FROM auth_accounts a JOIN employees e ON e.id=a.employee_id WHERE a.employee_id=? AND a.password_hash=? AND a.enabled=1 AND lower(trim(json_extract(e.data,'$.login')))=?").bind(tokenHash(token),now+sessionLifetime*1000,row.employee_id,row.password_hash,login),
   db().prepare('DELETE FROM auth_attempts WHERE key=?').bind(tokenHash('login:'+login)),
  ]);
- return results[1].meta.changes?{token}:null;
+ return results[1].meta.changes?{token,redirect:row.test_id?'/oktell-test':'/'}:null;
 }
