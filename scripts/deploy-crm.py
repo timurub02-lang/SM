@@ -119,7 +119,9 @@ def run(rollback=None):
             tmp=pathlib.Path(tmp);archive=tmp/'runtime.tgz';archive.write_bytes(data);extract(archive,tmp)
             runtime=tmp/'runtime';meta=json.loads((runtime/'release.json').read_text())
             if meta.get('commit')!=sha or meta.get('format')!=1 or not (runtime/'server.js').is_file():raise ValueError('Runtime identity mismatch')
-            staged=tmp/'release';(staged/'.next').mkdir(parents=True);runtime.rename(staged/'.next/standalone')
+            staged=tmp/'release';(staged/'.next').mkdir(parents=True)
+            if len(list((runtime/'jobs').glob('sync-*.mjs')))!=7:raise ValueError('Background jobs are missing')
+            (runtime/'jobs').rename(staged/'scripts');runtime.rename(staged/'.next/standalone')
             static=staged/'.next/standalone/.next/static'
             meta['staticFiles']=[p.relative_to(static).as_posix() for p in static.rglob('*') if p.is_file()]
             # Serve immutable chunks from the two preceding builds for already open browser tabs.

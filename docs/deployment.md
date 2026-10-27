@@ -1,6 +1,6 @@
 # Production releases
 
-The source of truth is `timurub02-lang/SM`, branch `main`. Publish changes through GitHub; do not clone dependencies or build inside `/srv/crm/releases`.
+The source of truth is `timurub02-lang/SM`, branch `main`. Publish changes through GitHub; do not clone dependencies or build inside `/srv/crm/releases`. The package includes the seven existing background synchronization jobs, bundled with their imports, so their systemd services keep working without the source checkout.
 
 The `CRM build and release` workflow builds with Node 24.21.0, the npm lockfile and `CRM_RUNTIME=miran`. It runs authentication, telephony, Oktell and deployment checks against temporary synthetic databases. These checks never place a call. Branches and pull requests build without publishing. A successful main build publishes `crm-<full commit SHA>` with `crm-runtime.tgz` and `SHA256SUMS`. Workflow artifacts expire after seven days; release assets remain in GitHub.
 
