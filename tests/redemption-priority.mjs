@@ -28,3 +28,8 @@ assert.deepEqual(Object.keys(await readRedemptionSummaries(d,['visible'],now)),[
 console.log('Three groups, Moscow day, preserved future result after ND and visible-order scope passed');
 
 assert.equal(summarizeRedemption({result:'none',days:{}},now).result,'');
+
+const pending=new Set(['ready','waiting']);
+assert.deepEqual([pickup,ready,unknown,waiting,post].sort((a,b)=>compareRedemptionPriority(a,b,statuses,new Set(['ready']),pending)).map(o=>o.id),['ready','waiting','pickup','unknown','post']);
+assert.deepEqual([pickup,ready,waiting].sort((a,b)=>compareRedemptionPriority(a,b,statuses,new Set(['ready']),new Set())).map(o=>o.id),['pickup','ready','waiting']);
+console.log('Pending operator decisions first, including worked/ineligible orders; resolved decisions restore normal priority');

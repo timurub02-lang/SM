@@ -62,7 +62,7 @@ function LegacyBrowserPhone({admin,actorId,children}:{admin:boolean;actorId:stri
 }
 function LegacyCallButton({target,disabled=false,children='Позвонить',className='',icon=<Phone size={17}/>,route='beeline',onCompleted}:{target:Target;onCompleted?:()=>void;disabled?:boolean;children?:ReactNode;className?:string;icon?:ReactNode;route?:'beeline'|'mts'}){
  const legacy=useContext(PhoneContext),native=useOktellPhone();
- const phone=route==='mts'?{enabled:!!native?.ready&&!native?.working,busy:!!native?.routeBusy,start:(target:Target,_onCompleted?:()=>void)=>{if(target.mode==='client')void native?.call(target.clientId,target.phoneKey);}}:legacy;
+ const phone=route==='mts'?{enabled:!!native?.ready&&!native?.working,busy:!!native?.routeBusy,start:(target:Target,onCompleted?:()=>void)=>{if(target.mode==='client'||target.mode==='order'||target.mode==='incoming')void native?.call(target,onCompleted);}}:legacy;
  const [choices,setChoices]=useState<{key:string;label:string}[]>([]),[loading,setLoading]=useState(false);
  if(!phone)return null;
  async function choose(){
@@ -81,4 +81,4 @@ export function TelephonySettings(){
 }
 
 export function BrowserPhone(props:{admin:boolean;actorId:string;children:ReactNode}){return props.actorId===OKTELL_ACTOR?<OktellPhone><LegacyBrowserPhone {...props}/></OktellPhone>:<LegacyBrowserPhone {...props}/>;}
-export function CallButton(props:Parameters<typeof LegacyCallButton>[0]){if(props.target.mode==='client')return <div className={`call-route-buttons ${props.className||''}`} role="group" aria-label="Выбор линии для звонка"><LegacyCallButton {...props} route="mts" className="call-route-mts" icon={null}>МТС</LegacyCallButton><LegacyCallButton {...props} route="beeline" className="call-route-beeline" icon={<Phone size={17}/>}>Позвонить</LegacyCallButton></div>;return <LegacyCallButton {...props}/>;}
+export function CallButton(props:Parameters<typeof LegacyCallButton>[0]){if(props.target.mode==='client'||props.target.mode==='order'||props.target.mode==='incoming')return <div className={`call-route-buttons ${props.className||''}`} role="group" aria-label="Выбор линии для звонка"><LegacyCallButton {...props} route="mts" className="call-route-mts" icon={null}>МТС</LegacyCallButton><LegacyCallButton {...props} route="beeline" className="call-route-beeline" icon={<Phone size={17}/>}>Позвонить</LegacyCallButton></div>;return <LegacyCallButton {...props}/>;}

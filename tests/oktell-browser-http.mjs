@@ -40,6 +40,22 @@ try{
   const beeline=await req('/api/telephony',{mode:'client',clientId},cookies.irina);assert.equal(beeline.status,200,JSON.stringify(beeline.data));assert.equal(db.prepare('SELECT destination FROM phone_call_targets WHERE call_id=?').get(beeline.data.callId).destination,mts.data.destination);
   assert.notEqual((await req('/api/oktell-phone',{action:'call',tab,clientId},cookies.irina)).status,200);closeCalls();
  }
+ // Order calls retain order history and enforce the same access rules.
+ for(const [orderId,clientId,manager] of [['own-order','existing-card',id],['foreign-order','foreign-card','other']]){
+  const o={id:orderId,clientId,manager,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,version:1};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(orderId,clientId,JSON.stringify(o));
+ }
+ const orderCall=await req('/api/oktell-phone',{action:'call',tab,mode:'order',orderId:'own-order'},cookies.irina);
+ assert.equal(orderCall.status,200,JSON.stringify(orderCall.data));assert.equal(orderCall.data.destination,'79990000001');
+ assert.deepEqual({...db.prepare('SELECT client_id,order_id FROM phone_calls WHERE id=?').get(orderCall.data.callId)},{client_id:'existing-card',order_id:'own-order'});closeCalls();
+ for(const orderId of ['foreign-order','missing-order'])assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'order',orderId},cookies.irina)).status,403);
+ assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'order'},cookies.irina)).status,400);
+ await req('/api/crm',null,cookies.irina);
+ db.prepare('INSERT INTO incoming_calls(id,assignee_id,at,phone,called_number) VALUES(?,?,?,?,?)').run('unknown-incoming',id,c.createdAt,'+79990000099','');
+ const incomingCall=await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'unknown-incoming'},cookies.irina);
+ assert.equal(incomingCall.status,200,JSON.stringify(incomingCall.data));assert.equal(incomingCall.data.destination,'79990000099');
+ assert.equal(db.prepare('SELECT incoming_id FROM phone_call_incoming WHERE call_id=?').get(incomingCall.data.callId).incoming_id,'unknown-incoming');closeCalls();
+ assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'missing'},cookies.irina)).status,403);
  // Created after startup: no test-card configuration, migration or per-card setup needed.
  addCard('new-card','+79990000004');
  const choices=await req('/api/telephony?mode=client&clientId=new-card',null,cookies.irina);assert.equal(choices.status,200);assert.equal(choices.data.phones.length,2);assert.equal(choices.data.phones[0].label.includes('79990000004'),false);
