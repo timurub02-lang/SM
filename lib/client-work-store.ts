@@ -21,6 +21,7 @@ export async function saveClientWork(d:Db,s:State,e:Employee,input:any,at=new Da
  const p=z.object({clientId:z.string().min(1),outcome:z.enum(['reached','missed','callback']),due:z.string().datetime().optional(),version:z.number().int().nonnegative()}).parse(input);
  const c=s.clients.find(c=>c.id===p.clientId);if(e.role!=='operator'||!c||c.owner!==e.id)throw Error('Результат можно сохранить только для своего клиента');
  if(p.outcome==='callback'&&(!p.due||Date.parse(p.due)<=Date.parse(at)))throw Error('Выберите будущее время перезвона');
+ if(p.outcome==='callback'&&c.assignedUntil&&Date.parse(p.due!)>=Date.parse(c.assignedUntil))throw Error('Перезвон нужно назначить до окончания закрепления клиента');
  await initClientWork(d);
  const old=await d.prepare('SELECT data FROM client_work WHERE employee_id=? AND client_id=?').bind(e.id,c.id).first();
  const reminderId=p.outcome==='callback'?crypto.randomUUID():undefined,mutation=crypto.randomUUID();
