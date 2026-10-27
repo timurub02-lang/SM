@@ -7,7 +7,8 @@ import {setCallMicrophoneMuted} from '@/lib/call-microphone';
 export const OKTELL_ACTOR='E-43a21d76-351';
 type Config={username:string;authorizationUsername:string;password:string;domain:string;token:string;registered:boolean;error?:string};
 type Route='mts'|'beeline';
-type PhoneState={routeBusy:boolean;acquire:(route:Route)=>boolean;release:(route:Route)=>void;ready:boolean;busy:boolean;working:boolean;message:string;connect:()=>Promise<void>;disconnect:()=>Promise<void>;call:(id:string,phoneKey?:string)=>Promise<void>;tone:()=>void};
+type CallTarget={mode:'client';clientId:string;phoneKey?:string}|{mode:'order';orderId:string;phoneKey?:string}|{mode:'incoming';incomingId:string};
+type PhoneState={routeBusy:boolean;acquire:(route:Route)=>boolean;release:(route:Route)=>void;ready:boolean;busy:boolean;working:boolean;message:string;connect:()=>Promise<void>;disconnect:()=>Promise<void>;call:(target:CallTarget,onCompleted?:()=>void)=>Promise<void>;tone:()=>void};
 const Context=createContext<PhoneState|null>(null);
 export const useOktellPhone=()=>useContext(Context);
 export function OktellPhone({children}:{children:ReactNode}){
@@ -16,9 +17,10 @@ export function OktellPhone({children}:{children:ReactNode}){
  function release(value:Route){if(route.current===value){route.current=null;setRouteBusy(false);}}
  const [ready,setReady]=useState(false),[busy,setBusy]=useState(false),[working,setWorking]=useState(false),[message,setMessage]=useState('Гарнитура не подключена'),[muted,setMuted]=useState(false),[host,setHost]=useState<HTMLElement|null>(null);
  const tab=useRef(''),phone=useRef<SimpleUser|null>(null),audio=useRef<HTMLAudioElement>(null),domain=useRef(''),locked=useRef(false),active=useRef(false),generation=useRef(0);
- async function api(action:string,clientId?:string,phoneKey?:string){
+ const completion=useRef<(()=>void)|undefined>(undefined),answered=useRef(false);
+ async function api(action:string,target?:CallTarget){
   if(!tab.current)tab.current=crypto.randomUUID();
-  const r=await fetch('/api/oktell-phone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,tab:tab.current,...(clientId?{clientId}:{}),...(phoneKey?{phoneKey}:{})}),signal:AbortSignal.timeout(25000),keepalive:action==='disconnect'}),c=await r.json() as Config;
+  const r=await fetch('/api/oktell-phone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,tab:tab.current,...target}),signal:AbortSignal.timeout(25000),keepalive:action==='disconnect'}),c=await r.json() as Config;
   if(!r.ok)throw Error(c.error||'Нет связи с Oktell');return c;
  }
  async function sync(){try{const c=await api('heartbeat');if(!c.registered&&phone.current){setReady(false);setMessage('Регистрация телефона потеряна. Отключите и подключите гарнитуру заново.');}window.dispatchEvent(new Event('crm-call-updated'));}catch{setReady(false);setMessage('Связь с Oktell потеряна. Подключите гарнитуру заново.');}}
@@ -40,16 +42,16 @@ export function OktellPhone({children}:{children:ReactNode}){
     aor:`sip:${c.username}@${c.domain}`,reconnectionAttempts:0,
     userAgentOptions:{authorizationUsername:c.authorizationUsername,authorizationPassword:c.password,logLevel:'error',logConfiguration:false,sessionDescriptionHandlerFactoryOptions:{peerConnectionConfiguration:{iceServers:[]}}},
     media:{constraints:{audio:true,video:false},remote:{audio:audio.current!}},
-    delegate:{onRegistered(){if(run===generation.current){setReady(true);setMessage('Гарнитура подключена к Oktell. Звонок ещё не начат.');}},onUnregistered(){setReady(false);},onCallAnswered(){setMessage('Соединение установлено — можно говорить');void audio.current?.play().catch(()=>setMessage('Нажмите «Включить звук»'));void sync();},onCallHangup(){active.current=false;release('mts');setBusy(false);setMuted(false);setMessage('Звонок завершён');void sync();},onServerDisconnect(){if(run===generation.current){setReady(false);active.current=false;release('mts');setBusy(false);setMessage('Соединение прервано. Отключите и подключите гарнитуру заново.');void sync();}}}
+    delegate:{onRegistered(){if(run===generation.current){setReady(true);setMessage('Гарнитура подключена к Oktell. Звонок ещё не начат.');}},onUnregistered(){setReady(false);},onCallAnswered(){answered.current=true;setMessage('Соединение установлено — можно говорить');void audio.current?.play().catch(()=>setMessage('Нажмите «Включить звук»'));void sync();},onCallHangup(){active.current=false;release('mts');setBusy(false);setMuted(false);setMessage('Звонок завершён');const done=completion.current;completion.current=undefined;void sync().then(()=>{if(answered.current)done?.();});},onServerDisconnect(){if(run===generation.current){setReady(false);active.current=false;release('mts');setBusy(false);setMessage('Соединение прервано. Отключите и подключите гарнитуру заново.');void sync();}}}
    });
    phone.current=p;setMessage('Подключаем телефон к Oktell…');await p.connect();if(run!==generation.current){await p.disconnect();return;}await p.register({requestDelegate:{onReject(r){setReady(false);setMessage(`Oktell отклонил регистрацию (${r.message.statusCode}). Отключите гарнитуру и повторите подключение.`);}}});
   }catch(e){const p=phone.current;phone.current=null;try{await p?.disconnect();await api('disconnect');}catch{}setReady(false);setMessage(e instanceof Error&&e.name==='NotAllowedError'?'Разрешите доступ к микрофону для CRM в настройках браузера.':e instanceof Error&&e.name==='NotFoundError'?'Подключите гарнитуру: микрофон не найден.':e instanceof Error?e.message:'Не удалось подключить гарнитуру');}
   finally{locked.current=false;setWorking(false);}
  }
- async function call(id:string,phoneKey?:string){
-  if(locked.current||active.current||!phone.current||!ready||!acquire('mts'))return;locked.current=true;active.current=true;setBusy(true);setMuted(false);setMessage('Подготовка вызова…');
+ async function call(target:CallTarget,onCompleted?:()=>void){
+  if(locked.current||active.current||!phone.current||!ready||!acquire('mts'))return;locked.current=true;active.current=true;setBusy(true);setMuted(false);setMessage('Подготовка вызова…');completion.current=onCompleted;answered.current=false;
   try{
-   const c=await api('call',id,phoneKey) as Config&{callId:string;destination:string};
+   const c=await api('call',target) as Config&{callId:string;destination:string};
    await phone.current.call(`sip:${c.destination}@${domain.current}`,{earlyMedia:true,extraHeaders:[`X-CRM-Call-ID: ${c.callId}`]},{requestDelegate:{onProgress(){setMessage('Идёт вызов…');},onReject(r){active.current=false;release('mts');setBusy(false);setMessage(`Звонок не состоялся (ответ ${r.message.statusCode})`);void sync();}}});
    window.dispatchEvent(new Event('crm-call-updated'));
   }catch(e){active.current=false;release('mts');setBusy(false);setMessage(e instanceof Error?e.message:'Не удалось начать вызов');void sync();}finally{locked.current=false;}
