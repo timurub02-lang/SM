@@ -1,4 +1,5 @@
 import importlib.util,io,json,pathlib,tarfile,tempfile,unittest
+from unittest.mock import patch,MagicMock,call
 
 def module(name,path):
     spec=importlib.util.spec_from_file_location(name,path);value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
@@ -30,5 +31,12 @@ class Deployment(unittest.TestCase):
                 p=releases/name;p.mkdir();(p/'release.json').write_text('{}')
             self.assertEqual(deploy.retain(names,releases/names[0]),names[:3])
             self.assertFalse((releases/names[3]).exists());self.assertTrue((releases/'someone-working').exists())
+    def test_failed_health_restores_previous_release(self):
+        with tempfile.TemporaryDirectory() as d:
+            deploy.BASE=pathlib.Path(d);previous=deploy.BASE/'saved';target=deploy.BASE/'new';state={'history':['saved']}
+            with patch.object(deploy,'current',return_value=previous),patch.object(deploy,'idle',return_value=True),patch.object(deploy.sqlite3,'connect',return_value=MagicMock()),patch.object(deploy.os,'chmod'),patch.object(deploy.os,'replace'),patch.object(deploy,'switch',side_effect=[RuntimeError('health failure'),None]) as switch:
+                with self.assertRaisesRegex(RuntimeError,'health failure'):deploy.activate(target,previous,state)
+                self.assertEqual(switch.call_args_list,[call(target),call(previous)])
+                self.assertEqual(state,{'history':['saved']})
 
 if __name__=='__main__':unittest.main()
