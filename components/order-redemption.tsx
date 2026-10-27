@@ -2,6 +2,7 @@
 import {useEffect,useState} from 'react';
 import type {Employee} from '@/lib/crm';
 import {actions,results,allowedResults,futureRedemptionDate,operatorReturnScheduled,awaitingOperator,refusalRetryDate} from '@/lib/redemption';
+import {ReturnCountdown} from './return-countdown';
 import {toast} from 'sonner';
 import {CalendarDays,PhoneMissed,BriefcaseBusiness,Truck,PackageCheck,ShieldCheck,Undo2,Check} from 'lucide-react';
 const actionIcons={date:CalendarDays,nd:PhoneMissed,refusal:Undo2,work:BriefcaseBusiness,courier:Truck,client_delivered:PackageCheck,po:ShieldCheck};
@@ -25,6 +26,7 @@ export function OrderRedemption({orderId,employee,incomingId,onSaved,onConsultat
  {incomingId&&onConsultation&&<button className="secondary" disabled={busy} onClick={()=>setConsultation(true)}>Вопрос решён / консультация</button>}
  {error?<p role="alert">{error} <button className="secondary" onClick={()=>void load()}>Повторить загрузку</button></p>:!data?<p>Загрузка результата…</p>:!row?<p>Заказ пока недоступен в проекте «Выкуп».</p>:<>
  <div className="notice"><div><strong>{title(row)}</strong>{row.resultSource==='incoming'&&<span className="badge purple">Из входящего обращения</span>}<small className="muted" style={{display:'block'}}>{row.author||'Результат ещё не оставляли'}{row.author&&` · ${stamp(row.days?.[row.lastDay]?.at||row.updatedAt)} МСК`}</small></div></div>
+ {awaitingOperator(row)&&<ReturnCountdown deadline={row.operatorReturn.deadline} startsAt={row.operatorReturn.startsAt}/>}
  {row.pendingEnrollment&&<p className="notice">Результат сохранится заранее. Заказ попадёт в «Выкуп», когда статус СДЭК станет подходящим; будущая дата будет ожидать наступления.</p>}
  <small className="muted">Общий результат с проектом «Выкуп». Изменения видны оператору и отделу выкупа.{future&&' Недозвон сохранится в истории и не отменит назначенную дату.'}</small>
  {row.comments?.length>0&&<div><b>Последний комментарий</b><p style={{whiteSpace:'pre-wrap'}}>{row.comments.at(-1).text}</p><small className="muted">{row.comments.at(-1).author} · {stamp(row.comments.at(-1).at)} МСК</small></div>}

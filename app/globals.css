@@ -239,3 +239,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-work{background:#ece0ff;color:#745398}
 
 @media(max-width:600px){.client-detail-dialog.has-header-call:has(.call-route-buttons) [data-slot=dialog-header]{padding-right:54px}.client-detail-dialog .call-route-buttons.card-header-call{position:static;margin-top:12px;align-self:flex-end}}
+
+.orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-awaiting-operator{background:#ece0ff;color:#745398}
