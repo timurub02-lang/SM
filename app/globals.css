@@ -199,18 +199,18 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 
 /* Carrier branding on the scoped pilot card. Official marks are local assets. */
 .call-route-buttons{display:flex;flex-wrap:wrap;gap:12px}
-.client-detail-dialog.has-header-call:has(.call-route-buttons) [data-slot=dialog-header]{padding-right:64px}
-.client-detail-dialog .call-route-buttons.card-header-call{position:static;display:flex;flex-wrap:wrap;gap:12px;margin:0;flex-basis:100%;order:4}
-.call-route-buttons .browser-call-button{min-height:56px;min-width:156px;padding:12px 20px;gap:12px;font-size:20px;font-weight:700;line-height:1.2;box-shadow:none;transition:background-color .15s ease,border-color .15s ease}
+.client-detail-dialog.has-header-call:has(.call-route-buttons) [data-slot=dialog-header]{padding-right:370px}
+.client-detail-dialog .call-route-buttons.card-header-call{position:absolute;z-index:2;top:28px;right:70px;display:flex;flex-wrap:nowrap;gap:10px;margin:0}
+.call-route-buttons .browser-call-button{min-height:44px;min-width:126px;padding:10px 16px;gap:8px;font-size:16px;font-weight:700;line-height:1.2;box-shadow:none;transition:background-color .15s ease,border-color .15s ease}
 .call-route-buttons .browser-call-button img{display:block;flex:none;width:28px;height:28px}
 .call-route-buttons .call-route-mts{background:#ff0032;border-color:#ff0032;color:#fff;border-radius:8px;letter-spacing:.02em}
 .call-route-buttons .call-route-mts:hover:not(:disabled){background:#e0002c;border-color:#e0002c}
-.call-route-buttons .call-route-beeline{background:#ffc800;border-color:#806400;color:#1b242c;border-radius:28px;letter-spacing:-.02em}
-.call-route-buttons .call-route-beeline:hover:not(:disabled){background:#f0bd00;border-color:#705800}
+.call-route-buttons .call-route-beeline{background:#16834a;border-color:#16834a;color:#fff;border-radius:12px;box-shadow:0 4px 12px #16834a26}
+.call-route-buttons .call-route-beeline:hover:not(:disabled){background:#116b3c;border-color:#116b3c}
 .call-route-buttons .browser-call-button:focus-visible{outline:3px solid #2359a8;outline-offset:3px}
 .call-route-buttons .browser-call-button:disabled{cursor:not-allowed;opacity:1}
 .call-route-buttons .call-route-mts:disabled{background:#f8dce2;border-color:#ebbdc7;color:#8c243b}
-.call-route-buttons .call-route-beeline:disabled{background:#f5e9bd;border-color:#c4b580;color:#70613c}
+.call-route-buttons .call-route-beeline:disabled{background:#649d7e;border-color:#649d7e;color:#fff;opacity:.7}
 @media(max-width:600px){.call-route-buttons .browser-call-button{flex:1;min-width:0;justify-content:center;white-space:nowrap;padding:12px 14px;gap:8px}}
 @media(prefers-reduced-motion:reduce){.call-route-buttons .browser-call-button{transition:none}}
 
@@ -237,3 +237,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 
 .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-date{background:#d9eeff;color:#276490}
 .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-work{background:#ece0ff;color:#745398}
+
+@media(max-width:600px){.client-detail-dialog.has-header-call:has(.call-route-buttons) [data-slot=dialog-header]{padding-right:54px}.client-detail-dialog .call-route-buttons.card-header-call{position:static;margin-top:12px;align-self:flex-end}}
