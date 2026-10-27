@@ -50,6 +50,7 @@ try{
  assert.deepEqual({...db.prepare('SELECT client_id,order_id FROM phone_calls WHERE id=?').get(orderCall.data.callId)},{client_id:'existing-card',order_id:'own-order'});closeCalls();
  for(const orderId of ['foreign-order','missing-order'])assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'order',orderId},cookies.irina)).status,403);
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'order'},cookies.irina)).status,400);
+ assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'client',clientId:'foreign-card',orderId:'own-order'},cookies.irina)).status,403);
  await req('/api/crm',null,cookies.irina);
  db.prepare('INSERT INTO incoming_calls(id,assignee_id,at,phone,called_number) VALUES(?,?,?,?,?)').run('unknown-incoming',id,c.createdAt,'+79990000099','');
  const incomingCall=await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'unknown-incoming'},cookies.irina);

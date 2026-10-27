@@ -28,7 +28,7 @@ export async function POST(req:Request){
    let number:string,clientId:string|null=null;
    try{
     if(mode==='incoming')number=await incomingCallTarget(db(),a,b.incomingId!);
-    else{const result=await clientPhones(a,{mode,clientId:b.clientId,orderId:b.orderId});clientId=result.clientId;const selected=b.phoneKey?result.phones.find(p=>p.key===b.phoneKey):result.phones[0];if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');number=selected.number;}
+    else{const result=await clientPhones(a,mode==='order'?{mode,orderId:b.orderId}:{mode,clientId:b.clientId});clientId=result.clientId;const selected=b.phoneKey?result.phones.find(p=>p.key===b.phoneKey):result.phones[0];if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');number=selected.number;}
    }catch(e){throw Object.assign(e instanceof Error?e:Error('Нет доступа к номеру клиента'),{status:403});}
    await initPhone(db());const callId=crypto.randomUUID().replaceAll('-','');
    await db().prepare("INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status,detail) VALUES(?,?,?,?,?,?,?,'preparing',?)").bind(callId,clientId,mode==='order'?b.orderId:null,a.id,a.name,'',new Date().toISOString(),'Oktell / МТС · звонок клиенту').run();
