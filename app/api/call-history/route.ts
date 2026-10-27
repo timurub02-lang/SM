@@ -1,3 +1,4 @@
+import {employeeCallJournal} from '@/lib/employee-call-journal';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -6,6 +7,8 @@ import {z} from 'zod';
 export const dynamic='force-dynamic';
 export const GET=authenticated(async req=>{
  const e=(await getChatGPTUser())?.employee,url=new URL(req.url),clientId=url.searchParams.get('clientId')||undefined,orderId=url.searchParams.get('orderId')||undefined;
+ const employeeId=url.searchParams.get('employeeId');
+ if(employeeId){if(!e||e.role!=='admin')return Response.json({error:'Журнал сотрудников доступен администратору'},{status:403});return Response.json({calls:await employeeCallJournal(db(),e,employeeId)},{headers:{'Cache-Control':'no-store'}});}
  if(!e||!!clientId===!!orderId||!await phoneScope(db(),e,{clientId,orderId}))return Response.json({error:'История звонков недоступна'},{status:403});
  await initPhone(db());
  const before=Number(url.searchParams.get('before')||Number.MAX_SAFE_INTEGER);if(!Number.isSafeInteger(before)||before<1)return Response.json({error:'Неверная страница'},{status:400});

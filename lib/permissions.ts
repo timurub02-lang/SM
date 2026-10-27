@@ -39,6 +39,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='saveEmployee')return allow(e.role==='chief_logistic'||e.role==='department_head'&&!!e.department);
  if(p.action==='createClient')return allow(e.role==='department_head');
  if(['createClientReminder','closeClientReminder'].includes(p.action))return allow(!!client&&canOpenClientCard(e,client)&&visibleState(s,e).clients.some(c=>c.id===client.id));
+ if(p.action==='saveClientWork')return allow(e.role==='operator'&&!!client&&client.owner===e.id);
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
@@ -71,6 +72,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/redemption')return ['GET','POST'].includes(method)&&['admin','operator','department_head','redemption'].includes(e.role);if(e.role==='admin')return true;
  if(path==='/api/sk-orders')return method==='GET'&&['operator','department_head'].includes(e.role)||method==='POST'&&e.role==='department_head';
  if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
+ if(path==='/api/operator-state')return ['GET','POST'].includes(method)&&e.role==='operator';
  if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption','courier'].includes(e.role);
  if(path==='/api/call-history')return ['GET','PATCH','POST'].includes(method)&&e.role!=='courier';
  if(path==='/api/call-history/recording')return method==='GET'&&e.role!=='courier';

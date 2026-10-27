@@ -4,7 +4,7 @@ import {initReplacement,confirmReplacementCourier} from '@/lib/phone-replacement
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
-import {inRedemptionTab,syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,closedTime} from '@/lib/redemption';
+import {prepareIncomingRedemption,inRedemptionTab,syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,closedTime} from '@/lib/redemption';
 import {cdekStatuses} from '@/lib/cdek-statuses';
 import {skorozvonToken} from '@/lib/skorozvon';
 export const dynamic='force-dynamic';
@@ -12,7 +12,8 @@ async function actor(){const e=(await getChatGPTUser())?.employee;if(!e)throw Er
 export const GET=authenticated(async req=>{try{
  const e=await actor(),d=db();await syncRedemption(d);const cfg=await redemptionConfig(d),q=new URL(req.url).searchParams;
  if(q.has('projects')){if(e.role!=='admin')return Response.json({error:'Недостаточно прав'},{status:403});const credentials=await d.prepare("SELECT data FROM settings WHERE id='skorozvon'").first<{data:string}>();if(!credentials)throw Error('Сначала подключите Скорозвон в интеграциях');const token=await skorozvonToken(JSON.parse(credentials.data));const projects=[];for(let page=1;page<=100;page++){const r=await fetch('https://api.skorozvon.ru/api/v2/call_projects?length=100&page='+page,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('Не удалось получить проекты СК');const data=await r.json() as any,part=Array.isArray(data)?data:data.data;if(!Array.isArray(part))throw Error('Неожиданный ответ СК');projects.push(...part.map((p:any)=>({id:String(p.id),title:p.title})));if(part.length<100)break;}return Response.json({projects});}
- const all=await redemptionRows(d),archives=(await d.prepare('SELECT day,at FROM redemption_archives ORDER BY day DESC').all()).results;
+ if(q.get('incomingId'))await prepareIncomingRedemption(d,e,q.get('id')||'',q.get('incomingId')!);
+ const all=await redemptionRows(d,!!q.get('id')),archives=(await d.prepare('SELECT day,at FROM redemption_archives ORDER BY day DESC').all()).results;
  const confirmation=q.get('tab')==='confirm',returns=q.get('tab')==='returns';if((confirmation||returns)&&!['admin','redemption'].includes(e.role))return Response.json({error:'Access denied'},{status:403});
  let rows=all;if(q.get('tab')==='operator')rows=all.filter(awaitingOperator);else if(returns)rows=all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf()));else if(confirmation)rows=all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf()));else if(q.get('archive')||q.get('tab')==='archive'){const a=await d.prepare('SELECT data FROM redemption_archives WHERE day=?').bind(q.get('archive')||'').first<{data:string}>();rows=JSON.parse(a?.data||'[]');}
  else if(!q.get('id'))rows=all.filter((r:any)=>inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role)));

@@ -1,0 +1,48 @@
+import http from 'node:http';
+import {createHash} from 'node:crypto';
+import {z} from 'zod';
+import {sessionEmployee,trustedOrigin,cookieToken} from '@/lib/auth';
+import {db} from '@/lib/db';
+import {initPhone} from '@/lib/phone-store';
+import {clientPhones} from '@/lib/client-call-targets';
+export const dynamic='force-dynamic';
+const actorId='E-43a21d76-351';
+const input=z.object({action:z.enum(['connect','heartbeat','disconnect','call']),tab:z.string().uuid(),clientId:z.string().max(100).optional(),phoneKey:z.string().max(64).optional()}).strict();
+function control(body?:unknown){return new Promise<any>((resolve,reject)=>{
+ const r=http.request({socketPath:process.env.OKTELL_CONTROL_SOCKET||'/run/sm-oktell-bridge/control.sock',path:'/browser-phone',method:body?'POST':'GET',headers:{'Content-Type':'application/json'}},s=>{let raw='';s.on('data',x=>{raw+=x;if(raw.length>16000)r.destroy(Error('Invalid bridge response'));});s.on('end',()=>{try{const data=JSON.parse(raw);if(s.statusCode!==200)reject(Object.assign(Error(data.error||'Oktell недоступен'),{status:s.statusCode}));else resolve(data);}catch(e){reject(e);}});});
+ r.on('error',reject);r.setTimeout(20000,()=>r.destroy(Error('Oktell не ответил вовремя')));r.end(body?JSON.stringify(body):undefined);
+});}
+async function actor(req:Request){const a=await sessionEmployee(req.headers);return a?.id===actorId&&a.role==='operator'?a:null;}
+export async function GET(req:Request){
+ if(!await actor(req))return Response.json({error:'Телефон Oktell для вас пока не подключён'},{status:403});
+ try{return Response.json(await control(),{headers:{'Cache-Control':'no-store'}});}catch{return Response.json({error:'Нет связи с Oktell'},{status:502});}
+}
+export async function POST(req:Request){
+ const a=await actor(req);if(!a||!trustedOrigin(req.headers))return Response.json({error:'Нет доступа'},{status:403});
+ try{
+  const raw=await req.text();if(raw.length>2048)return Response.json({error:'Слишком большой запрос'},{status:413});
+  const b=input.parse(JSON.parse(raw)),owner=createHash('sha256').update(cookieToken(req.headers)+':'+b.tab).digest('hex');
+  if(b.action==='call'){
+   if(!b.clientId)throw Object.assign(Error('Выберите карточку клиента'),{status:400});
+   let number:string;
+   try{const result=await clientPhones(a,{mode:'client',clientId:b.clientId});const selected=b.phoneKey?result.phones.find(p=>p.key===b.phoneKey):result.phones[0];if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');number=selected.number;}
+   catch(e){throw Object.assign(e instanceof Error?e:Error('Нет доступа к номеру клиента'),{status:403});}
+   await initPhone(db());const callId=crypto.randomUUID().replaceAll('-','');
+   await db().prepare("INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status,detail) VALUES(?,?,NULL,?,?,?,?,'preparing',?)").bind(callId,b.clientId,a.id,a.name,'',new Date().toISOString(),'Oktell / МТС · звонок клиенту').run();
+   try{await control({action:'authorize',actor:a.id,owner,destination:number,callId});}
+   catch(e){await db().prepare("UPDATE phone_calls SET status='failed',ended_at=?,detail=? WHERE id=?").bind(new Date().toISOString(),'Oktell / МТС · не удалось подготовить вызов',callId).run();throw e;}
+   return Response.json({callId,destination:number},{headers:{'Cache-Control':'no-store'}});
+  }
+  const result=await control({action:b.action,actor:a.id,owner});
+  if(b.action==='heartbeat'&&result.call){
+   const c=result.call;
+   if(/^[a-f0-9]{32}$/.test(c.id)&&['dialing','connected','ended','cancelled','failed','busy','no_answer','unknown'].includes(c.status)){
+    const end=['ended','cancelled','failed','busy','no_answer','unknown'].includes(c.status);
+    const status=c.status==='ended'?'completed':c.status;
+    const answered=c.answeredAt||null,ended=c.endedAt||null;
+    await db().prepare("UPDATE phone_calls SET status=?,answered_at=COALESCE(answered_at,?),ended_at=COALESCE(ended_at,?),bill_seconds=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN MAX(0,CAST((julianday(?)-julianday(?))*86400 AS INTEGER)) ELSE bill_seconds END,provider_at=?,detail=? WHERE id=? AND actor_id=? AND detail LIKE 'Oktell / МТС%' AND (ended_at IS NULL OR status='unknown')").bind(status,answered,ended,answered,ended,ended,answered,new Date().toISOString(),'Oktell / МТС · '+(end?'вызов завершён; запись ещё не подключена':'состояние подтверждено SIP'),c.id,a.id).run();
+   }
+  }
+  return Response.json(result,{headers:{'Cache-Control':'no-store'}});
+ }catch(e){return Response.json({error:e instanceof z.ZodError?'Неверная команда':e instanceof Error?e.message:'Oktell недоступен'},{status:e instanceof z.ZodError||e instanceof SyntaxError?400:(e as any)?.status||502,headers:{'Cache-Control':'no-store'}});}
+}

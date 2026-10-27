@@ -50,7 +50,7 @@ async function handleGET(req:Request){
   }
   const products=await db().prepare('SELECT data FROM products').all<{data:string}>();
   const warehouse=await db().prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
-  return reply({shipment:c.shipment,canDelete:['admin','chief_logistic'].includes(c.actor.role),warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:i.price};})});
+  return reply({shipment:c.shipment,canDelete:!c.order.legacyLv&&['admin','chief_logistic'].includes(c.actor.role),warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:i.price};})});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }
 async function handlePOST(req:Request){
@@ -64,6 +64,7 @@ async function handlePOST(req:Request){
    const result=await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(JSON.stringify(next),c.key,previous).run();
    if(!result.meta.changes)throw Error('Отправление изменилось. Обновите карточку');
   };
+  if(c.order.legacyLv&&['create','delete'].includes(p.action))throw Error('Заказ перенесён из ЛВ: повторная выгрузка и удаление отправления недоступны');
   if(p.action==='delete'){
    if(!['admin','chief_logistic'].includes(c.actor.role))return Response.json({error:'Удалить отправление может только администратор или главный логист'},{status:403});
    if(p.confirmed!==true||!p.reason)throw Error('Укажите причину и подтвердите удаление отправления из СДЭК');

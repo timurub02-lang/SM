@@ -32,7 +32,7 @@ try{
  assert.deepEqual(allowedResults('po',await row(),'operator','2026-10-15'),['date']);
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-22').run();
  const beforeCommentCheck=await row();
- await assert.rejects(edit(admin,{action:'nd',result:'none',comment:'  '}),/комментарий/);
+ await assert.rejects(edit(admin,{action:'courier',result:'courier',comment:'  '}),/комментарий/);
  assert.equal((await row()).version,beforeCommentCheck.version);
  await edit(admin,{action:'nd',result:'none',comment:'  Проверочный комментарий  '});
  assert.equal((await row()).comments.at(-1).text,'Проверочный комментарий');
@@ -83,8 +83,8 @@ try{
  await edit(op,{action:'date',result:'date',date:'2026-10-18'});
  assert.equal((await row()).dateConfirmation,'pending');
  for(const actor of [op,head]){
-  assert(!canSeeRedemption(actor,await row(),true));
-  await assert.rejects(edit(actor,{operation:'confirm_date'}),/недоступен/);
+  assert.equal(canSeeRedemption(actor,await row(),true),actor.role==='operator');
+  await assert.rejects(edit(actor,{operation:'confirm_date'}),/недоступен|Подтверждение доступно/);
  }
  assert(canSeeRedemption(buyer,await row(),false));
  assert(!inWorkday(await row(),'2026-10-18'));
@@ -96,12 +96,12 @@ try{
  assert(!inWorkday(await row(),'2026-10-17'));
  assert(inWorkday(await row(),'2026-10-18'));assert(inWorkday(await row(),'2026-10-19'));
  await assert.rejects(edit(buyer,{operation:'confirm_date'}),/Подтверждение/);
- await assert.rejects(edit(buyer,{action:'work',result:'date',date:'2026-10-19'}),/Подтверждение/);
+ await assert.rejects(edit(buyer,{action:'work',result:'date',date:'2026-10-19'}),/Подтвердите/);
  await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.dateConfirmedAt','2026-10-14T10:00:00Z')").run();
- await edit(buyer,{action:'work',result:'date',date:'2026-10-19'});
+ await edit(buyer,{action:'work',result:'date',date:'2026-10-19',replaceConfirmed:true});
  assert.equal((await row()).dateConfirmation,'pending');assert.equal((await row()).dateConfirmedAt,null);
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-15').run();
- await edit(buyer,{action:'po',result:'date',date:'2026-10-25'});
+ await edit(buyer,{action:'po',result:'date',date:'2026-10-25',replaceConfirmed:true});
  assert.equal((await row()).dateConfirmation,'pending');
  await edit(buyer,{operation:'confirm_date'});
  const confirmHistory=JSON.parse((await d.prepare("SELECT data FROM redemption_history WHERE json_extract(data,'$.changeKind')='confirm_date' ORDER BY id DESC LIMIT 1").first()).data);

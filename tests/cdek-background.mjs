@@ -74,4 +74,12 @@ try{
  const child=spawnSync(process.execPath,['--experimental-strip-types','--import',resolve('tests/fixtures/cdek-fetch.mjs'),resolve('scripts/sync-cdek-shipments.mjs')],{env:{...process.env,CRM_DATABASE_PATH:file,CDEK_TEST_FIXTURE:fixtureFile},encoding:'utf8'});
  assert.equal(child.status,0,child.stderr);assert.equal(JSON.parse(child.stdout.trim()).changed,1);assert.equal((await row('CLI')).status,'redeemed');
  console.log('Standalone background script updated a shipment with no web server or browser running.');
+ await reset();const legacy=await fixture('LV-123',{legacyLv:{orderId:'123',cdekOrderNumber:'OLD-EXTERNAL-123',trial:true}});
+ records.get(legacy.s.uuid).id='OLD-EXTERNAL-123';
+ assert.equal((await db.prepare('SELECT reserved FROM product_stock').first()).reserved,0,'LV shipments must not reserve stock twice');
+ mode='identity';assert.equal((await syncCdekShipments(db,request)).failed,1,'Wrong external order remains rejected');
+ mode='normal';assert.equal((await syncCdekShipments(db,request)).changed,1);
+ assert.equal((await row('LV-123')).status,'redeemed');
+ assert.equal((await db.prepare('SELECT sold FROM product_stock').first()).sold,0,'LV redemption must not deduct warehouse stock twice');
+ console.log('Legacy external identity and zero duplicate warehouse allocation passed.');
 }finally{db.close();rmSync(dir,{recursive:true,force:true});}

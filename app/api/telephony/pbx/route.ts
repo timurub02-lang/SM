@@ -4,7 +4,7 @@ import {mkdir,writeFile,link,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {z} from 'zod';
 import {db} from '@/lib/db';
-import {initPhone,type PhoneCall} from '@/lib/phone-store';
+import {incomingCallTarget,initPhone,type PhoneCall} from '@/lib/phone-store';
 import {phoneAccount,phoneRoles} from '@/lib/phone-accounts';
 export const dynamic='force-dynamic';
 
@@ -21,6 +21,8 @@ export async function GET(req:Request){
  if(!target||target.sip_user!==params.get('endpoint'))return Response.json({error:'Invalid endpoint'},{status:403});
  const employee=await db().prepare('SELECT e.data FROM employees e JOIN auth_accounts a ON a.employee_id=e.id WHERE e.id=? AND a.enabled=1').bind(target.actor_id).first<{data:string}>();
  if(!employee||!phoneRoles.includes(JSON.parse(employee.data).role))return Response.json({error:'Account disabled'},{status:403});
+ const incoming=await db().prepare('SELECT incoming_id FROM phone_call_incoming WHERE call_id=?').bind(id).first<{incoming_id:string}>();
+ if(incoming){try{if(await incomingCallTarget(db(),JSON.parse(employee.data),incoming.incoming_id)!==target.destination)throw Error('Changed destination');}catch{return Response.json({error:'Обращение изменилось или больше недоступно. Обновите данные'},{status:403});}}
  const now=new Date().toISOString();
  const r=await db().prepare("UPDATE phone_calls SET claimed_at=?,status='dialing' WHERE id=? AND claimed_at IS NULL AND ended_at IS NULL AND started_at>? AND (caller_number='' OR EXISTS(SELECT 1 FROM phone_numbers WHERE number=caller_number AND state='active'))").bind(now,id,new Date(Date.now()-120000).toISOString()).run();
  if(!r.meta.changes)return Response.json({error:'Call expired or already used'},{status:409});

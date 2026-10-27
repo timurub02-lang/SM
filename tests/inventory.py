@@ -75,3 +75,12 @@ assert legacy.execute('SELECT available,reserved FROM product_stock').fetchone()
 legacy.execute("UPDATE orders SET data=json_set(data,'$.status','redeemed') WHERE id='old'")
 assert legacy.execute('SELECT available,reserved,sold FROM product_stock').fetchone()==(-1,0,1)
 print('Stock reservations, payment, return, cancellation, edits, retries, shortages and existing orders passed')
+# Legacy shipments may contain discontinued goods, but may not reserve/sell them twice.
+db.execute("INSERT INTO lv_stock VALUES('bag','legacy-bag','Сумка',0,0,0,0,'2026-10-27')")
+fails(lambda:order('inactive-new',1,name='Сумка'), 'Товар отключён')
+before=stock('bag')
+db.execute('INSERT INTO orders VALUES(?,?)',('lv-shipment',json.dumps({'legacyLv':{'orderId':'123'},'status':'shipping','items':[{'name':'Сумка','quantity':2}]})))
+assert stock('bag')==before
+update('lv-shipment',status='redeemed')
+assert stock('bag')==before
+print('Imported discontinued goods preserved; new sales remain blocked; no duplicate stock deduction')

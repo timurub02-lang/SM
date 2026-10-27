@@ -178,3 +178,62 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .incoming-card-body .incoming-assignment{grid-template-columns:1fr}.incoming-card-body .incoming-assignment-action{padding-top:0;flex-wrap:wrap}
 .incoming-card-body .action-buttons{flex-wrap:wrap}.incoming-card-body button{white-space:normal}.incoming-card-body .incoming-result{min-width:0;margin:0}.incoming-card-body .incoming-client-heading:empty{display:none}
 @media(max-width:480px){.incoming-card-person>strong{font-size:18px}.incoming-card-stats strong{font-size:19px}.incoming-card-footer{align-items:flex-start}.incoming-card-body{padding:16px}}
+
+.client-work-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.client-work-filters .selected{background:#e5efff;color:#285ca3;border-color:#91b8ee;box-shadow:inset 0 0 0 1px #91b8ee}
+.client-work-summary{display:flex;flex-direction:column;gap:6px;padding:16px 20px;text-align:left;border-top:1px solid #e5eaf2;color:#53667e}
+.client-work-summary small{font-size:13px;line-height:1.5}
+.client-work-form{padding:20px;margin-bottom:24px;border:1px solid #dce5f1;border-radius:18px;background:#f6f9ff}
+.client-work-form .client-work-summary{padding:0;border:0}
+
+.order-tracking-link{color:#246dcc;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere;cursor:pointer}
+.order-tracking-link:hover{color:#164c96}
+
+/* Active orders are distinguishable without opening the incoming card. */
+.incoming-card.incoming-card-has-order{border-color:#91c4a8;background:linear-gradient(135deg,#f3fbf6,#dceee3)}
+.incoming-card-has-order .incoming-card-person .avatar{background:linear-gradient(145deg,#f1fbf5,#badbc8);color:#347251}
+.incoming-card-has-order .incoming-card-top,.incoming-card-has-order .incoming-card-contact{color:#527963}
+.incoming-card-order-label{margin:-10px 22px 18px;font-size:13px;color:#64748b}
+.incoming-card-has-order .incoming-card-order-label{color:#266443;font-weight:650}
+.incoming-card-has-order .incoming-card-status{background:#c9e5d366}
+
+/* Carrier branding on the scoped pilot card. Official marks are local assets. */
+.call-route-buttons{display:flex;flex-wrap:wrap;gap:12px}
+.client-detail-dialog.has-header-call:has(.call-route-buttons) [data-slot=dialog-header]{padding-right:64px}
+.client-detail-dialog .call-route-buttons.card-header-call{position:static;display:flex;flex-wrap:wrap;gap:12px;margin:0;flex-basis:100%;order:4}
+.call-route-buttons .browser-call-button{min-height:56px;min-width:156px;padding:12px 20px;gap:12px;font-size:20px;font-weight:700;line-height:1.2;box-shadow:none;transition:background-color .15s ease,border-color .15s ease}
+.call-route-buttons .browser-call-button img{display:block;flex:none;width:28px;height:28px}
+.call-route-buttons .call-route-mts{background:#ff0032;border-color:#ff0032;color:#fff;border-radius:8px;letter-spacing:.02em}
+.call-route-buttons .call-route-mts:hover:not(:disabled){background:#e0002c;border-color:#e0002c}
+.call-route-buttons .call-route-beeline{background:#ffc800;border-color:#806400;color:#1b242c;border-radius:28px;letter-spacing:-.02em}
+.call-route-buttons .call-route-beeline:hover:not(:disabled){background:#f0bd00;border-color:#705800}
+.call-route-buttons .browser-call-button:focus-visible{outline:3px solid #2359a8;outline-offset:3px}
+.call-route-buttons .browser-call-button:disabled{cursor:not-allowed;opacity:1}
+.call-route-buttons .call-route-mts:disabled{background:#f8dce2;border-color:#ebbdc7;color:#8c243b}
+.call-route-buttons .call-route-beeline:disabled{background:#f5e9bd;border-color:#c4b580;color:#70613c}
+@media(max-width:600px){.call-route-buttons .browser-call-button{flex:1;min-width:0;justify-content:center;white-space:nowrap;padding:12px 14px;gap:8px}}
+@media(prefers-reduced-motion:reduce){.call-route-buttons .browser-call-button{transition:none}}
+
+
+/* Keep the buyout result readable in compact order rows. */
+.order-table .order-buyout-summary,.order-buyout-summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:fit-content;max-width:100%;margin-top:5px;padding:7px 10px;border:1px solid #e8cc7c;border-radius:9px;background:#fff2c6;color:#715013;line-height:1.45}
+.order-buyout-summary .badge,.order-buyout-summary>span{color:#715013;background:transparent;opacity:1}
+.order-buyout-summary .badge{padding:0;font-weight:650}
+
+.orders-compact-table .order-buyout-summary{padding:2px 7px;line-height:1.3;border:0;border-radius:7px;margin-top:2px;gap:2px 6px}
+.orders-compact-table .order-buyout-summary .badge{padding:0;line-height:inherit}
+
+.orders-compact-table .table-link .order-buyout-summary{display:flex;flex-wrap:wrap;gap:4px 8px;padding:0;border:0;background:transparent;color:#71809a;line-height:1.3}
+.orders-compact-table .table-link .order-buyout-summary>span{background:transparent;color:#71809a}
+.orders-compact-table .table-link .order-buyout-summary>.badge{display:inline-flex;padding:2px 7px;border-radius:7px;background:#fff2c6;color:#715013;font-weight:650;line-height:1.3}
+
+.orders-compact-table .table-link .order-buyout-summary>.buyout-result{background:#edf1f7;color:#42536b}
+ .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-delivered{background:#166534;color:#fff;font-weight:600}
+ .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-returned{background:#eadbd3;color:#86523b;font-weight:500}
+ .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-client_delivered{background:#e2f3e5;color:#41734c}
+ .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-courier{background:#ccfbf1;color:#0f766e}
+ .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-none{background:#fff0c7;color:#8b6724}
+ .orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-to_return{background:#ffe0dd;color:#ae4335}
+
+.orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-date{background:#d9eeff;color:#276490}
+.orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-work{background:#ece0ff;color:#745398}
