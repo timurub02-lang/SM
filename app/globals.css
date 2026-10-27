@@ -240,4 +240,12 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 
 @media(max-width:600px){.client-detail-dialog.has-header-call:has(.call-route-buttons) [data-slot=dialog-header]{padding-right:54px}.client-detail-dialog .call-route-buttons.card-header-call{position:static;margin-top:12px;align-self:flex-end}}
 
-.orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-awaiting-operator{background:#ece0ff;color:#745398}
+.orders-compact-table .table-link .order-buyout-summary>.buyout-result.result-awaiting-operator{background:#fbe3e5;color:#9c3445}
+
+.redemption-edit-dialog [data-slot=dialog-header]>.badge{align-self:flex-start;width:fit-content}
+.redemption-order-summary{display:grid;gap:18px;padding:20px;border:1px solid #dfe6f0;border-radius:16px;background:#f7f9fd;min-width:0;color:#34445e}
+.redemption-order-client{display:grid;gap:4px}.redemption-order-client>span,.redemption-order-meta dt{font-size:12px;color:#71809a}.redemption-order-client strong{font-size:17px;line-height:1.4;overflow-wrap:anywhere}
+.redemption-order-meta{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0}.redemption-order-meta dd{margin:4px 0 0;font-size:14px;overflow-wrap:anywhere}
+.redemption-order-items{border-top:1px solid #dfe6f0;padding-top:14px;min-width:0}.redemption-order-items h3{font-size:13px;font-weight:600;margin:0 0 6px;color:#71809a}.redemption-order-item{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:8px 0;font-size:14px;line-height:1.4}.redemption-order-item>span{min-width:0;overflow-wrap:anywhere}.redemption-order-item small{display:block;margin-top:4px;font-size:12px;color:#71809a}.redemption-order-item>b{white-space:nowrap;font-weight:500;flex-shrink:0}
+.redemption-order-total{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #dfe6f0;padding-top:14px;font-size:14px}.redemption-order-total strong{font-size:22px;color:#3166a5;white-space:nowrap}
+@media(max-width:480px){.redemption-order-summary{padding:16px}.redemption-order-meta{grid-template-columns:1fr}}
