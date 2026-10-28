@@ -5,7 +5,7 @@ export const pilotSchema=z.object({
  name:z.string().trim().min(1).max(100),
  state:z.enum(['draft','paused']),
  native:z.object({projectId:z.string().uuid(),taskId:z.string().uuid(),listId:z.string().uuid(),verifiedAt:z.string().datetime(),active:z.literal(false),operatorUserIds:z.array(z.string().uuid()).length(2),line:z.string().min(1).max(100)}).strict().optional(),
- contacts:z.array(z.object({name:z.string().min(1).max(100),phone:z.string().regex(/^\+7\d{10}$/)}).strict()).length(3),
+ contacts:z.array(z.object({name:z.string().min(1).max(100),clientId:z.string().regex(/^C-[a-zA-Z0-9-]+$/).optional(),phone:z.string().regex(/^\+7\d{10}$/)}).strict()).length(3),
  operatorIds:z.array(z.string().regex(/^E-[a-zA-Z0-9-]+$/)).length(2),
  mode:z.literal('predictive'),
  ringSeconds:z.number().int().min(10).max(120),

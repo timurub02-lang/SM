@@ -11,7 +11,7 @@ export async function syncPilot(d:ActivityDb,rows?:unknown){
  const calls=z.array(call).max(100).parse(rows??await pilotControl('/pilot-history'));
  await initPhone(d);
  for(const c of calls.sort((a,b)=>a.started_at.localeCompare(b.started_at))){
-  if(!p.operatorIds.includes(c.actor)||!p.contacts.some(x=>normalizeOutgoingNumber(x.phone)===c.phone))throw Error('Состав Т1 изменился');
+  if(!p.operatorIds.includes(c.actor)||!p.contacts.some(x=>normalizeOutgoingNumber(x.phone)===c.phone&&(!x.clientId||x.clientId===c.client_id)))throw Error('Состав Т1 изменился');
   const [client,employee]=await Promise.all([d.prepare('SELECT data FROM clients WHERE id=?').bind(c.client_id).first(),d.prepare('SELECT data FROM employees WHERE id=?').bind(c.actor).first()]);
   if(!client||!employee)throw Error('Карточка Т1 или оператор не найдены');
   const cl=JSON.parse(client.data),e=JSON.parse(employee.data);
