@@ -20,6 +20,11 @@ await syncPilot(d,[result]);await syncPilot(d,[{...result,command_state:'confirm
 assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM events').first()).n,1);
 assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell подтвердил/);
 await syncPilot(d,[result]);assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell подтвердил/);
+assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM client_reminders').first()).n,1);
+assert.equal((await d.prepare('SELECT due FROM client_reminders').first()).due,'2026-10-29T11:00:00Z');
+await syncPilot(d,[{...c,chain:uuid(),actor:ops[1],started_at:'2026-10-29T11:00:00Z',answered_at:'2026-10-29T11:00:02Z',ended_at:'2026-10-29T11:01:00Z',updated_at:'2026-10-29T11:01:00Z'}]);
+assert.equal((await d.prepare('SELECT resolution FROM client_reminders').first()).resolution,'done');
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data).owner,ops[1]);
 await assert.rejects(()=>syncPilot(d,[{...c,phone:'79990000009'}]),/Состав/);
 await assert.rejects(()=>syncPilot(d,[{...c,client_id:'C-1'}]),/не совпадает/);
 d.close();console.log('PASS: T1 CRM assignment, history, durations, idempotent results, private three-contact scope');
