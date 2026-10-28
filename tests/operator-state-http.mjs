@@ -41,6 +41,14 @@ try{
  }
  assert.equal((await call('/oktell-pilot')).status,307);
  assert.equal((await call('/oktell-pilot',cookies.admin)).status,200);
+ const pilot={name:'Synthetic T1',state:'paused',contacts:[1,2,3].map(n=>({name:`Pilot contact ${n}`,phone:`+7999000000${n}`})),operatorIds:[actor,'E-second'],mode:'predictive',ringSeconds:50,maxAttempts:3,order:'attempt_count_ascending',timezone:'Europe/Moscow',schedule:[{day:1,from:'07:00',to:'21:00'}],clientWindow:{from:'09:00',to:'20:00'},retries:['busy','no_answer','declined','lost','answering_machine','error'].map(result=>({result,kind:'after',minutes:30,attempts:3})),results:['Callback'],telephony:'existing_oktell_only',native:{projectId:'10000000-0000-4000-8000-000000000001',taskId:'10000000-0000-4000-8000-000000000002',listId:'10000000-0000-4000-8000-000000000003',verifiedAt:'2026-10-28T19:00:00Z',active:false,operatorUserIds:['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002'],line:'Existing fixture line'}};
+ db.prepare('INSERT INTO settings VALUES(?,?)').run('oktell-pilot-t1',JSON.stringify(pilot));
+ const pilotPage=await call('/oktell-pilot',cookies.admin);
+ assert.equal(pilotPage.status,200);assert.ok(pilotPage.text.includes('задача сохранена неактивной'));assert.ok(pilotPage.text.includes('назначен в задачу Oktell'));for(const c of pilot.contacts)assert.ok(pilotPage.text.includes(c.phone));
+ db.prepare('UPDATE settings SET data=? WHERE id=?').run('{invalid','oktell-pilot-t1');
+ const brokenPilot=await call('/oktell-pilot',cookies.admin);assert.equal(brokenPilot.status,200);assert.ok(brokenPilot.text.includes('не прошла проверку'));
+ db.prepare('UPDATE settings SET data=? WHERE id=?').run(JSON.stringify(pilot),'oktell-pilot-t1');
+
  for(const who of ['head','operator','tester',actor])assert.equal((await call('/oktell-pilot',cookies[who])).status,307,'Pilot contact list is administrator-only');
  assert.equal((await call('/api/operator-state')).status,401);
  for(const id of ['admin','head','operator','tester'])for(const body of [undefined,{action:'ready'}])assert.ok([401,403].includes((await call('/api/operator-state',cookies[id],body)).status));
