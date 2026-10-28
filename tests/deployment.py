@@ -8,6 +8,16 @@ deploy=module('deploy',root/'scripts/deploy-crm.py')
 pack=module('pack',root/'scripts/package-crm.py')
 
 class Deployment(unittest.TestCase):
+    def test_phone_idle_checks_aggregate_and_fails_closed(self):
+        for db_busy, payload, status, expected in [(0,{'busy':False},200,True),(0,{'busy':True},200,False),(1,{'busy':False},200,False),(0,{},200,None),(0,{'busy':'false'},200,None),(0,{'busy':False},503,None)]:
+            with self.subTest(payload=payload,status=status), patch.object(deploy.sqlite3,'connect') as connect, patch.object(deploy.http.client.HTTPConnection,'request') as request, patch.object(deploy.http.client.HTTPConnection,'getresponse') as response:
+                connect.return_value.__enter__.return_value.execute.return_value.fetchone.return_value=[db_busy]
+                response.return_value.status=status;response.return_value.read.return_value=json.dumps(payload).encode()
+                if expected is None:
+                    with self.assertRaises(RuntimeError):deploy.idle()
+                else:self.assertEqual(deploy.idle(),expected)
+                request.assert_called_once_with('GET','/deployment-state')
+
     def test_package_and_identity(self):
         with tempfile.TemporaryDirectory() as d:
             p=pathlib.Path(d);runtime=p/'.next/standalone';runtime.mkdir(parents=True)

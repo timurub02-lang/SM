@@ -22,6 +22,7 @@ let phone,control;
  const owner=i=>i.toString(16).padStart(64,'0');
  async function command(i,action,extra={}){const r=await fetch(base,{method:'POST',body:JSON.stringify({actor:'E-'+i,owner:owner(i),action,...extra})});return {status:r.status,data:await r.json()};}
  async function state(i){const r=await fetch(base+'?actor=E-'+i);return {status:r.status,data:await r.json()};}
+ assert.deepEqual(phone.deploymentState(),{busy:false});
  const results=await Promise.all(Array.from({length:100},(_,i)=>command(i,'connect')));
  assert.ok(results.every(r=>r.status===200));assert.equal(operators.activeUsers().length,100);
  assert.equal(new Set(results.map(r=>r.data.token)).size,100);
@@ -39,7 +40,7 @@ let phone,control;
  }));
  assert.ok((await Promise.all(results.map((_,i)=>state(i)))).every(r=>r.data.registered));
  const calls=await Promise.all(results.map((_,i)=>command(i,'authorize',{destination:'79990000001',callId:i.toString(16).padStart(32,'0')})));
- assert.ok(calls.every(r=>r.status===200));
+ assert.ok(calls.every(r=>r.status===200));assert.deepEqual(phone.deploymentState(),{busy:true});
  // A grant belonging to another operator cannot authorize this phone's INVITE.
  const first=sockets[0],closed=once(first,'close');
  first.send('INVITE sip:79990000001@example.invalid SIP/2.0\r\nFrom: <sip:test0@example.invalid>;tag=x\r\nCall-ID: isolated\r\nX-CRM-Call-ID: '+(1).toString(16).padStart(32,'0')+'\r\nContent-Length: 0\r\n\r\n');await closed;
@@ -54,13 +55,14 @@ let phone,control;
  assert.equal((await command(1,'disconnect')).status,200);
  assert.equal((await command(1,'connect')).data.username,'replacement');
  links['E-102']={...links['E-2']};assert.equal((await command(102,'connect')).status,403);delete links['E-102'];
- delete links['E-2'];assert.equal((await command(2,'heartbeat')).status,403);assert.equal((await command(2,'disconnect')).status,200);
+ delete links['E-2'];assert.deepEqual(phone.deploymentState(),{busy:true});assert.equal((await command(2,'heartbeat')).status,403);assert.equal((await command(2,'disconnect')).status,200);
  // Disconnect during an outstanding login cannot resurrect a browser lease.
  let unblock;gate=new Promise(r=>unblock=r);
  const connecting=command(0,'connect');while(!requests.some(r=>r.method==='login'&&r.userlogin==='test0'&&requests.indexOf(r)>100))await delay(5);
+ assert.deepEqual(phone.deploymentState(),{busy:true});
  operators.disconnected();phone.disconnected();unblock();gate=null;
  assert.equal((await connecting).status,503);assert.equal((await state(0)).data.prepared,false);
- assert.equal(operators.activeUsers().length,0);
+ assert.equal(operators.activeUsers().length,0);assert.deepEqual(phone.deploymentState(),{busy:false});
  assert.equal((await command(0,'connect')).status,200);
  // Expiration cleans up one lease while a later lease stays registered independently.
  const realNow=Date.now;

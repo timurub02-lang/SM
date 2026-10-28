@@ -140,7 +140,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
    }
   }catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}
  }
- return {handle,server,disconnected:()=>{generation++;for(const lease of leases.values()){lease.client?.close();lease.upstream?.close();}leases.clear();},stop:async()=>{clearInterval(timer);await Promise.all([...leases.keys()].map(close));server.close();}};
+ return {handle,server,deploymentState:()=>({busy:mutating.size>0||[...leases.values()].some(l=>l.calling||l.grant&&Date.now()<l.grant.expires)}),disconnected:()=>{generation++;for(const lease of leases.values()){lease.client?.close();lease.upstream?.close();}leases.clear();},stop:async()=>{clearInterval(timer);await Promise.all([...leases.keys()].map(close));server.close();}};
 };
 module.exports.allowedSip=allowedSip;
 
