@@ -39,6 +39,9 @@ try{
  for(const id of ['admin','head','operator','tester',actor]){
   const r=await call('/api/auth/login',null,{login:id===actor?'SKP_Solomatina.Irina':id,password:'synthetic-reset-only-2026'});assert.equal(r.status,200);cookies[id]=r.headers.get('set-cookie').split(';')[0];
  }
+ assert.equal((await call('/oktell-pilot')).status,307);
+ assert.equal((await call('/oktell-pilot',cookies.admin)).status,200);
+ for(const who of ['head','operator','tester',actor])assert.equal((await call('/oktell-pilot',cookies[who])).status,307,'Pilot contact list is administrator-only');
  assert.equal((await call('/api/operator-state')).status,401);
  for(const id of ['admin','head','operator','tester'])for(const body of [undefined,{action:'ready'}])assert.ok([401,403].includes((await call('/api/operator-state',cookies[id],body)).status));
  assert.equal(bridgeRequests,0);
