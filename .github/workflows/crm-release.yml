@@ -39,6 +39,11 @@ jobs:
           node --experimental-strip-types tests/oktell-browser-http.mjs
           node --experimental-strip-types tests/operator-state-http.mjs
           node --experimental-strip-types tests/oktell-provisioning.mjs
+          node scripts/oktell-bridge/browser-phone.test.cjs
+          node scripts/oktell-bridge/browser-media.test.cjs
+          node scripts/oktell-bridge/multi-operator.test.cjs
+          node scripts/oktell-bridge/bridge.test.cjs
+          node scripts/oktell-bridge/test-control.cjs
           python3 tests/deployment.py
       - name: Package standalone runtime
         run: python3 scripts/package-crm.py "$GITHUB_SHA"
