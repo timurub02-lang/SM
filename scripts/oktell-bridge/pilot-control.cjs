@@ -33,7 +33,7 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   const p=config();if(!p||!a||!uuid(a.qid))return;
   const o=p.operators.find(o=>lower(o.userid)===lower(a.userid));if(!o)return;
   try{operator(o.actor);}catch{return;}
-  if(db.prepare('SELECT 1 FROM pilot_events WHERE qid=?').get(a.qid))return;
+  if(db.prepare('SELECT 1 FROM pilot_events WHERE qid=?').get(a.qid)){if(method==='dlgcard_showformstop'&&current(o.actor)?.form_id===lower(a.idshow))send('dlgcard_showformdone',{...operator(o.actor),qid:randomUUID()});return;}
   const time=stamp(),chain=lower(a.chainid);
   if(['phoneevent_ringstarted','phoneevent_commstarted'].includes(method)){
    const contact=p.contacts.find(c=>phone(c.phone)===phone(a.callerid));
@@ -47,7 +47,7 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
    if(method==='phoneevent_ringstopped'&&c.answered_at)return;
    db.prepare("UPDATE pilot_calls SET ended_at=COALESCE(ended_at,?),status=CASE WHEN answered_at IS NULL THEN 'no_answer' ELSE 'completed' END,updated_at=? WHERE chain=?").run(time,time,chain);
   }else if(method==='dlgcard_showformstop'){
-   const c=current(o.actor);if(!c||!uuid(a.idshow)||a.taskid&&lower(a.taskid)!==lower(p.taskId))return;
+   const c=current(o.actor);if(!c||!c.sip_id||c.ended_at&&now()-Date.parse(c.ended_at)>90000||!uuid(a.idshow)||a.taskid&&lower(a.taskid)!==lower(p.taskId))return;
    if(c.form_id&&lower(c.form_id)!==lower(a.idshow))return;
    const results=Array.isArray(a.userresults)?a.userresults.filter(r=>Number.isInteger(r.id)&&typeof r.name==='string'&&typeof r.issuccess==='boolean').map(r=>({id:r.id,val:r.name,issuc:r.issuccess})):[];
    db.prepare('UPDATE pilot_calls SET form_id=?,form_results=?,updated_at=? WHERE chain=?').run(lower(a.idshow),JSON.stringify(results),time,c.chain);

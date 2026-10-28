@@ -28,7 +28,7 @@ export async function syncPilot(d:ActivityDb,rows?:unknown){
   statements.push(d.prepare("UPDATE phone_calls SET answered_at=?,ended_at=?,status=?,bill_seconds=?,duration=?,detail=?,provider_at=? WHERE id=? AND actor_id=? AND detail LIKE 'Т1 · %' AND (provider_at IS NULL OR provider_at<=?)").bind(c.answered_at,c.ended_at,c.status==='ringing'?'dialing':c.status,c.answered_at&&c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.answered_at))/1000)):0,c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.started_at))/1000)):0,text+(result?' · '+(c.command_state==='confirmed'?'Oktell подтвердил':'подтверждение Oktell ожидается'):''),c.updated_at,id,c.actor,c.updated_at));
   if(result&&c.command_id){
    const event={id:c.command_id,clientId:c.client_id,orderId:'',at:c.updated_at,actor:e.name,actorId:c.actor,text:text+' · '+(c.command_state==='confirmed'?'Oktell подтвердил':'ожидается подтверждение Oktell')};
-   statements.push(d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,'',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE events.at<=excluded.at").bind(c.command_id,c.client_id,c.updated_at,JSON.stringify(event)));
+   statements.push(d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,'',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,at=excluded.at WHERE events.at<=excluded.at").bind(c.command_id,c.client_id,c.updated_at,JSON.stringify(event)));
   }
   await d.batch(statements);
  }

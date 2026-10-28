@@ -19,6 +19,7 @@ const result={...c,result:JSON.stringify({outcome:'Перезвон',comment:'Fi
 await syncPilot(d,[result]);await syncPilot(d,[{...result,command_state:'confirmed',updated_at:'2026-10-29T10:02:01Z'}]);
 assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM events').first()).n,1);
 assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell подтвердил/);
+await syncPilot(d,[result]);assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell подтвердил/);
 await assert.rejects(()=>syncPilot(d,[{...c,phone:'79990000009'}]),/Состав/);
 await assert.rejects(()=>syncPilot(d,[{...c,client_id:'C-1'}]),/не совпадает/);
 d.close();console.log('PASS: T1 CRM assignment, history, durations, idempotent results, private three-contact scope');

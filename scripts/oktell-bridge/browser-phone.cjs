@@ -96,14 +96,21 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
      const reject=()=>{if(upstream.readyState!==1)return;const headers=['Via','From','To','Call-ID','CSeq'].map(h=>text.match(new RegExp('^'+h+':[^\\r\\n]*','im'))?.[0]);if(headers.every(Boolean))upstream.send('SIP/2.0 486 Busy Here\r\n'+headers.map(h=>h.startsWith('To:')&&!/;tag=/i.test(h)?h+';tag=crm-rejected':h).join('\r\n')+'\r\nContent-Length: 0\r\n\r\n');};
      if(current.incomingPending===sipId)return;
      if(current.calling||current.incomingPending||current.grant&&Date.now()<current.grant.expires){reject();return;}
-     current.incomingPending=sipId;
+     current.incomingPending=sipId;current.incomingRequest=text;
      void incoming(lease.actor,number,sipId).then(call=>{
       if(current.incomingPending!==sipId||client.readyState!==1)return;
       current.incomingPending=null;if(!call){reject();return;}
       current.incomingId=sipId;current.call=call;current.calling=true;client.send(text);
-     }).catch(()=>{current.incomingPending=null;reject();});return;
+     }).catch(()=>{if(current.incomingPending===sipId){current.incomingPending=null;reject();}});return;
     }
-    if(text.startsWith('CANCEL ')){current.incomingPending=null;current.calling=false;if(current.call){current.call.status='cancelled';current.call.endedAt=new Date().toISOString();}}
+    if(text.startsWith('CANCEL ')){
+     const id=/^Call-ID:\s*(\S+)/im.exec(text)?.[1];
+     if(current.incomingPending===id){
+      const reply=(source,status)=>{const headers=['Via','From','To','Call-ID','CSeq'].map(h=>source.match(new RegExp('^'+h+':[^\\r\\n]*','im'))?.[0]);if(headers.every(Boolean))upstream.send('SIP/2.0 '+status+'\r\n'+headers.map(h=>h.startsWith('To:')&&!/;tag=/i.test(h)?h+';tag=crm-cancelled':h).join('\r\n')+'\r\nContent-Length: 0\r\n\r\n');};
+      reply(text,'200 OK');reply(current.incomingRequest,'487 Request Terminated');current.incomingPending=null;return;
+     }
+     if(current.incomingId===id){current.calling=false;if(current.call){current.call.status='cancelled';current.call.endedAt=new Date().toISOString();}}
+    }
     if(/^SIP\/2\.0 200 /m.test(text)&&/^CSeq:\s*\d+ REGISTER/im.test(text))current.registered=/^Contact:/im.test(text)&&!/^Contact:.*expires=0\b/im.test(text);
     if(current.call&&/^CSeq:\s*\d+ INVITE/im.test(text)){
      const code=Number(/^SIP\/2\.0 (\d+)/.exec(text)?.[1]);
@@ -114,7 +121,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
     if(current.call&&!current.calling)current.call.endedAt ||= new Date().toISOString();
     if(client.readyState===1)client.send(text);
    });
-   let didEnd=false;const ended=()=>{if(didEnd)return;didEnd=true;current.registered=false;current.calling=false;if(current.call&&!['ended','cancelled','failed','busy','no_answer'].includes(current.call.status))current.call.status='unknown';if(current.call)current.call.endedAt ||= new Date().toISOString();client.close();upstream.close();};
+   let didEnd=false;const ended=()=>{if(didEnd)return;didEnd=true;current.incomingPending=null;current.registered=false;current.calling=false;if(current.call&&!['ended','cancelled','failed','busy','no_answer'].includes(current.call.status))current.call.status='unknown';if(current.call)current.call.endedAt ||= new Date().toISOString();client.close();upstream.close();};
    client.on('error',ended);upstream.on('error',ended);client.on('close',ended);upstream.on('close',ended);
   });
  });

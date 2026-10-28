@@ -21,6 +21,12 @@ const invite=(id,number='79990000001')=>`INVITE sip:test@example.invalid SIP/2.0
  assert.equal((await (await cmd('heartbeat')).json()).call.status,'connected');
  const bye=once(client,'message');native.send('BYE sip:test@example.invalid SIP/2.0\r\nCall-ID: accepted\r\nContent-Length: 0\r\n\r\n');await bye;
  assert.equal(phone.deploymentState().busy,false);assert.equal((await (await cmd('heartbeat')).json()).call.status,'ended');
+ release=null;native.send(invite('cancel-before-event'));
+ for(let n=0;n<50&&!release;n++)await new Promise(r=>setTimeout(r,10));assert.ok(release);
+ const cancelled=[];const collect=raw=>cancelled.push(raw.toString());native.on('message',collect);
+ native.send(invite('cancel-before-event').replace(/^INVITE /,'CANCEL ').replace('CSeq: 1 INVITE','CSeq: 1 CANCEL'));
+ for(let n=0;n<50&&cancelled.length<2;n++)await new Promise(r=>setTimeout(r,10));
+ assert.match(cancelled[0],/^SIP\/2.0 200/);assert.match(cancelled[1],/^SIP\/2.0 487/);assert.equal(phone.deploymentState().busy,false);native.off('message',collect);release();
  console.log('PASS: isolated native SIP incoming gate, rejection, pending mutex, answer, hangup; no external calls');
  }finally{client?.terminate();native?.terminate();await phone?.stop();control?.close();upstream.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
