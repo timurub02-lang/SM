@@ -49,7 +49,7 @@ const browserOperators={...operators,prepare:async(actor,owner)=>{
  try{if(pilot.configured(actor))await request('dlgcard_setsupported',{...operators.identity(actor),supported:true});return credentials;}
  catch(e){await operators.release(actor,owner);throw e;}
 }};
-const browserPhone=require('./browser-phone.cjs')({operators:browserOperators,connected:()=>publicState().connected,incoming:pilot.incoming});
+const browserPhone=require('./browser-phone.cjs')({operators:browserOperators,connected:()=>publicState().connected,incoming:pilot.incoming,canAuthorize:pilot.canAuthorize});
 const control=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
  if(req.method==='GET'&&req.url==='/status'){res.end(JSON.stringify(publicState()));return;}

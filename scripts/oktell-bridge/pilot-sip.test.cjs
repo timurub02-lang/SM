@@ -12,6 +12,7 @@ const invite=(id,number='79990000001')=>`INVITE sip:test@example.invalid SIP/2.0
  const cmd=async(action,extra={})=>fetch(base,{method:'POST',body:JSON.stringify({actor:'E-test',owner,action,...extra})});
  const config=await (await cmd('connect')).json(),connected=once(upstream,'connection');
  client=new WebSocket('ws://127.0.0.1:'+phone.server.address().port+'/?token='+config.token,'sip',{origin:'https://crm.smanalytics.ru'});await once(client,'open');[native]=await connected;
+ const registered=once(client,'message');native.send('SIP/2.0 200 OK\r\nCSeq: 1 REGISTER\r\nContact: <sip:test@example.invalid>;expires=300\r\nContent-Length: 0\r\n\r\n');await registered;assert.equal((await (await cmd('heartbeat')).json()).registered,true);
  let reply=once(native,'message');native.send(invite('blocked','79990000002'));assert.match((await reply)[0].toString(),/^SIP\/2.0 486/);
  const received=once(client,'message');native.send(invite('accepted'));
  for(let n=0;n<50&&!release;n++)await new Promise(r=>setTimeout(r,10));assert.ok(release);assert.equal(phone.deploymentState().busy,true);

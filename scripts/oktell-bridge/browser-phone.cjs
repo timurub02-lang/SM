@@ -60,7 +60,7 @@ function publishBrowserMedia(message){
  sdp=sdp.replace(/^c=IN IP4 10\.21\.103\.2\r?$/gm,'c=IN IP4 185.162.93.10\r');
  return headers.replace(/^Content-Length:\s*\d+\s*$/im,'Content-Length: '+Buffer.byteLength(sdp,'utf8'))+'\r\n\r\n'+sdp;
 }
-module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21.103.2:5060/',incoming=async()=>null}){
+module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21.103.2:5060/',incoming=async()=>null,canAuthorize=()=>true}){
  const leases=new Map(),mutating=new Set();let generation=0;
  const state=actor=>{const lease=leases.get(actor);return ({connected:connected(),prepared:!!lease,registered:!!lease?.registered,calling:!!lease?.calling,call:lease?.call||null});};
  async function close(actor){const old=leases.get(actor);if(!old||mutating.has(actor))return;mutating.add(actor);try{old.client?.close();old.upstream?.close();await operators.release(actor,old.owner);if(leases.get(actor)===old)leases.delete(actor);}finally{mutating.delete(actor);}}
@@ -154,7 +154,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
     if(b.action==='disconnect'){await close(b.actor);res.end(JSON.stringify(state(b.actor)));return;}
     lease.expires=Date.now()+90000;
     if(b.action==='authorize'){
-     if(!lease.registered||lease.calling||lease.incomingPending||(lease.grant&&Date.now()<lease.grant.expires))throw fail('Телефон не готов к новому вызову');
+     if(!canAuthorize(b.actor)||!lease.registered||lease.calling||lease.incomingPending||(lease.grant&&Date.now()<lease.grant.expires))throw fail('Телефон не готов к новому вызову');
      if(!/^7\d{10}$/.test(b.destination||'')||!/^[a-f0-9]{32}$/.test(b.callId||''))throw fail('Недопустимый номер клиента',403);
      lease.grant={callId:b.callId,destination:b.destination,expires:Date.now()+45000};
     }

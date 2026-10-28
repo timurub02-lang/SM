@@ -19,12 +19,12 @@ async function main(){
  const result={id:randomUUID(),chain,outcome:'Перезвон',comment:'Synthetic callback',callbackAt:new Date(Date.now()+3600000).toISOString()};
  assert.throws(()=>p.result('E-two',result));
  assert.throws(()=>p.result('E-one',{...result,callbackAt:'2000-01-01T00:00:00Z'}));
- assert.equal(p.result('E-one',result).state,'sent');assert.equal(p.result('E-one',result).state,'sent');
+ assert.equal(p.canAuthorize('E-one'),false);assert.equal(p.result('E-one',result).state,'sent');assert.equal(p.result('E-one',result).state,'sent');
  const commands=sent.filter(x=>x[0]==='dlgcard_setstopformresult');assert.equal(commands.length,1);assert.equal(commands[0][1].nextcalltype,'numberafter');assert.equal(commands[0][1].userid,operators[0].userid);assert.equal(commands[0][1].userresult,null);
  assert.throws(()=>p.result('E-one',{...result,comment:'different'}));
  emit('dlgcard_closeall','E-two',{});assert.equal(p.read('E-one').current.command_state,'sent');
  emit('dlgcard_closeall','E-one',{});assert.equal(p.read('E-one').current.command_state,'confirmed');
- assert.equal(p.result('E-one',result).state,'confirmed');
+ assert.equal(p.result('E-one',result).state,'confirmed');assert.equal(p.canAuthorize('E-one'),true);
  assert.equal(p.read('E-two').current.chain,other);
  assert.equal(sent.some(([m])=>/call|activity/.test(m)&&m!=='dlgcard_setstopformresult'),false);
  p.close();console.log('PASS: native pilot isolation, incoming correlation, callbacks, idempotent result, separate operators, no dial commands');

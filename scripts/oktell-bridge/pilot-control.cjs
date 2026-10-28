@@ -99,5 +99,5 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   return {state:'sent'};
  }
  function disconnected(){db.exec("UPDATE pilot_commands SET state='unknown' WHERE state='sent'; UPDATE pilot_calls SET command_state='unknown' WHERE command_state='sent'");}
- return {event,incoming,read,result,operator,busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR (form_id IS NOT NULL AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ return {event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };
