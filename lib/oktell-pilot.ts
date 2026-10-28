@@ -3,7 +3,8 @@ import {z} from 'zod';
 const clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 export const pilotSchema=z.object({
  name:z.string().trim().min(1).max(100),
- state:z.literal('draft'),
+ state:z.enum(['draft','paused']),
+ native:z.object({projectId:z.string().uuid(),taskId:z.string().uuid(),listId:z.string().uuid(),verifiedAt:z.string().datetime(),active:z.literal(false),operatorUserIds:z.array(z.string().uuid()).length(2),line:z.string().min(1).max(100)}).strict().optional(),
  contacts:z.array(z.object({name:z.string().min(1).max(100),phone:z.string().regex(/^\+7\d{10}$/)}).strict()).length(3),
  operatorIds:z.array(z.string().regex(/^E-[a-zA-Z0-9-]+$/)).length(2),
  mode:z.literal('predictive'),
@@ -18,6 +19,8 @@ export const pilotSchema=z.object({
  telephony:z.literal('existing_oktell_only'),
 }).strict().superRefine((p,c)=>{
  const fail=(message:string)=>c.addIssue({code:z.ZodIssueCode.custom,message});
+ if(p.state==='paused'&&!p.native)fail('Для сохранённого проекта нужна проверенная привязка Oktell');
+ if(p.native&&new Set(p.native.operatorUserIds).size!==2)fail('Нужны две разные учётные записи Oktell');
  if(new Set(p.contacts.map(x=>x.phone)).size!==3)fail('Нужны три разных тестовых номера');
  if(new Set(p.operatorIds).size!==2)fail('Выберите двух разных операторов');
  if(new Set(p.retries.map(x=>x.result)).size!==6)fail('Для каждого исхода нужно одно правило повторов');

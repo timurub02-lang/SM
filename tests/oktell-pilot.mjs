@@ -6,3 +6,9 @@ for(const change of [{state:'active'},{contacts:[...p.contacts,p.contacts[0]]},{
 assert.equal(pilotOperatorLinked({role:'operator',oktell:{requested:true,status:'linked',userId:'fixture',login:'test'}}),true);
 for(const e of [{role:'admin'},{role:'operator'},{role:'operator',oktell:{requested:false,status:'linked',userId:'fixture',login:'test'}},{role:'operator',oktell:{requested:true,status:'pending',login:'test'}}])assert.equal(pilotOperatorLinked(e),false);
 console.log('PASS: draft-only pilot, exactly three distinct contacts and two operators, retry outcomes, schedule validation, linked accounts');
+
+const native={projectId:'10000000-0000-4000-8000-000000000001',taskId:'10000000-0000-4000-8000-000000000002',listId:'10000000-0000-4000-8000-000000000003',verifiedAt:'2026-10-28T19:00:00Z',active:false,operatorUserIds:['10000000-0000-4000-8000-000000000004','10000000-0000-4000-8000-000000000005'],line:'Existing test line'};
+assert.equal(pilotSchema.safeParse({...p,state:'paused',native}).success,true);
+assert.equal(pilotSchema.safeParse({...p,state:'paused'}).success,false);
+assert.equal(pilotSchema.safeParse({...p,state:'paused',native:{...native,active:true}}).success,false);
+assert.equal(pilotSchema.safeParse({...p,native:{...native,operatorUserIds:Array(2).fill(native.operatorUserIds[0])}}).success,false);
