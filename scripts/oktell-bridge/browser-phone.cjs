@@ -45,7 +45,7 @@ function normalizeRegisterContact(message,registrations,username){
 }
 // The SIP proxy is on the private network, but the browser reaches media through the existing 1:1 UDP NAT.
 function publishBrowserMedia(message){
- if(!/^SIP\/2\.0 (?:18[03]|200) /.test(message)||!/^CSeq:\s*\d+ INVITE\s*$/im.test(message))return message;
+ if(!/^(?:SIP\/2\.0 (?:18[03]|200) |INVITE )/.test(message)||!/^CSeq:\s*\d+ INVITE\s*$/im.test(message))return message;
  const split=message.indexOf('\r\n\r\n');if(split<0)return message;
  const headers=message.slice(0,split),body=message.slice(split+4);
  if(!/^Content-Type:\s*application\/sdp\s*$/im.test(headers)||!/^Content-Length:\s*\d+\s*$/im.test(headers))return message;
@@ -60,7 +60,7 @@ function publishBrowserMedia(message){
  sdp=sdp.replace(/^c=IN IP4 10\.21\.103\.2\r?$/gm,'c=IN IP4 185.162.93.10\r');
  return headers.replace(/^Content-Length:\s*\d+\s*$/im,'Content-Length: '+Buffer.byteLength(sdp,'utf8'))+'\r\n\r\n'+sdp;
 }
-module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21.103.2:5060/'}){
+module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21.103.2:5060/',incoming=async()=>null}){
  const leases=new Map(),mutating=new Set();let generation=0;
  const state=actor=>{const lease=leases.get(actor);return ({connected:connected(),prepared:!!lease,registered:!!lease?.registered,calling:!!lease?.calling,call:lease?.call||null});};
  async function close(actor){const old=leases.get(actor);if(!old||mutating.has(actor))return;mutating.add(actor);try{old.client?.close();old.upstream?.close();await operators.release(actor,old.owner);if(leases.get(actor)===old)leases.delete(actor);}finally{mutating.delete(actor);}}
@@ -82,13 +82,28 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
       if(uri&&cseq){if(registrations.size>=20)registrations.delete(registrations.keys().next().value);registrations.set(via[2],{uri,cseq});}
      }
     }
+    if(/^SIP\/2\.0 200 /.test(text)&&current.incomingId===/^Call-ID:\s*(\S+)/im.exec(text)?.[1]&&/^CSeq:\s*\d+ INVITE/im.test(text)){current.calling=true;if(current.call){current.call.status='connected';current.call.answeredAt ||= new Date().toISOString();}}
+    if(/^SIP\/2\.0 [3-6]\d\d /.test(text)&&current.incomingId===/^Call-ID:\s*(\S+)/im.exec(text)?.[1]&&/^CSeq:\s*\d+ INVITE/im.test(text)){current.calling=false;if(current.call){current.call.status='cancelled';current.call.endedAt=new Date().toISOString();}}
     if(text.startsWith('INVITE ')){current.calling=true;current.call={id:current.grant.callId,status:'dialing',startedAt:current.call?.id===current.grant.callId?current.call.startedAt:new Date().toISOString()};}
     if(text.startsWith('BYE ')||text.startsWith('CANCEL ')){current.calling=false;current.grant=null;if(current.call){current.call.status=current.call.status==='connected'?'ended':'cancelled';current.call.endedAt=new Date().toISOString();}}
     if(upstream.readyState===1)upstream.send(text);else if(queue.length<4)queue.push(text);else client.close(1008);
    });
    upstream.on('open',()=>{for(const text of queue)upstream.send(text);queue.length=0;});
    upstream.on('message',raw=>{const text=publishBrowserMedia(normalizeRegisterContact(normalizeResponseVia(raw.toString(),vias),registrations,current.credentials.username));
-    if(text.startsWith('INVITE ')){client.close(1008,'Incoming calls are not enabled');return;}
+    if(text.startsWith('INVITE ')){
+     const sipId=/^Call-ID:\s*(\S+)/im.exec(text)?.[1],number=/^From:\s*.*<sip:([^@>]+)@/im.exec(text)?.[1];
+     if(current.incomingId===sipId&&current.calling){if(client.readyState===1)client.send(text);return;}
+     const reject=()=>{if(upstream.readyState!==1)return;const headers=['Via','From','To','Call-ID','CSeq'].map(h=>text.match(new RegExp('^'+h+':[^\\r\\n]*','im'))?.[0]);if(headers.every(Boolean))upstream.send('SIP/2.0 486 Busy Here\r\n'+headers.map(h=>h.startsWith('To:')&&!/;tag=/i.test(h)?h+';tag=crm-rejected':h).join('\r\n')+'\r\nContent-Length: 0\r\n\r\n');};
+     if(current.incomingPending===sipId)return;
+     if(current.calling||current.incomingPending||current.grant&&Date.now()<current.grant.expires){reject();return;}
+     current.incomingPending=sipId;
+     void incoming(lease.actor,number,sipId).then(call=>{
+      if(current.incomingPending!==sipId||client.readyState!==1)return;
+      current.incomingPending=null;if(!call){reject();return;}
+      current.incomingId=sipId;current.call=call;current.calling=true;client.send(text);
+     }).catch(()=>{current.incomingPending=null;reject();});return;
+    }
+    if(text.startsWith('CANCEL ')){current.incomingPending=null;current.calling=false;if(current.call){current.call.status='cancelled';current.call.endedAt=new Date().toISOString();}}
     if(/^SIP\/2\.0 200 /m.test(text)&&/^CSeq:\s*\d+ REGISTER/im.test(text))current.registered=/^Contact:/im.test(text)&&!/^Contact:.*expires=0\b/im.test(text);
     if(current.call&&/^CSeq:\s*\d+ INVITE/im.test(text)){
      const code=Number(/^SIP\/2\.0 (\d+)/.exec(text)?.[1]);
@@ -122,7 +137,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
     mutating.add(b.actor);const epoch=generation;try{
      const credentials=await operators.prepare(b.actor,b.owner);
      if(epoch!==generation||!connected())throw fail('Нет соединения с Oktell',503);
-     lease={owner:b.owner,credentials,expires:Date.now()+90000,token:crypto.randomBytes(32).toString('hex'),tokenExpires:Date.now()+30000,registered:false,calling:false};
+     lease={actor:b.actor,owner:b.owner,credentials,expires:Date.now()+90000,token:crypto.randomBytes(32).toString('hex'),tokenExpires:Date.now()+30000,registered:false,calling:false};
      leases.set(b.actor,lease);
      res.end(JSON.stringify({...credentials,token:lease.token,...state(b.actor)}));
     }finally{mutating.delete(b.actor);}
@@ -132,7 +147,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
     if(b.action==='disconnect'){await close(b.actor);res.end(JSON.stringify(state(b.actor)));return;}
     lease.expires=Date.now()+90000;
     if(b.action==='authorize'){
-     if(!lease.registered||lease.calling||(lease.grant&&Date.now()<lease.grant.expires))throw fail('Телефон не готов к новому вызову');
+     if(!lease.registered||lease.calling||lease.incomingPending||(lease.grant&&Date.now()<lease.grant.expires))throw fail('Телефон не готов к новому вызову');
      if(!/^7\d{10}$/.test(b.destination||'')||!/^[a-f0-9]{32}$/.test(b.callId||''))throw fail('Недопустимый номер клиента',403);
      lease.grant={callId:b.callId,destination:b.destination,expires:Date.now()+45000};
     }
@@ -140,7 +155,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
    }
   }catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}
  }
- return {handle,server,deploymentState:()=>({busy:mutating.size>0||[...leases.values()].some(l=>l.calling||l.grant&&Date.now()<l.grant.expires)}),disconnected:()=>{generation++;for(const lease of leases.values()){lease.client?.close();lease.upstream?.close();}leases.clear();},stop:async()=>{clearInterval(timer);await Promise.all([...leases.keys()].map(close));server.close();}};
+ return {handle,server,deploymentState:()=>({busy:mutating.size>0||[...leases.values()].some(l=>l.calling||l.incomingPending||l.grant&&Date.now()<l.grant.expires)}),disconnected:()=>{generation++;for(const lease of leases.values()){lease.client?.close();lease.upstream?.close();}leases.clear();},stop:async()=>{clearInterval(timer);await Promise.all([...leases.keys()].map(close));server.close();}};
 };
 module.exports.allowedSip=allowedSip;
 

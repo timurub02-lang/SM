@@ -1,0 +1,32 @@
+'use strict';
+const assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
+const make=require('./pilot-control.cjs');
+const operators=[{actor:'E-one',userid:randomUUID()},{actor:'E-two',userid:randomUUID()}];
+const config={taskId:randomUUID(),operators,contacts:[1,2,3].map(n=>({phone:'7999000000'+n,clientId:'C-test'+n})),results:['Заказ','Перезвон','Отказ']};
+const sent=[],identity=actor=>({userid:operators.find(o=>o.actor===actor)?.userid,userlogin:actor});
+const p=make({file:':memory:',load:()=>config,identity,connected:()=>true,send:(m,a)=>sent.push([m,a])});
+const emit=(method,o,fields)=>p.event(method,{qid:randomUUID(),...identity(o),...fields});
+const ring=(actor,phone,taskid=config.taskId)=>{const chainid=randomUUID();emit('phoneevent_ringstarted',actor,{istask:true,taskid,chainid,callerid:phone});return chainid;};
+async function main(){
+ ring('E-one','79990000004');ring('E-one',config.contacts[0].phone,randomUUID());assert.equal(p.read('E-one').current,null);
+ const chain=ring('E-one',config.contacts[0].phone),other=ring('E-two',config.contacts[1].phone);
+ assert.equal((await p.incoming('E-one',config.contacts[0].phone,'sip-one')).chain,chain);
+ assert.equal((await p.incoming('E-two',config.contacts[1].phone,'sip-two')).chain,other);
+ assert.throws(()=>p.read('E-other'),/доступ/);
+ const commutationid=randomUUID();emit('phoneevent_commstarted','E-one',{istask:true,taskid:config.taskId,chainid:chain,callerid:config.contacts[0].phone,commutationid});
+ emit('phoneevent_commstopped','E-one',{chainid:chain,commutationid});
+ const idshow=randomUUID();emit('dlgcard_showformstop','E-one',{idshow,userresults:[{id:1028,name:'Отказ',issuccess:false}]});
+ const result={id:randomUUID(),chain,outcome:'Перезвон',comment:'Synthetic callback',callbackAt:new Date(Date.now()+3600000).toISOString()};
+ assert.throws(()=>p.result('E-two',result));
+ assert.throws(()=>p.result('E-one',{...result,callbackAt:'2000-01-01T00:00:00Z'}));
+ assert.equal(p.result('E-one',result).state,'sent');assert.equal(p.result('E-one',result).state,'sent');
+ const commands=sent.filter(x=>x[0]==='dlgcard_setstopformresult');assert.equal(commands.length,1);assert.equal(commands[0][1].nextcalltype,'numberafter');assert.equal(commands[0][1].userid,operators[0].userid);assert.equal(commands[0][1].userresult,null);
+ assert.throws(()=>p.result('E-one',{...result,comment:'different'}));
+ emit('dlgcard_closeall','E-two',{});assert.equal(p.read('E-one').current.command_state,'sent');
+ emit('dlgcard_closeall','E-one',{});assert.equal(p.read('E-one').current.command_state,'confirmed');
+ assert.equal(p.result('E-one',result).state,'confirmed');
+ assert.equal(p.read('E-two').current.chain,other);
+ assert.equal(sent.some(([m])=>/call|activity/.test(m)&&m!=='dlgcard_setstopformresult'),false);
+ p.close();console.log('PASS: native pilot isolation, incoming correlation, callbacks, idempotent result, separate operators, no dial commands');
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});

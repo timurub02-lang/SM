@@ -33,21 +33,37 @@ wss.on('connection',ws=>{
   else if(method==='getavailableforms')send('availableforms',{qid:args.qid,forms:[]});
   else if(method==='getactiveusers')send('activeusers',{qid:args.qid,users:operators.activeUsers()});
   else if(method==='iam')hello={type:args.type,name:args.name,version:args.version,build:args.build};
+  pilot.event(method,args);
   const match=pending.get(args.qid);if(match&&(method===match.method+'result'||(match.method==='setuserstate'&&method==='userstatechanged')||(match.method==='whoareyou'&&method==='iam')||(match.method==='ping'&&method==='pong'))){clearTimeout(match.timeout);pending.delete(args.qid);match.resolve({method,...args});}
  }catch{console.log('{"event":"invalid_message"}');}});
  ws.on('error',()=>{});
- ws.on('close',()=>{if(peer===ws){peer=null;hello=null;operators.disconnected();browserPhone.disconnected();for(const p of pending.values()){clearTimeout(p.timeout);p.reject(Error('Connection lost; result unknown'))}pending.clear();console.log('{"event":"disconnected"}')}});
+ ws.on('close',()=>{if(peer===ws){peer=null;hello=null;operators.disconnected();browserPhone.disconnected();pilot.disconnected();for(const p of pending.values()){clearTimeout(p.timeout);p.reject(Error('Connection lost; result unknown'))}pending.clear();console.log('{"event":"disconnected"}')}});
  setTimeout(()=>{if(peer===ws)request('whoareyou',{type:'crm-server',name:'SM CRM isolated pilot',version:1}).catch(()=>ws.close());},500);
 });
 server.listen(Number(process.env.BRIDGE_PORT||3305),'127.0.0.1');
 const tasks=require('./task-control.cjs')({request,connected:()=>publicState().connected,enabled:()=>cfg.testControl===true,file:process.env.BRIDGE_JOURNAL||'/var/lib/sm-oktell-bridge/commands.sqlite'});
 const operators=require('./linked-operators.cjs')({request,connected:()=>publicState().connected});
-const browserPhone=require('./browser-phone.cjs')({operators,connected:()=>publicState().connected});
+const pilot=require('./pilot-control.cjs')({send,request,connected:()=>publicState().connected,identity:operators.identity,file:process.env.BRIDGE_PILOT_JOURNAL||(process.env.BRIDGE_JOURNAL?process.env.BRIDGE_JOURNAL+'.pilot':'/var/lib/sm-oktell-bridge/pilot.sqlite')});
+const browserOperators={...operators,prepare:async(actor,owner)=>{
+ const credentials=await operators.prepare(actor,owner);
+ try{if(pilot.configured(actor))await request('dlgcard_setsupported',{...operators.identity(actor),supported:true});return credentials;}
+ catch(e){await operators.release(actor,owner);throw e;}
+}};
+const browserPhone=require('./browser-phone.cjs')({operators:browserOperators,connected:()=>publicState().connected,incoming:pilot.incoming});
 const control=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
  if(req.method==='GET'&&req.url==='/status'){res.end(JSON.stringify(publicState()));return;}
- if(req.method==='GET'&&req.url==='/deployment-state'){res.end(JSON.stringify(browserPhone.deploymentState()));return;}
+ if(req.method==='GET'&&req.url==='/deployment-state'){res.end(JSON.stringify({busy:browserPhone.deploymentState().busy||pilot.busy()}));return;}
+ if(req.method==='GET'&&req.url==='/pilot-history'){res.end(JSON.stringify(pilot.history()));return;}
  if(req.url?.startsWith('/browser-phone')){await browserPhone.handle(req,res);return;}
+ if(req.url?.startsWith('/pilot')){
+  try{const url=new URL(req.url,'http://localhost');if(url.pathname!=='/pilot')throw Object.assign(Error('Not found'),{status:404});
+   const actor=url.searchParams.get('actor');if(req.method==='GET'){res.end(JSON.stringify(pilot.read(actor)));return;}
+   if(req.method!=='POST')throw Object.assign(Error('Method not allowed'),{status:405});
+   let raw='';for await(const chunk of req){raw+=chunk;if(Buffer.byteLength(raw)>8192)throw Object.assign(Error('Payload too large'),{status:413});}
+   res.end(JSON.stringify(pilot.result(actor,JSON.parse(raw))));
+  }catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}return;
+ }
  if(req.url?.startsWith('/operator')){
   try{
    const url=new URL(req.url,'http://localhost');

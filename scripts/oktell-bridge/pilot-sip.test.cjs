@@ -1,0 +1,26 @@
+'use strict';
+const assert=require('node:assert/strict'),http=require('node:http'),{once}=require('node:events');
+const {WebSocket,WebSocketServer}=require('ws'),make=require('./browser-phone.cjs');
+const upstream=new WebSocketServer({port:0,host:'127.0.0.1'});let phone,control,client,native,release;
+const owner='a'.repeat(64),credentials={username:'test',domain:'example.invalid'};
+const invite=(id,number='79990000001')=>`INVITE sip:test@example.invalid SIP/2.0\r\nVia: SIP/2.0/WS example.invalid;branch=z9hG4bK${id}\r\nFrom: <sip:${number}@example.invalid>;tag=x\r\nTo: <sip:test@example.invalid>\r\nCall-ID: ${id}\r\nCSeq: 1 INVITE\r\nContent-Length: 0\r\n\r\n`;
+(async()=>{try{
+ await once(upstream,'listening');
+ phone=make({listen:false,operators:{validate(){},prepare:async()=>credentials,release:async()=>{}},connected:()=>true,upstreamUrl:'ws://127.0.0.1:'+upstream.address().port,incoming:async(actor,number,id)=>{assert.equal(actor,'E-test');if(number!=='79990000001')return null;await new Promise(r=>release=r);return {id:'b'.repeat(32),direction:'incoming',status:'ringing'};}});
+ phone.server.listen(0,'127.0.0.1');await once(phone.server,'listening');control=http.createServer(phone.handle);control.listen(0,'127.0.0.1');await once(control,'listening');
+ const base='http://127.0.0.1:'+control.address().port;
+ const cmd=async(action,extra={})=>fetch(base,{method:'POST',body:JSON.stringify({actor:'E-test',owner,action,...extra})});
+ const config=await (await cmd('connect')).json(),connected=once(upstream,'connection');
+ client=new WebSocket('ws://127.0.0.1:'+phone.server.address().port+'/?token='+config.token,'sip',{origin:'https://crm.smanalytics.ru'});await once(client,'open');[native]=await connected;
+ let reply=once(native,'message');native.send(invite('blocked','79990000002'));assert.match((await reply)[0].toString(),/^SIP\/2.0 486/);
+ const received=once(client,'message');native.send(invite('accepted'));
+ for(let n=0;n<50&&!release;n++)await new Promise(r=>setTimeout(r,10));assert.ok(release);assert.equal(phone.deploymentState().busy,true);
+ assert.equal((await cmd('authorize',{destination:'79990000001',callId:'c'.repeat(32)})).status,409);
+ release();assert.match((await received)[0].toString(),/^INVITE/);
+ reply=once(native,'message');client.send('SIP/2.0 200 OK\r\nCall-ID: accepted\r\nCSeq: 1 INVITE\r\nContent-Length: 0\r\n\r\n');await reply;
+ assert.equal((await (await cmd('heartbeat')).json()).call.status,'connected');
+ const bye=once(client,'message');native.send('BYE sip:test@example.invalid SIP/2.0\r\nCall-ID: accepted\r\nContent-Length: 0\r\n\r\n');await bye;
+ assert.equal(phone.deploymentState().busy,false);assert.equal((await (await cmd('heartbeat')).json()).call.status,'ended');
+ console.log('PASS: isolated native SIP incoming gate, rejection, pending mutex, answer, hangup; no external calls');
+ }finally{client?.terminate();native?.terminate();await phone?.stop();control?.close();upstream.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});
