@@ -37,9 +37,9 @@ def idle():
     class Unix(http.client.HTTPConnection):
         def connect(self):
             self.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.sock.settimeout(5);self.sock.connect('/run/sm-oktell-bridge/control.sock')
-    conn=Unix('localhost');conn.request('GET','/browser-phone');response=conn.getresponse();state=json.loads(response.read());conn.close()
-    if response.status!=200:raise RuntimeError('Cannot verify phone state')
-    return not busy and not state.get('calling')
+    conn=Unix('localhost');conn.request('GET','/deployment-state');response=conn.getresponse();state=json.loads(response.read());conn.close()
+    if response.status!=200 or not isinstance(state,dict) or type(state.get('busy')) is not bool:raise RuntimeError('Cannot verify phone state')
+    return not busy and not state['busy']
 
 def healthy():
     for _ in range(30):

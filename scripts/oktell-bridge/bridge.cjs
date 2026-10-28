@@ -46,6 +46,7 @@ const browserPhone=require('./browser-phone.cjs')({operators,connected:()=>publi
 const control=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
  if(req.method==='GET'&&req.url==='/status'){res.end(JSON.stringify(publicState()));return;}
+ if(req.method==='GET'&&req.url==='/deployment-state'){res.end(JSON.stringify(browserPhone.deploymentState()));return;}
  if(req.url?.startsWith('/browser-phone')){await browserPhone.handle(req,res);return;}
  if(req.url?.startsWith('/operator')){
   try{

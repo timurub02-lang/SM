@@ -26,3 +26,5 @@ rm /srv/crm/deploy-paused
 Choose rollback names exactly from `history` in the state file. A manual rollback pauses automatic deployment so the next check cannot immediately undo it. During the initial migration the legacy source trees and Git metadata are archived outside `releases`; they are recovery material, not installed builds. The current source and recovered Git history are also saved on the administrator's workstation.
 
 The installer and systemd units are installed by an administrator. A repository update does not replace root-owned deployment tooling automatically. Changes to this tooling must be reviewed and installed separately.
+
+The installer reads `/deployment-state` on the private Oktell bridge socket. Its `busy` flag covers all browser sessions, including pending connection changes and unexpired call grants. Install the matching bridge and installer together; a missing or malformed aggregate response stops deployment. These files require separate installation; the CRM runtime release does not update them.
