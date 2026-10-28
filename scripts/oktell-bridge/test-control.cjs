@@ -23,4 +23,3 @@ const create=()=>require('./task-control.cjs')({request,connected:()=>!offline,e
  offline=true;await assert.rejects(()=>c.read(),/Нет соединения/);
  console.log('PASS control: exact scope, state revision, two operators, confirmation, unsafe guard, safe stop, persistent dedupe, uncertain outcome, disconnect');
  }finally{fs.rmSync(dir,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1});
-

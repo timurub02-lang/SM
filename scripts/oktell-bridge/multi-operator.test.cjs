@@ -25,6 +25,8 @@ let phone,control;
  const results=await Promise.all(Array.from({length:100},(_,i)=>command(i,'connect')));
  assert.ok(results.every(r=>r.status===200));assert.equal(operators.activeUsers().length,100);
  assert.equal(new Set(results.map(r=>r.data.token)).size,100);
+ assert.equal((await state(0)).data.password,undefined);
+ assert.equal((await state(0)).data.token,undefined);
  assert.deepEqual(results.map(r=>r.data.username),Array.from({length:100},(_,i)=>'test'+i));
  assert.equal((await command(0,'connect')).status,409);
  assert.equal((await command(0,'disconnect',{owner:owner(1)})).status,409);
@@ -60,6 +62,12 @@ let phone,control;
  assert.equal((await connecting).status,503);assert.equal((await state(0)).data.prepared,false);
  assert.equal(operators.activeUsers().length,0);
  assert.equal((await command(0,'connect')).status,200);
+ // Expiration cleans up one lease while a later lease stays registered independently.
+ const realNow=Date.now;
+ try{Date.now=()=>realNow()+100000;assert.equal((await command(1,'connect')).status,200);
+  for(let n=0;n<120&&(await state(0)).data.prepared;n++)await delay(100);
+  assert.equal((await state(0)).data.prepared,false);assert.equal((await state(1)).data.prepared,true);
+ }finally{Date.now=realNow;}
  assert.equal(requests.some(r=>/call|dial|invite/i.test(r.method)),false);
  console.log('PASS: 100 isolated operator logins, WebSockets, registrations and grants; ownership, mapping changes, revocation and disconnect race. No real PBX or calls.');
 }finally{

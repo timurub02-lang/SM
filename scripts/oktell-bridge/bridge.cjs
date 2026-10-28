@@ -90,4 +90,3 @@ const control=http.createServer(async(req,res)=>{
 const socket=process.env.BRIDGE_SOCKET||'/run/sm-oktell-bridge/control.sock';if(fs.existsSync(socket))fs.unlinkSync(socket);
 control.listen(socket,()=>fs.chmodSync(socket,0o660));
 setInterval(()=>{if(peer)request('ping').catch(()=>peer?.close())},30000).unref();
-

@@ -9,8 +9,8 @@ module.exports=function({request,connected,load=()=>{
  const controls=new Map();
  function identityFor(actor){
   const links=load(),identity=Object.hasOwn(links,actor)?links[actor]:null;
-  if(!identity||!/^E-[a-zA-Z0-9-]+$/.test(actor)||!/^[-0-9a-f]{36}$/i.test(identity.userid)||!/^[-A-Za-z0-9_.@]{1,50}$/.test(identity.userlogin))throw fail('Учётная запись Oktell ещё не подключена для этого сотрудника');
-  if(Object.entries(links).some(([id,x])=>id!==actor&&(x.userid===identity.userid||x.userlogin.toLowerCase()===identity.userlogin.toLowerCase())))throw fail('Учётная запись Oktell назначена нескольким сотрудникам');
+  if(!identity||!/^E-[a-zA-Z0-9-]+$/.test(actor)||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.userid)||!/^[-A-Za-z0-9_.@]{1,50}$/.test(identity.userlogin))throw fail('Учётная запись Oktell ещё не подключена для этого сотрудника');
+  if(Object.entries(links).some(([id,x])=>id!==actor&&(String(x?.userid).toLowerCase()===identity.userid.toLowerCase()||String(x?.userlogin).toLowerCase()===identity.userlogin.toLowerCase())))throw fail('Учётная запись Oktell назначена нескольким сотрудникам');
   return {userid:identity.userid,userlogin:identity.userlogin};
  }
  function get(actor){
