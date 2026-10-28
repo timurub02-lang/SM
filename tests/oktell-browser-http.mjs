@@ -10,12 +10,12 @@ import {authSchema} from '../lib/auth-schema.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'oktell-browser-test-')),db=new DatabaseSync(join(dir,'test.sqlite'));
 const id='E-43a21d76-351',port=process.env.PREVIEW?'3337':'3097',origin=process.env.PREVIEW?'http://127.0.0.1:3337':'https://crm.test',base=`http://127.0.0.1:${port}`,socket=join(dir,'control.sock');
-let server,logs='',owner='',call=null,connected=false;const commands=[];
-const bridge=http.createServer(async(req,res)=>{let body='';for await(const x of req)body+=x;res.setHeader('Content-Type','application/json');if(req.url.startsWith('/operator')){res.end(JSON.stringify({state:'offline',checkedAt:new Date().toISOString(),hasLine:false,busy:false,login:'preview'}));return;}if(!body){res.end(JSON.stringify({connected:true,prepared:connected,registered:connected}));return;}const b=JSON.parse(body);commands.push(b);if(owner&&owner!==b.owner){res.writeHead(409).end(JSON.stringify({error:'Телефон уже подключён в другой вкладке'}));return;}if(b.action==='connect'){owner=b.owner;connected=true;}if(b.action==='disconnect'){owner='';connected=false;}if(b.action==='authorize')assert.match(b.destination,/^7\d{10}$/);res.end(JSON.stringify({username:'fixture',authorizationUsername:'fixture',password:'fixture',domain:'example.invalid',token:'fixture',connected:true,prepared:connected,registered:connected,call}));});
+let server,logs='',owner='',call=null,connected=false;const commands=[],leases=new Map();
+const bridge=http.createServer(async(req,res)=>{let body='';for await(const x of req)body+=x;res.setHeader('Content-Type','application/json');if(req.url.startsWith('/operator')){res.end(JSON.stringify({state:'offline',checkedAt:new Date().toISOString(),hasLine:false,busy:false,login:'preview'}));return;}if(!body){const actor=new URL(req.url,'http://localhost').searchParams.get('actor');res.end(JSON.stringify({connected:true,prepared:!!leases.get(actor)?.connected,registered:!!leases.get(actor)?.connected}));return;}const b=JSON.parse(body);({owner='',connected=false}=leases.get(b.actor)||{});commands.push(b);if(owner&&owner!==b.owner){res.writeHead(409).end(JSON.stringify({error:'Телефон уже подключён в другой вкладке'}));return;}if(b.action==='connect'){owner=b.owner;connected=true;}if(b.action==='disconnect'){owner='';connected=false;}leases.set(b.actor,{owner,connected});if(b.action==='authorize')assert.match(b.destination,/^7\d{10}$/);res.end(JSON.stringify({username:'fixture',authorizationUsername:'fixture',password:'fixture',domain:'example.invalid',token:'fixture',connected:true,prepared:connected,registered:connected,call}));});
 try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of authSchema)db.exec(sql);
  const hash=await hashPassword('synthetic-browser-preview-2026');
- for(const [who,role] of [[id,'operator'],['other','operator'],['admin','admin']]){db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(who,JSON.stringify({id:who,login:who===id?'irina':who,name:who===id?'Ирина · проверка интерфейса':who,alias:'',skLogin:'',role,department:'1',salary:0,bonus:0}));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(who,hash);}
+ for(const [who,role] of [[id,'operator'],['other','operator'],['admin','admin'],['E-second','operator']]){db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(who,JSON.stringify({id:who,login:who===id?'irina':who,name:who===id?'Ирина · проверка интерфейса':who,alias:'',skLogin:'',role,department:'1',salary:0,bonus:0,oktell:(who===id||who==='E-second')?{requested:true,status:'linked',userId:'00000000-0000-4000-8000-000000000001',login:'fixture'}:undefined}));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(who,hash);}
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:30}));db.prepare('INSERT INTO settings VALUES(?,?)').run('oktell-browser-test',JSON.stringify({clientId:'test-card'}));
  const c={id:'test-card',name:'Тест связи Oktell',phone:'+79990000007',city:'',address:'',source:'Тест Oktell',owner:id,baseType:'M',sheet:'К',assignedUntil:new Date(Date.now()+86400000).toISOString(),assignmentStartedAt:new Date().toISOString(),trialUntil:new Date(Date.now()+86400000).toISOString(),createdAt:new Date().toISOString(),version:1};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));
  await new Promise(r=>bridge.listen(socket,r));
@@ -23,7 +23,7 @@ try{
  const address=process.env.PREVIEW?'http://10.20.0.10:'+port:base;
  let ready=false;for(let i=0;i<150;i++){try{await fetch(address+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}assert.ok(ready,logs);
  async function req(path,body,cookie='',extra={}){const r=await fetch(address+path,{method:body?'POST':'GET',headers:{Cookie:cookie,Origin:origin,'Content-Type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
- const cookies={};for(const who of ['irina','other','admin']){const r=await req('/api/auth/login',{login:who,password:'synthetic-browser-preview-2026'});assert.equal(r.status,200);cookies[who]=r.cookie;}
+ const cookies={};for(const who of ['irina','other','admin','E-second']){const r=await req('/api/auth/login',{login:who,password:'synthetic-browser-preview-2026'});assert.equal(r.status,200);cookies[who]=r.cookie;}
  const closeCalls=()=>db.prepare("UPDATE phone_calls SET status='cancelled',ended_at=? WHERE ended_at IS NULL").run(new Date().toISOString());
  const tab=crypto.randomUUID();
  assert.equal((await req('/api/oktell-phone')).status,403);
@@ -31,6 +31,15 @@ try{
  assert.equal((await req('/api/oktell-phone',{action:'connect',tab},cookies.irina,{Origin:'https://evil.invalid'})).status,403);assert.equal(commands.length,0);
  assert.equal((await req('/api/oktell-phone',{action:'connect',tab},cookies.irina)).status,200);
  assert.equal((await req('/api/oktell-phone',{action:'connect',tab:crypto.randomUUID()},cookies.irina)).status,409);
+ const secondTab=crypto.randomUUID();
+ assert.equal((await req('/api/oktell-phone',{action:'connect',tab:secondTab},cookies['E-second'])).status,200);
+ assert.equal(commands.at(-1).actor,'E-second');
+ assert.equal((await req('/api/oktell-phone',{action:'disconnect',tab:secondTab},cookies['E-second'])).status,200);
+ assert.equal((await req('/api/oktell-phone',null,cookies.irina)).data.prepared,true);
+ assert.equal((await req('/api/oktell-phone',null,cookies['E-second'])).data.prepared,false);
+ assert.equal((await req('/api/oktell-phone',{action:'heartbeat',tab:secondTab,actor:id},cookies['E-second'])).status,400);
+ db.prepare("UPDATE employees SET data=json_set(data,'$.oktell.status','pending') WHERE id=?").run('E-second');
+ assert.equal((await req('/api/oktell-phone',null,cookies['E-second'])).status,403);
  function addCard(clientId,phone,owner=id){const card={...c,id:clientId,phone,owner,name:'Synthetic '+clientId,linkedPhones:clientId==='new-card'?['+79990000002']:[]};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(clientId,phone,JSON.stringify(card));}
  addCard('existing-card','8 (999) 000-00-01');addCard('foreign-card','+79990000003','other');
  for(const clientId of ['test-card','existing-card']){

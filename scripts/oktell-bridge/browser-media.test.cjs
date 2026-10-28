@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict');
+const {publishBrowserMedia}=require('./browser-phone.cjs');
+const sdp=['v=0','o=- 1 1 IN IP4 10.21.103.2','s=Oktell','c=IN IP4 10.21.103.2','t=0 0','m=audio 20018 UDP/TLS/RTP/SAVPF 0 110','a=ice-ufrag:fixture','a=ice-pwd:fixture-not-a-real-key','a=fingerprint:sha-256 AA:BB:CC','a=setup:passive','a=candidate:586275962 1 UDP 2113929727 10.21.103.2 20018 typ host generation 0','a=rtcp-mux','a=rtpmap:0 PCMU/8000',''].join('\r\n');
+const packet='SIP/2.0 200 OK\r\nVia: SIP/2.0/WSS browser.invalid;branch=z9hG4bKtest\r\nCSeq: 1 INVITE\r\nContent-Type: application/sdp\r\nContent-Length: '+Buffer.byteLength(sdp)+'\r\n\r\n'+sdp;
+const result=publishBrowserMedia(packet),body=result.split('\r\n\r\n')[1];
+assert.notEqual(result,packet);
+assert.match(body,/c=IN IP4 185\.162\.93\.10\r\n/);
+assert.match(body,/185\.162\.93\.10 20018 typ srflx raddr 10\.21\.103\.2 rport 20018 generation 0/);
+assert.equal(Number(/^Content-Length:\s*(\d+)/im.exec(result)[1]),Buffer.byteLength(body));
+for(const key of ['ice-ufrag','ice-pwd','fingerprint','setup','rtcp-mux','rtpmap'])assert.equal(body.split('\r\n').find(x=>x.startsWith('a='+key)),sdp.split('\r\n').find(x=>x.startsWith('a='+key)));
+assert.equal(publishBrowserMedia(result),result);
+for(const p of [packet.replaceAll('20018','10018'),packet.replaceAll('10.21.103.2','10.21.104.2'),packet.replace('1 INVITE','1 REGISTER'),packet.replace('application/sdp','text/plain'),packet.replace('UDP/TLS/RTP/SAVPF','RTP/AVP')])assert.equal(publishBrowserMedia(p),p);
+console.log('PASS: browser SDP publishes mapped audio endpoint only; ICE/DTLS/codecs retained; length corrected; idempotent; unrelated traffic unchanged');

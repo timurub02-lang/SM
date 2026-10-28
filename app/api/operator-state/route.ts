@@ -1,3 +1,4 @@
+import {hasOktellLink} from '@/lib/oktell-link';
 import http from 'node:http';
 import {z} from 'zod';
 import {authenticated} from '@/lib/api-auth';
@@ -6,7 +7,7 @@ export const dynamic='force-dynamic';
 const input=z.object({action:z.enum(['ready','break','finish']),reason:z.enum(['Обед','Короткий перерыв']).optional()});
 async function handle(req:Request){
  const actor=(await getChatGPTUser())?.employee;
- if(!actor||actor.role!=='operator'||actor.id!=='E-43a21d76-351')return Response.json({error:'Учётная запись Oktell ещё не подключена для этого сотрудника'},{status:403});
+ if(!actor||!hasOktellLink(actor))return Response.json({error:'Учётная запись Oktell ещё не подключена для этого сотрудника'},{status:403});
  try{
   const body=req.method==='POST'?{...input.parse(await req.json()),actor:actor.id}:undefined;
   return await new Promise<Response>((resolve,reject)=>{

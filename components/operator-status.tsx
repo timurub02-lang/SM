@@ -18,7 +18,7 @@ export default function OperatorStatus({actorId}:{actorId:string}){
   catch(e){setStatus(null);setError(e instanceof Error?e.message:'Команда не подтверждена');}
   finally{sending.current=false;setWorking(false);}
  }
- const connectedEmployee=actorId==='E-43a21d76-351';
+ const connectedEmployee=!!native;
  const disabled=!connectedEmployee||working||status?.busy||native?.busy;
  return <section className="operator-workspace" aria-labelledby="operator-status-title">
   <div className="operator-workspace-top">

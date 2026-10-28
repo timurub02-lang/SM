@@ -11,8 +11,8 @@ import {hashPassword} from '../lib/auth-crypto.ts';
 
 const dir=mkdtempSync(join(tmpdir(),'oktell-reset-')),file=join(dir,'test.sqlite');
 const db=new DatabaseSync(file),origin='https://crm.test',base='http://127.0.0.1:3326';
-const sock=join(dir,'bridge.sock');let server,logs='',bridgeRequests=0,lastBody; const actor='E-43a21d76-351';
-const bridge=http.createServer((req,res)=>{bridgeRequests++;let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{lastBody=raw?JSON.parse(raw):null;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({state:'break',checkedAt:new Date().toISOString()}));});});
+const sock=join(dir,'bridge.sock');let server,logs='',bridgeRequests=0,lastBody,lastUrl; const actor='E-43a21d76-351';
+const bridge=http.createServer((req,res)=>{bridgeRequests++;lastUrl=req.url;let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{lastBody=raw?JSON.parse(raw):null;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({state:'break',checkedAt:new Date().toISOString()}));});});
 await new Promise(r=>bridge.listen(sock,r));
 async function boot(){
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{PATH:process.env.PATH,CRM_RUNTIME:'miran',OKTELL_CONTROL_SOCKET:sock,CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:'3326'},stdio:['ignore','pipe','pipe']});
@@ -28,15 +28,15 @@ async function call(path,cookie,body){
 try{
  db.exec(readFileSync('drizzle/0000_cynical_monster_badoon.sql','utf8'));for(const sql of authSchema)db.exec(sql);
  const hash=await hashPassword('synthetic-reset-only-2026');
- for(const [id,role] of [['admin','admin'],['head','department_head'],['operator','operator'],['tester','operator'],[actor,'operator']]){
-  db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify({id,login:id===actor?'SKP_Solomatina.Irina':id,name:'Тестовый сотрудник',alias:'',skLogin:'',role,department:'1',salary:0,bonus:0}));
+ for(const [id,role] of [['admin','admin'],['head','department_head'],['operator','operator'],['tester','operator'],[actor,'operator'],['E-second','operator']]){
+  db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify({id,login:id===actor?'SKP_Solomatina.Irina':id,name:'Тестовый сотрудник',alias:'',skLogin:'',role,department:'1',salary:0,bonus:0,oktell:(id===actor||id==='E-second')?{requested:true,status:'linked',userId:'00000000-0000-4000-8000-000000000001',login:'fixture'}:undefined}));
   db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
  }
  db.prepare('INSERT INTO auth_test_accounts VALUES(?)').run('tester');
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:30}));
  await boot();
  const cookies={};
- for(const id of ['admin','head','operator','tester',actor]){
+ for(const id of ['admin','head','operator','tester',actor,'E-second']){
   const r=await call('/api/auth/login',null,{login:id===actor?'SKP_Solomatina.Irina':id,password:'synthetic-reset-only-2026'});assert.equal(r.status,200);cookies[id]=r.headers.get('set-cookie').split(';')[0];
  }
  assert.equal((await call('/oktell-pilot')).status,307);
@@ -50,6 +50,12 @@ try{
  assert.deepEqual(lastBody,{actor,action:'break',reason:'Обед'});
  db.prepare("UPDATE employees SET data=json_set(data,'$.login',?) WHERE id=?").run('SKP_Ira.Salomatina_5.19',actor);
  assert.equal((await call('/api/operator-state',cookies[actor])).status,200,'Stable employee ID survives CRM login changes');
+ assert.equal((await call('/api/operator-state',cookies['E-second'])).status,200);
+ assert.equal(lastUrl,'/operator?actor=E-second');
+ assert.equal((await call('/api/operator-state',cookies['E-second'],{action:'break',reason:'Обед',actor})).status,200);
+ assert.equal(lastBody.actor,'E-second');
+ db.prepare("UPDATE employees SET data=json_set(data,'$.oktell.requested',json('false')) WHERE id=?").run('E-second');
+ assert.equal((await call('/api/operator-state',cookies['E-second'])).status,403);
  const count=bridgeRequests;
  assert.equal((await call('/api/operator-state',cookies[actor],{action:'ready',actorId:'operator'})).status,403);
  assert.equal((await call('/api/operator-state',cookies[actor],{action:'fake'})).status,400);
