@@ -27,6 +27,9 @@ try{
  const closeCalls=()=>db.prepare("UPDATE phone_calls SET status='cancelled',ended_at=? WHERE ended_at IS NULL").run(new Date().toISOString());
  const tab=crypto.randomUUID();
  assert.equal((await req('/api/oktell-phone')).status,403);
+ assert.equal((await req('/api/oktell-pilot',{action:'sync'},'')).status,403);
+ assert.equal((await req('/api/oktell-pilot',{action:'sync'},cookies.admin)).status,403);
+ assert.equal((await req('/api/oktell-pilot',{action:'sync'},cookies.irina,{Origin:'https://evil.invalid'})).status,403);
  for(const who of ['other','admin'])assert.equal((await req('/api/oktell-phone',null,cookies[who])).status,403);
  assert.equal((await req('/api/oktell-phone',{action:'connect',tab},cookies.irina,{Origin:'https://evil.invalid'})).status,403);assert.equal(commands.length,0);
  assert.equal((await req('/api/oktell-phone',{action:'connect',tab},cookies.irina)).status,200);

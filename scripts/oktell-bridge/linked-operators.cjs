@@ -20,7 +20,7 @@ module.exports=function({request,connected,load=()=>{
   return controls.get(actor).control;
  }
  return {
-  validate:actor=>{get(actor);},
+  validate:actor=>{get(actor);},identity:identityFor,
   prepare:(actor,owner)=>get(actor).prepare(actor,owner),
   // A removed or changed mapping must still allow its existing session to log out.
   release:(actor,owner)=>(controls.get(actor)?.control||get(actor)).release(actor,owner),
