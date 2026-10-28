@@ -5,7 +5,7 @@ import {createPortal} from 'react-dom';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
 import {toast} from 'sonner';
 import {PhoneNumbers} from './phone-numbers';
-import {OktellPhone,useOktellPhone,OKTELL_ACTOR} from './oktell-phone';
+import {OktellPhone,useOktellPhone} from './oktell-phone';
 import {setCallMicrophoneMuted} from '@/lib/call-microphone';
 import type {SimpleUser} from 'sip.js/lib/platform/web';
 
@@ -80,5 +80,5 @@ export function TelephonySettings(){
  return <div className="stack"><p>Звонки прямо из CRM через новую АТС и Билайн.</p><p>Транк: 25 одновременных вызовов, до 5 новых вызовов в секунду.</p><p className="notice">Рабочий режим: сотрудники звонят клиентам из доступных им карточек. До 25 одновременных звонков. Максимальная длительность разговора — 30 минут.</p>{error&&<p role="alert">{error}</p>}{!config&&!error&&<p>Проверка подключения…</p>}{config&&<>{!config.configured?<p>Подключение ещё готовится.</p>:<><p>Тестовый номер: +{config.phone}</p><div className="action-buttons"><CallButton target={{mode:'echo'}}>Проверить микрофон</CallButton><CallButton target={{mode:'test'}}>Тестовый звонок</CallButton></div><p className="muted">Сначала проверьте эхо в гарнитуре, затем позвоните на тестовый телефон и проверьте слышимость в обе стороны. Проверка эха длится не более 3 минут. Разговоры записываются.</p></>}</>}<PhoneNumbers/></div>;
 }
 
-export function BrowserPhone(props:{admin:boolean;actorId:string;children:ReactNode}){return props.actorId===OKTELL_ACTOR?<OktellPhone><LegacyBrowserPhone {...props}/></OktellPhone>:<LegacyBrowserPhone {...props}/>;}
+export function BrowserPhone(props:{admin:boolean;actorId:string;oktellEnabled?:boolean;children:ReactNode}){return props.oktellEnabled?<OktellPhone><LegacyBrowserPhone {...props}/></OktellPhone>:<LegacyBrowserPhone {...props}/>;}
 export function CallButton(props:Parameters<typeof LegacyCallButton>[0]){if(props.target.mode==='client'||props.target.mode==='order'||props.target.mode==='incoming')return <div className={`call-route-buttons ${props.className||''}`} role="group" aria-label="Выбор линии для звонка"><LegacyCallButton {...props} route="mts" className="call-route-mts" icon={null}>МТС</LegacyCallButton><LegacyCallButton {...props} route="beeline" className="call-route-beeline" icon={<Phone size={17}/>}>Позвонить</LegacyCallButton></div>;return <LegacyCallButton {...props}/>;}

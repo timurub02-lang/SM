@@ -4,7 +4,6 @@ import {createPortal} from 'react-dom';
 import {Phone,PhoneOff,Headphones,Mic,MicOff} from 'lucide-react';
 import type {SimpleUser} from 'sip.js/lib/platform/web';
 import {setCallMicrophoneMuted} from '@/lib/call-microphone';
-export const OKTELL_ACTOR='E-43a21d76-351';
 type Config={username:string;authorizationUsername:string;password:string;domain:string;token:string;registered:boolean;error?:string};
 type Route='mts'|'beeline';
 type CallTarget={mode:'client';clientId:string;phoneKey?:string}|{mode:'order';orderId:string;phoneKey?:string}|{mode:'incoming';incomingId:string};
