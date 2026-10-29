@@ -6,8 +6,8 @@ export function OperatorPremiumPayout({actor,period,preview,orders,rate}:{actor:
  const [amount,setAmount]=useState<number|null>(null),[error,setError]=useState(false);
  useEffect(()=>{
   if(preview||!period)return;
-  let active=true;setAmount(null);setError(false);
-  fetch('/api/premium?actorId='+encodeURIComponent(actor)+'&period='+encodeURIComponent(period),{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error();return r.json();}).then((data:{payroll?:{employeeId:string;payout:number|null}[]})=>{if(active)setAmount(data.payroll?.find(r=>r.employeeId===actor)?.payout??null);}).catch(()=>{if(active)setError(true);});
+  let active=true;
+  fetch('/api/premium?actorId='+encodeURIComponent(actor)+'&period='+encodeURIComponent(period),{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error();return r.json();}).then(value=>{const data=value as {payroll?:{employeeId:string;payout:number|null}[]};if(active){setAmount(data.payroll?.find(r=>r.employeeId===actor)?.payout??null);setError(false);}}).catch(()=>{if(active)setError(true);});
   return()=>{active=false;};
  },[actor,period,preview,orders]);
  if(preview)return <span><strong>Предполагаемая выплата: {money(nextOperatorPayout(orders,rate))}</strong><small className="block">Только {rate}% от заказов, без оклада и корректировок</small></span>;
