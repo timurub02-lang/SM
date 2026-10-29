@@ -1,4 +1,4 @@
-# Premium drafts
+# Premium periods and payroll
 
 Finance has Calculation, Orders and Employees views sharing a calculation period. CDEK eligibility requires exactly one positive remittance; the period uses its paymentDate. Commission uses collectedCents (customer payment), not amountCents (net remittance). Moscow courier/post use the recorded receipt amount and Moscow receipt date.
 
@@ -10,4 +10,12 @@ Draft adjustments are saved in settings by period and employee with revision che
 
 Positive totals round to nearest RUB 50, negative totals remain exact and never reduce other people's payouts. UDL second-half preview requires an explicit first-half percentage bonus. The period-specific bonus from the old program is not inferred from an incomplete historical order set.
 
-These are editable draft previews, not payment confirmations. Prior-paid reconciliation, payroll Excel import, signatures, locking/closing, archive snapshots and automatic debt carry are not implemented by this change. No payroll is sent to cash accounts. The admin must reconcile imported LV orders before any actual payout workflow is enabled.
+The ledger is stored separately in settings/premium-ledger. Initial import is an audited, one-off migration: payroll rows and all source order IDs are retained, missing CRM identities remain explicitly unmatched, and matched orders receive importedPayment evidence with source hash and recordedAt (not a fabricated payment date or CDEK registry). An imported open period uses the source membership and amounts, not the current receipt preview. It may be edited through scoped period adjustments until frozen.
+
+Administrator freezes the current period into immutable rows/order membership/signer IDs. All required department heads sign that frozen snapshot. Administrator can confirm actual payment only after all signatures; confirmation archives it and opens the next period atomically. No transfer or cash transaction is created by confirmation. Current signer selection requires exactly one department head with leaderPremium in each represented department, excluding partners without premium. New departments or ambiguous heads require explicit signer configuration before use; fixation fails rather than selecting arbitrarily.
+
+The CRM response derives premiumStage; operational order status remains redeemed. Open active membership is accrued. Frozen membership never expands. After payment its orders are paid; next-period receipts and newly learned backdated receipts become accrued, excluding every previously assigned order by its stable LV/CRM key. Existing older receipts seen at fixation do not silently carry forward. Other periods remain in the normal paid-by-customer queue until active. Receipt conflicts prevent fixation. Previously paid LV reconciliation remains required before fixing a non-imported LV period. No prior-paid history is fabricated from delivery status.
+
+CAS protects ledger revisions plus employee/order versions and period adjustment values. Frozen/paid adjustments are rejected at read and write boundaries. Snapshot fields and unmatched rows are scoped by department/operator before API output. Signatures cannot be submitted by operators or on behalf of another leader. Source Excel signatures are retained as source context only; they are not copied as CRM signatures.
+
+Automatic debt carry and a reusable browser Excel uploader remain outside this change; the supplied initial workbook is imported through the audited migration. No payroll is sent to cash accounts.

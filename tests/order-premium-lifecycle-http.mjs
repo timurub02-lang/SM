@@ -1,0 +1,71 @@
+// Run after the Miran standalone build. Uses only a temporary, synthetic database.
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {authSchema} from '../lib/auth-schema.ts';
+import {createHmac} from 'node:crypto';
+import {hashPassword} from '../lib/auth-crypto.ts';
+const dir=mkdtempSync(join(tmpdir(),'crm-auth-')), db=new DatabaseSync(join(dir,'test.sqlite'));
+const password='test-password-only-123',pbxKey='fixture-pbx-result-key-not-a-real-secret';
+const origin='https://crm.test',port=process.env.AUTH_TEST_PORT||'3109',base=`http://127.0.0.1:${port}`;
+let server,logs='';
+try{
+ db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));
+ for(const sql of authSchema)db.exec(sql);
+ const hash=await hashPassword(password);
+ const staff=[['admin','admin','1'],['one','operator','1'],['two','operator','2'],['head','department_head','1'],['head2','department_head','2'],['head0','department_head',''],['logistic','logistic',''],['chief','chief_logistic',''],['redemption','redemption',''],['courier','courier','']].map(([id,role,department])=>({id,login:id,name:'Test '+id,alias:'',skLogin:'',role,department,salary:100,bonus:1,version:1}));
+ for(const e of staff){db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(e.id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(e.id,hash);}
+ db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:30}));
+ for(const id of ['one','two']){
+  const c={id:'c-'+id,name:'Client '+id,phone:id==='one'?'+79990000001':'+79990000002',city:'',address:'',source:'Test',owner:id,assignedUntil:new Date(Date.now()+86400000).toISOString(),assignmentStartedAt:new Date().toISOString(),createdAt:new Date().toISOString(),version:1};
+  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));
+  const o={id:'o-'+id,clientId:c.id,manager:id,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,version:1};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
+ }
+ server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_STAFF_ENABLED:'1',CRM_PHONE_RESULT_KEY:pbxKey,CRM_PHONE_RECORDINGS_DIR:join(dir,'recordings'),CRM_PHONE_USER:'pilot-test',CRM_PHONE_PASSWORD:'fixture-secret',CRM_PHONE_TEST_NUMBER:'79990000001',CRM_PHONE_CALLER_ID:'79000000000',CRM_PHONE_EMPLOYEE:'admin',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
+ let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
+ assert.ok(ready,'Server failed to start');
+ async function call(path,{cookie,body,headers={},method}={}){const r=await fetch(base+path,{method:method||(body?'POST':'GET'),redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}return {status:r.status,data,headers:r.headers,text};}
+ async function login(name,pw=password){return call('/api/auth/login',{body:{login:name,password:pw}});}
+ const cookies={};for(const {id} of staff){const r=await login(id);assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
+
+
+ const period='2026-10-2';
+ for(const id of ['head','head2'])db.prepare("UPDATE employees SET data=json_set(data,'$.leaderPremium',json(?)) WHERE id=?").run(JSON.stringify({model:'salary_bonus',fixedPerPeriod:0,links:[]}),id);
+ for(const id of ['o-one','o-two'])db.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed','$.delivery','russian_post','$.paymentReceivedAt','2026-10-25T10:00:00Z','$.paymentReceivedAmount',1000) WHERE id=?").run(id);
+ const initial={revision:'initial',initialPeriod:period,activePeriod:period,historyReconciled:true,periods:{[period]:{status:'open',signatures:{}}}};
+ db.prepare('INSERT INTO settings(id,data) VALUES(?,?)').run('premium-ledger',JSON.stringify(initial));
+ const ledger=()=>JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get().data);
+ const act=(who,action,revision=ledger().revision)=>call('/api/premium/lifecycle',{cookie:cookies[who],body:{period,revision,action}});
+ const stages=async()=>{const r=await call('/api/crm',{cookie:cookies.admin});assert.equal(r.status,200,r.text);return Object.fromEntries(r.data.orders.map(o=>[o.id,o.premiumStage?.status]));};
+ assert.equal((await stages())['o-one'],'accrued');
+ assert.equal((await act('one','freeze')).status,403);
+ assert.equal((await act('head','freeze')).status,403);
+ assert.equal((await act('admin','freeze')).status,200);
+ assert.equal((await act('admin','pay')).status,400);
+ const blockedEdit=await call('/api/premium?period='+period,{cookie:cookies.admin,body:{employeeId:'one',employeeVersion:1,revision:'',adjustment:{salary:0,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:false,firstHalfBonus:null}}});
+ assert.equal(blockedEdit.status,409,blockedEdit.text);
+ assert.equal((await act('one','sign')).status,403);
+ assert.equal((await act('head','pay')).status,403);
+ assert.equal((await act('head','sign','stale')).status,409);
+ const late={...JSON.parse(db.prepare("SELECT data FROM orders WHERE id='o-one'").get().data),id:'late',paymentReceivedAt:'2026-10-25T12:00:00Z'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(late.id,late.clientId,JSON.stringify(late));
+ assert.equal((await stages()).late,undefined);
+ assert.equal((await act('head','sign')).status,200);
+ assert.equal((await act('admin','pay')).status,400);
+ assert.equal((await act('head2','sign')).status,200);
+ assert.equal((await act('admin','pay')).status,200);
+ assert.equal(ledger().activePeriod,'2026-11-1');
+ const result=await stages();assert.equal(result['o-one'],'paid');assert.equal(result['o-two'],'paid');assert.equal(result.late,'accrued');
+ assert.equal((await act('admin','pay')).status,400);
+ const operatorState=await call('/api/crm',{cookie:cookies.one});assert.equal(operatorState.status,200,operatorState.text);
+ assert(operatorState.data.orders.some(o=>o.id==='o-one'&&o.status==='redeemed'&&o.premiumStage.status==='paid'));
+ assert(!operatorState.data.orders.some(o=>o.id==='o-two'));
+ console.log('Payroll HTTP: roles, all-head signatures, stale revisions, frozen late receipts, payout rollover and order visibility passed. Synthetic data only.');
+}catch(error){console.error(logs);throw error;}
+finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
