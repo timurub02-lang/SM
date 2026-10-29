@@ -717,3 +717,18 @@ body:has(.courier-design-aurora){background:#191a1e}
 .order-status-tabs .order-payment-group{display:inline-flex;align-items:center;gap:2px;flex-shrink:0;margin:0 5px;padding:3px;border:1px solid #8ba6c633;border-radius:12px;background:#d2e0ef80;box-shadow:inset 0 1px 2px #5266810a}
 .order-status-tabs .order-payment-group [role=tab]{flex:none;font-size:13px}
 .order-status-tabs .order-payment-group [role=tab]:first-child{font-size:14px;font-weight:650;margin-right:3px}
+
+/* Compact approval overview; lifecycle permissions stay in the component. */
+.premium-approval{padding:16px;border:1px solid var(--border);border-radius:16px;background:#f7f9fc;display:grid;gap:14px}
+.premium-approval-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.premium-approval-header>div:first-child{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.premium-approval-count{font-size:12px;color:#718099}
+.premium-approval .toolbar{margin:0;gap:8px}
+.premium-approval .toolbar button{font-size:12px;min-height:34px;padding:7px 12px}
+.premium-signers{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.premium-signer{display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:12px 14px;border:1px solid #e6ebf3;border-radius:12px;background:#fff;min-width:0}
+.premium-signer-department{font-size:11px;letter-spacing:.04em;color:#718099}
+.premium-signer>strong{font-size:13px;line-height:1.4;font-weight:600;overflow-wrap:anywhere}
+.premium-signature{margin-top:auto;font-size:11px;line-height:1.4;padding:3px 8px;border-radius:6px;background:#f0f3f8;color:#738198}
+.premium-signature.is-signed{background:#e8f4ed;color:#367653}
+@media(max-width:540px){.premium-signers{grid-template-columns:1fr}.premium-approval{padding:12px}.premium-approval-header .toolbar{width:100%}}
