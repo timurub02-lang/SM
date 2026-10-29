@@ -5,7 +5,7 @@ import {premiumPeriods} from './premium-periods.ts';
 
 export type PayrollRow={id:string;employeeId?:string;login:string;name:string;department:string;role:'operator'|'department_head';rate:number;volume:number;commission:number;salary:number;input:PremiumAdjustment;result:number|null;payout:number|null;terms?:Employee['leaderPremium']};
 export type PayrollOrder={id?:string;externalId:string;employeeId?:string;login:string;department:string;amount:number};
-export type PayrollPeriod={status:'open'|'frozen'|'paid';source?:{name:string;sha256:string;importedAt:string};rows?:PayrollRow[];orders?:PayrollOrder[];frozenAt?:string;frozenBy?:string;paidAt?:string;paidBy?:string;signers?:{id:string;name:string;department:string}[];signatures:Record<string,{at:string;by:string}>;knownReceipts?:string[]};
+export type PayrollPeriod={status:'open'|'frozen'|'paid';source?:{name:string;sha256:string;importedAt:string};rows?:PayrollRow[];orders?:PayrollOrder[];frozenAt?:string;frozenBy?:string;paidAt?:string;paidBy?:string;signers?:{id:string;name:string;department:string}[];signatures:Record<string,{at:string;by:string}>;knownReceipts?:string[];returns?:{at:string;by:string;rows:PayrollRow[];signatures:PayrollPeriod['signatures']}[]};
 export type PremiumLedger={revision:string;activePeriod:string;initialPeriod:string;periods:Record<string,PayrollPeriod>;historyReconciled?:boolean};
 export const ledgerKey='premium-ledger';
 export const orderKey=(o:Order)=>o.legacyLv?.orderId||o.id.replace(/^LV-/, '');
@@ -71,7 +71,7 @@ export function freezePeriod(ledger:PremiumLedger,period:string,orders:Order[],e
  const departments=[...new Set(rows.map(r=>r.department))];
  const signers=departments.map(department=>{const heads=employees.filter(e=>e.role==='department_head'&&e.department===department&&e.leaderPremium);if(heads.length!==1)throw Error('Не определён единственный руководитель отдела '+department);return {id:heads[0].id,name:heads[0].name,department};});
  if(!signers.length)throw Error('В ведомости нет получателей');
- const frozen:PayrollPeriod={...p,status:'frozen',rows,orders:membership,signers,signatures:{},frozenAt:at,frozenBy:actor,knownReceipts:premiumOrders(orders,admin,employees).map(r=>orderKey(r.order))};
+ const frozen:PayrollPeriod={...p,status:'frozen',rows,orders:membership,signers,signatures:{},frozenAt:at,frozenBy:actor,knownReceipts:p.knownReceipts??premiumOrders(orders,admin,employees).map(r=>orderKey(r.order))};
  return {...ledger,revision:crypto.randomUUID(),periods:{...ledger.periods,[period]:frozen}};
 }
 export function signPeriod(ledger:PremiumLedger,period:string,actor:Employee,at:string){
@@ -84,4 +84,9 @@ export function payPeriod(ledger:PremiumLedger,period:string,actor:string,at:str
  if(!p.signers?.length||p.signers.some(e=>!p.signatures[e.id]))throw Error('Не все руководители подписали расчёт');
  const next=premiumPeriods[premiumPeriods.findIndex(p=>p.id===period)+1];if(!next||ledger.periods[next.id])throw Error('Следующий период недоступен');
  return {...ledger,revision:crypto.randomUUID(),activePeriod:next.id,periods:{...ledger.periods,[period]:{...p,status:'paid' as const,paidAt:at,paidBy:actor},[next.id]:{status:'open' as const,signatures:{}}}};
+}
+
+export function reopenPeriod(ledger:PremiumLedger,period:string,actor:string,at:string){
+ const p=ledger.periods[period];if(period!==ledger.activePeriod||p?.status!=='frozen')throw Error('Вернуть можно только зафиксированный, ещё не выплаченный период');
+ return {...ledger,revision:crypto.randomUUID(),periods:{...ledger.periods,[period]:{...p,status:'open' as const,signatures:{},returns:[...(p.returns||[]),{at,by:actor,rows:p.rows||[],signatures:p.signatures}]}}};
 }
