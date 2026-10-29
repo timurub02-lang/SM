@@ -9,6 +9,10 @@ type Config={username:string;authorizationUsername:string;password:string;domain
 type Route='mts'|'beeline';
 type CallTarget={mode:'client';clientId:string;phoneKey?:string}|{mode:'order';orderId:string;phoneKey?:string}|{mode:'incoming';incomingId:string};
 type PhoneState={routeBusy:boolean;acquire:(route:Route)=>boolean;release:(route:Route)=>void;ready:boolean;busy:boolean;working:boolean;message:string;connect:()=>Promise<void>;disconnect:()=>Promise<void>;call:(target:CallTarget,onCompleted?:()=>void)=>Promise<void>;tone:()=>void};
+async function bounded<T>(work:Promise<T>,message:string,ms=15000):Promise<T>{
+ let timer:ReturnType<typeof setTimeout>;
+ try{return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(message)),ms);})]);}finally{clearTimeout(timer!);}
+}
 const Context=createContext<PhoneState|null>(null);
 export const useOktellPhone=()=>useContext(Context);
 export function OktellPhone({children}:{children:ReactNode}){
@@ -27,25 +31,27 @@ export function OktellPhone({children}:{children:ReactNode}){
  async function disconnect(){
   generation.current++;setReady(false);setWorking(true);locked.current=true;
   const p=phone.current;phone.current=null;
-  try{if(active.current)await p?.hangup();await sync();await p?.unregister();}catch{}finally{try{await p?.disconnect();}catch{}}
+  try{if(active.current)await p?.hangup();await sync();await bounded(p?.unregister()||Promise.resolve(),'Отключение телефона заняло слишком много времени',5000);}catch{}finally{try{await p?.disconnect();}catch{}}
   active.current=false;release('mts');setBusy(false);setMuted(false);
   try{await api('disconnect');setMessage('Гарнитура отключена');}catch(e){setMessage(e instanceof Error?e.message:'Не удалось завершить сеанс');}finally{locked.current=false;setWorking(false);}
  }
  async function connect(){
-  if(locked.current||phone.current)return;locked.current=true;setWorking(true);const run=++generation.current;
+  if(locked.current||active.current||ready)return;if(phone.current)await disconnect();locked.current=true;setWorking(true);const run=++generation.current;
   try{
    if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw Error('Откройте CRM по HTTPS в Chrome или Edge');
-   setMessage('Разрешите доступ к микрофону');const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});stream.getTracks().forEach(t=>t.stop());if(run!==generation.current)return;
+   setMessage('Разрешите доступ к микрофону');await bounded(navigator.mediaDevices.getUserMedia({audio:true,video:false}).then(stream=>{stream.getTracks().forEach(t=>t.stop());}),'Микрофон не ответил. Разрешите доступ в Chrome и нажмите «Подключить гарнитуру» ещё раз.');if(run!==generation.current)return;
    const c=await api('connect');if(run!==generation.current){await api('disconnect');return;}domain.current=c.domain;
    const {SimpleUser}=await import('sip.js/lib/platform/web');
+   let registered:()=>void=()=>{},rejected:(error:Error)=>void=()=>{};
+   const registration=new Promise<void>((resolve,reject)=>{registered=resolve;rejected=reject;});void registration.catch(()=>{});
    const p=new SimpleUser(`wss://${location.host}/oktell-phone/ws?token=${encodeURIComponent(c.token)}`,{
     aor:`sip:${c.username}@${c.domain}`,reconnectionAttempts:0,
     userAgentOptions:{authorizationUsername:c.authorizationUsername,authorizationPassword:c.password,logLevel:'error',logConfiguration:false,sessionDescriptionHandlerFactoryOptions:{peerConnectionConfiguration:{iceServers:[]}}},
     media:{constraints:{audio:true,video:false},remote:{audio:audio.current!}},
-    delegate:{onCallReceived(){if(run!==generation.current||active.current||!acquire('mts')){void p.decline();return;}active.current=true;answered.current=false;setBusy(true);setIncoming(true);setMessage('Т1 · клиент на линии. Примите звонок.');void sync();},onRegistered(){if(run===generation.current){setReady(true);setMessage('Гарнитура подключена к Oktell. Звонок ещё не начат.');}},onUnregistered(){setReady(false);},onCallAnswered(){setIncoming(false);answered.current=true;setMessage('Соединение установлено — можно говорить');void audio.current?.play().catch(()=>setMessage('Нажмите «Включить звук»'));void sync();},onCallHangup(){setIncoming(false);active.current=false;release('mts');setBusy(false);setMuted(false);setMessage('Звонок завершён');const done=completion.current;completion.current=undefined;void sync().then(()=>{if(answered.current)done?.();});},onServerDisconnect(){if(run===generation.current){setReady(false);active.current=false;release('mts');setBusy(false);setMessage('Соединение прервано. Отключите и подключите гарнитуру заново.');void sync();}}}
+    delegate:{onCallReceived(){if(run!==generation.current||active.current||!acquire('mts')){void p.decline();return;}active.current=true;answered.current=false;setBusy(true);setIncoming(true);setMessage('Т1 · клиент на линии. Примите звонок.');void sync();},onRegistered(){registered();if(run===generation.current){setReady(true);setMessage('Гарнитура подключена к Oktell. Звонок ещё не начат.');}},onUnregistered(){setReady(false);},onCallAnswered(){setIncoming(false);answered.current=true;setMessage('Соединение установлено — можно говорить');void audio.current?.play().catch(()=>setMessage('Нажмите «Включить звук»'));void sync();},onCallHangup(){setIncoming(false);active.current=false;release('mts');setBusy(false);setMuted(false);setMessage('Звонок завершён');const done=completion.current;completion.current=undefined;void sync().then(()=>{if(answered.current)done?.();});},onServerDisconnect(){if(run===generation.current){setReady(false);active.current=false;release('mts');setBusy(false);phone.current=null;rejected(Error('Соединение с Oktell прервано. Нажмите «Подключить гарнитуру» для восстановления.'));setMessage('Соединение с Oktell прервано. Нажмите «Подключить гарнитуру» для восстановления.');}}}
    });
-   phone.current=p;setMessage('Подключаем телефон к Oktell…');await p.connect();if(run!==generation.current){await p.disconnect();return;}await p.register({requestDelegate:{onReject(r){setReady(false);setMessage(`Oktell отклонил регистрацию (${r.message.statusCode}). Отключите гарнитуру и повторите подключение.`);}}});
-  }catch(e){const p=phone.current;phone.current=null;try{await p?.disconnect();await api('disconnect');}catch{}setReady(false);setMessage(e instanceof Error&&e.name==='NotAllowedError'?'Разрешите доступ к микрофону для CRM в настройках браузера.':e instanceof Error&&e.name==='NotFoundError'?'Подключите гарнитуру: микрофон не найден.':e instanceof Error?e.message:'Не удалось подключить гарнитуру');}
+   phone.current=p;setMessage('Подключаем телефон к Oktell…');await bounded(p.connect(),'Oktell не ответил. Попробуйте подключить гарнитуру ещё раз.');if(run!==generation.current){await p.disconnect();return;}await bounded(p.register({requestDelegate:{onReject(r){rejected(Error(`Oktell отклонил регистрацию (${r.message.statusCode}). Попробуйте подключить гарнитуру ещё раз.`));}}}),'Oktell не ответил при регистрации. Попробуйте подключить гарнитуру ещё раз.');await bounded(registration,'Oktell не подтвердил регистрацию. Попробуйте подключить гарнитуру ещё раз.');
+  }catch(e){generation.current++;const p=phone.current;phone.current=null;try{await p?.disconnect();await api('disconnect');}catch{}setReady(false);setMessage(e instanceof Error&&e.name==='NotAllowedError'?'Разрешите доступ к микрофону для CRM в настройках браузера.':e instanceof Error&&e.name==='NotFoundError'?'Подключите гарнитуру: микрофон не найден.':e instanceof Error?e.message:'Не удалось подключить гарнитуру');}
   finally{locked.current=false;setWorking(false);}
  }
  async function call(target:CallTarget,onCompleted?:()=>void){

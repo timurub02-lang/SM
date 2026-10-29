@@ -63,7 +63,7 @@ function publishBrowserMedia(message){
 module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21.103.2:5060/',incoming=async()=>null,canAuthorize=()=>true}){
  const leases=new Map(),mutating=new Set();let generation=0;
  const state=actor=>{const lease=leases.get(actor);return ({connected:connected(),prepared:!!lease,registered:!!lease?.registered,calling:!!lease?.calling,call:lease?.call||null});};
- async function close(actor){const old=leases.get(actor);if(!old||mutating.has(actor))return;mutating.add(actor);try{old.client?.close();old.upstream?.close();await operators.release(actor,old.owner);if(leases.get(actor)===old)leases.delete(actor);}finally{mutating.delete(actor);}}
+ async function close(actor,expected){const old=leases.get(actor);if(!old||(expected&&old!==expected)||mutating.has(actor))return;mutating.add(actor);try{old.client?.close();old.upstream?.close();await operators.release(actor,old.owner);if(leases.get(actor)===old)leases.delete(actor);}finally{mutating.delete(actor);}}
  const server=http.createServer((req,res)=>res.writeHead(404).end());
  const wss=new WebSocketServer({noServer:true,maxPayload:65536,handleProtocols:p=>p.has('sip')?'sip':false});
  server.on('upgrade',(req,socket,head)=>{
@@ -121,12 +121,12 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
     if(current.call&&!current.calling)current.call.endedAt ||= new Date().toISOString();
     if(client.readyState===1)client.send(text);
    });
-   let didEnd=false;const ended=()=>{if(didEnd)return;didEnd=true;current.incomingPending=null;current.registered=false;current.calling=false;if(current.call&&!['ended','cancelled','failed','busy','no_answer'].includes(current.call.status))current.call.status='unknown';if(current.call)current.call.endedAt ||= new Date().toISOString();client.close();upstream.close();};
+   let didEnd=false;const ended=()=>{if(didEnd)return;didEnd=true;const wasCalling=current.calling||!!current.incomingPending;current.incomingPending=null;current.registered=false;current.calling=false;if(current.call&&!['ended','cancelled','failed','busy','no_answer'].includes(current.call.status))current.call.status='unknown';if(current.call)current.call.endedAt ||= new Date().toISOString();client.close();upstream.close();if(!wasCalling)void close(lease.actor,current).catch(()=>{});};
    client.on('error',ended);upstream.on('error',ended);client.on('close',ended);upstream.on('close',ended);
   });
  });
  if(listen)server.listen(Number(process.env.BROWSER_SIP_PORT??3315),'127.0.0.1');
- const timer=setInterval(()=>{for(const [actor,lease] of leases){if(lease.client?.readyState===1)lease.client.ping();if(Date.now()>lease.expires)void close(actor).catch(()=>{});}},10000);timer.unref();
+ const timer=setInterval(()=>{for(const [actor,lease] of leases){if(lease.client?.readyState===1)lease.client.ping();if(lease.upstream?.readyState===1)lease.upstream.ping();if(Date.now()>lease.expires)void close(actor).catch(()=>{});}},10000);timer.unref();
  async function handle(req,res){
   try{
    if(req.method==='GET'){const actor=new URL(req.url,'http://localhost').searchParams.get('actor');operators.validate(actor);res.end(JSON.stringify(state(actor)));return;}
