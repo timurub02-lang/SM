@@ -126,7 +126,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
   });
  });
  if(listen)server.listen(Number(process.env.BROWSER_SIP_PORT??3315),'127.0.0.1');
- const timer=setInterval(()=>{for(const [actor,lease] of leases){if(lease.client?.readyState===1)lease.client.ping();if(lease.upstream?.readyState===1)lease.upstream.ping();if(Date.now()>lease.expires)void close(actor).catch(()=>{});}},10000);timer.unref();
+ const timer=setInterval(()=>{for(const [actor,lease] of leases){if(lease.client?.readyState===1)lease.client.ping();if(lease.upstream?.readyState===1)lease.upstream.ping();if(Date.now()>lease.expires||!lease.client&&Date.now()>lease.tokenExpires)void close(actor,lease).catch(()=>{});}},10000);timer.unref();
  async function handle(req,res){
   try{
    if(req.method==='GET'){const actor=new URL(req.url,'http://localhost').searchParams.get('actor');operators.validate(actor);res.end(JSON.stringify(state(actor)));return;}
