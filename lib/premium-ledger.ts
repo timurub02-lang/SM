@@ -46,6 +46,14 @@ export function ledgerRows(ledger:PremiumLedger,period:string,orders:Order[],emp
  const selected=orders.filter(o=>ids.has(o.id)).map(o=>({...o,cdekRemittances:o.cdekRemittances?.map(r=>({...r,paymentDate:cutoff})),paymentReceivedAt:o.paymentReceivedAt?cutoff+'T12:00:00Z':undefined}));
  return premiumCalculation(selected,admin,employees,period,adjustments).rows.map(rowFromCalculation);
 }
+export function nextPremiumPreview(ledger:PremiumLedger|null,orders:Order[],employees:Employee[]){
+ if(!ledger)return null;
+ const active=ledger.periods[ledger.activePeriod],index=premiumPeriods.findIndex(p=>p.id===ledger.activePeriod);
+ const next=index>=0?premiumPeriods[index+1]:undefined;if(!active||!next)return null;
+ // Simulate rollover for membership only. No status, signature or payment is persisted.
+ const preview:PremiumLedger={...ledger,periods:{...ledger.periods,[ledger.activePeriod]:{...active,status:'paid',orders:periodOrders(ledger,ledger.activePeriod,orders,employees),knownReceipts:active.knownReceipts??premiumOrders(orders,admin,employees).map(r=>orderKey(r.order))},[next.id]:ledger.periods[next.id]??{status:'open',signatures:{}}}};
+ return {period:next.id,orderIds:new Set(periodOrders(preview,next.id,orders,employees).map(o=>o.id))};
+}
 export function applyPremiumStages(ledger:PremiumLedger|null,orders:Order[],employees:Employee[]){
  const stages=new Map<string,{status:'accrued'|'paid';periodId:string}>();
  if(ledger)for(const [id,p] of Object.entries(ledger.periods))if(p.status==='paid'||id===ledger.activePeriod)for(const o of periodOrders(ledger,id,orders,employees))stages.set(o.externalId,{status:p.status==='paid'?'paid':'accrued',periodId:id});

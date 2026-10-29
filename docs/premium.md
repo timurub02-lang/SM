@@ -21,3 +21,5 @@ CAS protects ledger revisions plus employee/order versions and period adjustment
 Automatic debt carry and a reusable browser Excel uploader remain outside this change; the supplied initial workbook is imported through the audited migration. No payroll is sent to cash accounts.
 
 Operator cards store `sz`. Open calculations use this setting for the Н/СЗ payout columns; saved adjustments from older versions fall back to their period flag until the card is initialized. Editing СЗ in Premium also updates the employee card. Frozen and paid snapshots retain their original flag even when the card changes later.
+
+Orders → Начислено offers a read-only next-payment switch. The API projects the next period's eligible membership using the same rollover rule, including newly learned backdated receipts after fixation and excluding assigned/paid orders. Operator/head order visibility still applies. This preview never changes the stored ledger or accrued/paid stages.

@@ -43,6 +43,17 @@ try{
  const ledger=()=>JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get().data);
  const act=(who,action,revision=ledger().revision)=>call('/api/premium/lifecycle',{cookie:cookies[who],body:{period,revision,action}});
  const stages=async()=>{const r=await call('/api/crm',{cookie:cookies.admin});assert.equal(r.status,200,r.text);return Object.fromEntries(r.data.orders.map(o=>[o.id,o.premiumStage?.status]));};
+ for(const id of ['one','two']){
+  const future={...JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get('o-'+id).data),id:'future-'+id,paymentReceivedAt:'2026-10-28T10:00:00Z'};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(future.id,future.clientId,JSON.stringify(future));
+ }
+ for(const who of ['one','head']){
+  const preview=await call('/api/crm',{cookie:cookies[who]});assert.equal(preview.status,200);
+  assert.equal(preview.data.premiumNextPeriod,'2026-11-1');
+  assert.equal(preview.data.orders.find(o=>o.id==='future-one').premiumNextPeriod,'2026-11-1');
+  assert(!preview.data.orders.some(o=>o.id==='future-two'));
+  assert(!preview.data.orders.find(o=>o.id==='future-one').premiumStage);
+ }
  assert.equal((await stages())['o-one'],'accrued');
  assert.equal((await act('one','freeze')).status,403);
  assert.equal((await act('head','freeze')).status,403);
