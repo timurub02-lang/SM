@@ -1,4 +1,4 @@
-import {orderGroup,orderGroups,type Order} from './crm.ts';
+import {orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
 export type OrderPremiumStage={status:'accrued'|'paid';periodId:string};
 const accrued={id:'accrued',label:'Начислено'};
@@ -11,4 +11,9 @@ export function orderDisplayGroup(order:Order){
   if(order.premiumStage.status==='paid')return paid;
  }
  return orderGroup(order);
+}
+
+// Only the operational list is pruned; payroll history retains its original membership.
+export function showPaidOrderInList(order:Order,client:Client|undefined,role:Employee["role"]){
+ return !["operator","department_head"].includes(role)||orderDisplayGroup(order).id!=="premium_paid"||!!client?.owner&&client.owner===order.manager;
 }
