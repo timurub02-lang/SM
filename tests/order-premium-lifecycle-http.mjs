@@ -62,7 +62,8 @@ try{
  assert.equal((await stages())['o-one'],'accrued');
  assert.equal((await act('one','freeze')).status,403);
  assert.equal((await act('head','freeze')).status,403);
- assert.equal((await act('admin','freeze')).status,200);
+ assert.equal((await act('admin','freeze')).status,400);
+ assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('admin','pay')).status,400);
  const blockedEdit=await call('/api/premium?period='+period,{cookie:cookies.admin,body:{employeeId:'one',employeeVersion:1,revision:'',adjustment:{salary:0,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:false,firstHalfBonus:null}}});
  assert.equal(blockedEdit.status,409,blockedEdit.text);
@@ -80,7 +81,8 @@ try{
  assert.equal(ledger().periods[period].status,'open');
  assert.deepEqual(ledger().periods[period].signatures,{});
  assert.equal(ledger().periods[period].returns.length,1);
- assert.equal((await act('admin','freeze')).status,200);
+ assert.equal((await act('admin','freeze')).status,400);
+ assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('head2','sign')).status,200);
  const frozen=JSON.stringify(ledger());
