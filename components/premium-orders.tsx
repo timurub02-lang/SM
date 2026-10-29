@@ -1,4 +1,5 @@
 "use client";
+import {Tabs,TabsList,TabsTrigger} from '@/components/ui/tabs';
 import {PremiumPayroll} from '@/components/premium-payroll';
 import {useState} from 'react';
 import {isCdekOrder} from '@/lib/cdek-remittance';
@@ -23,7 +24,7 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  const rows=selected.filter(r=>(!operator||r.order.manager===operator)&&[r.order.id,names.get(r.order.clientId),staff.get(r.order.manager)?.name,staff.get(r.order.manager)?.login,r.registry].join(' ').toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')));
  return <section className="stack table-panel cash-panel" aria-label="Премия">
   <h2>Премия</h2>
-  <div className="toolbar" role="tablist" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники']] as const).filter(([id])=>employee.role!=='operator'||id!=='employees').map(([id,label])=><button type="button" role="tab" aria-selected={view===id} className={view===id?'primary':'secondary'} key={id} onClick={()=>setView(id)}>{label}</button>)}</div>
+  <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники']] as const).filter(([id])=>employee.role!=='operator'||id!=='employees').map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs>
   <label>Расчётный период <select aria-label="Расчётный период" value={periodId} onChange={e=>{setPeriodId(e.target.value);setQuery('');setOperator('');}}>
    {choices.map(p=><option key={p.id} value={p.id}>{p.label} · {counts.get(p.id)||0} заказов</option>)}
    {(counts.has('unassigned')||!current)&&<option value="unassigned">Требуется календарь · {counts.get('unassigned')||0} заказов</option>}
