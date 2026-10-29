@@ -15,13 +15,14 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  const [current]=useState(()=>currentPremiumPeriod(new Date(Date.now()+3*3600000).toISOString().slice(0,10)));
  const [periodId,setPeriodId]=useState(current?.id||'unassigned'),[query,setQuery]=useState(''),[operator,setOperator]=useState(''),[group,setGroup]=useState('all');
  const [activePeriod,setActivePeriod]=useState('');
- const [ledgerPeriods,setLedgerPeriods]=useState<string[]>([]);
- useEffect(()=>{let active=true;fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(current?.id||'')).then(r=>r.ok?r.json():null).then(value=>{const r=value as {periods?:string[];activePeriod?:string}|null;if(active&&r){setLedgerPeriods(r.periods||[]);if(r.activePeriod){setPeriodId(r.activePeriod);setActivePeriod(r.activePeriod);}}}).catch(()=>{});return ()=>{active=false;};},[employee.id,current?.id]);
+ const [ledgerPeriods,setLedgerPeriods]=useState<string[]>([]),[ledgerCounts,setLedgerCounts]=useState<Record<string,number>>({});
+ useEffect(()=>{let active=true;fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(current?.id||'')).then(r=>r.ok?r.json():null).then(value=>{const r=value as {periods?:string[];activePeriod?:string;periodCounts?:Record<string,number>}|null;if(active&&r){setLedgerPeriods(r.periods||[]);setLedgerCounts(r.periodCounts||{});if(r.activePeriod){setPeriodId(r.activePeriod);setActivePeriod(r.activePeriod);}}}).catch(()=>{});return ()=>{active=false;};},[employee.id,current?.id]);
  const all=premiumOrders(orders,employee,employees).map(r=>({...r,periodId:r.order.premiumStage?.periodId||r.periodId||periodForReceipt(r.date)?.id||'unassigned'})).filter(r=>!ledgerPeriods.includes(r.periodId)||r.order.premiumStage?.periodId===r.periodId);
  const visiblePeriod=view==='orders'?activePeriod:periodId;
  const period=premiumPeriods.find(p=>p.id===visiblePeriod);
  const next=current?premiumPeriods[premiumPeriods.findIndex(p=>p.id===current.id)+1]:undefined;
  const counts=new Map<string,number>();for(const r of all)counts.set(r.periodId,(counts.get(r.periodId)||0)+1);
+ for(const [id,count] of Object.entries(ledgerCounts))counts.set(id,count);
  const choices=premiumPeriods.filter(p=>ledgerPeriods.includes(p.id)||counts.has(p.id)||p.id===current?.id||p.id===next?.id);
  const selected=all.filter(r=>r.periodId===visiblePeriod);
  const names=new Map(clients.map(c=>[c.id,c.name]));

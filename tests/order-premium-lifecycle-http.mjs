@@ -134,6 +134,8 @@ try{
   if(who==='logistic')continue;
   assert.deepEqual(r.data.periods.map(p=>p.id),[period],'Paid period automatically enters archive');
   const p=r.data.periods[0];assert.equal(p.count,who==='admin'?2:1);
+  const calculation=await call('/api/premium?period='+period,{cookie:cookies[who]});
+  assert.equal(calculation.data.periodCounts[period],p.count,'Period selector counts the saved worksheet, using the same role scope as archive');
   if(who!=='admin')assert(p.orders.every(o=>o.employeeId==='one'),'No other operators in scoped archive');
   assert.equal(p.payout,who==='admin'?400:who==='head'?200:100);
  }
@@ -141,6 +143,12 @@ try{
  const operatorState=await call('/api/crm',{cookie:cookies.one});assert.equal(operatorState.status,200,operatorState.text);
  assert(operatorState.data.orders.some(o=>o.id==='o-one'&&o.status==='redeemed'&&o.premiumStage.status==='paid'));
  assert(!operatorState.data.orders.some(o=>o.id==='o-two'));
+ const historical=ledger();historical.periods[period].orders.push({externalId:'archive-only',employeeId:'one',login:'one',department:'1',amount:300});
+ db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(JSON.stringify(historical));
+ for(const who of ['admin','head','one']){
+  const r=await call('/api/premium?period='+period,{cookie:cookies[who]});
+  assert.equal(r.data.periodCounts[period],who==='admin'?3:2,'Saved orders missing from CRM still count in the worksheet');
+ }
  console.log('Payroll HTTP: roles, signatures, reopen audit, cash rollback, exact debt carry, repeat protection, scoped statistics, official part and order rollover passed. Synthetic data only.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
