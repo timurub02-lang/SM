@@ -732,3 +732,12 @@ body:has(.courier-design-aurora){background:#191a1e}
 .premium-signature{margin-top:auto;font-size:11px;line-height:1.4;padding:3px 8px;border-radius:6px;background:#f0f3f8;color:#738198}
 .premium-signature.is-signed{background:#e8f4ed;color:#367653}
 @media(max-width:540px){.premium-signers{grid-template-columns:1fr}.premium-approval{padding:12px}.premium-approval-header .toolbar{width:100%}}
+
+.premium-search{display:flex;flex-direction:column;gap:5px;flex:1;max-width:440px;min-width:220px}
+.premium-search>span{font-size:12px;font-weight:500;color:#64748b}
+.premium-search>div{display:flex;align-items:center;gap:9px;padding:0 12px;height:40px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;box-shadow:0 1px 2px #22334d05}
+.premium-search>div:focus-within{border-color:#5b9bea;box-shadow:0 0 0 3px #5b9bea20}
+.premium-search svg{flex-shrink:0;color:#8090a7}
+.premium-search input{width:100%;min-width:0;height:100%;padding:0;border:0;outline:none;background:transparent;font:inherit;font-size:13px;box-shadow:none}
+.premium-search input:focus{outline:none;box-shadow:none}
+.premium-search input::placeholder{color:#8391a5}
