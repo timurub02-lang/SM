@@ -253,3 +253,11 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-edit-dialog.redemption-order-dialog{height:calc(100dvh - 32px);align-content:start;scrollbar-gutter:stable}
 
 @media(min-width:1200px){.personal-cash-panel{width:50%;align-self:flex-start}.personal-cash-panel .cash-summary,.personal-cash-panel .cash-actions{gap:10px}.personal-cash-panel .cash-action{padding:14px}.personal-cash-panel .cash-summary>div{padding:14px}}
+
+/* Compact payroll controls; keep the detailed rules available on demand. */
+.premium-panel.stack,.premium-payroll.stack{gap:10px}
+.premium-heading,.premium-dates{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.premium-heading h2{margin:0}.premium-heading .order-status-tabs{margin:0}
+.premium-dates{font-size:14px;line-height:1.5;padding:8px 12px;background:#f5f7fb;border-radius:8px}
+.premium-help{font-size:13px;color:#78888d}.premium-help summary{cursor:pointer}.premium-help p{margin:6px 0}
+.premium-payroll .toolbar{margin:0}.premium-status{font-size:13px;line-height:1.5;margin:0;color:#78888d}

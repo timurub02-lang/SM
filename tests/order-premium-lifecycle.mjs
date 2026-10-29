@@ -51,3 +51,13 @@ const importedPost={...post,paymentReceivedAt:undefined,importedPayment:excelRec
 assert.equal(packingStage(importedPost),'payment_received');
 assert.equal(canReceivePayment(importedPost,'chief_logistic'),false,'Imported receipt must not be received into cash twice');
 console.log('Excel receipt evidence: accrued projection and logistic acceptance without duplicate receipt passed');
+
+// Employee SZ routes open payroll only; frozen/paid snapshots keep their column.
+const {ledgerRows}=await import('../lib/premium-ledger.ts');
+const szStaff=staff.map(e=>e.id==='op'?{...e,sz:true}:e);
+const openSz={...ledger,activePeriod:'2026-10-2',periods:{'2026-10-2':{status:'open',signatures:{}}}};
+assert.equal(ledgerRows(openSz,'2026-10-2',[initial],szStaff,{}).find(r=>r.employeeId==='op').input.sz,true);
+const frozenSz=freezePeriod(openSz,'2026-10-2',[initial],szStaff,{},'admin','now');
+assert.equal(ledgerRows(frozenSz,'2026-10-2',[initial],staff.map(e=>({...e,sz:false})),{}).find(r=>r.employeeId==='op').input.sz,true);
+const importedSz={...openSz,periods:{'2026-10-2':{...frozenSz.periods['2026-10-2'],status:'open'}}};
+assert.equal(ledgerRows(importedSz,'2026-10-2',[initial],staff.map(e=>({...e,sz:false})),{}).find(r=>r.employeeId==='op').input.sz,false);
