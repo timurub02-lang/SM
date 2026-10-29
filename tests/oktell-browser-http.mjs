@@ -94,7 +94,8 @@ try{
  assert.equal((await req('/api/telephony',{mode:'client',clientId:'new-card'},cookies.other)).status,200);closeCalls();
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,clientId:'new-card'},cookies.other)).status,403);
  const mts=await req('/api/oktell-phone',{action:'call',tab,clientId:'test-card'},cookies.irina);assert.equal(mts.status,200);
- call={id:mts.data.callId,status:'ended',answeredAt:'2026-10-27T10:00:00.000Z',endedAt:'2026-10-27T10:00:20.000Z'};assert.equal((await req('/api/oktell-phone',{action:'heartbeat',tab},cookies.irina)).status,200);assert.equal(db.prepare('SELECT status FROM phone_calls WHERE id=?').get(mts.data.callId).status,'completed');
+ call={id:mts.data.callId,status:'connected',answeredAt:'2026-10-27T10:00:00.000Z'};await req('/api/oktell-phone',{action:'heartbeat',tab},cookies.irina);assert.equal(db.prepare('SELECT status FROM phone_calls WHERE id=?').get(mts.data.callId).status,'dialing');assert.equal(db.prepare('SELECT answered_at FROM phone_calls WHERE id=?').get(mts.data.callId).answered_at,null);
+ call={id:mts.data.callId,status:'ended',answeredAt:'2026-10-27T10:00:00.000Z',endedAt:'2026-10-27T10:00:20.000Z'};assert.equal((await req('/api/oktell-phone',{action:'heartbeat',tab},cookies.irina)).status,200);assert.equal(db.prepare('SELECT status FROM phone_calls WHERE id=?').get(mts.data.callId).status,'unknown');assert.equal(db.prepare('SELECT answered_at FROM phone_calls WHERE id=?').get(mts.data.callId).answered_at,null);
  assert.equal((await req('/api/oktell-phone',{action:'disconnect',tab},cookies.irina)).status,200);
  const ui=await req('/api/crm',null,cookies.other);assert.equal(ui.status,200,logs);
  console.log('PASS: existing/new cards, both carriers, linked phone selection, ownership and reassignment, no arbitrary destinations, single active call, failed grants, native actor scope, history. No real calls.');
