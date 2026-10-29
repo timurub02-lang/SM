@@ -1,7 +1,7 @@
 "use client";
 import {OperatorPremiumPayout} from "@/components/operator-premium-payout";
 import {premiumPeriods} from "@/lib/premium-periods";
-import {orderDisplayGroup,orderDisplayGroups,showPaidOrderInList} from "@/lib/order-premium-stage";
+import {orderDisplayGroup,orderDisplayGroups,showOrderInList} from "@/lib/order-premium-stage";
 import {results as buyoutResults} from '@/lib/redemption';
 import {canEditOrderRedemption,eligibleForRedemption,compareRedemptionPriority} from '@/lib/redemption-priority';
 import {orderTracking} from '@/lib/order-tracking';
@@ -180,7 +180,7 @@ export default function Page(){
  const workCandidates=clientCandidates.filter(c=>!clientsInTransit.has(c.id));
  const clients=(showClientWork?workCandidates:clientCandidates).filter(c=>!showClientWork||clientWorkFilter==="all"||workGroup(c)===clientWorkFilter).sort((a,b)=>showClientWork?clientWorkQueueOrder(a,workMap.get(a.id),state.clientReminders||[],reminderNow)-clientWorkQueueOrder(b,workMap.get(b.id),state.clientReminders||[],reminderNow):0);
  const scopedOrders=employee.role==="operator"?state.orders.filter(o=>o.manager===actor):employee.role==="department_head"?departmentOrders(state.orders,state.employees,employee):state.orders;
- const visibleOrders=view==="orders"?scopedOrders.filter(o=>showPaidOrderInList(o,state.clients.find(c=>c.id===o.clientId),employee.role)):scopedOrders;
+ const visibleOrders=view==="orders"?scopedOrders.filter(o=>showOrderInList(o,state.clients.find(c=>c.id===o.clientId),employee.role)):scopedOrders;
  const prioritizeRedemption=view==="orders"&&filter==="sent";
  const redemptionStatuses=state.redemptionStatuses||[];
  const awaitingBuyoutOperator=new Set(Object.entries(state.redemptionResults||{}).filter(([,r])=>r.awaitingOperator).map(([id])=>id));
