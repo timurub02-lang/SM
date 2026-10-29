@@ -4,7 +4,7 @@ import {premiumOrders} from './premium-orders.ts';
 import {premiumPeriods} from './premium-periods.ts';
 
 export type PayrollRow={id:string;employeeId?:string;login:string;name:string;department:string;role:'operator'|'department_head';rate:number;volume:number;commission:number;salary:number;input:PremiumAdjustment;result:number|null;payout:number|null;terms?:Employee['leaderPremium']};
-export type PayrollOrder={id?:string;externalId:string;employeeId?:string;login:string;department:string;amount:number};
+export type PayrollOrder={id?:string;externalId:string;employeeId?:string;login:string;department:string;amount:number;amountUnknown?:boolean};
 export type PayrollPeriod={status:'open'|'frozen'|'paid';source?:{name:string;sha256:string;importedAt:string};rows?:PayrollRow[];orders?:PayrollOrder[];frozenAt?:string;frozenBy?:string;paidAt?:string;paidBy?:string;signers?:{id:string;name:string;department:string}[];signatures:Record<string,{at:string;by:string}>;knownReceipts?:string[];returns?:{at:string;by:string;rows:PayrollRow[];signatures:PayrollPeriod['signatures']}[]};
 export type PremiumLedger={revision:string;activePeriod:string;initialPeriod:string;periods:Record<string,PayrollPeriod>;historyReconciled?:boolean};
 export const ledgerKey='premium-ledger';
