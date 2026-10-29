@@ -251,3 +251,5 @@ export const canLogisticEditOrder=(o:Pick<Order,"status"|"cdekExported"|"courier
 export const teamEmployees=(staff:Employee[],viewer:Employee)=>staff.filter(e=>viewer.role==="admin"||viewer.role==="chief_logistic"&&e.role==="logistic"||viewer.role==="department_head"&&e.role==="operator"&&!!viewer.department&&e.department===viewer.department);
 
 export const canReceivePayment=(order:Order,role:string)=>["admin","logistic","chief_logistic"].includes(role)&&["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"&&!order.paymentReceivedAt;
+
+export const closedOrderCallBlocked=(e:Pick<Employee,"id"|"role">,o:Pick<Order,"status">,c:Pick<Client,"owner">)=>e.role==="operator"&&["refused","redeemed"].includes(o.status)&&c.owner!==e.id;
