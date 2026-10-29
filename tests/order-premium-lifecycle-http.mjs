@@ -17,7 +17,7 @@ try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));
  for(const sql of authSchema)db.exec(sql);
  const hash=await hashPassword(password);
- const staff=[['admin','admin','1'],['one','operator','1'],['two','operator','2'],['head','department_head','1'],['head2','department_head','2'],['head0','department_head',''],['logistic','logistic',''],['chief','chief_logistic',''],['redemption','redemption',''],['courier','courier','']].map(([id,role,department])=>({id,login:id,name:'Test '+id,alias:'',skLogin:'',role,department,salary:100,bonus:1,version:1}));
+ const staff=[['admin','admin','1'],['one','operator','1'],['two','operator','2'],['head','department_head','1'],['head2','department_head','2'],['head0','department_head',''],['logistic','logistic',''],['chief','chief_logistic',''],['redemption','redemption',''],['courier','courier','']].map(([id,role,department])=>({id,login:id,name:'Test '+id,alias:'',skLogin:'',role,department,salary:100,bonus:10,sz:id==='two',version:1}));
  for(const e of staff){db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(e.id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(e.id,hash);}
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:30}));
  for(const id of ['one','two']){
@@ -36,7 +36,7 @@ try{
 
 
  const period='2026-10-2';
- for(const id of ['head','head2'])db.prepare("UPDATE employees SET data=json_set(data,'$.leaderPremium',json(?)) WHERE id=?").run(JSON.stringify({model:'salary_bonus',fixedPerPeriod:0,links:[]}),id);
+ for(const id of ['head','head2'])db.prepare("UPDATE employees SET data=json_set(data,'$.leaderPremium',json(?)) WHERE id=?").run(JSON.stringify({model:'salary_bonus',fixedPerPeriod:100,links:[]}),id);
  for(const id of ['o-one','o-two'])db.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed','$.delivery','russian_post','$.paymentReceivedAt','2026-10-25T10:00:00Z','$.paymentReceivedAmount',1000) WHERE id=?").run(id);
  const initial={revision:'initial',initialPeriod:period,activePeriod:period,historyReconciled:true,periods:{[period]:{status:'open',signatures:{}}}};
  db.prepare('INSERT INTO settings(id,data) VALUES(?,?)').run('premium-ledger',JSON.stringify(initial));
@@ -70,10 +70,25 @@ try{
  assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('admin','pay')).status,400);
  assert.equal((await act('head2','sign')).status,200);
+ const frozen=JSON.stringify(ledger());
+ assert.equal((await act('admin','pay')).status,400,'Empty cash must block payment');
+ assert.equal(JSON.stringify(ledger()),frozen,'Failed debit must roll back period');
+ assert.equal(db.prepare("SELECT count(*) AS n FROM cash_operations WHERE kind='spend'").get().n,0);
+ const fund=id=>db.prepare("INSERT INTO cash_operations VALUES(?, 'add',NULL,?,100000,'Test funding','2026-10-29','2026-10-29','2026-10-29','admin','','Test',NULL)").run('fund-'+id,id);
+ fund('head');
+ assert.equal((await act('admin','pay')).status,400,'Second cash shortage must roll back first debit');
+ assert.equal(JSON.stringify(ledger()),frozen);
+ assert.equal(db.prepare("SELECT count(*) AS n FROM cash_operations WHERE kind='spend'").get().n,0);
+ fund('head2');
+ assert.equal((await act('admin','pay','stale')).status,409);
  assert.equal((await act('admin','pay')).status,200);
+ const spends=db.prepare("SELECT sender,amount FROM cash_operations WHERE kind='spend' ORDER BY sender").all();
+ assert.deepEqual(spends.map(r=>({...r})),[{sender:'head',amount:20000},{sender:'head2',amount:10000}],'Н includes head/operator, SZ excluded');
+
  assert.equal(ledger().activePeriod,'2026-11-1');
  const result=await stages();assert.equal(result['o-one'],'paid');assert.equal(result['o-two'],'paid');assert.equal(result.late,'accrued');
  assert.equal((await act('admin','pay')).status,400);
+ assert.equal(db.prepare("SELECT count(*) AS n FROM cash_operations WHERE kind='spend'").get().n,2,'Retry never debits twice');
  const operatorState=await call('/api/crm',{cookie:cookies.one});assert.equal(operatorState.status,200,operatorState.text);
  assert(operatorState.data.orders.some(o=>o.id==='o-one'&&o.status==='redeemed'&&o.premiumStage.status==='paid'));
  assert(!operatorState.data.orders.some(o=>o.id==='o-two'));
