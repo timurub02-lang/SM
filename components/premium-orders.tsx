@@ -24,16 +24,15 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  const names=new Map(clients.map(c=>[c.id,c.name]));
  const staff=new Map(employees.map(e=>[e.id,e]));
  const rows=selected.filter(r=>(!operator||r.order.manager===operator)&&[r.order.id,names.get(r.order.clientId),staff.get(r.order.manager)?.name,staff.get(r.order.manager)?.login,r.registry].join(' ').toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')));
- return <section className="stack table-panel cash-panel" aria-label="Премия">
-  <h2>Премия</h2>
-  <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники']] as const).filter(([id])=>employee.role!=='operator'||id!=='employees').map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs>
+ return <section className="stack table-panel cash-panel premium-panel" aria-label="Премия">
+  <div className="premium-heading"><h2>Премия</h2>
+  <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники']] as const).filter(([id])=>employee.role!=='operator'||id!=='employees').map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs></div>
   <label>Расчётный период <select aria-label="Расчётный период" value={periodId} onChange={e=>{setPeriodId(e.target.value);setQuery('');setOperator('');}}>
    {choices.map(p=><option key={p.id} value={p.id}>{p.label} · {counts.get(p.id)||0} заказов</option>)}
    {(counts.has('unassigned')||!current)&&<option value="unassigned">Требуется календарь · {counts.get('unassigned')||0} заказов</option>}
   </select></label>
-  {period?<div className="notice"><div><strong>{period.label}</strong><p>Деньги получены: {dateLabel(period.from)} — {dateLabel(period.cutoff)} включительно.</p><p>Выплата: {dateLabel(period.payout)}{period.payout!==period.nominal?' (перенесена с '+dateLabel(period.nominal)+')':''}.</p></div></div>:<p role="alert">Для этих дат нужно добавить производственный календарь. Заказы сохранены и не включены в другие периоды.</p>}
-  <p className="muted">СДЭК — по дате перечисления в реестре; почта и курьер — по дате приёма денег. До плановой даты выплаты оставлены четыре полных рабочих дня с учётом праздников и переносов.</p>
-  <div className="notice amber">Полученные деньги — не сумма премии. Фиксация сохраняет состав ведомости; после подписей руководителей администратор отдельно подтверждает фактическую выплату.</div>
+  {period?<div className="premium-dates"><span>Поступления: {dateLabel(period.from)} — {dateLabel(period.cutoff)}</span><strong>Выплата: {dateLabel(period.payout)}</strong>{period.payout!==period.nominal&&<span>перенесена с {dateLabel(period.nominal)}</span>}</div>:<p role="alert">Для этих дат нужно добавить производственный календарь.</p>}
+  <details className="premium-help"><summary>Правила расчёта и выплаты</summary><p>СДЭК — по дате перечисления в реестре; почта и курьер — по дате приёма денег. До плановой даты выплаты оставлены четыре полных рабочих дня с учётом праздников и переносов.</p><p>Полученные деньги — не сумма премии. Фиксация сохраняет состав ведомости; после подписей руководителей администратор подтверждает фактическую выплату.</p></details>
   {view==='orders'&&<>
   <MissingPayrollOrders employeeId={employee.id} period={periodId}/>
   <div className="toolbar">{employee.role!=='operator'&&<select aria-label="Оператор премии" value={operator} onChange={e=>setOperator(e.target.value)}><option value="">Все операторы</option>{[...new Set(selected.map(r=>r.order.manager))].map(id=><option key={id} value={id}>{staff.get(id)?.name||id}</option>)}</select>}<input aria-label="Поиск заказов премии" placeholder="Заказ, клиент, оператор, реестр" value={query} onChange={e=>setQuery(e.target.value)}/><button className="secondary" onClick={()=>{setQuery('');setOperator('');}}>Сбросить поиск</button></div>

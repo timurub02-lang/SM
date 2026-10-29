@@ -35,7 +35,11 @@ export function periodOrders(ledger:PremiumLedger,periodId:string,orders:Order[]
 }
 export function ledgerRows(ledger:PremiumLedger,period:string,orders:Order[],employees:Employee[],adjustments:Record<string,PremiumSaved>):PayrollRow[]{
  const p=ledger.periods[period];if(!p)return [];
- if(p.rows)return p.status==='open'?p.rows.map(r=>adjustments[r.employeeId||'']?recalculateRow(r,adjustments[r.employeeId!],employees.find(e=>e.id===r.employeeId)?.bonus??r.rate,period):r):p.rows;
+ if(p.rows)return p.status==='open'?p.rows.map(r=>{
+  const e=employees.find(e=>e.id===r.employeeId),saved=adjustments[r.employeeId||''];
+  const row=saved?recalculateRow(r,saved,e?.bonus??r.rate,period):r;
+  return {...row,input:{...row.input,sz:e?.sz??row.input.sz}};
+ }):p.rows;
  const eligible=periodOrders(ledger,period,orders,employees),ids=new Set(eligible.map(o=>o.id));
  // Feed selected membership to the existing percentage calculation, including late receipts.
  const cutoff=premiumPeriods.find(p=>p.id===period)!.cutoff;

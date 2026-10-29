@@ -491,7 +491,7 @@ async function handlePOST(request:Request){
   message=summary;
  }else if(p.action==="saveEmployee"){
   const existing=s.employees.find(e=>e.id===p.id);
-  const data=employeeForManager(employee,p.employee,existing);
+  const data=employeeForManager(employee,{...p.employee,sz:p.employee.sz??existing?.sz??false},existing);
   if(existing?.role==='courier'&&data.role!=='courier'&&s.orders.some(o=>o.courier?.id===existing.id&&courierOutstanding(o)))throw Error('Сначала примите у курьера все деньги и возвраты');
   data.login=data.login.trim();
   if(s.employees.some(e=>e.login.toLowerCase()===data.login.toLowerCase()&&e.id!==p.id))throw Error("Такой логин уже существует");
