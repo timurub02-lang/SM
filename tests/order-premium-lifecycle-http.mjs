@@ -128,6 +128,16 @@ try{
   assert.equal(total.getCell(5).value,who==='admin'?100:0);
  }
  assert.equal((await call('/api/premium/export?period='+period+'&actorId=admin',{cookie:cookies.head})).status,403);
+ for(const who of ['admin','head','one','logistic']){
+  const r=await call('/api/premium/archive',{cookie:cookies[who]});
+  assert.equal(r.status,who==='logistic'?403:200);
+  if(who==='logistic')continue;
+  assert.deepEqual(r.data.periods.map(p=>p.id),[period],'Paid period automatically enters archive');
+  const p=r.data.periods[0];assert.equal(p.count,who==='admin'?2:1);
+  if(who!=='admin')assert(p.orders.every(o=>o.employeeId==='one'),'No other operators in scoped archive');
+  assert.equal(p.payout,who==='admin'?400:who==='head'?200:100);
+ }
+ assert.equal((await call('/api/premium/archive?actorId=admin',{cookie:cookies.one})).status,403);
  const operatorState=await call('/api/crm',{cookie:cookies.one});assert.equal(operatorState.status,200,operatorState.text);
  assert(operatorState.data.orders.some(o=>o.id==='o-one'&&o.status==='redeemed'&&o.premiumStage.status==='paid'));
  assert(!operatorState.data.orders.some(o=>o.id==='o-two'));
