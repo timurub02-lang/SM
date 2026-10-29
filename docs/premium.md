@@ -19,3 +19,5 @@ The CRM response derives premiumStage; operational order status remains redeemed
 CAS protects ledger revisions plus employee/order versions and period adjustment values. Frozen/paid adjustments are rejected at read and write boundaries. Snapshot fields and unmatched rows are scoped by department/operator before API output. Signatures cannot be submitted by operators or on behalf of another leader. Source Excel signatures are retained as source context only; they are not copied as CRM signatures.
 
 Automatic debt carry and a reusable browser Excel uploader remain outside this change; the supplied initial workbook is imported through the audited migration. No payroll is sent to cash accounts.
+
+Operator cards store `sz`. Open calculations use this setting for the Н/СЗ payout columns; saved adjustments from older versions fall back to their period flag until the card is initialized. Editing СЗ in Premium also updates the employee card. Frozen and paid snapshots retain their original flag even when the card changes later.

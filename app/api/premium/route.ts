@@ -38,7 +38,7 @@ async function handle(req:Request){
    const guardValues=stored?[target.id,body.employeeVersion,stored.data]:[target.id,body.employeeVersion];
    const save=old?d.prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND '+guard).bind(data,id,old.data,...guardValues):d.prepare('INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE '+guard).bind(id,data,...guardValues);
    const statements=[save];
-   if(body.rate!==undefined&&body.rate!==target.bonus)statements.push(d.prepare("UPDATE employees SET data=json_set(data,'$.bonus',?),version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)").bind(body.rate,target.id,body.employeeVersion,id,data));
+   if(target.role==='operator'&&(body.rate!==undefined&&body.rate!==target.bonus||body.adjustment.sz!==target.sz))statements.push(d.prepare("UPDATE employees SET data=json_set(data,'$.bonus',?,'$.sz',json(?)),version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)").bind(body.rate??target.bonus,JSON.stringify(body.adjustment.sz),target.id,body.employeeVersion,id,data));
    const results=await d.batch(statements);
    if(!results[0].meta.changes)return Response.json({error:'Расчёт уже изменён. Обновите данные.'},{status:409});
   }

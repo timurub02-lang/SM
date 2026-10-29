@@ -8,14 +8,15 @@ export const premiumAdjustmentSchema=z.object({salary:amount,vacation:amount,off
 export type PremiumAdjustment=z.infer<typeof premiumAdjustmentSchema>;
 export type PremiumSaved=PremiumAdjustment&{revision:string};
 export function premiumStaff(actor:Employee,target:Employee){return actor.role==='admin'&&['operator','department_head'].includes(target.role)||actor.id===target.id&&['operator','department_head'].includes(actor.role)||actor.role==='department_head'&&!!actor.department&&target.role==='operator'&&target.department===actor.department;}
-export function defaultPremiumAdjustment(e:Employee):PremiumAdjustment{return {salary:e.leaderPremium?.fixedPerPeriod??0,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:false,firstHalfBonus:null};}
+export function defaultPremiumAdjustment(e:Employee):PremiumAdjustment{return {salary:e.leaderPremium?.fixedPerPeriod??0,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:!!e.sz,firstHalfBonus:null};}
 const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 export function premiumCalculation(orders:Order[],actor:Employee,employees:Employee[],period:string,adjustments:Record<string,PremiumSaved>){
  const eligible=premiumOrders(orders,actor,employees).filter(r=>(r.periodId||r.order.premiumStage?.periodId||periodForReceipt(r.date)?.id)===period);
  const amounts=new Map<string,number>();
  for(const r of eligible){const cents=r.order.importedPayment?Math.round(r.order.importedPayment.amount*100):isCdekOrder(r.order)?r.order.cdekRemittances![0].collectedCents:Math.round(r.amount*100);amounts.set(r.order.manager,(amounts.get(r.order.manager)||0)+cents);}
  const rows=employees.filter(e=>premiumStaff(actor,e)&&(e.role==='operator'||!!e.leaderPremium)).map(employee=>{
-  const input=adjustments[employee.id]||defaultPremiumAdjustment(employee),terms=employee.leaderPremium;
+  const saved=adjustments[employee.id]||defaultPremiumAdjustment(employee);
+  const input={...saved,sz:employee.sz??saved.sz},terms=employee.leaderPremium;
   const volume=(amounts.get(employee.id)||0)/100;
   const commission=terms?round(terms.links.reduce((sum,l)=>sum+round((amounts.get(l.operatorId||'')||0)/100*l.rate/100),0)):round(volume*employee.bonus/100);
   const second=period.endsWith('-2'),missingPrior=terms?.model==='udl_guarantee'&&second&&input.firstHalfBonus===null;
