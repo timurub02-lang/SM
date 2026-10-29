@@ -5,6 +5,7 @@ import {sessionEmployee,trustedOrigin,cookieToken} from '@/lib/auth';
 import {db} from '@/lib/db';
 import {initPhone,incomingCallTarget} from '@/lib/phone-store';
 import {hasOktellLink} from '@/lib/oktell-link';
+import {manualOktellOutcome} from '@/lib/oktell-call-outcome';
 import {clientPhones} from '@/lib/client-call-targets';
 export const dynamic='force-dynamic';
 const input=z.object({action:z.enum(['connect','heartbeat','disconnect','call']),tab:z.string().uuid(),mode:z.enum(['client','order','incoming']).optional(),orderId:z.string().min(1).max(100).optional(),incomingId:z.string().min(1).max(100).optional(),clientId:z.string().max(100).optional(),phoneKey:z.string().max(64).optional()}).strict();
@@ -41,10 +42,9 @@ export async function POST(req:Request){
   if(b.action==='heartbeat'&&result.call){
    const c=result.call;
    if(/^[a-f0-9]{32}$/.test(c.id)&&['dialing','connected','ended','cancelled','failed','busy','no_answer','unknown'].includes(c.status)){
-    const end=['ended','cancelled','failed','busy','no_answer','unknown'].includes(c.status);
-    const status=c.status==='ended'?'completed':c.status;
-    const answered=c.answeredAt||null,ended=c.endedAt||null;
-    await db().prepare("UPDATE phone_calls SET status=?,answered_at=COALESCE(answered_at,?),ended_at=COALESCE(ended_at,?),bill_seconds=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN MAX(0,CAST((julianday(?)-julianday(?))*86400 AS INTEGER)) ELSE bill_seconds END,provider_at=?,detail=? WHERE id=? AND actor_id=? AND detail LIKE 'Oktell / МТС%' AND (ended_at IS NULL OR status='unknown')").bind(status,answered,ended,answered,ended,ended,answered,new Date().toISOString(),'Oktell / МТС · '+(end?'вызов завершён; запись ещё не подключена':'состояние подтверждено SIP'),c.id,a.id).run();
+    const {status,answered,detail}=manualOktellOutcome(c.status);
+    const ended=c.endedAt||null;
+    await db().prepare("UPDATE phone_calls SET status=?,answered_at=COALESCE(answered_at,?),ended_at=COALESCE(ended_at,?),bill_seconds=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN MAX(0,CAST((julianday(?)-julianday(?))*86400 AS INTEGER)) ELSE bill_seconds END,provider_at=?,detail=? WHERE id=? AND actor_id=? AND detail LIKE 'Oktell / МТС%' AND (ended_at IS NULL OR status='unknown')").bind(status,answered,ended,answered,ended,ended,answered,new Date().toISOString(),'Oktell / МТС · '+detail,c.id,a.id).run();
    }
   }
   return Response.json(result,{headers:{'Cache-Control':'no-store'}});
