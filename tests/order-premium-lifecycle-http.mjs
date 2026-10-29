@@ -149,6 +149,10 @@ try{
   const r=await call('/api/premium?period='+period,{cookie:cookies[who]});
   assert.equal(r.data.periodCounts[period],who==='admin'?3:2,'Saved orders missing from CRM still count in the worksheet');
  }
+ historical.periods[period].orders.push({externalId:'legacy-paid-only',login:'',department:'',amount:0,amountUnknown:true,historyOnly:true});
+ db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(JSON.stringify(historical));
+ const confirmed=await call('/api/premium?period='+period,{cookie:cookies.admin});assert.equal(confirmed.data.periodCounts[period],3);
+ const archive=await call('/api/premium/archive',{cookie:cookies.admin});assert.equal(archive.data.periods[0].count,3);assert.equal(archive.data.periods[0].historyOrders[0].externalId,'legacy-paid-only');
  console.log('Payroll HTTP: roles, signatures, reopen audit, cash rollback, exact debt carry, repeat protection, scoped statistics, official part and order rollover passed. Synthetic data only.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

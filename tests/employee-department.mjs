@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import {employeeSchema} from '../lib/crm.ts';
 const base={name:'Сотрудник',alias:'',login:'test',skLogin:'',salary:0,bonus:0};
-for(const role of ['logistic','redemption']){
+for(const role of ['admin','logistic','redemption']){
  assert.equal(employeeSchema.parse({...base,role}).department,undefined);
  assert.equal(employeeSchema.parse({...base,role,department:'1'}).department,undefined);
 }
-for(const role of ['operator','department_head','admin']){
+for(const role of ['operator','department_head']){
  assert.equal(employeeSchema.safeParse({...base,role}).success,false);
  assert.equal(employeeSchema.parse({...base,role,department:'2'}).department,'2');
 }

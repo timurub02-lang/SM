@@ -4,7 +4,7 @@ import {payrollVisible,type PayrollRow,type PayrollOrder,type PayrollPeriod} fro
 
 export async function premiumWorkbook(actor:Employee,period:string,label:string,entry:PayrollPeriod,allRows:PayrollRow[],allOrders:PayrollOrder[]){
  if(!['admin','department_head'].includes(actor.role))throw Error('Выгрузка недоступна');
- const rows=allRows.filter(r=>payrollVisible(actor,r)),orders=allOrders.filter(r=>payrollVisible(actor,r));
+ const rows=allRows.filter(r=>payrollVisible(actor,r)),orders=allOrders.filter(r=>!r.historyOnly&&payrollVisible(actor,r)),historyOrders=allOrders.filter(r=>r.historyOnly&&payrollVisible(actor,r));
  const groups=[...new Set([...rows.map(r=>r.department),...orders.map(r=>r.department)])].sort();
  const book=new ExcelJS.Workbook();book.creator='СМ CRM';
  const status=entry.status==='paid'?'Выплачено':entry.status==='frozen'?'Зафиксировано':'Предварительный расчёт';
@@ -32,6 +32,7 @@ export async function premiumWorkbook(actor:Employee,period:string,label:string,
   detail.addRow(['ИТОГО',list.length,'',list.reduce((n,o)=>n+Math.round(o.amount*100),0)/100]).font={bold:true};
  }
  summary.addRow(['ИТОГО',orders.length,orders.reduce((n,o)=>n+Math.round(o.amount*100),0)/100,sum(rows,false),sum(rows,true),sum(rows,false)+sum(rows,true),'']).font={bold:true};
+ if(historyOrders.length){const history=sheet('Старая история',['Номер заказа','Примечание'],[24,80]);for(const o of historyOrders)history.addRow([o.externalId,'Ранее выплачен. В подтверждённый расчёт периода не входит; сумма в источнике отсутствует.']);}
  for(const s of book.worksheets){s.autoFilter={from:{row:4,column:1},to:{row:Math.max(4,s.rowCount-1),column:s.columnCount}};s.eachRow((r,i)=>{if(i<5)return;r.height=30;r.eachCell(c=>{c.alignment={vertical:'middle',wrapText:true};if(typeof c.value==='number')c.numFmt='#,##0.00;[Red](#,##0.00);"—"';});});}
  return book;
 }
