@@ -70,6 +70,29 @@ try{
 
  assert.equal((await call('/api/cdek',{cookie:cookies.one,body:{action:'save'}})).status,403);
  assert.equal((await call('/api/mainsms',{cookie:cookies.one,body:{action:'preview',orderId:'o-two'}})).status,403);
+ // Period adjustments and the shared operator rate are atomic and scoped.
+ const premiumEmployee={...staff[1],id:'premium-op',login:'premium-op',sentinel:'preserve'};
+ db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(premiumEmployee.id,JSON.stringify(premiumEmployee));
+ const premiumPath='/api/premium?period=2026-10-2';
+ const adjustments={salary:1234,vacation:100,official:99,debt:20,penalty:10,extra:50,sz:false,firstHalfBonus:null};
+ const premiumBody={employeeId:'premium-op',employeeVersion:1,rate:7,revision:'',adjustment:adjustments};
+ assert.equal((await call(premiumPath,{cookie:cookies.one,body:premiumBody})).status,403);
+ assert.equal((await call(premiumPath,{cookie:cookies.head,body:{...premiumBody,employeeId:'two'}})).status,403);
+ let premiumResponse=await call(premiumPath,{cookie:cookies.admin,body:premiumBody});assert.equal(premiumResponse.status,200,premiumResponse.text);
+ let premiumRevision=premiumResponse.data.adjustments['premium-op'].revision;
+ let premiumRow=db.prepare('SELECT data,version FROM employees WHERE id=?').get('premium-op');
+ assert.equal(JSON.parse(premiumRow.data).bonus,7);assert.equal(JSON.parse(premiumRow.data).sentinel,'preserve');assert.equal(JSON.parse(premiumRow.data).salary,100);assert.equal(premiumRow.version,2);
+ assert.equal((await call(premiumPath,{cookie:cookies.admin,body:premiumBody})).status,409);
+ assert.equal((await call(premiumPath,{cookie:cookies.one})).data.adjustments['premium-op'],undefined);
+ assert.equal((await call('/api/premium?period=2026-11-1',{cookie:cookies.head})).data.adjustments['premium-op'],undefined);
+ const headChange={...premiumBody,employeeVersion:2,revision:premiumRevision,rate:8};
+ assert.equal((await call(premiumPath,{cookie:cookies.head,body:{...headChange,adjustment:{...adjustments,official:100}}})).status,403);
+ assert.equal((await call(premiumPath,{cookie:cookies.head,body:{...headChange,adjustment:{...adjustments,penalty:-1}}})).status,400);
+ premiumResponse=await call(premiumPath,{cookie:cookies.head,body:headChange});assert.equal(premiumResponse.status,200,premiumResponse.text);
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM employees WHERE id=?').get('premium-op').data).bonus,8);
+ const premiumCard=(await call('/api/crm',{cookie:cookies.admin})).data.employees.find(e=>e.id==='premium-op');assert.equal(premiumCard.bonus,8);
+ assert.equal((await call('/api/premium?period=2028-01-1',{cookie:cookies.admin})).status,400);
+ db.prepare('DELETE FROM employees WHERE id=?').run('premium-op');db.prepare('DELETE FROM settings WHERE id=?').run('premium-draft:2026-10-2:premium-op');
  async function save(actor,e,patch={},id=e.id){return call('/api/crm',{cookie:cookies[actor],body:{action:'saveEmployee',...(id?{id,version:e.version}:{}),employee:{...e,accessEnabled:true,...patch}}});}
  const leaderTerms={model:'udl_guarantee',fixedPerPeriod:0,monthlyGuarantee:100000,firstPeriod:50000,links:[{operatorId:'one',login:'one',rate:7}]};
  db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify({...staff[3],leaderPremium:leaderTerms}),'head');
