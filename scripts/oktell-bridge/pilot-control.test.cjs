@@ -1,6 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const make=require('./pilot-control.cjs');
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),{DatabaseSync}=require('node:sqlite');
 const operators=[{actor:'E-one',userid:randomUUID()},{actor:'E-two',userid:randomUUID()}];
 const config={taskId:randomUUID(),operators,contacts:[1,2,3].map(n=>({phone:'7999000000'+n,clientId:'C-test'+n})),results:['Заказ','Перезвон','Отказ']};
 const sent=[],identity=actor=>({userid:operators.find(o=>o.actor===actor)?.userid,userlogin:actor});
@@ -30,6 +31,21 @@ async function main(){
  assert.equal(p.result('E-one',result).state,'confirmed');assert.equal(p.canAuthorize('E-one'),true);
  assert.equal(p.read('E-two').current.chain,other);
  assert.equal(sent.some(([m])=>/call|activity/.test(m)&&m!=='dlgcard_setstopformresult'),false);
+ for(let i=0;i<150;i++){const chainid=ring('E-two',config.contacts[1].phone);emit('phoneevent_ringstopped','E-two',{chainid});}
+ let cursor=0;const seen=new Set();
+ for(;;){const batch=p.changes(cursor);if(!batch.calls.length)break;assert.ok(batch.through>cursor);for(const c of batch.calls){assert.ok(c.seq>cursor);assert.ok(!seen.has(c.chain));seen.add(c.chain);}cursor=batch.through;}
+ assert.equal(seen.size,153);assert.equal(p.history().length,100);
+ emit('phoneevent_ringstopped','E-two',{chainid:other});
+ assert.equal(p.changes(cursor).calls[0].chain,other);
+ assert.throws(()=>p.changes(-1),/cursor/);
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'oktell-history-')),file=path.join(dir,'legacy.sqlite');
+ let legacy=make({file,load:()=>config,identity,connected:()=>true,send:()=>{}});
+ for(let i=0;i<3;i++)legacy.event('phoneevent_ringstarted',{qid:randomUUID(),...identity('E-two'),istask:true,taskid:config.taskId,chainid:randomUUID(),callerid:config.contacts[i].phone});
+ legacy.close();const oldDb=new DatabaseSync(file);oldDb.exec('DROP TRIGGER pilot_update_insert; DROP TRIGGER pilot_update_change; DROP TABLE pilot_updates;');oldDb.close();
+ legacy=make({file,load:()=>config,identity,connected:()=>true,send:()=>{}});
+ const migrated=legacy.changes(0);assert.equal(migrated.calls.length,3);legacy.close();
+ legacy=make({file,load:()=>config,identity,connected:()=>true,send:()=>{}});
+ assert.equal(legacy.changes(migrated.through).calls.length,0);legacy.close();fs.rmSync(dir,{recursive:true,force:true});
  p.close();console.log('PASS: native pilot isolation, incoming correlation, callbacks, idempotent result, separate operators, no dial commands');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

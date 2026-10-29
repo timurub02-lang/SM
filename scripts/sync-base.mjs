@@ -1,8 +1,16 @@
 import {openDatabase} from '../server/sqlite.ts';
 import {reconcileOrderTimers,reconcileClients} from '../lib/base-retention-store.ts';
 import {runBaseDispatch} from '../lib/base-dispatch.ts';
+import {syncOktellBackground} from '../lib/oktell-background.ts';
 const path=process.env.CRM_DATABASE_PATH;if(!path)throw Error('CRM_DATABASE_PATH is required');
 const db=openDatabase(path);
+try{
+ const result=await syncOktellBackground(db);
+ await db.prepare("INSERT INTO settings(id,data) VALUES('oktell-history-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({ok:true,at:new Date().toISOString(),...result})).run();
+}catch(e){
+ await db.prepare("INSERT INTO settings(id,data) VALUES('oktell-history-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({ok:false,at:new Date().toISOString(),error:e instanceof Error?e.message:'Ошибка синхронизации Oktell'})).run();
+ console.error('Oktell history sync failed; see oktell-history-health');process.exitCode=1;
+}
 try{
  const read=async(table)=> (await db.prepare(`SELECT data,version FROM ${table}`).all()).results.map(r=>({...JSON.parse(r.data),version:r.version}));
  let orders=await read('orders');const events=(await db.prepare("SELECT data FROM events WHERE data LIKE '%Возврат оператору%' ORDER BY at DESC").all()).results.map(r=>JSON.parse(r.data));
