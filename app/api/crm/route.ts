@@ -1,4 +1,4 @@
-import {applyPremiumStages,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
+import {applyPremiumStages,nextPremiumPreview,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
 import {prepareOktellLink} from "@/lib/oktell-provisioning";
 import {readRedemptionSummaries} from '@/lib/redemption-summary';
 import {redemptionConfig} from '@/lib/redemption';
@@ -49,7 +49,11 @@ async function readState(reconcile=true,extraClientId='',includeFree=false):Prom
 
  }
  const payroll=await d.prepare('SELECT data FROM settings WHERE id=?').bind(ledgerKey).first<{data:string}>();
- state.orders=applyPremiumStages(payroll?JSON.parse(payroll.data) as PremiumLedger:null,state.orders,state.employees);
+ const ledger=payroll?JSON.parse(payroll.data) as PremiumLedger:null;
+ const preview=nextPremiumPreview(ledger,state.orders,state.employees);
+ state.premiumActivePeriod=ledger?.activePeriod;
+ state.premiumNextPeriod=preview?.period;
+ state.orders=applyPremiumStages(ledger,state.orders,state.employees).map(o=>({...o,premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
  return state;
 }
 async function initialize(){const d=db();if(await d.prepare("SELECT id FROM settings WHERE id='main'").first())return;

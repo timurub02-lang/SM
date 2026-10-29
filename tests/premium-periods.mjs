@@ -35,3 +35,8 @@ r=premiumCalculation(orders,admin,[op,udl],'2026-10-2',{head:{...defaultPremiumA
 assert(!premiumAdjustmentSchema.safeParse({...adjustment,penalty:-1}).success);
 assert(!premiumAdjustmentSchema.safeParse({...adjustment,salary:Infinity}).success);
 console.log('Premium: calendar boundaries, holidays, receipt basis, staff scope, deductions, rounding and UDL passed');
+
+const {nextOperatorPayout}=await import('../lib/premium-calculation.ts');
+assert.equal(nextOperatorPayout([{delivery:'cdek_pickup',cdekRemittances:[{collectedCents:200000,amountCents:170000}]}],5),100);
+assert.equal(nextOperatorPayout([{delivery:'russian_post',paymentReceivedAmount:2000}],5),100);
+assert.equal(nextOperatorPayout([],5),0);

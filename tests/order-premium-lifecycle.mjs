@@ -61,3 +61,13 @@ const frozenSz=freezePeriod(openSz,'2026-10-2',[initial],szStaff,{},'admin','now
 assert.equal(ledgerRows(frozenSz,'2026-10-2',[initial],staff.map(e=>({...e,sz:false})),{}).find(r=>r.employeeId==='op').input.sz,true);
 const importedSz={...openSz,periods:{'2026-10-2':{...frozenSz.periods['2026-10-2'],status:'open'}}};
 assert.equal(ledgerRows(importedSz,'2026-10-2',[initial],staff.map(e=>({...e,sz:false})),{}).find(r=>r.employeeId==='op').input.sz,false);
+
+const {nextPremiumPreview}=await import('../lib/premium-ledger.ts');
+const previewOpen={revision:'1',activePeriod:'2026-10-2',initialPeriod:'2026-10-2',historyReconciled:true,periods:{'2026-10-2':{status:'open',signatures:{}}}};
+const afterNext=receipt('later','2026-11-10');
+assert.deepEqual([...nextPremiumPreview(previewOpen,[initial,next,afterNext],staff).orderIds],['next']);
+const previewFrozen=freezePeriod(previewOpen,'2026-10-2',[initial,next],staff,{},'admin','now');
+const unchanged=JSON.stringify(previewFrozen);
+assert.deepEqual([...nextPremiumPreview(previewFrozen,[initial,next,late,afterNext],staff).orderIds].sort(),['late','next']);
+assert.equal(JSON.stringify(previewFrozen),unchanged);
+assert.equal(nextPremiumPreview(null,[next],staff),null);
