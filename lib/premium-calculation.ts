@@ -11,9 +11,9 @@ export function premiumStaff(actor:Employee,target:Employee){return actor.role==
 export function defaultPremiumAdjustment(e:Employee):PremiumAdjustment{return {salary:e.leaderPremium?.fixedPerPeriod??0,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:false,firstHalfBonus:null};}
 const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 export function premiumCalculation(orders:Order[],actor:Employee,employees:Employee[],period:string,adjustments:Record<string,PremiumSaved>){
- const eligible=premiumOrders(orders,actor,employees).filter(r=>periodForReceipt(r.date)?.id===period);
+ const eligible=premiumOrders(orders,actor,employees).filter(r=>(r.periodId||r.order.premiumStage?.periodId||periodForReceipt(r.date)?.id)===period);
  const amounts=new Map<string,number>();
- for(const r of eligible){const cents=isCdekOrder(r.order)?r.order.cdekRemittances![0].collectedCents:Math.round(r.amount*100);amounts.set(r.order.manager,(amounts.get(r.order.manager)||0)+cents);}
+ for(const r of eligible){const cents=r.order.importedPayment?Math.round(r.order.importedPayment.amount*100):isCdekOrder(r.order)?r.order.cdekRemittances![0].collectedCents:Math.round(r.amount*100);amounts.set(r.order.manager,(amounts.get(r.order.manager)||0)+cents);}
  const rows=employees.filter(e=>premiumStaff(actor,e)&&(e.role==='operator'||!!e.leaderPremium)).map(employee=>{
   const input=adjustments[employee.id]||defaultPremiumAdjustment(employee),terms=employee.leaderPremium;
   const volume=(amounts.get(employee.id)||0)/100;

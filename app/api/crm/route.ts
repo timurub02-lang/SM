@@ -1,3 +1,4 @@
+import {applyPremiumStages,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
 import {prepareOktellLink} from "@/lib/oktell-provisioning";
 import {readRedemptionSummaries} from '@/lib/redemption-summary';
 import {redemptionConfig} from '@/lib/redemption';
@@ -47,6 +48,8 @@ async function readState(reconcile=true,extraClientId='',includeFree=false):Prom
   if(await reconcileClients(d,state.clients,state.orders))return readState(false,extraClientId,includeFree);
 
  }
+ const payroll=await d.prepare('SELECT data FROM settings WHERE id=?').bind(ledgerKey).first<{data:string}>();
+ state.orders=applyPremiumStages(payroll?JSON.parse(payroll.data) as PremiumLedger:null,state.orders,state.employees);
  return state;
 }
 async function initialize(){const d=db();if(await d.prepare("SELECT id FROM settings WHERE id='main'").first())return;
