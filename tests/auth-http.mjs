@@ -71,6 +71,12 @@ try{
  assert.equal((await call('/api/cdek',{cookie:cookies.one,body:{action:'save'}})).status,403);
  assert.equal((await call('/api/mainsms',{cookie:cookies.one,body:{action:'preview',orderId:'o-two'}})).status,403);
  async function save(actor,e,patch={},id=e.id){return call('/api/crm',{cookie:cookies[actor],body:{action:'saveEmployee',...(id?{id,version:e.version}:{}),employee:{...e,accessEnabled:true,...patch}}});}
+ const leaderTerms={model:'udl_guarantee',fixedPerPeriod:0,monthlyGuarantee:100000,firstPeriod:50000,links:[{operatorId:'one',login:'one',rate:7}]};
+ db.prepare('UPDATE employees SET data=? WHERE id=?').run(JSON.stringify({...staff[3],leaderPremium:leaderTerms}),'head');
+ const savedHead=await save('admin',staff[3],{leaderPremium:{model:'forged'}});
+ assert.equal(savedHead.status,200,savedHead.text);
+ assert.deepEqual(savedHead.data.state.employees.find(e=>e.id==='head').leaderPremium,leaderTerms);
+ staff[3].version=savedHead.data.state.employees.find(e=>e.id==='head').version;
  assert.equal((await save('head',staff[2],{password:changed})).status,400);
  assert.equal((await save('head',staff[0],{password:changed})).status,400);
  const fresh={...staff[1],id:undefined,login:'new-member',name:'New member'};
