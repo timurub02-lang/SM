@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {initRedemption,redemptionRows,editRedemption,canSeeRedemption} from '../lib/redemption.ts';
+import {initRedemption,redemptionRows,editRedemption,canSeeRedemption,redemptionResultLabel} from '../lib/redemption.ts';
 const d=openDatabase(':memory:'),now=new Date('2026-10-27T10:00:00Z');
-const op={id:'op',name:'Operator',role:'operator'},buyer={id:'buyer',name:'Buyout',role:'redemption'};
+const op={id:'op',name:'Operator',role:'operator',department:'1'},buyer={id:'buyer',name:'Buyout',role:'redemption'};
 await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)'].map(s=>d.prepare(s)));
 await initRedemption(d);
 await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c','{}').run();
@@ -11,7 +11,7 @@ await d.prepare('INSERT INTO settings VALUES(?,?)').bind('redemption-config',JSO
 await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('o','c',JSON.stringify({manager:'op',status:'shipping',delivery:'cdek_pvz',cdekStatus:{code:'ACCEPTED_AT_PICK_UP_POINT'},cdekStorageUntil:'2026-11-05'})).run();
 const initial={result:'date',action:'date',resultDate:'2026-10-30',dateConfirmation:'pending',author:'Buyout',authorId:'buyer',lastDay:'2026-10-27',days:{'2026-10-27':{at:now.toISOString()}},comments:[]};
 await d.prepare('INSERT OR REPLACE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind('o',now.toISOString(),JSON.stringify(initial)).run();
-const row=async()=>(await redemptionRows(d))[0];
+const row=async()=>(await redemptionRows(d)).find(r=>r.order_id==='o');
 const edit=async(p,actor=op)=>editRedemption(d,actor,{id:'o',version:(await row()).version,source:'order',comment:'Call result',...p},now);
 assert(canSeeRedemption(op,await row(),false));assert(!canSeeRedemption({...op,id:'other'},await row(),false));
 await edit({action:'nd',result:'none',comment:''});let r=await row();assert.equal(r.resultDate,initial.resultDate);assert.equal(r.author,'Buyout');assert.equal(r.result,'date');assert.equal(r.changeKind,'missed_attempt');assert.equal(r.comments.length,0);
@@ -68,3 +68,22 @@ await d.prepare("DELETE FROM events WHERE id='INCOMING-early-in'").run();
 await editEarly({action:'po',result:'date',date:'2026-11-06',replaceConfirmed:true,responsibilityConfirmed:true});
 assert.equal((await early()).resultDate,'2026-11-06');
 console.log('Early incoming result: hidden before eligibility, future date waits, due/overdue enters work, storage and responsibility guards passed');
+
+const head={id:'head',name:'Head',role:'department_head',department:'1'};
+await d.prepare("UPDATE settings SET data=json_set(data,'$.headsAll',json('true')) WHERE id='redemption-config'").run();
+await edit({action:'work',result:'date',date:'2026-10-30',replaceConfirmed:true},head);
+assert.equal((await row()).action,'work');assert.equal((await row()).authorId,'head');
+assert(canSeeRedemption(head,await row(),true));
+assert.equal(redemptionResultLabel(await row()),'В работе · Дата · 30.10.2026');
+await assert.rejects(edit({action:'nd',result:'none'},{...head,department:'2'}),/недоступен/);
+await assert.rejects(edit({action:'nd',result:'none'},{...head,department:''}),/недоступен/);
+await edit({action:'courier',result:'courier',replaceConfirmed:true},head);
+// Even headsAll must not grant order-card editing outside the department.
+await assert.rejects(edit({action:'nd',result:'none'},{...head,department:'2'}),/недоступен/);
+await d.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed') WHERE id='o'").run();
+await assert.rejects(edit({action:'nd',result:'none'},head),/недоступен/);
+assert.equal(redemptionResultLabel({action:'date',result:'date',resultDate:'2026-10-30'}),'Дата · 30.10.2026');
+assert.equal(redemptionResultLabel({action:'po',result:'date',resultDate:'2026-11-06'}),'Под ответственность · Дата · 06.11.2026');
+assert.equal(redemptionResultLabel({result:'date',resultDate:'2026-10-30'}),'Дата · 30.10.2026');
+assert.equal(redemptionResultLabel({action:'courier',result:'courier'}),'У курьера');
+console.log('Head order-card scope and selected action labels passed');

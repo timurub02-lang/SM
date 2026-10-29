@@ -1,3 +1,4 @@
+import {canEditOrderRedemption} from './redemption-priority.ts';
 import {incomingForAction} from './incoming.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Employee} from './crm.ts';
@@ -38,7 +39,7 @@ export function awaitingOperator(row:any){return !!row.operatorReturn&&!row.oper
 export function operatorReturnScheduled(row:any,now=new Date()){return awaitingOperator(row)&&!!row.operatorReturn.startsAt&&row.operatorReturn.startsAt>now.toISOString();}
 export function awaitingDateConfirmation(row:any){return !awaitingOperator(row)&&row.dateConfirmation==='pending'&&row.result==='date';}
 export function awaitingReturn(row:any){return !awaitingOperator(row)&&row.result==='to_return';}
-export function canSeeRedemption(e:Employee,row:any,headsAll:boolean){if(awaitingOperator(row))return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department;if((awaitingDateConfirmation(row)||awaitingReturn(row))&&!['admin','redemption'].includes(e.role)&&!(awaitingDateConfirmation(row)&&e.role==='operator'&&row.manager===e.id))return false;return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&(headsAll||!!e.department&&row.department===e.department);}
+export function canSeeRedemption(e:Employee,row:any,headsAll:boolean){if(awaitingOperator(row))return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department;if((awaitingDateConfirmation(row)||awaitingReturn(row))&&!['admin','redemption'].includes(e.role)&&!(awaitingDateConfirmation(row)&&(e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department)))return false;return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&(headsAll||!!e.department&&row.department===e.department);}
 export function inWorkday(r:any,day:string){if(r.pendingEnrollment||r.incomingScheduled&&r.result==='date'&&r.resultDate>day)return false;if(awaitingOperator(r)||awaitingReturn(r)||r.result==='returned'||awaitingDateConfirmation(r))return false;if((r.dateConfirmation==='confirmed'||r.refusalRetryUsed&&r.action==='refusal')&&r.result==='date'&&r.resultDate>day)return false;if(dayOf(new Date(r.entered_at))>day)return false;if(r.result==='delivered')return r.lastDay===day;return r.lastDay===day||!r.resultDate||r.result!=='date'||r.resultDate<=day;}
 export function dateConfirmedToday(row:any,day:string){return row.dateConfirmation==='confirmed'&&row.result==='date'&&!!row.dateConfirmedAt&&dayOf(new Date(row.dateConfirmedAt))===day;}
 export function returnConfirmedToday(row:any,day:string){return row.result==='returned'&&!!row.returnConfirmedAt&&dayOf(new Date(row.returnConfirmedAt))===day;}
@@ -72,7 +73,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
 
  const cfg=await redemptionConfig(d),row=(await redemptionRows(d,!!p.incomingId)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,cfg.headsAll))throw Error('Заказ недоступен');
  if(p.version!==row.version)throw Error('Заказ изменён другим сотрудником. Обновите результат');
- if(p.source==='order'){const stored=await d.prepare('SELECT data FROM orders WHERE id=?').bind(p.id).first();const order=JSON.parse(stored?.data||'{}');if(e.role!=='operator'||order.manager!==e.id||order.status!=='shipping'||!order.delivery?.startsWith('cdek_')||!p.incomingId&&!cfg.statuses.includes(order.cdekStatus?.code))throw Error('Результат выкупа недоступен для этого заказа');}
+ if(p.source==='order'){const stored=await d.prepare('SELECT data FROM orders WHERE id=?').bind(p.id).first();const order=JSON.parse(stored?.data||'{}');const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(order.manager||'').first();if(!canEditOrderRedemption(e,order,manager?{...JSON.parse(manager.data),id:order.manager}:undefined)||!p.incomingId&&!cfg.statuses.includes(order.cdekStatus?.code))throw Error('Результат выкупа недоступен для этого заказа');}
  let incoming:any=null;
  if(p.incomingId!==undefined){
   if(typeof p.incomingId!=='string'||!p.incomingId||p.incomingId.length>100||p.source!=='order'||p.operation)throw Error('Некорректный итог входящего обращения');
@@ -143,4 +144,9 @@ export async function archiveRedemption(d:Db,now=new Date()){
  await syncRedemption(d,now);const day=dayOf(now);if(!closedTime(now))return;
  const rows=(await redemptionRows(d)).filter((r:any)=>inWorkday(r,day)||awaitingDateConfirmation(r)||awaitingReturn(r)||awaitingOperator(r)||r.lastDay===day||r.updatedAt&&dayOf(new Date(r.updatedAt))===day);
  await d.prepare('INSERT OR IGNORE INTO redemption_archives(day,at,data) VALUES(?,?,?)').bind(day,now.toISOString(),JSON.stringify(rows.map((r:any)=>inRedemptionTab(r,'work',day)?{...r,author:redemptionDayAuthor(r,day)}:r))).run();
+}
+
+export function redemptionResultLabel(row:{action?:string;result?:string;resultDate?:string}){
+ const action=actions[row.action as keyof typeof actions],result=results[row.result as keyof typeof results]||'Ещё не указан';
+ return [action,action===result?undefined:result,row.resultDate?.split('-').reverse().join('.')].filter(Boolean).join(' · ');
 }
