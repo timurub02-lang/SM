@@ -19,7 +19,8 @@ export function visibleState(s:State,e:Employee):State{
   const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)).map(o=>({...o,paymentReceipt:undefined,manager:'',logistic:'',paymentReceivedBy:undefined}));
   return {orders,clients:s.clients.filter(c=>orders.some(o=>o.clientId===c.id)).map(c=>({id:c.id,name:c.name,phone:c.phone,city:c.city,address:c.address,source:'',owner:'',assignedUntil:'',createdAt:c.createdAt,version:c.version})),employees:[e],events:[],incoming:[],settings:{retentionDays:0,orderPolicy:s.settings?.orderPolicy}};
  }
- const orders=s.orders.filter(o=>seesOrder(e,o,s.employees));const orderIds=new Set(orders.map(o=>o.id));
+ const ownedClientIds=new Set(s.clients.filter(c=>ownsClient(e,c,s.employees)).map(c=>c.id));
+ const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)||ownedClientIds.has(o.clientId));const orderIds=new Set(orders.map(o=>o.id));
  const clients=s.clients.filter(c=>ownsClient(e,c,s.employees)||orders.some(o=>o.clientId===c.id));const ids=new Set(clients.map(c=>c.id));
  const staffIds=new Set([e.id,...orders.flatMap(o=>[o.manager,o.logistic]),...clients.map(c=>c.owner)]);
  const employees=s.employees.filter(x=>staffIds.has(x.id)||isLogistic(e.role)&&x.role==='courier'||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&!!e.department&&x.department===e.department).map(x=>({...x,leaderPremium:x.id===e.id?x.leaderPremium:undefined,salary:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.salary:0,bonus:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.bonus:0}));

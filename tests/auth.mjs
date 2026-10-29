@@ -21,3 +21,10 @@ assert.throws(()=>authorizeCrm(head,{action:'updateOrder',id:'oa'},state));
 assert.equal(seesOrder(logist,state.orders[0],state.employees),true);
 assert.equal(visibleState(state,admin),state);
 console.log('Passwords, role checks, department isolation and phone filtering passed');
+
+const reassigned={...state,clients:state.clients.map(c=>c.id==='ca'?{...c,owner:'b'}:c),orders:state.orders.map(o=>o.id==='oa'?{...o,status:'redeemed',premiumStage:{status:'paid',periodId:'2026-09-1'}}:o)};
+assert(visibleState(reassigned,b).orders.some(o=>o.id==='oa'));
+assert(visibleState(reassigned,b).events.some(e=>e.orderId==='oa'));
+assert(visibleState(reassigned,a).orders.some(o=>o.id==='oa'));
+assert.throws(()=>authorizeCrm(b,{action:'updateOrder',id:'oa'},reassigned));
+assert.equal(seesOrder(b,reassigned.orders[0],state.employees),false);
