@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {orderDisplayGroup,orderDisplayGroups,showPaidOrderInList} from '../lib/order-premium-stage.ts';
+import {orderDisplayGroup,orderDisplayGroups,showOrderInList} from '../lib/order-premium-stage.ts';
 import {orderGroup,closedOrderCallBlocked} from '../lib/crm.ts';
 assert.deepEqual(orderDisplayGroups.slice(4,7).map(g=>g.label),['Оплачен','Начислено','Выплачено']);
 const order={status:'redeemed'};
@@ -16,10 +16,21 @@ console.log('Financial tabs preserve order lifecycle and call restrictions');
 
 const paidOrder={status:'redeemed',manager:'original',premiumStage:{status:'paid',periodId:'2026-10-2'}};
 for(const role of ['operator','department_head']){
- assert.equal(showPaidOrderInList(paidOrder,{owner:'original'},role),true);
- for(const client of [{owner:''},{owner:'other'},undefined])assert.equal(showPaidOrderInList(paidOrder,client,role),false);
- assert.equal(showPaidOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},role),true);
- assert.equal(showPaidOrderInList({...paidOrder,premiumStage:undefined},{owner:''},role),true);
+ assert.equal(showOrderInList(paidOrder,{owner:'original'},role),true);
+ for(const client of [{owner:''},{owner:'other'},undefined])assert.equal(showOrderInList(paidOrder,client,role),false);
+ assert.equal(showOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},role),true);
+ assert.equal(showOrderInList({...paidOrder,premiumStage:undefined},{owner:''},role),true);
 }
-assert.equal(showPaidOrderInList(paidOrder,{owner:''},'admin'),true);
+assert.equal(showOrderInList(paidOrder,{owner:''},'admin'),true);
 assert.equal(paidOrder.premiumStage.status,'paid');
+
+const cancelled={status:'refused',manager:'original',cancelledAt:'2026-10-28T10:00:00Z',cancellationAuthor:{id:'original',name:'Operator'}};
+const saved=JSON.stringify(cancelled);
+for(const role of ['operator','department_head']){
+ assert.equal(showOrderInList(cancelled,{owner:'original'},role),true);
+ assert.equal(showOrderInList(cancelled,{owner:''},role),false);
+ assert.equal(showOrderInList(cancelled,{owner:'other'},role),false);
+}
+assert.equal(showOrderInList(cancelled,{owner:''},'admin'),true);
+assert.equal(JSON.stringify(cancelled),saved);
+assert.equal(orderGroup(cancelled).id,'cancelled');

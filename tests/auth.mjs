@@ -28,3 +28,9 @@ assert(visibleState(reassigned,b).events.some(e=>e.orderId==='oa'));
 assert(visibleState(reassigned,a).orders.some(o=>o.id==='oa'));
 assert.throws(()=>authorizeCrm(b,{action:'updateOrder',id:'oa'},reassigned));
 assert.equal(seesOrder(b,reassigned.orders[0],state.employees),false);
+
+const cancelledHistory={...reassigned,orders:reassigned.orders.map(o=>o.id==='oa'?{...o,status:'refused',premiumStage:undefined,cancellationAuthor:{id:'a',name:'Original operator'}}:o)};
+const historyForNewOwner=visibleState(cancelledHistory,b);
+assert.equal(historyForNewOwner.orders.find(o=>o.id==='oa').cancellationAuthor.id,'a');
+assert(historyForNewOwner.events.some(e=>e.orderId==='oa'));
+assert.equal(visibleState(cancelledHistory,admin).orders.filter(o=>o.manager==='a'&&o.status==='refused').length,1);

@@ -14,6 +14,6 @@ export function orderDisplayGroup(order:Order){
 }
 
 // Only the operational list is pruned; payroll history retains its original membership.
-export function showPaidOrderInList(order:Order,client:Client|undefined,role:Employee["role"]){
- return !["operator","department_head"].includes(role)||orderDisplayGroup(order).id!=="premium_paid"||!!client?.owner&&client.owner===order.manager;
+export function showOrderInList(order:Order,client:Client|undefined,role:Employee["role"]){
+ return !["operator","department_head"].includes(role)||!["premium_paid","cancelled"].includes(orderDisplayGroup(order).id)||!!client?.owner&&client.owner===order.manager;
 }
