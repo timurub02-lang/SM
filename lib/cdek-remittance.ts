@@ -2,7 +2,8 @@ import type {Order} from './crm.ts';
 export type CdekRemittance={slot:number;registry:string;tracking:string;paymentDate:string;amountCents:number;collectedCents:number};
 export const isCdekOrder=(o:Pick<Order,'delivery'>)=>['cdek_pickup','cdek_courier'].includes(o.delivery||'');
 export function cdekMoneyLabel(o:Order){
- if(!isCdekOrder(o)||o.status!=='redeemed')return '';
+ if(o.status!=='redeemed')return '';
+ if(!isCdekOrder(o))return o.importedPayment?'Деньги получены · '+o.importedPayment.source:'';
  if(o.cdekRemittances?.length===1){const r=o.cdekRemittances[0];return `Деньги получены · реестр №${r.registry} · ${r.paymentDate.split('-').reverse().join('.')}`;}
  if((o.cdekRemittances?.length||0)>1)return 'Несколько перечислений · требуется проверка администратора';
  if(o.importedPayment)return 'Деньги получены · '+o.importedPayment.source;
