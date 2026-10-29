@@ -27,3 +27,9 @@ export function premiumCalculation(orders:Order[],actor:Employee,employees:Emplo
  });
  return {rows,count:eligible.length,volume:[...amounts.values()].reduce((s,n)=>s+n,0)/100};
 }
+
+export function nextOperatorPayout(orders:Order[],rate:number){
+ const cents=orders.reduce((sum,o)=>sum+(o.importedPayment?Math.round(o.importedPayment.amount*100):isCdekOrder(o)?o.cdekRemittances?.[0]?.collectedCents||0:Math.round((o.paymentReceipt?.amount??o.paymentReceivedAmount??0)*100)),0);
+ const commission=round(cents/100*rate/100);
+ return Math.max(0,Math.round(commission/50)*50);
+}

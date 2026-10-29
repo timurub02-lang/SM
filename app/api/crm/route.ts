@@ -51,6 +51,7 @@ async function readState(reconcile=true,extraClientId='',includeFree=false):Prom
  const payroll=await d.prepare('SELECT data FROM settings WHERE id=?').bind(ledgerKey).first<{data:string}>();
  const ledger=payroll?JSON.parse(payroll.data) as PremiumLedger:null;
  const preview=nextPremiumPreview(ledger,state.orders,state.employees);
+ state.premiumActivePeriod=ledger?.activePeriod;
  state.premiumNextPeriod=preview?.period;
  state.orders=applyPremiumStages(ledger,state.orders,state.employees).map(o=>({...o,premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
  return state;
