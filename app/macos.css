@@ -689,18 +689,24 @@ body:has(.courier-design-aurora){background:#191a1e}
 
 .order-buyout-summary{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}.order-buyout-summary .badge{font-size:12px}
 
-.retention-dialog{width:min(1080px,95vw)!important;max-width:1080px!important}
-.retention-dialog fieldset{min-width:0}
-.retention-dialog select{font:inherit;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:inherit;width:100%}
-.retention-dialog .field{max-width:320px}
-.retention-table-wrap{max-height:48dvh}
-.retention-table{min-width:680px;width:100%}
-.retention-table tbody th{text-align:left;font-weight:400;white-space:normal}
-.retention-table tbody th strong{display:block;font-weight:600}
-.retention-table small{display:block;color:#718096;font-size:12px;margin-top:3px;white-space:normal}
-.retention-table td{font-variant-numeric:tabular-nums}
-.retention-table input{width:88px;min-height:36px;padding:7px 10px!important}
-.retention-table td:last-child{width:135px}
-.retention-stat-note{font-size:12px;line-height:1.5}
-.retention-table th:first-child{width:48%}
-.retention-table thead th:last-child{width:135px}
+.retention-dialog{width:min(1180px,96vw)!important;max-width:1180px!important;height:min(960px,94dvh);max-height:94dvh!important;padding:20px!important;display:flex!important;flex-direction:column;gap:12px!important;overflow:hidden}
+.retention-dialog [data-slot=dialog-title]{font-size:22px}
+.retention-dialog [data-slot=dialog-description]{font-size:12px;line-height:1.4}
+.retention-dialog form,.retention-dialog fieldset{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;gap:10px}
+.retention-toolbar{display:flex;align-items:center;gap:16px;flex-shrink:0;font-size:12px}
+.retention-toolbar .field{display:flex;flex-direction:row;align-items:center;gap:10px;margin:0}
+.retention-dialog select{font:inherit;padding:5px 10px;border:1px solid var(--border);border-radius:9px;background:#fff;color:inherit;width:200px;height:32px}
+.retention-table-wrap{flex:1;min-height:0;max-height:none;border-radius:12px}
+.retention-table{min-width:660px;width:100%;font-size:12px}
+.retention-table th,.retention-table td{height:31px;padding:2px 10px;line-height:1.3}
+.retention-table thead th{height:32px;padding:5px 10px;font-size:12px}
+.retention-table th:first-child{width:52%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400}
+.retention-table th:last-child{width:112px}
+.retention-table input{width:72px;height:26px;min-height:26px;padding:2px 8px!important;border:1px solid #d8e1ed;border-radius:7px;background:#fff;color:inherit;font-size:12px}
+.retention-table small{display:block;color:#718096;font-size:10px;white-space:normal}
+.retention-footer{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-shrink:0}
+.retention-footer details{font-size:12px;max-height:140px;overflow:auto;min-width:0}
+.retention-footer summary{cursor:pointer;color:#64748b;padding:7px 0}
+.retention-footer p{font-size:12px;line-height:1.5;margin:6px 0}
+.retention-footer button{min-height:32px;padding:7px 14px;font-size:12px;white-space:nowrap}
+@media(max-width:600px){.retention-dialog{padding:12px!important}.retention-dialog select{width:150px}.retention-toolbar{gap:10px}.retention-footer{gap:8px}}
