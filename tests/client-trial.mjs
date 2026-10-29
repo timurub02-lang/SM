@@ -7,7 +7,8 @@ const released=applyRetention(c,[],Date.parse(end));
 assert.equal(released.owner,'');assert.equal(released.sheet,'Т1');assert.equal(released.trialUntil,undefined);
 const held=applyRetention(c,[{clientId:'c',manager:'op',createdAt:start,status:'draft'}],Date.parse(end));
 assert.equal(held.owner,'op');assert.equal(held.trialUntil,undefined);
-assert.equal(applyRetention(c,[{clientId:'c',manager:'other',createdAt:start,status:'draft'}],Date.parse(end)).owner,'');
+// An active order protects the client from redistribution even when another manager owns the order.
+assert.equal(applyRetention(c,[{clientId:'c',manager:'other',createdAt:start,status:'draft'}],Date.parse(end)).owner,'op');
 console.log('24-hour assignment tests passed');
 
 const free={...c,owner:"",trialUntil:undefined,assignedUntil:""};
