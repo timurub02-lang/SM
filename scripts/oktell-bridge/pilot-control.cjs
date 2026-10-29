@@ -21,8 +21,8 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  const stamp=()=>new Date(now()).toISOString();
  function config(){
   const p=load();if(!p)return null;
-  if(!uuid(p.taskId)||!Array.isArray(p.operators)||p.operators.length!==2||!Array.isArray(p.contacts)||p.contacts.length!==3||
-   p.operators.some(o=>!/^E-[\w-]+$/.test(o.actor)||!uuid(o.userid))||new Set(p.operators.map(o=>o.actor)).size!==2||new Set(p.operators.map(o=>lower(o.userid))).size!==2||
+  if(!uuid(p.taskId)||!Array.isArray(p.operators)||(p.operators.length<2||p.operators.length>3)||!Array.isArray(p.contacts)||p.contacts.length!==3||
+   p.operators.some(o=>!/^E-[\w-]+$/.test(o.actor)||!uuid(o.userid))||new Set(p.operators.map(o=>o.actor)).size!==p.operators.length||new Set(p.operators.map(o=>lower(o.userid))).size!==p.operators.length||
    p.contacts.some(c=>!phone(c.phone)||!/^C-[\w-]+$/.test(c.clientId))||new Set(p.contacts.map(c=>phone(c.phone))).size!==3||
    !Array.isArray(p.results)||p.results.some(r=>typeof r!=='string')||p.results.length<1)throw fail('Проверьте конфигурацию Т1',503);
   return p;
