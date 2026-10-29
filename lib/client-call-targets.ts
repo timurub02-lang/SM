@@ -1,5 +1,5 @@
 import {createHmac} from 'node:crypto';
-import {cancelledOrderCallBlocked,operatorCallBlocked,type Employee,type Order} from './crm';
+import {closedOrderCallBlocked,operatorCallBlocked,type Employee,type Order} from './crm';
 import {db} from './db';
 import {phoneScope,normalizeOutgoingNumber} from './phone-store';
 export async function clientPhones(actor:Employee,p:{mode:string;clientId?:string;orderId?:string}){
@@ -15,7 +15,7 @@ export async function clientPhones(actor:Employee,p:{mode:string;clientId?:strin
  if(p.mode==='order'){
   const orderRow=await db().prepare('SELECT data FROM orders WHERE id=?').bind(p.orderId!).first<{data:string}>();
   if(!orderRow)throw Error('Заказ не найден');
-  if(cancelledOrderCallBlocked(actor,JSON.parse(orderRow.data),JSON.parse(row.data)))throw Error('Клиент больше не закреплён за вами. Звонок из отменённого заказа недоступен');
+  if(closedOrderCallBlocked(actor,JSON.parse(orderRow.data),JSON.parse(row.data)))throw Error('Клиент больше не закреплён за вами. Звонок из отменённого или выкупленного заказа недоступен');
  }
  const linked=JSON.parse(row.data).linkedPhones||[];
  const numbers=[...new Set([row.phone,...linked].map(normalizeOutgoingNumber).filter((number):number is string=>!!number))];

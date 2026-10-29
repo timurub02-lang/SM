@@ -79,8 +79,9 @@ try{
  for(const id of ['one','head'])assert.equal((await call('/api/telephony',{cookie:cookies[id],body:{mode:'test'}})).status,400);
  assert.equal((await call('/api/telephony',{cookie:cookies.one,body:{mode:'client',clientId:'c-two'}})).status,400);
  const ownCall=await call('/api/telephony',{cookie:cookies.one,body:{mode:'client',clientId:'c-one'}});assert.equal(ownCall.status,200);
- // Cancellation keeps order/history visible but cannot bypass current client ownership.
- db.prepare("UPDATE orders SET data=json_set(data,'$.status','refused') WHERE id='o-one'").run();
+ // Closed orders keep history visible but cannot bypass current client ownership.
+ for(const status of ['refused','redeemed']){
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status',?) WHERE id='o-one'").run(status);
  const orderPhones=()=>call('/api/telephony?mode=order&orderId=o-one',{cookie:cookies.one});
  assert.equal((await orderPhones()).status,200);
  for(const owner of ['', 'two']){
@@ -93,6 +94,7 @@ try{
  }
  db.prepare("UPDATE clients SET data=json_set(data,'$.owner','one') WHERE id='c-one'").run();
  assert.equal((await orderPhones()).status,200);
+ }
  db.prepare("UPDATE orders SET data=json_set(data,'$.status','draft') WHERE id='o-one'").run();
  const headCall=await call('/api/telephony',{cookie:cookies.head,body:{mode:'order',orderId:'o-one'}});assert.equal(headCall.status,200);assert.notEqual(headCall.data.username,ownCall.data.username);
  const status=await call('/api/telephony',{cookie:cookies.admin});assert.equal(status.data.configured,true);assert.ok(!status.text.includes('fixture-secret'));assert.ok(!status.text.includes('pilot-test'));assert.equal(status.headers.get('cache-control'),'no-store');

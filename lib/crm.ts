@@ -252,4 +252,4 @@ export const teamEmployees=(staff:Employee[],viewer:Employee)=>staff.filter(e=>v
 
 export const canReceivePayment=(order:Order,role:string)=>["admin","logistic","chief_logistic"].includes(role)&&["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"&&!order.paymentReceivedAt;
 
-export const cancelledOrderCallBlocked=(e:Pick<Employee,"id"|"role">,o:Pick<Order,"status">,c:Pick<Client,"owner">)=>e.role==="operator"&&o.status==="refused"&&c.owner!==e.id;
+export const closedOrderCallBlocked=(e:Pick<Employee,"id"|"role">,o:Pick<Order,"status">,c:Pick<Client,"owner">)=>e.role==="operator"&&["refused","redeemed"].includes(o.status)&&c.owner!==e.id;
