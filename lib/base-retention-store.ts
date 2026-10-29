@@ -46,7 +46,7 @@ export async function reconcileClients(d:Db,clients:Client[],orders:Order[]){
   const byClient=new Map<string,Order[]>();for(const order of orders){const group=byClient.get(order.clientId)||[];group.push(order);byClient.set(order.clientId,group);}
   for(const c of clients){
    const related=byClient.get(c.id)||[];
-   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent));
+   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent),!!baseConfig.retention.operators[c.owner]);
    if(JSON.stringify(next)===JSON.stringify(c))continue;
    const at=new Date().toISOString();const eid="EV-"+crypto.randomUUID();
    const event:Event={id:eid,clientId:c.id,orderId:"",at,actor:"Система",text:next.owner?"Правило К · закрепление обновлено":"Правило К · откреплён, возвращён в "+(clientSheet(next)||"исходную базу")};

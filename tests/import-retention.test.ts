@@ -11,3 +11,14 @@ assert.equal(clientAssignment(c,'other','2026-10-01T00:00:00Z').importRetentionU
 assert.equal(clientAssignment(c,'','2026-10-01T00:00:00Z').importRetentionUntil,undefined);
 assert.equal(applyRetention({...c,importRetentionUntil:undefined},[o],Date.parse('2026-10-10')).owner,'');
 console.log('Import retention checks passed');
+// An explicit operator policy overrides imported deadlines only when original redemption dates exist.
+const explicitNow=Date.parse('2026-10-10');
+const recent={...o,createdAt:'2026-09-01T00:00:00Z',redeemedAt:'2026-09-20T00:00:00Z'};
+const imported={...c,assignmentStartedAt:'2026-09-01T00:00:00Z'};
+assert.equal(applyRetention(imported,[recent],explicitNow,14,true).owner,'');
+assert.equal(applyRetention(imported,[recent],explicitNow,35,true).owner,c.owner);
+assert.equal(applyRetention(imported,[recent],explicitNow,14).owner,c.owner);
+assert.equal(applyRetention(imported,[],explicitNow,14,true).owner,c.owner);
+assert.equal(applyRetention(imported,[{...recent,redeemedAt:undefined}],explicitNow,14,true).owner,c.owner);
+assert.equal(applyRetention(imported,[recent,{...recent,status:'shipping'}],explicitNow,14,true).owner,c.owner);
+assert.equal(applyRetention(imported,[recent],explicitNow,14,true).sheet,'П');

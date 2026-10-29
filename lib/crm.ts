@@ -126,7 +126,7 @@ export function clientAssignment(c:Client,owner:string,now:string,firstSheet="Т
  const until=new Date(Date.parse(now)+86400000).toISOString();
  return {importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:clientSheet(c)||firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
 }
-function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35):Client{
+function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35,explicitPolicy=false):Client{
  if(!c.owner)return c;
  const original=c.returnSheet??(clientSheet(c)==="К"?"П":clientSheet(c));
  const own=orders.filter(o=>o.clientId===c.id&&o.manager===c.owner&&(!c.assignmentStartedAt||o.createdAt>=c.assignmentStartedAt));
@@ -137,13 +137,14 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
  const paid=own.filter(o=>o.status==="redeemed");
  // Missing historical redemption dates must not silently release a client.
  if(paid.some(o=>!o.redeemedAt||!Number.isFinite(Date.parse(o.redeemedAt))))return base;
- const until=Math.max(paid.length?Math.max(...paid.map(o=>Date.parse(o.redeemedAt!)))+retentionDays*86400000:0,Date.parse(c.importRetentionUntil||"")||0);
+ // A saved operator policy supersedes the imported deadline only with known redemption dates.
+ const until=Math.max(paid.length?Math.max(...paid.map(o=>Date.parse(o.redeemedAt!)))+retentionDays*86400000:0,explicitPolicy&&paid.length?0:Date.parse(c.importRetentionUntil||"")||0);
  if(until>now)return {...base,assignedUntil:new Date(until).toISOString()};
  return {...base,owner:"",releasedAt:new Date(now).toISOString(),sheet:paid.length?"П":original,returnSheet:undefined,assignmentStartedAt:undefined};
 }
 
-export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35):Client{
- const next=retentionResult(c,orders,now,days),related=orders.filter(o=>o.clientId===c.id);
+export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,explicitPolicy=false):Client{
+ const next=retentionResult(c,orders,now,days,explicitPolicy),related=orders.filter(o=>o.clientId===c.id);
  if(!related.some(o=>o.pv))return next;
  const events=related.flatMap(o=>o.status==='redeemed'&&o.redeemedAt?[{at:o.redeemedAt,sheet:next.owner?'К':'П',startedAt:''}]:o.pv?[{at:o.status==='returned'?o.returnedAt||o.updatedAt:o.status==='refused'?o.cancelledAt||o.updatedAt:o.pvMarkedAt||o.createdAt,sheet:['returned','refused'].includes(o.status)?'ЧС':'ПВ',startedAt:o.createdAt}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
  const latest=events[0];if(!latest)return next;

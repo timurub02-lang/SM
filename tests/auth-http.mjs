@@ -693,6 +693,27 @@ try{
  const denied=await call('/api/base',{cookie:cookies.admin,body:{action:'dispatch',base:'J',sheet:'К',project:'1',count:1}});assert.equal(denied.status,400);
  const baseAssigned=await call('/api/base',{cookie:cookies.admin,body:{action:'assign',base:'J',sheet:'Т1',operator:'one',count:1}});assert.equal(baseAssigned.status,200,baseAssigned.text);assert.equal(baseAssigned.data.assigned,1);
  console.log('Base HTTP: aggregate response, admin guard, Excel import preview/apply/backup/duplicates, cross-base conflicts, no free cards, blocked dispatch and manual assignment passed.');
+
+ // Operator weeks: persisted policy, department listing, authorization and stale writes.
+ const retentionBase=await call('/api/base',{cookie:cookies.admin});
+ assert.equal(retentionBase.data.operators.find(e=>e.id==='one').department,'1');
+ const retentionConfig=structuredClone(retentionBase.data.config);
+ retentionConfig.retention.operators.one={mode:'fixed',days:14,defaultWeeks:2,bands:[]};
+ const retentionBody={config:retentionConfig,revision:retentionBase.data.revision};
+ assert.equal((await call('/api/base',{cookie:policyOperator.cookie,body:retentionBody})).status,403);
+ const retentionSaved=await call('/api/base',{cookie:cookies.admin,body:retentionBody});assert.equal(retentionSaved.status,200,retentionSaved.text);
+ assert.equal((await call('/api/base',{cookie:cookies.admin})).data.config.retention.operators.one.days,14);
+ assert.equal((await call('/api/base',{cookie:cookies.admin,body:retentionBody})).status,409);
+ const invalidRetention=structuredClone(retentionConfig);invalidRetention.retention.operators.one.days=-7;
+ assert.equal((await call('/api/base',{cookie:cookies.admin,body:{config:invalidRetention,revision:retentionSaved.data.revision}})).status,400);
+ const retentionClient={id:'retention-client',name:'Retention test',phone:'+79998887766',owner:'one',sheet:'К',baseType:'M',returnSheet:'Т1',createdAt:new Date(Date.now()-30*86400000).toISOString(),assignmentStartedAt:new Date(Date.now()-30*86400000).toISOString(),importRetentionUntil:new Date(Date.now()+30*86400000).toISOString(),assignedUntil:'',version:1};
+ const retentionOrder={id:'retention-order',clientId:retentionClient.id,manager:'one',status:'redeemed',createdAt:retentionClient.createdAt,redeemedAt:new Date(Date.now()-20*86400000).toISOString(),updatedAt:retentionClient.createdAt,items:[],version:1};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(retentionClient.id,retentionClient.phone,JSON.stringify(retentionClient));
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(retentionOrder.id,retentionClient.id,JSON.stringify(retentionOrder));
+ await call('/api/crm',{cookie:cookies.admin});
+ const releasedRetention=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(retentionClient.id).data);
+ assert.equal(releasedRetention.owner,'');assert.equal(releasedRetention.sheet,'П');
+ console.log('Operator retention: departments, persisted weeks, admin guard, conflict, validation and actual release overriding imported deadline passed.');
  // Manual creation uses the selected base and its configured entry sheet.
  const manualBase=await call('/api/base',{cookie:cookies.admin});
  const config=manualBase.data.config;config.J.importSheet='Ж1';config.J.sheets.push({...config.J.sheets.find(s=>s.name==='Т1'),name:'Ж1'});
