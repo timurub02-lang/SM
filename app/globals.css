@@ -290,3 +290,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 
 .next-premium-toggle{display:flex;align-items:center;justify-content:flex-end;gap:12px;font-size:14px;color:var(--foreground)}
 .next-premium-period{text-align:right;font-size:14px}
+
+.premium-actions-slot{margin-left:auto;min-width:0}.premium-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}.premium-actions button,.premium-actions select{width:auto;flex:0 0 auto;min-height:36px;padding:7px 12px;font-size:13px}.premium-actions select{max-width:200px}@media(max-width:800px){.premium-actions-slot{width:100%;margin-left:0}.premium-actions{justify-content:flex-start}}
