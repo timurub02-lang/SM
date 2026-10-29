@@ -8,9 +8,14 @@ const uuid=()=>crypto.randomUUID(),ops=['E-one','E-two'],contacts=[1,2,3].map(n=
 const p={name:'Synthetic pilot',state:'paused',native:{projectId:uuid(),taskId:uuid(),listId:uuid(),verifiedAt:new Date().toISOString(),active:false,operatorUserIds:[uuid(),uuid()],line:'test'},contacts,operatorIds:ops,mode:'predictive',ringSeconds:50,maxAttempts:3,order:'attempt_count_ascending',timezone:'Europe/Moscow',schedule:[{day:1,from:'09:00',to:'20:00'}],clientWindow:{from:'09:00',to:'20:00'},retries:['busy','no_answer','declined','lost','answering_machine','error'].map(result=>({result,kind:'after',minutes:30,attempts:3})),results:['Перезвон'],telephony:'existing_oktell_only'};
 await d.prepare('INSERT INTO settings(id,data) VALUES(?,?)').bind('oktell-pilot-t1',JSON.stringify(p)).run();
 for(const id of ops)await d.prepare('INSERT INTO employees(id,data) VALUES(?,?)').bind(id,JSON.stringify({id,name:id,role:'operator',oktell:{status:'linked'}})).run();
-for(let i=0;i<3;i++)await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind('C-'+i,contacts[i].phone,JSON.stringify({id:'C-'+i,phone:contacts[i].phone,owner:''})).run();
+for(let i=0;i<3;i++)await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind('C-'+i,contacts[i].phone,JSON.stringify({id:'C-'+i,phone:contacts[i].phone,owner:'',sheet:'Т1',source:''})).run();
 const c={chain:uuid(),actor:ops[0],phone:'79990000001',client_id:'C-0',started_at:'2026-10-29T10:00:00Z',answered_at:'2026-10-29T10:00:05Z',ended_at:'2026-10-29T10:01:05Z',status:'completed',updated_at:'2026-10-29T10:01:05Z',result:null,command_id:null,command_state:null};
+const ringing={...c,answered_at:null,ended_at:null,status:'ringing',updated_at:c.started_at};
+await syncPilot(d,[ringing]);
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data).owner,'');
 await syncPilot(d,[c]);await syncPilot(d,[c]);
+const assigned=JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data);
+assert.equal(assigned.sheet,'К');assert.equal(assigned.trialUntil,'2026-10-30T10:00:05.000Z');assert.equal(assigned.trialReturnSheet,'Т1');
 assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM phone_calls').first()).n,1);
 assert.equal((await d.prepare('SELECT bill_seconds FROM phone_calls').first()).bill_seconds,60);
 assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data).owner,ops[0]);
@@ -22,9 +27,15 @@ assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell �
 await syncPilot(d,[result]);assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell подтвердил/);
 assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM client_reminders').first()).n,1);
 assert.equal((await d.prepare('SELECT due FROM client_reminders').first()).due,'2026-10-29T11:00:00Z');
-await syncPilot(d,[{...c,chain:uuid(),actor:ops[1],started_at:'2026-10-29T11:00:00Z',answered_at:'2026-10-29T11:00:02Z',ended_at:'2026-10-29T11:01:00Z',updated_at:'2026-10-29T11:01:00Z'}]);
+await syncPilot(d,[{...c,chain:uuid(),status:'no_answer',answered_at:null,started_at:'2026-10-29T11:00:00Z',ended_at:'2026-10-29T11:00:20Z',updated_at:'2026-10-29T11:00:20Z'}]);
+assert.equal((await d.prepare('SELECT completed_at FROM client_reminders').first()).completed_at,null);
+await syncPilot(d,[{...c,chain:uuid(),actor:ops[1],started_at:'2026-10-29T11:01:00Z',answered_at:'2026-10-29T11:01:02Z',ended_at:'2026-10-29T11:02:00Z',updated_at:'2026-10-29T11:02:00Z'}]);
 assert.equal((await d.prepare('SELECT resolution FROM client_reminders').first()).resolution,'done');
-assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data).owner,ops[1]);
+assert.deepEqual(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data),assigned);
+// History replay must not reclaim a subsequently released client.
+await d.prepare("UPDATE clients SET data=json_set(data,'$.owner','') WHERE id='C-0'").run();
+await syncPilot(d,[c]);
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data).owner,'');
 await assert.rejects(()=>syncPilot(d,[{...c,phone:'79990000009'}]),/Состав/);
 await assert.rejects(()=>syncPilot(d,[{...c,client_id:'C-1'}]),/не совпадает/);
 d.close();console.log('PASS: T1 CRM assignment, history, durations, idempotent results, private three-contact scope');

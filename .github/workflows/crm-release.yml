@@ -44,6 +44,7 @@ jobs:
           node --experimental-strip-types tests/order-premium-lifecycle.mjs
           node --experimental-strip-types tests/order-premium-lifecycle-http.mjs
           node --experimental-strip-types tests/retention.mjs
+          node --experimental-strip-types tests/client-trial.mjs
           node --experimental-strip-types tests/base-policy.mjs
           node --experimental-strip-types tests/import-retention.test.ts
           node --experimental-strip-types tests/auth-http.mjs
