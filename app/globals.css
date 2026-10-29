@@ -274,3 +274,13 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .personal-cash-panel .cash-actions-compact .cash-action{flex-direction:row;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:10px;white-space:nowrap;font-size:14px}
 .personal-cash-panel .cash-actions-compact .cash-action-icon{font-size:18px;line-height:1}
 @media(max-width:450px){.personal-cash-panel .cash-actions-compact{gap:5px}.personal-cash-panel .cash-actions-compact .cash-action{flex:1;padding:8px 6px;font-size:12px}}
+
+.finance-cash-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+.finance-cash-layout .cash-overview{grid-template-columns:1fr auto}
+.finance-cash-layout .cash-overview .cash-summary{grid-column:1/-1;grid-row:2}
+.finance-cash-layout .employee-cash-panel{min-width:0;gap:12px}
+.finance-cash-layout .employee-cash-grid{display:grid;grid-auto-flow:row;grid-auto-columns:auto;overflow-x:visible;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:10px}
+.finance-cash-layout .employee-cash-card{aspect-ratio:1;min-width:0;padding:10px;justify-content:center}
+.finance-cash-layout .employee-cash-name{font-size:12px;overflow-wrap:anywhere}
+.finance-cash-layout .employee-cash-amount{font-size:20px}
+@media(max-width:1000px){.finance-cash-layout{grid-template-columns:1fr}}
