@@ -1,5 +1,6 @@
 "use client";
 import {Tabs,TabsList,TabsTrigger} from '@/components/ui/tabs';
+import {PremiumStatistics} from '@/components/premium-statistics';
 import {PremiumArchive} from '@/components/premium-archive';
 import {PremiumPayroll} from '@/components/premium-payroll';
 import {useEffect,useState} from 'react';
@@ -12,7 +13,7 @@ import {Table,TableHeader,TableBody,TableRow,TableHead,TableCell} from '@/compon
 const dateLabel=(date:string)=>date.split('-').reverse().join('.');
 export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload}:{orders:Order[];employee:Employee;employees:Employee[];clients:Client[];onOpen:(id:string)=>void;onReload:()=>Promise<unknown>}){
  const [actionsTarget,setActionsTarget]=useState<HTMLDivElement|null>(null);
- const [view,setView]=useState<'calculation'|'orders'|'employees'|'archive'>('calculation');
+ const [view,setView]=useState<'calculation'|'orders'|'employees'|'archive'|'statistics'>('calculation');
  const [current]=useState(()=>currentPremiumPeriod(new Date(Date.now()+3*3600000).toISOString().slice(0,10)));
  const [periodId,setPeriodId]=useState(current?.id||'unassigned'),[query,setQuery]=useState(''),[operator,setOperator]=useState(''),[group,setGroup]=useState('all');
  const [activePeriod,setActivePeriod]=useState('');
@@ -31,8 +32,8 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  const rows=selected.filter(r=>(employee.role!=='admin'||group==='all'||staff.get(r.order.manager)?.department===group)&&(!operator||r.order.manager===operator)&&[r.order.id,names.get(r.order.clientId),staff.get(r.order.manager)?.name,staff.get(r.order.manager)?.login,r.registry].join(' ').toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')));
  return <section className="stack table-panel cash-panel premium-panel" aria-label="Премия">
   <div className="premium-heading"><h2>Премия</h2>
-  <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники'],['archive','Архив']] as const).filter(([id])=>employee.role!=='operator'||id!=='employees').map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs><div className="premium-actions-slot" ref={setActionsTarget}/></div>
-  {view==='archive'?<PremiumArchive employee={employee} employees={employees} orders={orders} onOpen={onOpen} onReload={onReload}/>:<>
+  <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники'],['archive','Архив'],['statistics','Статистика']] as const).filter(([id])=>employee.role!=='operator'||!['employees','statistics'].includes(id)).map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs><div className="premium-actions-slot" ref={setActionsTarget}/></div>
+  {view==='statistics'?<PremiumStatistics employee={employee}/>:view==='archive'?<PremiumArchive employee={employee} employees={employees} orders={orders} onOpen={onOpen} onReload={onReload}/>:<>
   <p className="premium-current-period">Текущий расчётный период: <strong>{period?.label||"Загрузка…"}</strong>{period&&` · ${counts.get(period.id)||0} заказов`}</p>
   {period?<div className="premium-dates"><span>Поступления: {dateLabel(period.from)} — {dateLabel(period.cutoff)}</span><strong>Выплата: {dateLabel(period.payout)}</strong>{period.payout!==period.nominal&&<span>перенесена с {dateLabel(period.nominal)}</span>}</div>:<p role="alert">Для этих дат нужно добавить производственный календарь.</p>}
   <details className="premium-help"><summary>Правила расчёта и выплаты</summary><p>СДЭК — по дате перечисления в реестре; почта и курьер — по дате приёма денег. До плановой даты выплаты оставлены четыре полных рабочих дня с учётом праздников и переносов.</p><p>Полученные деньги — не сумма премии. Руководители подписывают расчёт своих отделов. После всех подписей администратор закрывает период и подтверждает выплату.</p></details>
