@@ -1,5 +1,7 @@
+import {initBaseMovements} from './base-movements.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 export async function initBaseStorage(d:Db){
+ await initBaseMovements(d);
  await d.prepare('CREATE TABLE IF NOT EXISTS client_phone_index(phone TEXT PRIMARY KEY,client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE)').run();
  const source="SELECT phone AS value FROM clients WHERE id=NEW.id UNION SELECT value FROM json_each(COALESCE(json_extract(NEW.data,'$.linkedPhones'),'[]'))";
  const clean="replace(replace(replace(replace(replace(value,'+',''),' ',''),'-',''),'(',''),')','')";

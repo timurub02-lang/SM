@@ -291,4 +291,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .next-premium-toggle{display:flex;align-items:center;justify-content:flex-end;gap:12px;font-size:14px;color:var(--foreground)}
 .next-premium-period{text-align:right;font-size:14px}
 
+.base-navigation-summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,.6fr);align-items:start;gap:18px}.base-navigation{display:grid;gap:12px;min-width:0}.base-movements{font-size:13px;display:grid;gap:6px;padding:10px 12px;border:1px solid var(--border);border-radius:12px}.base-movements small{color:#738198}.base-movements>div{display:flex;gap:6px 16px;flex-wrap:wrap;max-height:120px;overflow:auto}@media(max-width:1200px){.base-navigation-summary{grid-template-columns:1fr}}
 .premium-actions-slot{margin-left:auto;min-width:0}.premium-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}.premium-actions button,.premium-actions select{width:auto;flex:0 0 auto;min-height:36px;padding:7px 12px;font-size:13px}.premium-actions select{max-width:200px}@media(max-width:800px){.premium-actions-slot{width:100%;margin-left:0}.premium-actions{justify-content:flex-start}}
