@@ -1,5 +1,6 @@
 // Run after the Miran standalone build. Uses only a temporary, synthetic database.
 import assert from 'node:assert/strict';
+import ExcelJS from 'exceljs';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -110,6 +111,23 @@ try{
   if(who==='head')assert(stats.data.rows.every(r=>r.department==='1'));
   if(who==='admin'){assert.equal(stats.data.rows.find(r=>r.id==='head').second,100);assert.equal(stats.data.rows.find(r=>r.id==='one').second,110,'Statistics add official part');}
  }
+ for(const who of ['admin','head','one']){
+  const response=await fetch(base+'/api/premium/export?period='+period+'&department=2',{headers:{cookie:cookies[who]}});
+  assert.equal(response.status,who==='one'?403:200);
+  if(who==='one')continue;
+  assert(response.headers.get('content-type').includes('spreadsheetml'));
+  const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()));
+  const values=workbook.worksheets.flatMap(sheet=>sheet.getSheetValues()).flat(3);
+  assert(values.includes('one'));assert(values.includes('head'));
+  assert.equal(values.includes('two'),who==='admin','Workbook must not contain another department');
+  assert.equal(workbook.worksheets.length,who==='admin'?5:3);
+  const summary=workbook.getWorksheet('Итоги'),total=summary.lastRow;
+  assert.equal(total.getCell(2).value,who==='admin'?2:1);
+  assert.equal(total.getCell(3).value,who==='admin'?2000:1000);
+  assert.equal(total.getCell(4).value,who==='admin'?300:200);
+  assert.equal(total.getCell(5).value,who==='admin'?100:0);
+ }
+ assert.equal((await call('/api/premium/export?period='+period+'&actorId=admin',{cookie:cookies.head})).status,403);
  const operatorState=await call('/api/crm',{cookie:cookies.one});assert.equal(operatorState.status,200,operatorState.text);
  assert(operatorState.data.orders.some(o=>o.id==='o-one'&&o.status==='redeemed'&&o.premiumStage.status==='paid'));
  assert(!operatorState.data.orders.some(o=>o.id==='o-two'));
