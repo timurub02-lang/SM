@@ -845,5 +845,15 @@ try{
   db.prepare('DELETE FROM orders WHERE id=?').run(id);
  }
  console.log('Delivery review and badge HTTP: both save paths, six channel directions, explicit confirmation, no writes on cancel, stale versions, cleared timers, admin packing/extra, preserved marker and unchanged CDEK subtype passed.');
+ const secondAdminSession=(await login('admin')).headers.get('set-cookie').split(';')[0];
+ const adminRaw=db.prepare("SELECT data,version FROM employees WHERE id='admin'").get();
+ const adminCard={...JSON.parse(adminRaw.data),version:adminRaw.version};
+ const adminReset=await save('admin',adminCard,{department:undefined,password:changed});
+ assert.equal(adminReset.status,200,adminReset.text);
+ assert.equal((await call('/api/auth/me',{cookie:cookies.admin})).status,401);
+ assert.equal((await call('/api/auth/me',{cookie:secondAdminSession})).status,401);
+ assert.equal((await login('admin')).status,401);
+ assert.equal((await login('admin',changed)).status,200);
+ console.log('Admin password save without department passed; all previous admin sessions revoked. Synthetic credentials only.');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
