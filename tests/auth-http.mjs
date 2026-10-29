@@ -697,6 +697,10 @@ try{
  // Operator weeks: persisted policy, department listing, authorization and stale writes.
  const retentionBase=await call('/api/base',{cookie:cookies.admin});
  assert.equal(retentionBase.data.operators.find(e=>e.id==='one').department,'1');
+ for(const operator of retentionBase.data.operators)assert.equal(operator.assignedClients,db.prepare("SELECT COUNT(*) AS n FROM clients WHERE json_extract(data,'$.owner')=?").get(operator.id).n);
+ assert.match(retentionBase.data.statsPeriod.from,/^\d{4}-\d{2}-\d{2}$/);
+ assert.ok(retentionBase.data.statsPeriod.to>=retentionBase.data.statsPeriod.from);
+
  const retentionConfig=structuredClone(retentionBase.data.config);
  retentionConfig.retention.operators.one={mode:'fixed',days:14,defaultWeeks:2,bands:[]};
  const retentionBody={config:retentionConfig,revision:retentionBase.data.revision};
