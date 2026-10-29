@@ -6,7 +6,7 @@ import {useState} from "react";
 import {deliveryLabels,money,stamp,type Order,type Employee} from "@/lib/crm";
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from "@/components/ui/table";
 
-export function Finances({orders,employee}:{orders:Order[];employee:Employee}){return <div className="stack">{["admin","department_head"].includes(employee.role)&&<details className="table-panel cash-panel"><summary><strong>Премия</strong></summary><div className="empty"><h3>Правила расчёта премии ещё не настроены</h3><p>Здесь будет расчёт премий и выплат руководителям и операторам.</p></div></details>}{employee.role==="admin"&&<EmployeeCash/>}{hasCash(employee.role)&&<Cash key={employee.id} actorId={employee.id}/>}{!["department_head","purchasing"].includes(employee.role)&&<DeliveryFinances orders={orders}/>}</div>;}
+export function Finances({orders,employee}:{orders:Order[];employee:Employee}){return <div className="stack">{employee.role==="admin"&&<EmployeeCash/>}{hasCash(employee.role)&&<Cash key={employee.id} actorId={employee.id}/>}{["admin","department_head"].includes(employee.role)&&<details className="table-panel cash-panel"><summary><strong>Премия</strong></summary><div className="empty"><h3>Правила расчёта премии ещё не настроены</h3><p>Здесь будет расчёт премий и выплат руководителям и операторам.</p></div></details>}{!["department_head","purchasing"].includes(employee.role)&&<DeliveryFinances orders={orders}/>}</div>;}
 function DeliveryFinances({orders}:{orders:Order[]}){
  const [from,setFrom]=useState("");const [to,setTo]=useState("");
  const rows=orders.filter(o=>{
