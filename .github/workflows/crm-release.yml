@@ -47,6 +47,7 @@ jobs:
           node --experimental-strip-types tests/import-retention.test.ts
           node --experimental-strip-types tests/auth-http.mjs
           node --experimental-strip-types tests/telephony-http.mjs
+          node --experimental-strip-types tests/oktell-call-outcome.mjs
           node --experimental-strip-types tests/oktell-browser-http.mjs
           node --experimental-strip-types tests/operator-state-http.mjs
           node --experimental-strip-types tests/oktell-provisioning.mjs
