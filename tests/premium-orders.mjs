@@ -19,3 +19,7 @@ for(const actor of [a,head]){
  assert.equal(premiumOrders(state.orders,actor,state.employees).length,3);
 }
 console.log('Premium orders: visibility, receipts, conflicts, kopecks and Moscow dates passed');
+const headTerms={...head,leaderPremium:{model:'udl_guarantee',fixedPerPeriod:0,monthlyGuarantee:100000,firstPeriod:50000,links:[{operatorId:'a',login:'a',rate:7}]}};
+const scoped={orders:[order],employees:[a,headTerms],clients:[],events:[],incoming:[],settings:{}};
+assert.equal(visibleState(scoped,a).employees.find(e=>e.id==='head')?.leaderPremium,undefined);
+assert.equal(visibleState(scoped,headTerms).employees.find(e=>e.id==='head').leaderPremium.monthlyGuarantee,100000);
