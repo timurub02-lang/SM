@@ -1,9 +1,10 @@
 "use client";
 import {PremiumPayroll} from '@/components/premium-payroll';
 import {useState} from 'react';
+import {isCdekOrder} from '@/lib/cdek-remittance';
 import {premiumOrders} from '@/lib/premium-orders';
 import {premiumPeriods,periodForReceipt,currentPremiumPeriod} from '@/lib/premium-periods';
-import {money,total,deliveryLabels,type Order,type Employee,type Client} from '@/lib/crm';
+import {money,deliveryLabels,type Order,type Employee,type Client} from '@/lib/crm';
 import {Table,TableHeader,TableBody,TableRow,TableHead,TableCell} from '@/components/ui/table';
 
 const dateLabel=(date:string)=>date.split('-').reverse().join('.');
@@ -33,7 +34,7 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
   {view==='orders'&&<>
   <div className="toolbar">{employee.role!=='operator'&&<select aria-label="Оператор премии" value={operator} onChange={e=>setOperator(e.target.value)}><option value="">Все операторы</option>{[...new Set(selected.map(r=>r.order.manager))].map(id=><option key={id} value={id}>{staff.get(id)?.name||id}</option>)}</select>}<input aria-label="Поиск заказов премии" placeholder="Заказ, клиент, оператор, реестр" value={query} onChange={e=>setQuery(e.target.value)}/><button className="secondary" onClick={()=>{setQuery('');setOperator('');}}>Сбросить поиск</button></div>
   <p>Заказов: <strong>{rows.length}</strong> · Получено: <strong>{money(rows.reduce((sum,r)=>sum+Math.round(r.amount*100),0)/100)}</strong></p>
-  <Table><TableHeader><TableRow><TableHead>Заказ / клиент</TableHead><TableHead>Оператор</TableHead><TableHead>Доставка</TableHead><TableHead>Сумма заказа</TableHead><TableHead>Деньги получены</TableHead><TableHead>Основание</TableHead><TableHead>Премия</TableHead></TableRow></TableHeader><TableBody>{rows.map(r=><TableRow key={r.order.id}><TableCell><button className="text-button" onClick={()=>onOpen(r.order.id)}>{r.order.id}</button><div>{names.get(r.order.clientId)||'Клиент'}</div></TableCell><TableCell>{staff.get(r.order.manager)?.name||r.order.manager}<div className="muted">{staff.get(r.order.manager)?.login}</div></TableCell><TableCell>{deliveryLabels[r.order.delivery||'']}</TableCell><TableCell>{money(total(r.order))}</TableCell><TableCell>{money(r.amount)}<div>{dateLabel(r.date)}</div></TableCell><TableCell>{r.registry?'Реестр №'+r.registry:'Приём денег в CRM'}</TableCell><TableCell>{r.order.legacyLv?'Нужна сверка прошлых выплат':'Ожидает расчёта'}</TableCell></TableRow>)}</TableBody></Table>
+  <Table><TableHeader><TableRow><TableHead>Заказ / клиент</TableHead><TableHead>Оператор</TableHead><TableHead>Доставка</TableHead><TableHead>Оплачено клиентом</TableHead><TableHead>Деньги получены</TableHead><TableHead>Основание</TableHead><TableHead>Премия</TableHead></TableRow></TableHeader><TableBody>{rows.map(r=><TableRow key={r.order.id}><TableCell><button className="text-button" onClick={()=>onOpen(r.order.id)}>{r.order.id}</button><div>{names.get(r.order.clientId)||'Клиент'}</div></TableCell><TableCell>{staff.get(r.order.manager)?.name||r.order.manager}<div className="muted">{staff.get(r.order.manager)?.login}</div></TableCell><TableCell>{deliveryLabels[r.order.delivery||'']}</TableCell><TableCell>{money(isCdekOrder(r.order)?r.order.cdekRemittances![0].collectedCents/100:r.amount)}</TableCell><TableCell>{money(r.amount)}<div>{dateLabel(r.date)}</div></TableCell><TableCell>{r.registry?'Реестр №'+r.registry:'Приём денег в CRM'}</TableCell><TableCell>{r.order.legacyLv?'Нужна сверка прошлых выплат':'Ожидает расчёта'}</TableCell></TableRow>)}</TableBody></Table>
   {!rows.length&&<div className="empty"><h3>Нет подтверждённых заказов</h3><p>{selected.length?'Измените поиск или оператора.':'В этом периоде пока нет подтверждённых поступлений. Выберите другой период.'}</p></div>}
   </>}
   {view!=='orders'&&period&&<PremiumPayroll key={employee.id+period.id} orders={orders} employee={employee} employees={employees} period={period.id} view={view} onReload={onReload}/>}
