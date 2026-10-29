@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useState} from 'react';
 import type {Employee} from '@/lib/crm';
-import {actions,results,allowedResults,futureRedemptionDate,operatorReturnScheduled,awaitingOperator,refusalRetryDate} from '@/lib/redemption';
+import {redemptionResultLabel,actions,results,allowedResults,futureRedemptionDate,operatorReturnScheduled,awaitingOperator,refusalRetryDate} from '@/lib/redemption';
 import {ReturnCountdown} from './return-countdown';
 import {toast} from 'sonner';
 import {CalendarDays,PhoneMissed,BriefcaseBusiness,Truck,PackageCheck,ShieldCheck,Undo2,Check} from 'lucide-react';
@@ -15,7 +15,7 @@ export function OrderRedemption({orderId,employee,incomingId,onSaved,onConsultat
  useEffect(()=>{if(action||comment)return;const timer=setInterval(()=>void load(),30000);return()=>clearInterval(timer);},[orderId,action,comment]);
  const row=data?.rows?.[0],future=row&&futureRedemptionDate(row,data.day);
  const choices=(a:string):string[]=>incomingId&&a==='po'&&row?.storageUntil?['date']:future&&a==='nd'?['none']:row?allowedResults(a,row,employee.role,data.day):[];
- const title=(r:any)=>`${results[r.result as keyof typeof results]||'Ещё не указан'}${r.resultDate?' · '+r.resultDate.split('-').reverse().join('.'):''}`;
+ const title=redemptionResultLabel;
  const locked=!row||busy||operatorReturnScheduled(row)||['returned','delivered'].includes(row.result)||data.closed&&!row.testOnly&&!awaitingOperator(row);
  async function save(confirmed=false){if(future&&action!=='nd'&&!confirmed){setConfirm(true);return;}setBusy(true);try{
   const response=await fetch('/api/redemption',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:orderId,version:draftVersion,source:'order',incomingId,action,result,date,comment,responsibilityConfirmed:responsibility,replaceConfirmed:confirmed})});const v=await response.json() as any;if(!response.ok)throw Error(v.error);
@@ -37,7 +37,7 @@ export function OrderRedemption({orderId,employee,incomingId,onSaved,onConsultat
  {result==='date'&&(action==='refusal'?<p>Повторная обработка: {refusalRetryDate(data.day).split('-').reverse().join('.')}</p>:<label>Дата<input type="date" min={data.day} max={action==='po'?undefined:row.storageUntil||undefined} value={date} onChange={e=>{setDate(e.target.value);setConfirm(false);}}/></label>)}
  {action==='po'&&(awaitingOperator(row)||!!incomingId)&&<label><input type="checkbox" checked={responsibility} onChange={e=>setResponsibility(e.target.checked)}/> Подтверждаю, что клиент выкупит заказ после окончания срока хранения</label>}
  <label>Комментарий к результату{action==='nd'?' · необязательно':''}<textarea rows={2} value={comment} onChange={e=>setComment(e.target.value)} maxLength={3000} placeholder="О чём договорились с клиентом"/></label>
- {confirm?<div className="notice" role="alert"><div><strong>Заменить результат «{title(row)}» на «{title({result,resultDate:result==='date'?(action==='refusal'?refusalRetryDate(data.day):date):''})}»?</strong><p>Предыдущий результат останется в истории проекта «Выкуп».</p><div className="action-buttons"><button className="primary" onClick={()=>void save(true)}>Да, заменить результат</button><button className="secondary" onClick={()=>setConfirm(false)}>Отмена</button></div></div></div>:<button className="primary" disabled={action!=='nd'&&!comment.trim()||!result||result==='date'&&action!=='refusal'&&!date||action==='po'&&(awaitingOperator(row)||!!incomingId)&&!responsibility} onClick={()=>void save()}>{incomingId&&action!=='nd'?'Сохранить итог и закрыть обращение':'Сохранить результат'}</button>}
+ {confirm?<div className="notice" role="alert"><div><strong>Заменить результат «{title(row)}» на «{title({action,result,resultDate:result==='date'?(action==='refusal'?refusalRetryDate(data.day):date):''})}»?</strong><p>Предыдущий результат останется в истории проекта «Выкуп».</p><div className="action-buttons"><button className="primary" onClick={()=>void save(true)}>Да, заменить результат</button><button className="secondary" onClick={()=>setConfirm(false)}>Отмена</button></div></div></div>:<button className="primary" disabled={action!=='nd'&&!comment.trim()||!result||result==='date'&&action!=='refusal'&&!date||action==='po'&&(awaitingOperator(row)||!!incomingId)&&!responsibility} onClick={()=>void save()}>{incomingId&&action!=='nd'?'Сохранить итог и закрыть обращение':'Сохранить результат'}</button>}
  </>}
  </fieldset>{data.history?.length>0&&<details><summary>История результатов</summary>{data.history.map((h:any,i:number)=><article key={i} className="notice"><div><b>{h.changeKind==='missed_attempt'?'Недозвон — назначенная дата сохранена':title(h)}</b><small className="muted" style={{display:'block'}}>{h.changeSource==='incoming'?'Из входящего обращения · ':''}{h.changedBy||h.author||'Система'} · {stamp(h.at)} МСК</small></div></article>)}</details>}{locked&&!busy&&<small className="muted">Изменение результата сейчас недоступно по правилам проекта «Выкуп».</small>}
  </>}

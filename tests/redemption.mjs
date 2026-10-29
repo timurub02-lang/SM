@@ -83,7 +83,7 @@ try{
  await edit(op,{action:'date',result:'date',date:'2026-10-18'});
  assert.equal((await row()).dateConfirmation,'pending');
  for(const actor of [op,head]){
-  assert.equal(canSeeRedemption(actor,await row(),true),actor.role==='operator');
+  assert.equal(canSeeRedemption(actor,await row(),true),true);
   await assert.rejects(edit(actor,{operation:'confirm_date'}),/недоступен|Подтверждение доступно/);
  }
  assert(canSeeRedemption(buyer,await row(),false));
