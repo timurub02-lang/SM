@@ -269,3 +269,8 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .cash-overview .cash-summary strong{font-size:24px}
 .cash-overview .cash-summary small{font-size:12px}
 @media(max-width:1000px){.cash-overview{grid-template-columns:1fr auto}.cash-overview .cash-summary{grid-column:1/-1;grid-row:2}}
+
+.personal-cash-panel .cash-actions-compact{display:flex;gap:8px;margin:0;flex-wrap:nowrap}
+.personal-cash-panel .cash-actions-compact .cash-action{flex-direction:row;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:10px;white-space:nowrap;font-size:14px}
+.personal-cash-panel .cash-actions-compact .cash-action-icon{font-size:18px;line-height:1}
+@media(max-width:450px){.personal-cash-panel .cash-actions-compact{gap:5px}.personal-cash-panel .cash-actions-compact .cash-action{flex:1;padding:8px 6px;font-size:12px}}
