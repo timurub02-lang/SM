@@ -12,8 +12,10 @@ export const POST=authenticated(async(req:Request)=>{
   if(!actor||(body.action==='sign'?actor.role!=='department_head':actor.role!=='admin'))return Response.json({error:'Недостаточно прав'},{status:403});
   if(!s.ledger)throw Error('Сначала загрузите и сверьте исходную ведомость');
   if(s.ledger.revision!==body.revision)return Response.json({error:'Ведомость изменилась. Обновите расчёт.'},{status:409});
+  if(body.action==='freeze')throw Error('Отдельная фиксация не нужна. Сначала руководители подписывают расчёт, затем администратор закрывает период.');
   const at=new Date().toISOString();
-  const next=body.action==='reopen'?reopenPeriod(s.ledger,body.period,actor!.id,at):body.action==='freeze'?freezePeriod(s.ledger,body.period,s.orders,s.employees,s.adjustments,actor!.id,at):body.action==='sign'?signPeriod(s.ledger,body.period,actor!,at):payPeriod(s.ledger,body.period,actor!.id,at);
+  const prepared=body.action==='sign'&&s.ledger.periods[body.period]?.status==='open'?freezePeriod(s.ledger,body.period,s.orders,s.employees,s.adjustments,actor.id,at):s.ledger;
+  const next=body.action==='reopen'?reopenPeriod(s.ledger,body.period,actor!.id,at):body.action==='sign'?signPeriod(prepared,body.period,actor!,at):payPeriod(s.ledger,body.period,actor!.id,at);
   if(next!==s.ledger)await savePremiumLedger(s,next,body.period);
   return Response.json({ok:true});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Некорректное действие':e instanceof Error?e.message:'Ошибка ведомости'},{status:400});}
