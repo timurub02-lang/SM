@@ -13,9 +13,9 @@ export const GET=authenticated(async(req:Request)=>{
  const stored=await d.prepare('SELECT data FROM settings WHERE id=?').bind(ledgerKey).first<{data:string}>();
  const ledger=stored?JSON.parse(stored.data) as PremiumLedger:null;
  const periods=Object.entries(ledger?.periods||{}).filter(([,p])=>p.status==='paid').sort(([a],[b])=>b.localeCompare(a)).flatMap(([id,p])=>{
-  const rows=(p.rows||[]).filter(r=>payrollVisible(actor,r)),orders=(p.orders||[]).filter(r=>payrollVisible(actor,r));
-  if(!rows.length&&!orders.length&&actor.role!=='admin')return [];
-  return [{id,label:premiumPeriods.find(p=>p.id===id)?.label||id,paidAt:p.paidAt,source:p.source?.name,count:orders.length,payout:rows.reduce((n,r)=>n+Math.round((r.payout||0)*100),0)/100,orders}];
+  const rows=(p.rows||[]).filter(r=>payrollVisible(actor,r)),visibleOrders=(p.orders||[]).filter(r=>payrollVisible(actor,r)),orders=visibleOrders.filter(r=>!r.historyOnly),historyOrders=visibleOrders.filter(r=>r.historyOnly);
+  if(!rows.length&&!visibleOrders.length&&actor.role!=='admin')return [];
+  return [{id,label:premiumPeriods.find(p=>p.id===id)?.label||id,paidAt:p.paidAt,source:p.source?.name,count:orders.length,payout:rows.reduce((n,r)=>n+Math.round((r.payout||0)*100),0)/100,orders,historyOrders}];
  });
  return Response.json({periods},{headers:{'Cache-Control':'no-store'}});
 });

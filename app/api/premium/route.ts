@@ -48,7 +48,7 @@ async function handle(req:Request){
   const fresh=await readPremiumState(period),p=fresh.ledger?.periods[period];
   const payroll=p?ledgerRows(fresh.ledger!,period,fresh.orders,fresh.employees,fresh.adjustments).filter(r=>payrollVisible(actor,r)):null;
   const lifecycle=p?{status:p.status,revision:fresh.ledger!.revision,activePeriod:fresh.ledger!.activePeriod,source:p.source,signers:(p.signers||[]).filter(e=>actor.role==='admin'||e.department===actor.department),signedIds:Object.keys(p.signatures),allSigned:!!p.signers?.length&&p.signers.every(e=>!!p.signatures[e.id]),frozenAt:p.frozenAt,paidAt:p.paidAt}:null;
-  const periodCounts=Object.fromEntries(Object.keys(fresh.ledger?.periods||{}).map(id=>[id,periodOrders(fresh.ledger!,id,fresh.orders,fresh.employees).filter(r=>payrollVisible(actor,r)).length]));
+  const periodCounts=Object.fromEntries(Object.keys(fresh.ledger?.periods||{}).map(id=>[id,periodOrders(fresh.ledger!,id,fresh.orders,fresh.employees).filter(r=>!r.historyOnly&&payrollVisible(actor,r)).length]));
   return Response.json({adjustments,payroll,lifecycle,periodCounts,activePeriod:fresh.ledger?.activePeriod,periods:Object.keys(fresh.ledger?.periods||{}),missingOrders:(p?.orders||[]).filter(r=>!r.id&&payrollVisible(actor,r))},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте суммы расчёта':e instanceof Error?e.message:'Ошибка расчёта'},{status:400});}
 }
