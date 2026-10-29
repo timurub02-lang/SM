@@ -4,9 +4,9 @@ const clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 export const pilotSchema=z.object({
  name:z.string().trim().min(1).max(100),
  state:z.enum(['draft','paused']),
- native:z.object({projectId:z.string().uuid(),taskId:z.string().uuid(),listId:z.string().uuid(),verifiedAt:z.string().datetime(),active:z.literal(false),operatorUserIds:z.array(z.string().uuid()).length(2),line:z.string().min(1).max(100)}).strict().optional(),
+ native:z.object({projectId:z.string().uuid(),taskId:z.string().uuid(),listId:z.string().uuid(),verifiedAt:z.string().datetime(),active:z.literal(false),operatorUserIds:z.array(z.string().uuid()).min(2).max(3),line:z.string().min(1).max(100)}).strict().optional(),
  contacts:z.array(z.object({name:z.string().min(1).max(100),clientId:z.string().regex(/^C-[a-zA-Z0-9-]+$/).optional(),phone:z.string().regex(/^\+7\d{10}$/)}).strict()).length(3),
- operatorIds:z.array(z.string().regex(/^E-[a-zA-Z0-9-]+$/)).length(2),
+ operatorIds:z.array(z.string().regex(/^E-[a-zA-Z0-9-]+$/)).min(2).max(3),
  mode:z.literal('predictive'),
  ringSeconds:z.number().int().min(10).max(120),
  maxAttempts:z.number().int().min(1).max(10),
@@ -20,9 +20,10 @@ export const pilotSchema=z.object({
 }).strict().superRefine((p,c)=>{
  const fail=(message:string)=>c.addIssue({code:z.ZodIssueCode.custom,message});
  if(p.state==='paused'&&!p.native)fail('Для сохранённого проекта нужна проверенная привязка Oktell');
- if(p.native&&new Set(p.native.operatorUserIds).size!==2)fail('Нужны две разные учётные записи Oktell');
+ if(p.native&&new Set(p.native.operatorUserIds.map(id=>id.toLowerCase())).size!==p.native.operatorUserIds.length)fail('Учётные записи Oktell должны различаться');
+ if(p.native&&p.native.operatorUserIds.length!==p.operatorIds.length)fail('Число операторов CRM и Oktell должно совпадать');
  if(new Set(p.contacts.map(x=>x.phone)).size!==3)fail('Нужны три разных тестовых номера');
- if(new Set(p.operatorIds).size!==2)fail('Выберите двух разных операторов');
+ if(new Set(p.operatorIds).size!==p.operatorIds.length)fail('Выберите разных операторов');
  if(new Set(p.retries.map(x=>x.result)).size!==6)fail('Для каждого исхода нужно одно правило повторов');
  if(p.clientWindow.from>=p.clientWindow.to)fail('Начало окна клиента должно предшествовать окончанию');
  for(const s of p.schedule){

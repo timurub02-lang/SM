@@ -20,7 +20,7 @@ export default async function Page(){
  const parsed=pilotSchema.safeParse(stored);
  if(!parsed.success)return <main className="workspace-content"><a href="/">Вернуться в CRM</a><h1>Проверьте настройки проекта</h1><p>Сохранённая структура не прошла проверку. Обзвон недоступен.</p></main>;
  const p=parsed.data;
- const staff=await db().prepare('SELECT data FROM employees WHERE id IN (?,?)').bind(...p.operatorIds).all<{data:string}>();
+ const staff=await db().prepare(`SELECT data FROM employees WHERE id IN (${p.operatorIds.map(()=>'?').join(',')})`).bind(...p.operatorIds).all<{data:string}>();
  const employees=staff.results.map(r=>JSON.parse(r.data) as Employee);
  return <main className="workspace-content" style={{maxWidth:1100,margin:'0 auto'}}>
   <a className="secondary" href="/">Вернуться в CRM</a>
