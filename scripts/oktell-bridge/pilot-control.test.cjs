@@ -30,6 +30,13 @@ async function main(){
  assert.equal(p.result('E-one',result).state,'confirmed');assert.equal(p.canAuthorize('E-one'),true);
  assert.equal(p.read('E-two').current.chain,other);
  assert.equal(sent.some(([m])=>/call|activity/.test(m)&&m!=='dlgcard_setstopformresult'),false);
+ for(let i=0;i<150;i++){const chainid=ring('E-two',config.contacts[1].phone);emit('phoneevent_ringstopped','E-two',{chainid});}
+ let cursor=0;const seen=new Set();
+ for(;;){const batch=p.changes(cursor);if(!batch.calls.length)break;assert.ok(batch.through>cursor);for(const c of batch.calls){assert.ok(c.seq>cursor);assert.ok(!seen.has(c.chain));seen.add(c.chain);}cursor=batch.through;}
+ assert.equal(seen.size,153);assert.equal(p.history().length,100);
+ emit('phoneevent_ringstopped','E-two',{chainid:other});
+ assert.equal(p.changes(cursor).calls[0].chain,other);
+ assert.throws(()=>p.changes(-1),/cursor/);
  p.close();console.log('PASS: native pilot isolation, incoming correlation, callbacks, idempotent result, separate operators, no dial commands');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

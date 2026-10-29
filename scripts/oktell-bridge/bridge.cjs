@@ -55,6 +55,10 @@ const control=http.createServer(async(req,res)=>{
  if(req.method==='GET'&&req.url==='/status'){res.end(JSON.stringify(publicState()));return;}
  if(req.method==='GET'&&req.url==='/deployment-state'){res.end(JSON.stringify({busy:browserPhone.deploymentState().busy||pilot.busy()}));return;}
  if(req.method==='GET'&&req.url==='/pilot-history'){res.end(JSON.stringify(pilot.history()));return;}
+ if(req.method==='GET'&&req.url?.startsWith('/pilot-changes?')){
+  try{const url=new URL(req.url,'http://localhost'),after=url.searchParams.get('after');if(!/^\d+$/.test(after||''))throw Object.assign(Error('Invalid cursor'),{status:400});res.end(JSON.stringify(pilot.changes(Number(after))));}
+  catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}return;
+ }
  if(req.url?.startsWith('/browser-phone')){await browserPhone.handle(req,res);return;}
  if(req.url?.startsWith('/pilot')){
   try{const url=new URL(req.url,'http://localhost');if(url.pathname!=='/pilot')throw Object.assign(Error('Not found'),{status:404});

@@ -17,6 +17,11 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  CREATE TABLE IF NOT EXISTS pilot_calls(chain TEXT PRIMARY KEY,actor TEXT NOT NULL,phone TEXT NOT NULL,client_id TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,commutation TEXT,sip_id TEXT,form_id TEXT,form_results TEXT,result TEXT,command_id TEXT,command_state TEXT,updated_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS pilot_events(qid TEXT PRIMARY KEY,method TEXT NOT NULL,at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS pilot_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,chain TEXT NOT NULL,state TEXT NOT NULL,at TEXT NOT NULL);`);
+ db.exec(`CREATE TABLE IF NOT EXISTS pilot_updates(seq INTEGER PRIMARY KEY AUTOINCREMENT,chain TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS pilot_updates_chain ON pilot_updates(chain,seq);
+ CREATE TRIGGER IF NOT EXISTS pilot_update_insert AFTER INSERT ON pilot_calls BEGIN INSERT INTO pilot_updates(chain) VALUES(NEW.chain); END;
+ CREATE TRIGGER IF NOT EXISTS pilot_update_change AFTER UPDATE ON pilot_calls BEGIN INSERT INTO pilot_updates(chain) VALUES(NEW.chain); END;
+ INSERT INTO pilot_updates(chain) SELECT chain FROM pilot_calls WHERE NOT EXISTS(SELECT 1 FROM pilot_updates);`);
  db.exec("UPDATE pilot_commands SET state='unknown' WHERE state='sent'; UPDATE pilot_calls SET command_state='unknown' WHERE command_state='sent'");
  const stamp=()=>new Date(now()).toISOString();
  function config(){
@@ -99,5 +104,11 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   return {state:'sent'};
  }
  function disconnected(){db.exec("UPDATE pilot_commands SET state='unknown' WHERE state='sent'; UPDATE pilot_calls SET command_state='unknown' WHERE command_state='sent'");}
- return {event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ function changes(after){
+  if(!Number.isSafeInteger(after)||after<0)throw fail('Invalid history cursor',400);
+  if(after>db.prepare('SELECT COALESCE(MAX(seq),0) seq FROM pilot_updates').get().seq)throw fail('History was restored or replaced; reconcile the CRM cursor',409);
+  const calls=db.prepare('SELECT c.*,u.seq FROM pilot_calls c JOIN (SELECT chain,MAX(seq) seq FROM pilot_updates WHERE seq>? GROUP BY chain ORDER BY seq LIMIT 100) u ON u.chain=c.chain ORDER BY u.seq').all(after);
+  return {after,through:calls.at(-1)?.seq??after,calls};
+ }
+ return {changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };
