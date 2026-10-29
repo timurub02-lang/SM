@@ -10,6 +10,7 @@ globalThis.fetch=async(input,options={})=>{
  let state=read();const path=new URL(url).pathname,method=options.method||'GET';
  state.calls.push({path,method,body:options.body&&typeof options.body==='string'?JSON.parse(options.body):undefined});save(state);
  const response=(data,status=200)=>Response.json(data,{status});
+ if(path==='/v2/registries')return response({registries:[]});
  if(path.endsWith('/oauth/token'))return response({access_token:'synthetic-token'});
  if(method==='POST'&&path==='/v2/orders'){
   const payload=JSON.parse(options.body),uuid=crypto.randomUUID();state=read();
