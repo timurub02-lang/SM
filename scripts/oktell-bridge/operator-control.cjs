@@ -24,10 +24,8 @@ module.exports=function({request:send,connected,identity:IDENTITY,actor:ACTOR}){
    info=await request('getmyuserinfo',IDENTITY);
    if(info.isoperator!==true)throw fail('В Oktell не подтверждена роль оператора',502);
    if(body.action!=='finish'&&!(Number(info.hasline)>0))throw fail('К сотруднику пока не подключён телефон Oktell. Приём звонков ещё недоступен');
-   if(body.action==='ready'){
-    const task=await request('checkuserintask',IDENTITY);
-    if(task.intask!==true)throw fail('Оператор пока не включён в задачу Oktell. Приём звонков ещё недоступен');
-   }
+   // checkuserintask reports current task participation, not permission to enter
+   // the call center. An idle operator must be allowed to enter first.
    const desired=body.action==='ready'?{userstateid:1,oncallcenter:true,onccmanual:false,onlunch:false}:body.action==='break'?{userstateid:2,onlunch:true,lunchreasonmsg:body.reason}:{userstateid:3,oncallcenter:false,onccmanual:false,onlunch:false};
    // Some builds emit userstatechanged without qid. Verify by reading; never retry the write.
    let writeError;try{const reply=await request('setuserstate',{...IDENTITY,...desired});if(reply.result!==undefined&&reply.result!==1)throw fail('Oktell отклонил статус. Код: '+String(reply.errorcode||reply.result),502);}catch(e){writeError=e;}

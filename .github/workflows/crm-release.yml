@@ -50,6 +50,7 @@ jobs:
           node scripts/oktell-bridge/browser-phone.test.cjs
           node scripts/oktell-bridge/browser-media.test.cjs
           node scripts/oktell-bridge/multi-operator.test.cjs
+          node scripts/oktell-bridge/operator-control.test.cjs
           node scripts/oktell-bridge/pilot-control.test.cjs
           node scripts/oktell-bridge/pilot-sip.test.cjs
           node --experimental-strip-types tests/oktell-pilot-sync.mjs
