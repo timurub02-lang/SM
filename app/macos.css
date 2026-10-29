@@ -198,6 +198,8 @@ button:focus-visible,a:focus-visible { outline: 3px solid #007aff70; outline-off
 .status-accepted{--status-ink:#1264c9;--status-tint:169,208,255;--status-edge:#70aaff}
 .status-cancelled{--status-ink:#a45a0c;--status-tint:255,213,156;--status-edge:#eda54b}
 .status-sent{--status-ink:#7952b5;--status-tint:219,191,255;--status-edge:#ae8bdd}
+.status-accrued{--status-ink:#916315;--status-tint:255,225,157;--status-edge:#d3aa51}
+.status-premium_paid{--status-ink:#247b4c;--status-tint:167,231,190;--status-edge:#6cbd8b}
 .status-paid{--status-ink:#247b4c;--status-tint:167,231,190;--status-edge:#6cbd8b}
 .status-returned{--status-ink:#b53e45;--status-tint:255,181,187;--status-edge:#e78890}
 .order-status-tabs{margin-bottom:22px}
