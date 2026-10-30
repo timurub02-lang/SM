@@ -45,6 +45,8 @@ jobs:
       - run: npx tsc --noEmit
       - name: Verify authentication and both calling routes without real calls
         run: |
+          node --experimental-strip-types tests/redemption-staff.mjs
+          node --experimental-strip-types tests/internal-waybill.mjs
           node --experimental-strip-types tests/warehouse.mjs
           node --experimental-strip-types tests/premium-periods.mjs
           node --experimental-strip-types tests/premium-orders.mjs

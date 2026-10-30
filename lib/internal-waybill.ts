@@ -15,5 +15,5 @@ export function internalWaybill(order:Order,client:Client,manager?:Employee,call
 export type WaybillData=ReturnType<typeof internalWaybill>;
 
 export function selectedPackingOrders(orders:Order[],ids:string[]){
- return orders.filter(order=>ids.includes(order.id)&&packingStage(order)==="calculated");
+ return orders.filter(order=>ids.includes(order.id)&&(order.delivery==="moscow_courier"?packingStage(order)==="new":packingStage(order)==="calculated"));
 }

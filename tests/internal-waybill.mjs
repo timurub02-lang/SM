@@ -47,3 +47,7 @@ const printed={...calculated,id:"c",packingWaybillAt:"2026-10-22"};
 assert.deepEqual(selectedPackingOrders([calculated,waiting,printed],[]),[]);
 assert.deepEqual(selectedPackingOrders([calculated,waiting,printed],["a","a","b","c","missing"]).map(o=>o.id),["a"]);
 assert.deepEqual(selectedPackingOrders([calculated,{...calculated,id:"d"}],["d"]).map(o=>o.id),["d"]);
+
+const moscow={...calculated,id:"m",delivery:"moscow_courier",cdekTariff:undefined};
+assert.deepEqual(selectedPackingOrders([moscow,{...moscow,id:"printed",packingWaybillAt:"2026-10-30"}],[]),[]);
+assert.deepEqual(selectedPackingOrders([moscow,{...moscow,id:"printed",packingWaybillAt:"2026-10-30"}],["m","m","printed"]).map(o=>o.id),["m"]);
