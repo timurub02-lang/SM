@@ -136,4 +136,5 @@ jobs:
             if docker exec -e SQLCMDPASSWORD "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q 'SELECT 1' >/dev/null 2>&1; then break; fi
             sleep 2
           done
-          docker exec -e SQLCMDPASSWORD -i "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b < /tmp/time-fixture.sql
+          docker cp /tmp/time-fixture.sql "$SQL_CONTAINER":/tmp/time-fixture.sql
+          docker exec -e SQLCMDPASSWORD "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -i /tmp/time-fixture.sql

@@ -11,7 +11,7 @@ export function exportCallTimeSql(input){
  const offsets=registry.zones.map(z=>{const n=offset(z,asOf);for(let d=1;d<=90;d++)if(offset(z,new Date(+asOf+d*86400000))!==n)throw Error('Timezone transition requires shorter registry validity');return n;});
  const statements=['SET XACT_ABORT ON; BEGIN TRANSACTION;',"DECLARE @lock int; EXEC @lock=sys.sp_getapplock @Resource='CRM_CallTimeRegistry',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000; IF @lock<0 THROW 50000,'Registry update is busy',1;",'DELETE FROM dbo.CRM_PhoneTimeRanges;'];
  const tuples=registry.ranges.map(([lo,hi,ids])=>{const values=ids.map(id=>offsets[id]);return `(${lo},${hi},${values.length?Math.min(...values):'NULL'},${values.length?Math.max(...values):'NULL'})`;});
- for(let i=0;i<tuples.length;i+=1000)statements.push('INSERT INTO dbo.CRM_PhoneTimeRanges(StartNumber,EndNumber,MinOffset,MaxOffset) VALUES '+tuples.slice(i,i+1000).join(',')+';');
+ for(let i=0;i<tuples.length;i+=1000)statements.push('INSERT INTO dbo.CRM_PhoneTimeRanges(StartNumber,EndNumber,MinOffset,MaxOffset) VALUES '+tuples.slice(i,i+1000).join(',\n')+';');
  const hash=createHash('sha256').update(JSON.stringify(registry)).digest('hex');
  statements.push('DELETE FROM dbo.CRM_PhoneTimeRegistry;',`INSERT INTO dbo.CRM_PhoneTimeRegistry VALUES(1,'${asOf.toISOString()}','${until.toISOString()}','${hash}');`);
  const task=p.native.taskId,minute=s=>Number(s.slice(0,2))*60+Number(s.slice(3));
