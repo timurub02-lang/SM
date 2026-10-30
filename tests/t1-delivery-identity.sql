@@ -54,3 +54,31 @@ IF (SELECT COUNT(*) FROM dbo.CRM_DeliveryContacts WHERE ClientId='C-first')<>2
  OR (SELECT COUNT(*) FROM dbo.CRM_DeliveryContacts WHERE ClientId='C-first' AND Archived=0)<>1
  THROW 51300,'New campaign lost archived identity',1;
 PRINT 'PASS: terminal native proof, active-session guard, completion replay and re-delivery with a fresh native ID';
+
+-- Mixed native failures reach the shared T1 cap without a terminal per-result counter.
+DECLARE @exhausted uniqueidentifier=NEWID(),@nativeId int,@sameChain uniqueidentifier=NEWID();
+UPDATE dbo.A_TaskManager_Lists SET Id='fd519550-95d8-45c3-9fb9-be83f3084034',Query='select id,phone,name,clientid from crm_t1_delivery' WHERE Id=@list;
+UPDATE dbo.CRM_DeliveryBindings SET ListId='fd519550-95d8-45c3-9fb9-be83f3084034',SourceQuery='select id,phone,name,clientid from crm_t1_delivery' WHERE TaskId=@task;
+UPDATE dbo.A_TaskManager_Tasks SET ListId='fd519550-95d8-45c3-9fb9-be83f3084034' WHERE Id=@task;
+EXEC dbo.w_crm_delivery_import @task,@exhausted,@hash,N'[{"clientId":"C-exhausted","phone":"79990000006","name":"Fixture"}]';
+SELECT @nativeId=Id FROM dbo.CRM_DeliveryContacts WHERE BatchId=@exhausted;
+INSERT dbo.A_TaskManager_SubTasks VALUES(@task,@nativeId,NULL,0,0);
+INSERT dbo.A_TaskManager_SubTaskEfforts VALUES
+ (NEWID(),@task,@sameChain,@nativeId,'79990000006',2,GETDATE()),
+ (NEWID(),@task,@sameChain,@nativeId,'79990000006',2,GETDATE()),
+ (NEWID(),@task,NULL,@nativeId,'79990000006',3,GETDATE()),
+ (NEWID(),@task,NULL,@nativeId,'79990000006',16,GETDATE());
+BEGIN TRY
+ EXEC dbo.w_crm_delivery_complete @task,@exhausted;
+ THROW 51300,'Duplicate chains or excluded numbers consumed the cap',1;
+END TRY BEGIN CATCH
+ IF XACT_STATE()<>0 ROLLBACK;
+ IF ERROR_NUMBER()<>50000 OR ERROR_MESSAGE()<>'Native queue still contains unfinished clients' THROW;
+END CATCH;
+INSERT dbo.A_TaskManager_SubTaskEfforts VALUES(NEWID(),@task,NULL,@nativeId,'79990000006',1,GETDATE());
+EXEC dbo.w_crm_delivery_complete @task,@exhausted;
+IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryContacts WHERE BatchId=@exhausted AND Archived=1)
+ THROW 51300,'Three mixed failures did not complete the batch',1;
+IF NOT EXISTS(SELECT 1 FROM dbo.A_TaskManager_SubTasks WHERE IdInList=@nativeId AND NResult=0)
+ THROW 51300,'Completion mutated native history',1;
+PRINT 'PASS: three mixed native attempts release the paused batch; duplicate chains and exclusions do not';

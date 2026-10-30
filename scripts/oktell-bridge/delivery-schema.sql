@@ -123,12 +123,21 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE TaskId=@task AND BatchId=@batch AND Completed=1)
  BEGIN
   IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryBindings b JOIN oktell_settings.dbo.A_TaskManager_Tasks t ON t.Id=b.TaskId
+   JOIN oktell_settings.dbo.A_TaskManager_Lists l ON l.Id=b.ListId AND l.Type=3 AND l.Query=b.SourceQuery
    WHERE b.TaskId=@task AND t.Active=0 AND t.ListId=b.ListId)
    OR EXISTS(SELECT 1 FROM dbo.A_SessionStorage) THROW 50000,'Stop the bound task and wait for sessions',1;
-  -- A saved form or an exhausted custom counter alone is not proof that native
-  -- dialing has terminated. Never release these clients based on either one.
+  -- T1 has a combined three-attempt cap even when native per-result counters
+  -- remain nonterminal. Prove exhaustion from distinct native call chains, not
+  -- a CRM counter. Archiving removes these IDs from the custom source selector.
   IF EXISTS(SELECT 1 FROM dbo.CRM_DeliveryContacts c WHERE c.TaskId=@task AND c.BatchId=@batch
-   AND NOT EXISTS(SELECT 1 FROM dbo.A_TaskManager_SubTasks n WHERE n.TaskId=@task AND n.IdInList=c.Id AND n.NResult IN (1,2,3)))
+   AND NOT EXISTS(SELECT 1 FROM dbo.A_TaskManager_SubTasks n WHERE n.TaskId=@task AND n.IdInList=c.Id AND n.NResult IN (1,2,3))
+   AND NOT (@task='185e121d-d888-4598-85d2-00aa47c825c5'
+    AND EXISTS(SELECT 1 FROM dbo.CRM_DeliveryBindings b WHERE b.TaskId=@task
+      AND b.ListId='fd519550-95d8-45c3-9fb9-be83f3084034'
+      AND b.SourceQuery='select id,phone,name,clientid from crm_t1_delivery')
+    AND (SELECT COUNT(DISTINCT COALESCE(NULLIF(e.ConnectionChainId,'00000000-0000-0000-0000-000000000000'),e.Id))
+     FROM dbo.A_TaskManager_SubTaskEfforts e WHERE e.TaskId=@task AND e.IdInList=c.Id
+      AND e.Number=c.Phone AND e.EResult NOT IN (12,16,17))>=3))
    THROW 50000,'Native queue still contains unfinished clients',1;
   UPDATE dbo.CRM_DeliveryContacts SET Archived=1 WHERE TaskId=@task AND BatchId=@batch;
   UPDATE dbo.CRM_DeliveryReceipts SET Completed=1 WHERE TaskId=@task AND BatchId=@batch;
