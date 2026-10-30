@@ -19,7 +19,21 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  const [periodId,setPeriodId]=useState(current?.id||'unassigned'),[query,setQuery]=useState(''),[operator,setOperator]=useState(''),[group,setGroup]=useState('all');
  const [activePeriod,setActivePeriod]=useState('');
  const [ledgerPeriods,setLedgerPeriods]=useState<string[]>([]),[ledgerCounts,setLedgerCounts]=useState<Record<string,number>>({});
- useEffect(()=>{let active=true;fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(current?.id||'')).then(r=>r.ok?r.json():null).then(value=>{const r=value as {periods?:string[];activePeriod?:string;periodCounts?:Record<string,number>}|null;if(active&&r){setLedgerPeriods(r.periods||[]);setLedgerCounts(r.periodCounts||{});if(r.activePeriod){setPeriodId(r.activePeriod);setActivePeriod(r.activePeriod);}}}).catch(()=>{});return ()=>{active=false;};},[employee.id,current?.id,orders]);
+ const [periodError,setPeriodError]=useState(''),[periodRetry,setPeriodRetry]=useState(0);
+ useEffect(()=>{
+  let active=true,pending=false;const controller=new AbortController();
+  async function refresh(){if(pending)return;pending=true;
+   try{const response=await fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(current?.id||''),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(20000)])});
+    const r=await response.json() as {periods?:string[];activePeriod?:string;periodCounts?:Record<string,number>;error?:string};
+    if(!response.ok)throw Error(r.error||'Не удалось загрузить премию');
+    if(!r.activePeriod)throw Error('Текущий расчётный период не указан');
+    if(active){setLedgerPeriods(r.periods||[]);setLedgerCounts(r.periodCounts||{});setPeriodId(r.activePeriod);setActivePeriod(r.activePeriod);setPeriodError('');}
+   }catch(e){if(active)setPeriodError(e instanceof Error&&e.name!=='TimeoutError'?e.message:'Сервер не ответил вовремя. Повторите загрузку.');}finally{pending=false;}
+  }
+  void refresh();const timer=setInterval(()=>void refresh(),60000);
+  return()=>{active=false;controller.abort();clearInterval(timer);};
+ },[employee.id,current?.id,periodRetry]);
+
  const all=premiumOrders(orders,employee,employees).map(r=>({...r,periodId:r.order.premiumStage?.periodId||r.periodId||periodForReceipt(r.date)?.id||'unassigned'})).filter(r=>!ledgerPeriods.includes(r.periodId)||r.order.premiumStage?.periodId===r.periodId);
  const visiblePeriod=activePeriod;
  const period=premiumPeriods.find(p=>p.id===visiblePeriod);
@@ -37,7 +51,7 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
   {view==='statistics'?<PremiumStatistics employee={employee}/>:view==='archive'?<PremiumArchive employee={employee} employees={employees} orders={orders} onOpen={onOpen} onReload={onReload}/>:<>
   {view==='calculation'&&<>
   <p className="premium-current-period">Текущий расчётный период: <strong>{period?.label||"Загрузка…"}</strong>{period&&` · ${counts.get(period.id)||0} заказов`}</p>
-  {period?<div className="premium-dates"><span>Поступления: {dateLabel(period.from)} — {dateLabel(period.cutoff)}</span><strong>Выплата: {dateLabel(period.payout)}</strong>{period.payout!==period.nominal&&<span>перенесена с {dateLabel(period.nominal)}</span>}</div>:<p role="alert">Для этих дат нужно добавить производственный календарь.</p>}
+  {periodError&&<p role="alert">{periodError} <button onClick={()=>setPeriodRetry(n=>n+1)}>Повторить загрузку</button></p>}{period?<div className="premium-dates"><span>Поступления: {dateLabel(period.from)} — {dateLabel(period.cutoff)}</span><strong>Выплата: {dateLabel(period.payout)}</strong>{period.payout!==period.nominal&&<span>перенесена с {dateLabel(period.nominal)}</span>}</div>:activePeriod?<p role="alert">Для этих дат нужно добавить производственный календарь.</p>:null}
   <details className="premium-help"><summary>Правила расчёта и выплаты</summary><p>СДЭК — по дате перечисления в реестре; почта и курьер — по дате приёма денег. До плановой даты выплаты оставлены четыре полных рабочих дня с учётом праздников и переносов.</p><p>Полученные деньги — не сумма премии. Руководители подписывают расчёт своих отделов. После всех подписей администратор закрывает период и подтверждает выплату.</p></details>
   </>}
   {view==='orders'&&<>
