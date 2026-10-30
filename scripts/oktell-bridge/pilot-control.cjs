@@ -32,7 +32,7 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  CREATE UNIQUE INDEX IF NOT EXISTS pilot_delivery_number ON pilot_delivery_contacts(task_id,phone) WHERE active=1;
  CREATE UNIQUE INDEX IF NOT EXISTS pilot_delivery_client ON pilot_delivery_contacts(task_id,client_id) WHERE active=1;`);
  function rememberDelivery(receipt,items){
-  if(!receipt||!uuid(receipt.id)||!uuid(receipt.taskId)||!/^[a-f0-9]{64}$/.test(receipt.fingerprint)||typeof receipt.cancelled!=='boolean')throw fail('Invalid delivery receipt',502);
+  if(!receipt||!uuid(receipt.id)||!uuid(receipt.taskId)||!/^[a-f0-9]{64}$/.test(receipt.fingerprint)||typeof receipt.cancelled!=='boolean'||receipt.completed!==undefined&&typeof receipt.completed!=='boolean')throw fail('Invalid delivery receipt',502);
   const id=lower(receipt.id),task=lower(receipt.taskId),old=db.prepare('SELECT * FROM pilot_deliveries WHERE id=?').get(id);
   if(old&&(old.task_id!==task||old.fingerprint!==receipt.fingerprint))throw fail('Delivery receipt changed',502);
   let payload=null;
@@ -40,15 +40,22 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
    if(!Array.isArray(items)||!items.length||items.length>1000||items.some(c=>!/^C-[\w-]+$/.test(c.clientId)||!phone(c.phone))||new Set(items.map(c=>c.clientId)).size!==items.length||new Set(items.map(c=>phone(c.phone))).size!==items.length)throw fail('Invalid delivery contacts',502);
    payload=JSON.stringify(items.map(c=>({clientId:c.clientId,phone:phone(c.phone)})).sort((a,b)=>a.clientId.localeCompare(b.clientId)));
    if(receipt.accepted!==items.length||old?.items&&old.items!==payload)throw fail('Delivery composition changed',502);
-  }else if(!receipt.cancelled)throw fail('Delivery contacts required',502);
+  }else if(!receipt.cancelled&&!receipt.completed)throw fail('Delivery contacts required',502);
   // Cancellation is terminal even when an earlier import response arrives late.
-  const cancelled=receipt.cancelled||old?.state==='cancelled';
+  const cancelled=receipt.cancelled||old?.state==='cancelled',completed=receipt.completed||old?.state==='completed';
   db.exec('BEGIN IMMEDIATE');try{
-   db.prepare("INSERT INTO pilot_deliveries VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET items=COALESCE(pilot_deliveries.items,excluded.items),state=excluded.state").run(id,task,receipt.fingerprint,payload,cancelled?'cancelled':'delivered');
-   if(cancelled)db.prepare('UPDATE pilot_delivery_contacts SET active=0 WHERE delivery_id=?').run(id);
+   db.prepare("INSERT INTO pilot_deliveries VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET items=COALESCE(pilot_deliveries.items,excluded.items),state=excluded.state").run(id,task,receipt.fingerprint,payload,cancelled?'cancelled':completed?'completed':'delivered');
+   if(cancelled||completed)db.prepare('UPDATE pilot_delivery_contacts SET active=0 WHERE delivery_id=?').run(id);
    else for(const c of JSON.parse(payload))db.prepare('INSERT INTO pilot_delivery_contacts VALUES(?,?,?,?,1) ON CONFLICT(delivery_id,client_id) DO NOTHING').run(id,task,c.clientId,c.phone);
    db.exec('COMMIT');
   }catch(e){db.exec('ROLLBACK');throw e;}
+ }
+ function checkDeliveryCompletion(id,through){
+  if(!Number.isSafeInteger(through)||through!==db.prepare('SELECT COALESCE(MAX(seq),0) seq FROM pilot_updates').get().seq)throw fail('Import all call history before completing delivery');
+  const delivery=db.prepare('SELECT * FROM pilot_deliveries WHERE id=?').get(lower(id));
+  if(!delivery||delivery.state==='cancelled')throw fail('Delivery manifest is unavailable');
+  if(db.prepare("SELECT 1 FROM pilot_calls WHERE delivery_id=? AND (ended_at IS NULL OR ((answered_at IS NOT NULL OR form_id IS NOT NULL) AND COALESCE(command_state,'')<>'confirmed')) LIMIT 1").get(lower(id)))throw fail('Finish pending operator results first');
+  if(callbackRouting&&db.prepare("SELECT 1 FROM pilot_calls c LEFT JOIN pilot_callback_sync r ON r.command_id=c.command_id WHERE c.delivery_id=? AND c.command_state='confirmed' AND r.synced_at IS NULL LIMIT 1").get(lower(id)))throw fail('Wait for native result synchronization');
  }
  const stamp=()=>new Date(now()).toISOString();
  function config(){
@@ -161,5 +168,5 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   const calls=db.prepare('SELECT c.*,u.seq FROM pilot_calls c JOIN (SELECT chain,MAX(seq) seq FROM pilot_updates WHERE seq>? GROUP BY chain ORDER BY seq LIMIT 100) u ON u.chain=c.chain ORDER BY u.seq').all(after);
   return {after,through:calls.at(-1)?.seq??after,calls};
  }
- return {rememberDelivery,syncCallbacks,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ return {rememberDelivery,checkDeliveryCompletion,syncCallbacks,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };

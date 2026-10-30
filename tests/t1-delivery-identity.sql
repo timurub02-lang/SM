@@ -24,3 +24,33 @@ IF EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@second)
  OR EXISTS(SELECT 1 FROM dbo.CRM_DeliveryContacts WHERE ClientId='C-second')
  THROW 51300,'Conflicting batch was partially committed',1;
 PRINT 'PASS: source ID separation, delivery replay and transactional native-history collision rejection';
+UPDATE dbo.A_TaskManager_Tasks SET ListId=@list;
+BEGIN TRY
+ EXEC dbo.w_crm_delivery_complete @task,@batch;
+ THROW 51300,'Unfinished client was released',1;
+END TRY BEGIN CATCH
+ IF XACT_STATE()<>0 ROLLBACK;
+ IF ERROR_NUMBER()<>50000 OR ERROR_MESSAGE()<>'Native queue still contains unfinished clients' THROW;
+END CATCH;
+INSERT dbo.A_TaskManager_SubTasks SELECT @task,Id,NULL,1,0 FROM dbo.CRM_DeliveryContacts WHERE BatchId=@batch;
+INSERT dbo.A_SessionStorage VALUES(1);
+BEGIN TRY
+ EXEC dbo.w_crm_delivery_complete @task,@batch;
+ THROW 51300,'Active session did not block completion',1;
+END TRY BEGIN CATCH
+ IF XACT_STATE()<>0 ROLLBACK;
+ IF ERROR_NUMBER()<>50000 OR ERROR_MESSAGE()<>'Stop the bound task and wait for sessions' THROW;
+END CATCH;
+DELETE dbo.A_SessionStorage;
+EXEC dbo.w_crm_delivery_complete @task,@batch;
+EXEC dbo.w_crm_delivery_complete @task,@batch;
+EXEC dbo.w_crm_delivery_import @task,@batch,@hash,N'[{"clientId":"C-first","phone":"79990000004","name":"Fixture"}]';
+IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch AND Completed=1)
+ OR EXISTS(SELECT 1 FROM dbo.CRM_DeliveryContacts WHERE BatchId=@batch AND Archived=0)
+ THROW 51300,'Receipt replay revived a completed source',1;
+DECLARE @again uniqueidentifier=NEWID();
+EXEC dbo.w_crm_delivery_import @task,@again,@hash,N'[{"clientId":"C-first","phone":"79990000004","name":"Fixture"}]';
+IF (SELECT COUNT(*) FROM dbo.CRM_DeliveryContacts WHERE ClientId='C-first')<>2
+ OR (SELECT COUNT(*) FROM dbo.CRM_DeliveryContacts WHERE ClientId='C-first' AND Archived=0)<>1
+ THROW 51300,'New campaign lost archived identity',1;
+PRINT 'PASS: terminal native proof, active-session guard, completion replay and re-delivery with a fresh native ID';

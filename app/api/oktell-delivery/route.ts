@@ -2,13 +2,14 @@ import {z} from 'zod';
 import {sessionEmployee,trustedOrigin} from '@/lib/auth';
 import {db} from '@/lib/db';
 import {pilotControl} from '@/lib/oktell-pilot-control';
-import {deliverySelection,initOktellDelivery,previewOktellDelivery,reserveOktellDelivery,sendOktellDelivery,cancelOktellDelivery} from '@/lib/oktell-delivery';
+import {deliverySelection,initOktellDelivery,previewOktellDelivery,reserveOktellDelivery,sendOktellDelivery,cancelOktellDelivery,completeOktellDelivery} from '@/lib/oktell-delivery';
 export const dynamic='force-dynamic';
 const command=z.discriminatedUnion('action',[
  z.object({action:z.literal('preview'),selection:deliverySelection}).strict(),
  z.object({action:z.literal('upload'),selection:deliverySelection,id:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
  z.object({action:z.literal('retry'),id:z.string().uuid()}).strict(),
  z.object({action:z.literal('cancel'),id:z.string().uuid()}).strict(),
+ z.object({action:z.literal('complete'),id:z.string().uuid()}).strict(),
 ]);
 export async function GET(req:Request){
  const actor=await sessionEmployee(req.headers);if(actor?.role!=='admin')return Response.json({error:'Нет доступа'},{status:403});
@@ -25,6 +26,7 @@ export async function POST(req:Request){
   const raw=await req.text();if(raw.length>4000)return Response.json({error:'Слишком большой запрос'},{status:413});
   const b=command.parse(JSON.parse(raw)),d=db();
   if(b.action==='retry')return Response.json(await sendOktellDelivery(d,b.id));
+  if(b.action==='complete')return Response.json(await completeOktellDelivery(d,b.id));
   if(b.action==='cancel')return Response.json(await cancelOktellDelivery(d,b.id));
   const source=await pilotControl('/delivery');
   if(source.taskId!==b.selection.taskId||source.sourcePresent!==true)throw Error('Источник проекта изменился или не настроен. Обновите данные.');

@@ -16,13 +16,27 @@ CREATE TABLE dbo.CRM_DeliveryReceipts(
  Cancelled bit NOT NULL DEFAULT 0,CreatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
 GO
+IF COL_LENGTH('dbo.CRM_DeliveryContacts','Archived') IS NULL
+ ALTER TABLE dbo.CRM_DeliveryContacts ADD Archived bit NOT NULL DEFAULT 0;
+IF COL_LENGTH('dbo.CRM_DeliveryReceipts','Completed') IS NULL
+ ALTER TABLE dbo.CRM_DeliveryReceipts ADD Completed bit NOT NULL DEFAULT 0;
+GO
+IF EXISTS(SELECT 1 FROM sys.key_constraints WHERE name='UQ_CRM_DeliveryClient')
+ ALTER TABLE dbo.CRM_DeliveryContacts DROP CONSTRAINT UQ_CRM_DeliveryClient;
+IF EXISTS(SELECT 1 FROM sys.key_constraints WHERE name='UQ_CRM_DeliveryPhone')
+ ALTER TABLE dbo.CRM_DeliveryContacts DROP CONSTRAINT UQ_CRM_DeliveryPhone;
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE name='IX_CRM_DeliveryActiveClient')
+ CREATE UNIQUE INDEX IX_CRM_DeliveryActiveClient ON dbo.CRM_DeliveryContacts(TaskId,ClientId) WHERE Archived=0;
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE name='IX_CRM_DeliveryActivePhone')
+ CREATE UNIQUE INDEX IX_CRM_DeliveryActivePhone ON dbo.CRM_DeliveryContacts(TaskId,Phone) WHERE Archived=0;
+GO
 CREATE OR ALTER PROCEDURE dbo.w_crm_delivery_state @task uniqueidentifier
 AS
 BEGIN
  SET NOCOUNT ON;
  SELECT t.Id TaskId,t.Name TaskName,b.ListId,t.ListId TaskListId,t.Active,t.Done,
  CASE WHEN l.Id IS NOT NULL AND l.Type=3 AND l.Query=b.SourceQuery THEN 1 ELSE 0 END SourcePresent,
- (SELECT COUNT(*) FROM dbo.CRM_DeliveryContacts WHERE TaskId=@task) Contacts,
+ (SELECT COUNT(*) FROM dbo.CRM_DeliveryContacts WHERE TaskId=@task AND Archived=0) Contacts,
  (SELECT COUNT(*) FROM dbo.A_SessionStorage) Sessions
  FROM dbo.CRM_DeliveryBindings b JOIN oktell_settings.dbo.A_TaskManager_Tasks t ON t.Id=b.TaskId
  LEFT JOIN oktell_settings.dbo.A_TaskManager_Lists l ON l.Id=b.ListId WHERE b.TaskId=@task;
@@ -56,7 +70,7 @@ BEGIN
   IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryBindings b JOIN oktell_settings.dbo.A_TaskManager_Tasks t ON t.Id=b.TaskId JOIN oktell_settings.dbo.A_TaskManager_Lists l ON l.Id=b.ListId WHERE b.TaskId=@task AND t.Active=0 AND t.Done=0 AND l.Type=3 AND l.Query=b.SourceQuery)
    THROW 50000,'Paused task and verified CRM source are required',1;
   IF EXISTS(SELECT 1 FROM dbo.A_SessionStorage) THROW 50000,'Wait for active sessions before import',1;
-  IF EXISTS(SELECT 1 FROM @items i JOIN dbo.CRM_DeliveryContacts c ON c.TaskId=@task AND (c.ClientId=i.ClientId OR c.Phone=i.Phone))
+  IF EXISTS(SELECT 1 FROM @items i JOIN dbo.CRM_DeliveryContacts c ON c.TaskId=@task AND c.Archived=0 AND (c.ClientId=i.ClientId OR c.Phone=i.Phone))
    THROW 50000,'Contact already belongs to task; reconcile previous delivery',1;
   INSERT dbo.CRM_DeliveryContacts(TaskId,ClientId,Phone,Name,BatchId) SELECT @task,ClientId,Phone,Name,@batch FROM @items;
   -- Native history is keyed by task + IdInList, not by list. A list swap must never
@@ -69,7 +83,7 @@ BEGIN
   INSERT dbo.CRM_DeliveryReceipts(BatchId,TaskId,Fingerprint,PayloadHash,Accepted) VALUES(@batch,@task,@fingerprint,@hash,@count);
  END
  COMMIT;
- SELECT BatchId,TaskId,Fingerprint,Accepted,Cancelled FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch;
+ SELECT BatchId,TaskId,Fingerprint,Accepted,Cancelled,Completed FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch;
 END;
 GO
 CREATE OR ALTER PROCEDURE dbo.w_crm_delivery_cancel @task uniqueidentifier,@batch uniqueidentifier
@@ -81,6 +95,7 @@ BEGIN
  EXEC @lock=sys.sp_getapplock @Resource='CRM_Delivery',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000;
  IF @lock<0 THROW 50000,'Delivery is busy',1;
  IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch AND TaskId=@task) THROW 50000,'Delivery receipt missing; reconcile before release',1;
+ IF EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch AND TaskId=@task AND Completed=1) THROW 50000,'Completed delivery cannot be cancelled',1;
  IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch AND TaskId=@task AND Cancelled=1)
  BEGIN
   -- An attached task may retain a native queue. Do not pretend deleting source rows cancels those calls.
@@ -91,5 +106,33 @@ BEGIN
   UPDATE dbo.CRM_DeliveryReceipts SET Cancelled=1 WHERE BatchId=@batch AND TaskId=@task;
  END
  COMMIT;
- SELECT BatchId,TaskId,Fingerprint,Accepted,Cancelled FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch;
+ SELECT BatchId,TaskId,Fingerprint,Accepted,Cancelled,Completed FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch;
+END;
+
+GO
+CREATE OR ALTER PROCEDURE dbo.w_crm_delivery_complete @task uniqueidentifier,@batch uniqueidentifier
+AS
+BEGIN
+ SET NOCOUNT ON; SET XACT_ABORT ON;
+ BEGIN TRANSACTION;
+ DECLARE @lock int;
+ EXEC @lock=sys.sp_getapplock @Resource='CRM_Delivery',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000;
+ IF @lock<0 THROW 50000,'Delivery is busy',1;
+ IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE TaskId=@task AND BatchId=@batch AND Cancelled=0)
+  THROW 50000,'Confirmed delivery required',1;
+ IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryReceipts WHERE TaskId=@task AND BatchId=@batch AND Completed=1)
+ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM dbo.CRM_DeliveryBindings b JOIN oktell_settings.dbo.A_TaskManager_Tasks t ON t.Id=b.TaskId
+   WHERE b.TaskId=@task AND t.Active=0 AND t.ListId=b.ListId)
+   OR EXISTS(SELECT 1 FROM dbo.A_SessionStorage) THROW 50000,'Stop the bound task and wait for sessions',1;
+  -- A saved form or an exhausted custom counter alone is not proof that native
+  -- dialing has terminated. Never release these clients based on either one.
+  IF EXISTS(SELECT 1 FROM dbo.CRM_DeliveryContacts c WHERE c.TaskId=@task AND c.BatchId=@batch
+   AND NOT EXISTS(SELECT 1 FROM dbo.A_TaskManager_SubTasks n WHERE n.TaskId=@task AND n.IdInList=c.Id AND n.NResult IN (1,2,3)))
+   THROW 50000,'Native queue still contains unfinished clients',1;
+  UPDATE dbo.CRM_DeliveryContacts SET Archived=1 WHERE TaskId=@task AND BatchId=@batch;
+  UPDATE dbo.CRM_DeliveryReceipts SET Completed=1 WHERE TaskId=@task AND BatchId=@batch;
+ END;
+ COMMIT;
+ SELECT BatchId,TaskId,Fingerprint,Accepted,Cancelled,Completed FROM dbo.CRM_DeliveryReceipts WHERE BatchId=@batch;
 END;

@@ -78,6 +78,18 @@ async function main(){
   const payload=packets.find(([m])=>m==='dlgcard_setstopformresult')[1];
   assert.equal(payload.issuccess,outcome==='Заказ');assert.equal(payload.userresult,9);single.close();
  }
+ const finished=make({file:':memory:',load:()=>config,identity,connected:()=>true,send:()=>{}});
+ const finalReceipt={id:randomUUID(),taskId:config.taskId,fingerprint:'d'.repeat(64),accepted:1,cancelled:false},finalItems=[{clientId:'C-final',phone:'79990000007'}];
+ finished.rememberDelivery(finalReceipt,finalItems);finished.checkDeliveryCompletion(finalReceipt.id,0);
+ const finalChain=randomUUID();finished.event('phoneevent_ringstarted',{qid:randomUUID(),...identity('E-one'),istask:true,taskid:config.taskId,chainid:finalChain,callerid:finalItems[0].phone});
+ assert.throws(()=>finished.checkDeliveryCompletion(finalReceipt.id,0),/history/);
+ assert.throws(()=>finished.checkDeliveryCompletion(finalReceipt.id,1),/pending/);
+ finished.event('phoneevent_ringstopped',{qid:randomUUID(),...identity('E-one'),chainid:finalChain});
+ finished.checkDeliveryCompletion(finalReceipt.id,finished.changes(0).through);
+ finished.rememberDelivery({...finalReceipt,completed:true});finished.rememberDelivery(finalReceipt,finalItems);
+ const ignored=randomUUID();finished.event('phoneevent_ringstarted',{qid:randomUUID(),...identity('E-one'),istask:true,taskid:config.taskId,chainid:ignored,callerid:finalItems[0].phone});
+ assert.notEqual(finished.read('E-one').current.chain,ignored);
+ finished.rememberDelivery({...finalReceipt,id:randomUUID()},finalItems);finished.close();
  p.close();console.log('PASS: native pilot isolation, incoming correlation, callbacks, idempotent result, separate operators, no dial commands');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
