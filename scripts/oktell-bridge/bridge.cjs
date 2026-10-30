@@ -50,9 +50,19 @@ const browserOperators={...operators,prepare:async(actor,owner)=>{
  catch(e){await operators.release(actor,owner);throw e;}
 }};
 const browserPhone=require('./browser-phone.cjs')({operators:browserOperators,connected:()=>publicState().connected,incoming:pilot.incoming,canAuthorize:pilot.canAuthorize});
+const delivery=require('./delivery-control.cjs')({request,connected:()=>publicState().connected});
 const control=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
  if(req.method==='GET'&&req.url==='/status'){res.end(JSON.stringify(publicState()));return;}
+ if(req.url==='/delivery'){
+  try{
+   if(req.method==='GET'){res.end(JSON.stringify(await delivery.state()));return;}
+   if(req.method!=='POST')throw Object.assign(Error('Method not allowed'),{status:405});
+   let raw='';for await(const chunk of req){raw+=chunk;if(Buffer.byteLength(raw)>500000)throw Object.assign(Error('Payload too large'),{status:413});}
+   const {action,...body}=JSON.parse(raw);if(!['import','cancel'].includes(action))throw Object.assign(Error('Invalid action'),{status:400});
+   res.end(JSON.stringify(await (action==='import'?delivery.importBatch(body):delivery.cancel(body))));
+  }catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}return;
+ }
  if(req.method==='GET'&&req.url==='/deployment-state'){res.end(JSON.stringify({busy:browserPhone.deploymentState().busy||pilot.busy()}));return;}
  if(req.method==='GET'&&req.url==='/pilot-history'){res.end(JSON.stringify(pilot.history()));return;}
  if(req.method==='GET'&&req.url?.startsWith('/pilot-changes?')){

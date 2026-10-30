@@ -1,0 +1,37 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
+type Source={taskId:string;sourcePresent:boolean;sourceAttached:boolean;paused:boolean;contacts:number;sessions:number};
+type Job={id:string;state:string;created_at:string;error:string;total:number;selection:{base:'M'|'J';sheet:string;count:number}};
+type Preview={total:number;eligible:number;selected:number;fingerprint:string;skipped:Record<string,number>};
+const stateNames:Record<string,string>={reserved:'Подготовлена',unknown:'Нужно подтверждение Oktell',delivered:'Oktell подтвердил приём',cancelled:'Загрузка отменена'};
+const skipNames:Record<string,string>={assigned:'Закреплены за оператором',cooling:'Не прошёл срок после освобождения',invalid:'Некорректный номер',reserved:'Уже передаются в обзвон',duplicate:'Повтор номера',restrictedNumber:'Номер связан с недоступной для обзвона карточкой',activeOrder:'Есть активный заказ'};
+export function OktellDelivery({base,sheet,onDone}:{base:'M'|'J';sheet:string;onDone:()=>void}){
+ const [open,setOpen]=useState(false),[source,setSource]=useState<Source|null>(null),[jobs,setJobs]=useState<Job[]>([]),[count,setCount]=useState('100'),[preview,setPreview]=useState<Preview|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState(''),[sourceError,setSourceError]=useState(''),[notice,setNotice]=useState('');
+ const uploadId=useRef('');
+ async function api<T>(body?:unknown):Promise<T>{const r=await fetch('/api/oktell-delivery',{method:body?'POST':'GET',cache:'no-store',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(25000)});const data=await r.json() as T&{error?:string};if(!r.ok)throw Error(data.error||'Не удалось выполнить действие');return data;}
+ async function refresh(){const data=await api<{source:Source|null;error:string;jobs:Job[]}>();setSource(data.source);setSourceError(data.error||'');setJobs(data.jobs);}
+ async function load(){setBusy('load');setError('');try{await refresh();}catch(e){setError(e instanceof Error?e.message:'Нет связи с CRM');}finally{setBusy('');}}
+ useEffect(()=>{if(open){setPreview(null);setNotice('');uploadId.current='';void load();}},[open,base,sheet]);
+ const available=!!source?.sourcePresent&&source.paused&&source.sessions===0;
+ const selection={base,sheet,count:Number(count),taskId:source?.taskId};
+ async function check(){setBusy('preview');setError('');setNotice('');setPreview(null);try{const data=await api<Preview>({action:'preview',selection});setPreview(data);uploadId.current=crypto.randomUUID();}catch(e){setError(e instanceof Error?e.message:'Не удалось проверить состав');}finally{setBusy('');}}
+ async function upload(){if(!preview||!uploadId.current)return;setBusy('upload');setError('');try{const r=await api<{state:string;accepted?:number}>({action:'upload',selection,id:uploadId.current,fingerprint:preview.fingerprint});setNotice(r.state==='cancelled'?'Эта загрузка уже отменена.':`Oktell подтвердил приём ${r.accepted??preview.selected} клиентов. Звонки не запускались.`);setPreview(null);onDone();}catch(e){setError((e instanceof Error?e.message:'Ответ не получен')+' Проверьте журнал загрузок ниже перед новой отправкой.');}finally{try{await refresh();}catch{}setBusy('');}}
+ async function act(action:'retry'|'cancel',id:string){setBusy(id);setError('');setNotice('');try{const r=await api<{state:string}>({action,id});setNotice(r.state==='cancelled'?'Загрузка отменена. Клиенты снова доступны в CRM.':'Приём клиентов подтверждён Oktell. Звонки не запускались.');setPreview(null);onDone();}catch(e){setError(e instanceof Error?e.message:'Нет подтверждения Oktell');}finally{try{await refresh();}catch{}setBusy('');}}
+ return <><button className="secondary" onClick={()=>setOpen(true)}>Загрузить в Т1 · Oktell</button><Dialog open={open} onOpenChange={value=>{if(!busy)setOpen(value);}}><DialogContent className="form-dialog"><DialogHeader><DialogTitle>База {base==='M'?'М':'Ж'} · {sheet} → Т1</DialogTitle><DialogDescription>Выберите количество и проверьте состав. Загрузка клиентов не запускает звонки.</DialogDescription></DialogHeader>
+  <div className="stack">
+   {busy==='load'&&<p role="status">Проверяем подключение к проекту…</p>}
+   {source&&<p>В источнике Oktell: <strong>{source.contacts.toLocaleString('ru-RU')} клиентов</strong>. {source.paused?'Проект приостановлен.':'Проект не готов к загрузке.'}</p>}
+   {source?.sourcePresent&&!source.sourceAttached&&<p className="notice">Источник принимает клиентов. Подключение рабочей базы к обзвону ещё не завершено.</p>}
+   {(sourceError||!source?.sourcePresent)&&!busy&&<p role="alert">{sourceError||'Источник клиентов в Oktell пока недоступен.'}</p>}
+   {source&&source.sessions>0&&<p role="status">Дождитесь завершения текущих звонков, затем обновите состояние.</p>}
+   <form className="stack" onSubmit={e=>{e.preventDefault();void check();}}>
+    <label className="field"><span>Количество клиентов</span><input type="number" min="1" max="1000" step="1" required value={count} disabled={!!busy} onChange={e=>{setCount(e.target.value);setPreview(null);uploadId.current='';}}/><small>До 1 000 за одну загрузку. Закреплённые, недоступные и уже отправленные клиенты будут исключены.</small></label>
+    <div className="action-buttons"><button className="secondary" type="submit" disabled={!!busy||!available}>{busy==='preview'?'Проверяем состав…':'Проверить состав'}</button><button className="secondary" type="button" disabled={!!busy} onClick={()=>void load()}>Обновить состояние</button></div>
+   </form>
+   {preview&&<section className="stack" aria-label="Результат проверки"><p>В листе {preview.total.toLocaleString('ru-RU')}, доступны {preview.eligible.toLocaleString('ru-RU')}. В эту загрузку войдут <strong>{preview.selected.toLocaleString('ru-RU')} клиентов</strong>.</p>{Object.entries(preview.skipped).some(([,n])=>n>0)&&<details><summary>Почему часть клиентов исключена</summary><ul>{Object.entries(preview.skipped).filter(([,n])=>n>0).map(([key,n])=><li key={key}>{skipNames[key]||key}: {n.toLocaleString('ru-RU')}</li>)}</ul></details>}<button className="primary" disabled={!!busy||!available||!preview.selected} onClick={()=>void upload()}>{busy==='upload'?'Загружаем…':`Загрузить ${preview.selected.toLocaleString('ru-RU')} клиентов`}</button></section>}
+   {notice&&<p role="status" className="notice">{notice}</p>}{error&&<p role="alert">{error}</p>}
+   <section className="stack" aria-label="Журнал загрузок"><h3>Последние загрузки</h3>{!jobs.length&&<p className="muted">Загрузок пока нет.</p>}{jobs.map(job=><div className="base-sheet-settings" key={job.id}><p><strong>{job.selection.base==='M'?'М':'Ж'} · {job.selection.sheet} · {job.total.toLocaleString('ru-RU')} клиентов</strong><br/>{stateNames[job.state]||job.state} · {new Date(job.created_at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} МСК</p>{job.error&&<p>{job.error}</p>}<div className="action-buttons">{['reserved','unknown'].includes(job.state)&&<button className="secondary" disabled={!!busy||!available} onClick={()=>void act('retry',job.id)}>{busy===job.id?'Проверяем…':'Проверить приём в Oktell'}</button>}{job.state!=='cancelled'&&<button className="secondary" disabled={!!busy||!available||source?.sourceAttached} onClick={()=>void act('cancel',job.id)}>Отменить загрузку</button>}</div></div>)}</section>
+  </div>
+ </DialogContent></Dialog></>;
+}
