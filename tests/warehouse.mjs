@@ -10,9 +10,18 @@ assert(productReady(productSchema.parse({...draft,sku:'SHOES-1',weight:500,payme
 console.log('Warehouse validation passed');
 const {parcelDefaults}=await import('../lib/warehouse.ts');
 const product={...productSchema.parse({...draft,packedWeight:1.2,length:35,width:25,height:15}),id:'one',version:1};
-assert.deepEqual(parcelDefaults([{name:'Кроссовки',quantity:1}],[product]),{weight:0.875,length:35,width:25,height:15,originMode:'warehouse',single:true});
+assert.deepEqual(parcelDefaults([{name:'Кроссовки',quantity:1}],[product]),{weight:0.875,length:35,width:25,height:15,originMode:'warehouse'});
 assert.equal(parcelDefaults([{name:'Кроссовки',quantity:2}],[product]).weight,0.875);
-assert.equal(parcelDefaults([{name:'Кроссовки',quantity:2}],[product]).length,null);
+assert.deepEqual(parcelDefaults([{name:'Кроссовки',quantity:7}],[product]),parcelDefaults([{name:'Кроссовки',quantity:1}],[product]));
+const other={...product,id:'two',name:'Другой товар',length:40,width:20,height:30,packedWeight:null};
+assert.deepEqual(parcelDefaults([{name:' КРОССОВКИ ',quantity:3},{name:'Другой товар',quantity:2}],[product,other]),{weight:0.875,length:40,width:25,height:30,originMode:'warehouse'});
+assert.equal(parcelDefaults([{name:'Другой товар',quantity:2}],[other]).length,40);
+assert.equal(parcelDefaults([{name:'Кроссовки',quantity:2}],[{...product,height:null}]).height,null);
+assert.equal(parcelDefaults([], [product]),null);
+assert.equal(parcelDefaults([{name:'Кроссовки',quantity:1},{name:'Unknown',quantity:1}],[product]),null);
+// Imported LV orders use the same items and warehouse matching as native orders.
+const imported={legacyLv:{orderId:'123'},items:[{name:'Кроссовки',quantity:5,price:100}]};
+assert.equal(parcelDefaults(imported.items,[product]).length,35);
 assert.equal(parcelDefaults([{name:'Unknown',quantity:1}],[product]),null);
 console.log('Parcel defaults passed');
 const {warehouseAddressSchema}=await import('../lib/warehouse.ts');
