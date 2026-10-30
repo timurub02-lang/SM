@@ -18,8 +18,14 @@ const paidOrder={status:'redeemed',manager:'original',premiumStage:{status:'paid
 for(const role of ['operator','department_head']){
  assert.equal(showOrderInList(paidOrder,{owner:'original'},role),true);
  for(const client of [{owner:''},{owner:'other'},undefined])assert.equal(showOrderInList(paidOrder,client,role),false);
- assert.equal(showOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},role),true);
- assert.equal(showOrderInList({...paidOrder,premiumStage:undefined},{owner:''},role),true);
+ for(const premiumStage of [undefined,{status:'accrued',periodId:'2026-10-2'},{status:'paid',periodId:'2026-10-2'}]){
+  const archived={...paidOrder,premiumStage},before=JSON.stringify(archived);
+  for(const client of [{owner:''},{owner:'other'},undefined])assert.equal(showOrderInList(archived,client,role),false);
+  assert.equal(showOrderInList(archived,{owner:'original'},role),true);
+  assert.equal(showOrderInList(archived,{owner:''},'admin'),true);
+  assert.equal(JSON.stringify(archived),before);
+ }
+ assert.equal(showOrderInList({...paidOrder,status:'shipping',premiumStage:undefined},{owner:''},role),true);
 }
 assert.equal(showOrderInList(paidOrder,{owner:''},'admin'),true);
 assert.equal(paidOrder.premiumStage.status,'paid');
