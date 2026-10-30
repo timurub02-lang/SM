@@ -18,3 +18,5 @@ Build only: no merge, deployment, source attachment, real customer import or cal
 - Resolve the observed provider refusal on the third diagnostic number; verify monitoring, recordings and restore procedure.
 
 This build is not certification that the full real-base campaign is ready.
+
+Phone-timezone build follow-up: see docs/t1-phone-timezones.md. Phone allocation lookup, preview diagnostics and an SQL dial-time gate are now prepared and tested independently. Production/native scenario wiring is still a deployment gate; do not equate a compiled guard with an attached call path.

@@ -5,6 +5,7 @@ import {distributionEligible,moscowDate,normalizedPhone} from './base-distributi
 import {blockedSheets} from './base-policy.ts';
 import {initBaseDispatch} from './base-dispatch.ts';
 import {pilotControl} from './oktell-pilot-control.ts';
+import phoneTime from './phone-timezone.cjs';
 
 export const deliverySelection=z.object({taskId:z.string().uuid().transform(v=>v.toLowerCase()),base:z.enum(['M','J']),sheet:z.string().trim().min(1).max(60),count:z.number().int().min(1).max(1000)}).strict();
 type Selection=z.infer<typeof deliverySelection>;
@@ -48,7 +49,9 @@ export async function previewOktellDelivery(d:Db,input:unknown,now=new Date()){
   phones.add(phone);items.push({clientId:row.id,phone,name:String(c.name||phone).slice(0,100),version:row.version});
  }
  const selected=items.slice(0,p.count),fingerprint=createHash('sha256').update(JSON.stringify({selection:p,items:selected})).digest('hex');
- return {selection:p,total:rows.length,eligible:items.length,selected:selected.length,skipped,fingerprint,items:selected};
+ const timezones={resolved:0,multiple:0,unknown:0,invalid:0,stale:0};
+ for(const item of selected){const status=phoneTime.resolvePhoneTimezone(item.phone,now).status as keyof typeof timezones;timezones[status]++;}
+ return {selection:p,total:rows.length,eligible:items.length,selected:selected.length,skipped,fingerprint,items:selected,timezones,timezoneSource:'phone_number'};
 }
 export async function reserveOktellDelivery(d:Db,actor:string,id:string,input:unknown,fingerprint:string,now=new Date()){
  id=z.string().uuid().parse(id).toLowerCase();z.string().regex(/^[a-f0-9]{64}$/).parse(fingerprint);const selection=deliverySelection.parse(input);

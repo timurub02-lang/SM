@@ -61,6 +61,7 @@ jobs:
           node scripts/oktell-bridge/operator-control.test.cjs
           node scripts/oktell-bridge/pilot-control.test.cjs
           node scripts/oktell-bridge/delivery-control.test.cjs
+          node tests/phone-timezone.cjs
           node --experimental-strip-types tests/oktell-delivery.mjs
           node --experimental-strip-types tests/oktell-delivery-http.mjs
           node scripts/oktell-bridge/pilot-sip.test.cjs
@@ -82,7 +83,7 @@ jobs:
 
   publish:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
+    needs: [build, verify-call-time-sql]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -107,3 +108,32 @@ jobs:
           gh release create "crm-$COMMIT" crm-runtime.tgz SHA256SUMS \
             --target "$COMMIT" --title "CRM ${COMMIT:0:12}" \
             --notes "Verified standalone build. Source: $COMMIT. Run: $RUN." --latest
+
+  verify-call-time-sql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: SyntheticFixtureOnly_2026!
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - run: npm ci --include=dev --include=optional --no-audit --no-fund
+      - name: Verify local-time guard in isolated SQL Server (no telephony)
+        env:
+          SQL_CONTAINER: ${{ job.services.sqlserver.id }}
+          SQLCMDPASSWORD: SyntheticFixtureOnly_2026!
+        run: |
+          node --experimental-strip-types tests/phone-timezone-sql.mjs /tmp/time-fixture.sql
+          for attempt in $(seq 1 60); do
+            if docker exec -e SQLCMDPASSWORD "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q 'SELECT 1' >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec -e SQLCMDPASSWORD -i "$SQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b < /tmp/time-fixture.sql

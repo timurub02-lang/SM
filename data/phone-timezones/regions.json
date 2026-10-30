@@ -1,0 +1,262 @@
+{
+  "Архангельская область": [
+    "Europe/Moscow"
+  ],
+  "Белгородская область": [
+    "Europe/Moscow"
+  ],
+  "Брянская область": [
+    "Europe/Moscow"
+  ],
+  "Владимирская область": [
+    "Europe/Moscow"
+  ],
+  "Волгоградская область": [
+    "Europe/Moscow"
+  ],
+  "Вологодская область": [
+    "Europe/Moscow"
+  ],
+  "Воронежская область": [
+    "Europe/Moscow"
+  ],
+  "Город Москва": [
+    "Europe/Moscow"
+  ],
+  "Город Санкт-Петербург": [
+    "Europe/Moscow"
+  ],
+  "Ивановская область": [
+    "Europe/Moscow"
+  ],
+  "Кабардино-Балкарская Республика": [
+    "Europe/Moscow"
+  ],
+  "Калужская область": [
+    "Europe/Moscow"
+  ],
+  "Карачаево-Черкесская Республика": [
+    "Europe/Moscow"
+  ],
+  "Кировская область": [
+    "Europe/Moscow"
+  ],
+  "Костромская область": [
+    "Europe/Moscow"
+  ],
+  "Краснодарский край": [
+    "Europe/Moscow"
+  ],
+  "Курская область": [
+    "Europe/Moscow"
+  ],
+  "Ленинградская область": [
+    "Europe/Moscow"
+  ],
+  "Липецкая область": [
+    "Europe/Moscow"
+  ],
+  "Московская область": [
+    "Europe/Moscow"
+  ],
+  "Мурманская область": [
+    "Europe/Moscow"
+  ],
+  "Ненецкий автономный округ": [
+    "Europe/Moscow"
+  ],
+  "Нижегородская область": [
+    "Europe/Moscow"
+  ],
+  "Новгородская область": [
+    "Europe/Moscow"
+  ],
+  "Орловская область": [
+    "Europe/Moscow"
+  ],
+  "Пензенская область": [
+    "Europe/Moscow"
+  ],
+  "Псковская область": [
+    "Europe/Moscow"
+  ],
+  "Республика Адыгея": [
+    "Europe/Moscow"
+  ],
+  "Республика Дагестан": [
+    "Europe/Moscow"
+  ],
+  "Республика Ингушетия": [
+    "Europe/Moscow"
+  ],
+  "Республика Калмыкия": [
+    "Europe/Moscow"
+  ],
+  "Республика Карелия": [
+    "Europe/Moscow"
+  ],
+  "Республика Коми": [
+    "Europe/Moscow"
+  ],
+  "Республика Марий Эл": [
+    "Europe/Moscow"
+  ],
+  "Республика Мордовия": [
+    "Europe/Moscow"
+  ],
+  "Республика Северная Осетия - Алания": [
+    "Europe/Moscow"
+  ],
+  "Республика Татарстан": [
+    "Europe/Moscow"
+  ],
+  "Ростовская область": [
+    "Europe/Moscow"
+  ],
+  "Рязанская область": [
+    "Europe/Moscow"
+  ],
+  "Смоленская область": [
+    "Europe/Moscow"
+  ],
+  "Ставропольский край": [
+    "Europe/Moscow"
+  ],
+  "Тамбовская область": [
+    "Europe/Moscow"
+  ],
+  "Тверская область": [
+    "Europe/Moscow"
+  ],
+  "Тульская область": [
+    "Europe/Moscow"
+  ],
+  "Чеченская Республика": [
+    "Europe/Moscow"
+  ],
+  "Чувашская Республика - Чувашия": [
+    "Europe/Moscow"
+  ],
+  "Ярославская область": [
+    "Europe/Moscow"
+  ],
+  "Город Севастополь": [
+    "Europe/Simferopol"
+  ],
+  "Республика Крым": [
+    "Europe/Simferopol"
+  ],
+  "Калининградская область": [
+    "Europe/Kaliningrad"
+  ],
+  "Астраханская область": [
+    "Europe/Astrakhan"
+  ],
+  "Самарская область": [
+    "Europe/Samara"
+  ],
+  "Удмуртская Республика": [
+    "Europe/Samara"
+  ],
+  "Саратовская область": [
+    "Europe/Saratov"
+  ],
+  "Ульяновская область": [
+    "Europe/Ulyanovsk"
+  ],
+  "Курганская область": [
+    "Asia/Yekaterinburg"
+  ],
+  "Оренбургская область": [
+    "Asia/Yekaterinburg"
+  ],
+  "Пермский край": [
+    "Asia/Yekaterinburg"
+  ],
+  "Республика Башкортостан": [
+    "Asia/Yekaterinburg"
+  ],
+  "Свердловская область": [
+    "Asia/Yekaterinburg"
+  ],
+  "Тюменская область": [
+    "Asia/Yekaterinburg"
+  ],
+  "Ханты-Мансийский автономный округ - Югра": [
+    "Asia/Yekaterinburg"
+  ],
+  "Челябинская область": [
+    "Asia/Yekaterinburg"
+  ],
+  "Ямало-Ненецкий автономный округ": [
+    "Asia/Yekaterinburg"
+  ],
+  "Омская область": [
+    "Asia/Omsk"
+  ],
+  "Алтайский край": [
+    "Asia/Barnaul"
+  ],
+  "Республика Алтай": [
+    "Asia/Barnaul"
+  ],
+  "Красноярский край": [
+    "Asia/Krasnoyarsk"
+  ],
+  "Кемеровская область - Кузбасс": [
+    "Asia/Krasnoyarsk"
+  ],
+  "Республика Тыва": [
+    "Asia/Krasnoyarsk"
+  ],
+  "Республика Хакасия": [
+    "Asia/Krasnoyarsk"
+  ],
+  "Новосибирская область": [
+    "Asia/Novosibirsk"
+  ],
+  "Томская область": [
+    "Asia/Tomsk"
+  ],
+  "Иркутская область": [
+    "Asia/Irkutsk"
+  ],
+  "Республика Бурятия": [
+    "Asia/Irkutsk"
+  ],
+  "Забайкальский край": [
+    "Asia/Chita"
+  ],
+  "Амурская область": [
+    "Asia/Yakutsk"
+  ],
+  "Приморский край": [
+    "Asia/Vladivostok"
+  ],
+  "Хабаровский край": [
+    "Asia/Vladivostok"
+  ],
+  "Еврейская автономная область": [
+    "Asia/Vladivostok"
+  ],
+  "Магаданская область": [
+    "Asia/Magadan"
+  ],
+  "Сахалинская область": [
+    "Asia/Sakhalin"
+  ],
+  "Камчатский край": [
+    "Asia/Kamchatka"
+  ],
+  "Чукотский автономный округ": [
+    "Asia/Anadyr"
+  ],
+  "Город Байконур": [
+    "Asia/Almaty"
+  ],
+  "Республика Саха (Якутия)": [
+    "Asia/Yakutsk",
+    "Asia/Vladivostok",
+    "Asia/Srednekolymsk"
+  ]
+}
