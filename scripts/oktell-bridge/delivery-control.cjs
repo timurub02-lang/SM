@@ -2,7 +2,7 @@
 const fs=require('node:fs');
 const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(v);
 const fail=(message,status=409)=>Object.assign(Error(message),{status});
-module.exports=function({request,connected,load=()=>JSON.parse(fs.readFileSync(process.env.BRIDGE_PILOT||'/etc/sm-oktell-bridge/pilot.json','utf8'))}){
+module.exports=function({request,connected,rememberDelivery=()=>{},load=()=>JSON.parse(fs.readFileSync(process.env.BRIDGE_PILOT||'/etc/sm-oktell-bridge/pilot.json','utf8'))}){
  function task(){const id=load()?.taskId;if(!uuid(id))throw fail('Проект Oktell не настроен',503);return id.toLowerCase();}
  async function execute(procedure,inputparams){
   if(!connected())throw fail('Нет связи с Oktell',503);
@@ -25,8 +25,9 @@ module.exports=function({request,connected,load=()=>JSON.parse(fs.readFileSync(p
   if(b.items.some(c=>!c||Object.keys(c).some(k=>!['clientId','phone','name'].includes(k))||!/^C-[a-zA-Z0-9-]{1,78}$/.test(c.clientId)||typeof c.phone!=='string'||!/^7\d{10}$/.test(c.phone)||typeof c.name!=='string'||c.name.length>200)||new Set(b.items.map(c=>c.clientId)).size!==b.items.length||new Set(b.items.map(c=>c.phone)).size!==b.items.length)throw fail('Проверьте клиентов и номера в партии',400);
   const taskId=task();if(b.taskId.toLowerCase()!==taskId)throw fail('Проект изменился; требуется сверка загрузки');const r=receipt(await execute('w_crm_delivery_import',{task:taskId,batch:b.id,fingerprint:b.fingerprint,payload:JSON.stringify(b.items)}),b.id,taskId);
   if(r.accepted!==b.items.length||r.fingerprint!==b.fingerprint)throw fail('Oktell подтвердил другой состав партии',502);
+  rememberDelivery(r,b.items);
   return r;
  }
- async function cancel(b){if(!b||Object.keys(b).some(k=>!['id','taskId'].includes(k))||!uuid(b.taskId)||!uuid(b.id))throw fail('Некорректная загрузка',400);const taskId=task();if(b.taskId.toLowerCase()!==taskId)throw fail('Проект изменился; требуется сверка загрузки');const r=receipt(await execute('w_crm_delivery_cancel',{task:taskId,batch:b.id}),b.id,taskId);if(!r.cancelled)throw fail('Отмена не подтверждена Oktell',502);return r;}
+ async function cancel(b){if(!b||Object.keys(b).some(k=>!['id','taskId'].includes(k))||!uuid(b.taskId)||!uuid(b.id))throw fail('Некорректная загрузка',400);const taskId=task();if(b.taskId.toLowerCase()!==taskId)throw fail('Проект изменился; требуется сверка загрузки');const r=receipt(await execute('w_crm_delivery_cancel',{task:taskId,batch:b.id}),b.id,taskId);if(!r.cancelled)throw fail('Отмена не подтверждена Oktell',502);rememberDelivery(r);return r;}
  return {state,importBatch,cancel};
 };

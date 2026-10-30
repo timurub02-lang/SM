@@ -48,6 +48,17 @@ async function main(){
  const migrated=legacy.changes(0);assert.equal(migrated.calls.length,3);legacy.close();
  legacy=make({file,load:()=>config,identity,connected:()=>true,send:()=>{}});
  assert.equal(legacy.changes(migrated.through).calls.length,0);legacy.close();fs.rmSync(dir,{recursive:true,force:true});
+ const receipt={id:randomUUID(),taskId:config.taskId,fingerprint:'a'.repeat(64),accepted:1,cancelled:false},items=[{clientId:'C-uploaded',phone:'79990000009'}];
+ p.rememberDelivery(receipt,items);p.rememberDelivery(receipt,items);
+ const uploaded=ring('E-four',items[0].phone);
+ assert.equal(p.read('E-four').current.delivery_id,receipt.id);
+ assert.equal(p.read('E-four').current.client_id,'C-uploaded');
+ assert.throws(()=>p.rememberDelivery({...receipt,id:randomUUID()},items),/UNIQUE/);
+ assert.throws(()=>p.rememberDelivery({...receipt,fingerprint:'b'.repeat(64)},items),/changed/);
+ p.rememberDelivery({...receipt,cancelled:true});p.rememberDelivery(receipt,items);
+ const afterCancel=ring('E-four',items[0].phone);assert.notEqual(p.read('E-four').current.chain,afterCancel);
+ emit('phoneevent_commstarted','E-four',{istask:true,taskid:config.taskId,chainid:uploaded,callerid:items[0].phone,commutationid:randomUUID()});
+ assert.equal(p.read('E-four').current.chain,uploaded);
  p.close();console.log('PASS: native pilot isolation, incoming correlation, callbacks, idempotent result, separate operators, no dial commands');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
