@@ -100,6 +100,11 @@ try{
  assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('head2','sign')).status,200);
+ const delegated=ledger();delegated.periods[period].signatures.head2={at:new Date().toISOString(),by:'admin',note:'Подтверждено по поручению администратора'};
+ db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(JSON.stringify(delegated));
+ const approval=await call('/api/premium?period='+period,{cookie:cookies.admin});
+ assert.deepEqual(approval.data.lifecycle.administrativeIds,['head2']);
+ assert.equal(approval.data.lifecycle.allSigned,true);
  const frozen=JSON.stringify(ledger());
  assert.equal((await act('admin','pay')).status,400,'Empty cash must block payment');
  assert.equal(JSON.stringify(ledger()),frozen,'Failed debit must roll back period');
