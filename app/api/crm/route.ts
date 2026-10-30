@@ -1,3 +1,4 @@
+import {canCreateRedemptionStaff} from '@/lib/crm';
 import {applyPremiumStages,nextPremiumPreview,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
 import {prepareOktellLink} from "@/lib/oktell-provisioning";
 import {readRedemptionSummaries} from '@/lib/redemption-summary';
@@ -68,7 +69,7 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
  const state=await readState();await saveReminders(state);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
- if(['admin','department_head','chief_logistic'].includes(user.employee.role)){
+ if(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee)){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});
  }
@@ -511,7 +512,7 @@ async function handlePOST(request:Request){
    if(enabled&&!account&&!passwordHash)throw Error("Задайте пароль для включения входа сотрудника");
   }
   const oktell=prepareOktellLink(employee,data,existing,p.employee.oktellRequested);
-  const saved=json({...data,...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
+  const saved=json({...data,...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
   const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?").bind(saved,eid,p.version):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
   const guard="EXISTS(SELECT 1 FROM employees WHERE id=? AND data=? AND version=?)";
   const args=[eid,saved,p.id?p.version+1:1];
