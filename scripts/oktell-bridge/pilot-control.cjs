@@ -11,7 +11,7 @@ const fail=(message,status=409)=>Object.assign(Error(message),{status});
 module.exports=function({send,request,connected,identity,file,load=()=>{
  try{return JSON.parse(fs.readFileSync(process.env.BRIDGE_PILOT||'/etc/sm-oktell-bridge/pilot.json','utf8'));}
  catch(e){if(e.code==='ENOENT')return null;throw e;}
-},now=()=>Date.now()}){
+},now=()=>Date.now(),callbackRouting=false}){
  const db=new DatabaseSync(file);
  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
  CREATE TABLE IF NOT EXISTS pilot_calls(chain TEXT PRIMARY KEY,actor TEXT NOT NULL,phone TEXT NOT NULL,client_id TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,commutation TEXT,sip_id TEXT,form_id TEXT,form_results TEXT,result TEXT,command_id TEXT,command_state TEXT,updated_at TEXT NOT NULL);
@@ -23,6 +23,8 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  CREATE TRIGGER IF NOT EXISTS pilot_update_change AFTER UPDATE ON pilot_calls BEGIN INSERT INTO pilot_updates(chain) VALUES(NEW.chain); END;
  INSERT INTO pilot_updates(chain) SELECT chain FROM pilot_calls WHERE NOT EXISTS(SELECT 1 FROM pilot_updates);`);
  db.exec("UPDATE pilot_commands SET state='unknown' WHERE state='sent'; UPDATE pilot_calls SET command_state='unknown' WHERE command_state='sent'");
+ db.exec("CREATE TABLE IF NOT EXISTS pilot_callback_sync(command_id TEXT PRIMARY KEY, attempted_at TEXT NOT NULL, synced_at TEXT)");
+ let syncing=false;
  const stamp=()=>new Date(now()).toISOString();
  function config(){
   const p=load();if(!p)return null;
@@ -30,6 +32,7 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
    p.operators.some(o=>!/^E-[\w-]+$/.test(o.actor)||!uuid(o.userid))||new Set(p.operators.map(o=>o.actor)).size!==p.operators.length||new Set(p.operators.map(o=>lower(o.userid))).size!==p.operators.length||
    p.contacts.some(c=>!phone(c.phone)||!/^C-[\w-]+$/.test(c.clientId))||new Set(p.contacts.map(c=>phone(c.phone))).size!==3||
    !Array.isArray(p.results)||p.results.some(r=>typeof r!=='string')||p.results.length<1)throw fail('Проверьте конфигурацию Т1',503);
+  if(callbackRouting&&!uuid(p.listId))throw fail('�� ����� ������ ��� �������� ���������� �1',503);
   return p;
  }
  function operator(actor){const p=config(),o=p?.operators.find(o=>o.actor===actor);if(!o)throw fail('Нет доступа к Т1',403);const current=identity(actor);if(lower(current.userid)!==lower(o.userid))throw fail('Привязка оператора Т1 изменилась',403);return current;}
@@ -98,17 +101,38 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   const payload={...ident,qid:randomUUID(),idshow:c.form_id,issuccess:success,userresult:native?.id??null,comment:b.outcome+(b.comment?' · '+b.comment:''),nextcalltype:callback?'numberafter':'abonentnone',callatdatetime:null,callaftersec:callback?Math.max(1,Math.ceil((Date.parse(b.callbackAt)-now())/1000)):null,anothernumbers:[]};
   db.exec('BEGIN IMMEDIATE');try{
    db.prepare('INSERT INTO pilot_commands VALUES(?,?,?,?,?)').run(b.id,fingerprint,c.chain,'sent',stamp());
-   db.prepare("UPDATE pilot_calls SET result=?,command_id=?,command_state='sent',updated_at=? WHERE chain=?").run(JSON.stringify({outcome:b.outcome,comment:b.comment,callbackAt:b.callbackAt||null}),b.id,stamp(),c.chain);db.exec('COMMIT');
+   db.prepare("UPDATE pilot_calls SET result=?,command_id=?,command_state='sent',updated_at=? WHERE chain=?").run(JSON.stringify({outcome:b.outcome,comment:b.comment,callbackAt:b.callbackAt||null,operatorUserId:lower(ident.userid),taskId:lower(p.taskId),listId:p.listId?lower(p.listId):null}),b.id,stamp(),c.chain);db.exec('COMMIT');
   }catch(e){db.exec('ROLLBACK');throw e;}
   try{send('dlgcard_setstopformresult',payload);}catch(e){db.prepare("UPDATE pilot_commands SET state='unknown' WHERE id=?").run(b.id);db.prepare("UPDATE pilot_calls SET command_state='unknown' WHERE chain=?").run(c.chain);throw fail('Результат отправки неизвестен. Не повторяйте команду до сверки с Oktell',502);}
   return {state:'sent'};
  }
  function disconnected(){db.exec("UPDATE pilot_commands SET state='unknown' WHERE state='sent'; UPDATE pilot_calls SET command_state='unknown' WHERE command_state='sent'");}
+ async function syncCallbacks(){
+  if(!callbackRouting||!connected()||syncing)return;
+  syncing=true;
+  try{
+   const calls=db.prepare(`SELECT c.* FROM pilot_calls c LEFT JOIN pilot_callback_sync r ON r.command_id=c.command_id
+    WHERE c.command_state='confirmed' AND r.synced_at IS NULL AND json_extract(c.result,'$.operatorUserId') IS NOT NULL
+    ORDER BY COALESCE(r.attempted_at,''),c.updated_at,c.chain LIMIT 20`).all();
+   let error;
+   for(const c of calls){
+    db.prepare('INSERT INTO pilot_callback_sync(command_id,attempted_at) VALUES(?,?) ON CONFLICT(command_id) DO UPDATE SET attempted_at=excluded.attempted_at').run(c.command_id,stamp());
+    try{
+    const result=JSON.parse(c.result);
+    const reply=await request('execpredefineddbstoredproc',{procedure:'w_crm_t1_callback_sync',inputparams:{command:c.command_id,chain:c.chain,task:result.taskId,list:result.listId,operator:result.operatorUserId,phone:c.phone,due:result.callbackAt}});
+    const set=reply.dataset?.[0];
+    if(reply.result!==1||!Array.isArray(set)||set.length!==2||set[0]?.length!==1||set[0][0]!=='CommandId'||lower(set[1]?.[0])!==lower(c.command_id))throw fail('Привязка перезвона ещё не подтверждена Oktell',502);
+    db.prepare('UPDATE pilot_callback_sync SET synced_at=? WHERE command_id=?').run(stamp(),c.command_id);
+    }catch(e){error=e;}
+   }
+   if(error)throw error;
+  }finally{syncing=false;}
+ }
  function changes(after){
   if(!Number.isSafeInteger(after)||after<0)throw fail('Invalid history cursor',400);
   if(after>db.prepare('SELECT COALESCE(MAX(seq),0) seq FROM pilot_updates').get().seq)throw fail('History was restored or replaced; reconcile the CRM cursor',409);
   const calls=db.prepare('SELECT c.*,u.seq FROM pilot_calls c JOIN (SELECT chain,MAX(seq) seq FROM pilot_updates WHERE seq>? GROUP BY chain ORDER BY seq LIMIT 100) u ON u.chain=c.chain ORDER BY u.seq').all(after);
   return {after,through:calls.at(-1)?.seq??after,calls};
  }
- return {changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ return {syncCallbacks,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };

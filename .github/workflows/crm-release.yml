@@ -15,6 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  callback-sql:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Verify callback routing with native SQL fixtures, without calls
+        shell: powershell
+        run: |
+          SqlLocalDB start MSSQLLocalDB
+          ./tests/t1-callback-routing.ps1
+
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -62,6 +73,7 @@ jobs:
           node scripts/oktell-bridge/multi-operator.test.cjs
           node scripts/oktell-bridge/operator-control.test.cjs
           node scripts/oktell-bridge/pilot-control.test.cjs
+          node scripts/oktell-bridge/callback-routing.test.cjs
           node scripts/oktell-bridge/delivery-control.test.cjs
           node --experimental-strip-types tests/oktell-delivery.mjs
           node --experimental-strip-types tests/oktell-delivery-http.mjs
@@ -84,7 +96,7 @@ jobs:
 
   publish:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
+    needs: [build, callback-sql]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
