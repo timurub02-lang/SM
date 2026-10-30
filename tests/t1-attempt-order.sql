@@ -52,3 +52,26 @@ UPDATE dbo.CRM_CallTimePolicies SET ClientFrom=780;
 EXEC dbo.CRM_T1_Select @list,@id OUTPUT,@phone OUTPUT;
 IF @id<>'' THROW 51200,'Attempt ordering bypassed client timezone',1;
 PRINT 'PASS: attempt order, retry vs callback priority, aggregate cap, owner and time windows';
+
+UPDATE dbo.CRM_CallTimePolicies SET ClientFrom=540;
+DELETE dbo.CRM_T1SelectionOffers;
+DELETE dbo.A_TaskManager_SubTasks;
+DELETE dbo.A_TaskManager_SubTaskNumber;
+DELETE dbo.CRM_T1CallbackResults;
+DELETE dbo.A_TaskManager_SubTaskEfforts;
+DELETE dbo.FixtureContacts WHERE Id<>3;
+DECLARE @result int,@delay int;
+DECLARE rules CURSOR LOCAL FAST_FORWARD FOR SELECT result,delay FROM (VALUES(1,30),(2,30),(3,30),(6,5),(7,5),(13,5),(15,60)) r(result,delay);
+OPEN rules;FETCH NEXT FROM rules INTO @result,@delay;
+WHILE @@FETCH_STATUS=0 BEGIN
+ INSERT dbo.A_TaskManager_SubTaskEfforts VALUES(NEWID(),@task,NEWID(),3,'79990000003',@result,DATEADD(minute,1-@delay,CONVERT(datetime,'2026-10-30T12:00:00')));
+ EXEC dbo.CRM_T1_Select @list,@id OUTPUT,@phone OUTPUT;
+ IF @id<>'' THROW 51200,'Minimum native-result retry delay was bypassed',1;
+ UPDATE dbo.A_TaskManager_SubTaskEfforts SET EDateTime=DATEADD(minute,-@delay,CONVERT(datetime,'2026-10-30T12:00:00'));
+ EXEC dbo.CRM_T1_Select @list,@id OUTPUT,@phone OUTPUT;
+ IF @id<>'3' THROW 51200,'Retry not eligible at exact delay boundary',1;
+ DELETE dbo.A_TaskManager_SubTaskEfforts;DELETE dbo.CRM_T1SelectionOffers;
+ FETCH NEXT FROM rules INTO @result,@delay;
+END;
+CLOSE rules;DEALLOCATE rules;
+PRINT 'PASS: native result retry minimums and exact minute boundaries';

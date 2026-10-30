@@ -26,15 +26,21 @@ BEGIN
  LEFT JOIN dbo.CRM_T1SelectionOffers o ON o.ListId=@list AND o.Id=c.Id
  CROSS APPLY dbo.CRM_T1CandidateTiming(@now,@local,c.Phone,s.NextEffortTime,n.NextEffortTime,s.NResult,s.IsDeleted,n.NResult) timing
  CROSS APPLY dbo.CRM_T1CallbackState(@list,c.Id,c.Phone,@now) affinity
- OUTER APPLY (SELECT COUNT(DISTINCT COALESCE(NULLIF(e.ConnectionChainId,'00000000-0000-0000-0000-000000000000'),e.Id)) Attempts
+ LEFT JOIN (SELECT e.IdInList,e.Number,COUNT(DISTINCT COALESCE(NULLIF(e.ConnectionChainId,'00000000-0000-0000-0000-000000000000'),e.Id)) Attempts
   FROM dbo.A_TaskManager_SubTaskEfforts e
+  WHERE e.TaskId='185e121d-d888-4598-85d2-00aa47c825c5' AND e.EResult NOT IN (12,16,17)
+  GROUP BY e.IdInList,e.Number) attempts ON attempts.IdInList=c.Id AND attempts.Number=c.Phone
+ OUTER APPLY (SELECT TOP(1) e.EDateTime,e.EResult FROM dbo.A_TaskManager_SubTaskEfforts e
   WHERE e.TaskId='185e121d-d888-4598-85d2-00aa47c825c5' AND e.IdInList=c.Id AND e.Number=c.Phone
-   AND e.EResult NOT IN (12,16,17)) attempts
- WHERE timing.Eligible=1 AND affinity.Eligible=1 AND attempts.Attempts<3
+  AND e.EResult NOT IN (12,16,17) ORDER BY e.EDateTime DESC,e.Id DESC) lastEffort
+ WHERE timing.Eligible=1 AND affinity.Eligible=1 AND COALESCE(attempts.Attempts,0)<3
+ AND (lastEffort.EDateTime IS NULL OR DATEADD(minute,
+   CASE WHEN lastEffort.EResult IN (1,2,3) THEN 30 WHEN lastEffort.EResult IN (6,7,13) THEN 5
+    WHEN lastEffort.EResult=15 THEN 60 ELSE 0 END,lastEffort.EDateTime)<=@local)
  -- Brief offer lease lets parallel searches try different contacts; native in-flight
  -- and attempt-limit checks remain authoritative. Rejected offers expire automatically.
  AND (o.OfferedUtc IS NULL OR o.OfferedUtc<=DATEADD(second,-2,@now))
- ORDER BY CASE WHEN affinity.DueUtc IS NOT NULL THEN 0 ELSE 1 END,affinity.DueUtc,attempts.Attempts,
+ ORDER BY CASE WHEN affinity.DueUtc IS NOT NULL THEN 0 ELSE 1 END,affinity.DueUtc,COALESCE(attempts.Attempts,0),
    CASE WHEN c.Id>@last THEN 0 ELSE 1 END,c.Id;
  IF @next IS NOT NULL BEGIN
    UPDATE dbo.CRM_T1TimeCursor SET LastId=@next WHERE ListId=@list;
