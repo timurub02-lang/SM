@@ -10,7 +10,9 @@ const emit=(method,o,fields)=>p.event(method,{qid:randomUUID(),...identity(o),..
 const ring=(actor,phone,taskid=config.taskId)=>{const chainid=randomUUID();emit('phoneevent_ringstarted',actor,{istask:true,taskid,chainid,callerid:phone});return chainid;};
 async function main(){
  ring('E-one','79990000004');ring('E-one',config.contacts[0].phone,randomUUID());assert.equal(p.read('E-one').current,null);
- operators.push({actor:'E-three',userid:randomUUID()});
+ operators.push({actor:'E-three',userid:randomUUID()},{actor:'E-four',userid:randomUUID()});
+ assert.equal(p.read('E-four').configured,true);
+ assert.equal(p.read('E-four').current,null);
  const third=ring('E-three',config.contacts[2].phone);
  assert.equal((await p.incoming('E-three',config.contacts[2].phone,'sip-three')).chain,third);
  const chain=ring('E-one',config.contacts[0].phone),other=ring('E-two',config.contacts[1].phone);
