@@ -43,7 +43,8 @@ wss.on('connection',ws=>{
 server.listen(Number(process.env.BRIDGE_PORT||3305),'127.0.0.1');
 const tasks=require('./task-control.cjs')({request,connected:()=>publicState().connected,enabled:()=>cfg.testControl===true,file:process.env.BRIDGE_JOURNAL||'/var/lib/sm-oktell-bridge/commands.sqlite'});
 const operators=require('./linked-operators.cjs')({request,connected:()=>publicState().connected});
-const pilot=require('./pilot-control.cjs')({send,request,connected:()=>publicState().connected,identity:operators.identity,file:process.env.BRIDGE_PILOT_JOURNAL||(process.env.BRIDGE_JOURNAL?process.env.BRIDGE_JOURNAL+'.pilot':'/var/lib/sm-oktell-bridge/pilot.sqlite')});
+const pilot=require('./pilot-control.cjs')({send,request,callbackRouting:cfg.callbackRouting===true,connected:()=>publicState().connected,identity:operators.identity,file:process.env.BRIDGE_PILOT_JOURNAL||(process.env.BRIDGE_JOURNAL?process.env.BRIDGE_JOURNAL+'.pilot':'/var/lib/sm-oktell-bridge/pilot.sqlite')});
+setInterval(()=>pilot.syncCallbacks().catch(()=>console.log('{"event":"callback_route_sync_failed"}')),2000).unref();
 const browserOperators={...operators,prepare:async(actor,owner)=>{
  const credentials=await operators.prepare(actor,owner);
  try{if(pilot.configured(actor))await request('dlgcard_setsupported',{...operators.identity(actor),supported:true});return credentials;}

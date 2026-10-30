@@ -21,12 +21,13 @@ assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM phone_calls').first()).
 assert.equal((await d.prepare('SELECT bill_seconds FROM phone_calls').first()).bill_seconds,60);
 assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data).owner,ops[0]);
 assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-1'").first()).data).owner,'');
-const result={...c,result:JSON.stringify({outcome:'Перезвон',comment:'Fixture',callbackAt:'2026-10-29T11:00:00Z'}),command_id:uuid(),command_state:'sent',updated_at:'2026-10-29T10:02:00Z'};
+const result={...c,result:JSON.stringify({outcome:'Перезвон',comment:'Fixture',operatorUserId:p.native.operatorUserIds[0],taskId:p.native.taskId,callbackAt:'2026-10-29T11:00:00Z'}),command_id:uuid(),command_state:'sent',updated_at:'2026-10-29T10:02:00Z'};
 await syncPilot(d,[result]);await syncPilot(d,[{...result,command_state:'confirmed',updated_at:'2026-10-29T10:02:01Z'}]);
 assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM events').first()).n,1);
 assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell подтвердил/);
 await syncPilot(d,[result]);assert.match((await d.prepare('SELECT data FROM events').first()).data,/Oktell подтвердил/);
 assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM client_reminders').first()).n,1);
+assert.equal((await d.prepare('SELECT employee_id FROM client_reminders').first()).employee_id,ops[0]);
 assert.equal((await d.prepare('SELECT due FROM client_reminders').first()).due,'2026-10-29T11:00:00Z');
 await syncPilot(d,[{...c,chain:uuid(),status:'no_answer',answered_at:null,started_at:'2026-10-29T11:00:00Z',ended_at:'2026-10-29T11:00:20Z',updated_at:'2026-10-29T11:00:20Z'}]);
 assert.equal((await d.prepare('SELECT completed_at FROM client_reminders').first()).completed_at,null);
