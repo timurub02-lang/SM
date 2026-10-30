@@ -36,6 +36,21 @@ try{
  const cookies={};for(const {id} of staff){const r=await login(id);assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
 
 
+
+ const sheet='/api/timesheet?period=2026-11-1';
+ assert.equal((await call(sheet)).status,401);
+ for(const who of ['one','logistic','chief','courier','redemption'])assert.equal((await call(sheet,{cookie:cookies[who]})).status,403);
+ const hours={employeeId:'one',revision:'',days:{'2026-10-27':9,'2026-11-09':'ОТ'}};
+ const saved=await call(sheet,{cookie:cookies.head,body:hours});assert.equal(saved.status,200,saved.text);
+ assert.equal((await call(sheet,{cookie:cookies.head,body:hours})).status,409);
+ assert.equal((await call(sheet,{cookie:cookies.head2,body:{...hours,revision:saved.data.row.revision}})).status,403);
+ assert.equal((await call(sheet,{cookie:cookies.head,body:{...hours,revision:saved.data.row.revision,days:{'2026-11-10':8}}})).status,400);
+ assert.equal((await call(sheet,{cookie:cookies.head,body:{...hours,revision:saved.data.row.revision,days:{'2026-10-27':25}}})).status,400);
+ const own=await call(sheet,{cookie:cookies.head});assert.deepEqual(Object.keys(own.data.rows),['one']);assert(own.data.employees.every(e=>e.department==='1'));
+ assert.deepEqual((await call(sheet,{cookie:cookies.head2})).data.rows,{});
+ assert.equal((await call(sheet,{cookie:cookies.admin})).data.rows.one.days['2026-10-27'],9);
+ assert.deepEqual((await call('/api/timesheet?period=2026-11-2',{cookie:cookies.head})).data.rows,{});
+ assert.equal((await call(sheet,{cookie:cookies.admin,body:{...hours,revision:saved.data.row.revision,days:{'2026-10-27':0}}})).status,200);
  const period='2026-10-2';
  for(const id of ['head','head2'])db.prepare("UPDATE employees SET data=json_set(data,'$.leaderPremium',json(?)) WHERE id=?").run(JSON.stringify({model:'salary_bonus',fixedPerPeriod:100,links:[]}),id);
  for(const id of ['o-one','o-two'])db.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed','$.delivery','russian_post','$.paymentReceivedAt','2026-10-25T10:00:00Z','$.paymentReceivedAmount',1000) WHERE id=?").run(id);
