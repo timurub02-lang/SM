@@ -231,6 +231,7 @@ try{
  const redemptionCreated=await call('/api/crm',{cookie:redemptionLead.cookie,body:{action:'saveEmployee',employee:redemptionInput}});
  assert.equal(redemptionCreated.status,200,redemptionCreated.text);
  const redemptionNew=redemptionCreated.data.state.employees.find(e=>e.login==='redemption-created');
+ assert.equal(redemptionNew.accessEnabled,true);assert.equal(redemptionNew.hasPassword,true);
  assert.equal(redemptionNew.role,'redemption');assert.equal(redemptionNew.department,undefined);assert.equal(redemptionNew.canCreateRedemptionStaff,undefined);
  assert.equal((await login('redemption-created')).status,200);
  for(const cookie of [redemptionOrdinary.cookie,(await login('redemption-created')).headers.get('set-cookie').split(';')[0]])assert.equal((await call('/api/crm',{cookie,body:{action:'saveEmployee',employee:{...redemptionInput,login:'denied'}}})).status,400);
