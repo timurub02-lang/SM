@@ -17,6 +17,8 @@ const control=make({load:()=>({taskId}),connected:()=>online,request:async(metho
  const batch={taskId,id:randomUUID(),fingerprint:'a'.repeat(64),items:[{clientId:'C-synthetic',phone:'79990000001',name:'Synthetic'}]};
  assert.equal((await control.importBatch(batch)).accepted,1);await control.importBatch(batch);assert.equal(receipts.size,1);
  const before=calls.length;
+ const isolated=make({load:()=>({taskId,contacts:[{phone:'+79990000001',clientId:'C-test'}]}),connected:()=>true,request:()=>{throw Error('Must not reach native source');}});
+ await assert.rejects(()=>isolated.importBatch(batch),/Тестовые номера/);
  for(const body of [{...batch,taskId:randomUUID()},{...batch,items:[]},{...batch,items:[...batch.items,...batch.items]},{...batch,items:[{...batch.items[0],phone:79990000001}]},{...batch,items:[{...batch.items[0],sql:'arbitrary'}]}])await assert.rejects(()=>control.importBatch(body));
  assert.equal(calls.length,before);
  badReceipt=true;await assert.rejects(()=>control.importBatch(batch),/соответствует/);badReceipt=false;

@@ -23,6 +23,7 @@ module.exports=function({request,connected,rememberDelivery=()=>{},load=()=>JSON
  async function importBatch(b){
   if(!b||Object.keys(b).some(k=>!['taskId','id','fingerprint','items'].includes(k))||!uuid(b.taskId)||!uuid(b.id)||!/^[a-f0-9]{64}$/.test(b.fingerprint)||!Array.isArray(b.items)||b.items.length<1||b.items.length>1000)throw fail('Некорректная партия клиентов',400);
   if(b.items.some(c=>!c||Object.keys(c).some(k=>!['clientId','phone','name'].includes(k))||!/^C-[a-zA-Z0-9-]{1,78}$/.test(c.clientId)||typeof c.phone!=='string'||!/^7\d{10}$/.test(c.phone)||typeof c.name!=='string'||c.name.length>200)||new Set(b.items.map(c=>c.clientId)).size!==b.items.length||new Set(b.items.map(c=>c.phone)).size!==b.items.length)throw fail('Проверьте клиентов и номера в партии',400);
+  if((load()?.contacts||[]).some(c=>b.items.some(i=>i.phone===String(c.phone).replace(/\D/g,''))))throw fail('Тестовые номера нельзя смешивать с рабочей базой',409);
   const taskId=task();if(b.taskId.toLowerCase()!==taskId)throw fail('Проект изменился; требуется сверка загрузки');const r=receipt(await execute('w_crm_delivery_import',{task:taskId,batch:b.id,fingerprint:b.fingerprint,payload:JSON.stringify(b.items)}),b.id,taskId);
   if(r.accepted!==b.items.length||r.fingerprint!==b.fingerprint)throw fail('Oktell подтвердил другой состав партии',502);
   rememberDelivery(r,b.items);

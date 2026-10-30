@@ -1,7 +1,7 @@
 -- CRM-owned source tables. Never write native A_* tables.
 IF OBJECT_ID('dbo.CRM_DeliveryContacts') IS NULL
 CREATE TABLE dbo.CRM_DeliveryContacts(
- Id int IDENTITY(1,1) PRIMARY KEY, TaskId uniqueidentifier NOT NULL,
+ Id int IDENTITY(1000000,1) PRIMARY KEY, TaskId uniqueidentifier NOT NULL,
  ClientId nvarchar(80) NOT NULL, Phone varchar(11) NOT NULL, Name nvarchar(200) NOT NULL,
  BatchId uniqueidentifier NOT NULL, CreatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME(),
  CONSTRAINT UQ_CRM_DeliveryClient UNIQUE(TaskId,ClientId),
@@ -59,6 +59,13 @@ BEGIN
   IF EXISTS(SELECT 1 FROM @items i JOIN dbo.CRM_DeliveryContacts c ON c.TaskId=@task AND (c.ClientId=i.ClientId OR c.Phone=i.Phone))
    THROW 50000,'Contact already belongs to task; reconcile previous delivery',1;
   INSERT dbo.CRM_DeliveryContacts(TaskId,ClientId,Phone,Name,BatchId) SELECT @task,ClientId,Phone,Name,@batch FROM @items;
+  -- Native history is keyed by task + IdInList, not by list. A list swap must never
+  -- make a new client inherit a diagnostic contact's attempts or terminal result.
+  IF EXISTS(SELECT 1 FROM dbo.CRM_DeliveryContacts c WHERE c.BatchId=@batch AND (
+   EXISTS(SELECT 1 FROM dbo.A_TaskManager_SubTasks n WHERE n.TaskId=@task AND n.IdInList=c.Id)
+   OR EXISTS(SELECT 1 FROM dbo.A_TaskManager_SubTaskNumber n WHERE n.TaskId=@task AND n.IdInList=c.Id)
+   OR EXISTS(SELECT 1 FROM dbo.A_TaskManager_SubTaskEfforts n WHERE n.TaskId=@task AND n.IdInList=c.Id)))
+   THROW 50000,'Native contact identifier collision; no clients imported',1;
   INSERT dbo.CRM_DeliveryReceipts(BatchId,TaskId,Fingerprint,PayloadHash,Accepted) VALUES(@batch,@task,@fingerprint,@hash,@count);
  END
  COMMIT;

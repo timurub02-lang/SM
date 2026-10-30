@@ -122,7 +122,7 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   if(!connected())throw fail('Нет связи с Oktell',503);
   const callback=b.outcome==='Перезвон';
   if(callback&&(!b.callbackAt||!Number.isFinite(Date.parse(b.callbackAt))||Date.parse(b.callbackAt)<=now()||Date.parse(b.callbackAt)>now()+30*86400000)||!callback&&b.callbackAt)throw fail('Укажите будущее время перезвона в пределах 30 дней',400);
-  const success=['Заказ','NEW ZAKAZ'].includes(b.outcome),items=JSON.parse(c.form_results||'[]');
+  const success=b.outcome==='Заказ',items=JSON.parse(c.form_results||'[]');
   const native=items.find(r=>r.val===b.outcome&&r.issuc===success);
   // Native user results are optional. Preserve the exact CRM label in the PBX comment.
   const payload={...ident,qid:randomUUID(),idshow:c.form_id,issuccess:success,userresult:native?.id??null,comment:b.outcome+(b.comment?' · '+b.comment:''),nextcalltype:callback?'numberafter':'abonentnone',callatdatetime:null,callaftersec:callback?Math.max(1,Math.ceil((Date.parse(b.callbackAt)-now())/1000)):null,anothernumbers:[]};
@@ -161,6 +161,5 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   const calls=db.prepare('SELECT c.*,u.seq FROM pilot_calls c JOIN (SELECT chain,MAX(seq) seq FROM pilot_updates WHERE seq>? GROUP BY chain ORDER BY seq LIMIT 100) u ON u.chain=c.chain ORDER BY u.seq').all(after);
   return {after,through:calls.at(-1)?.seq??after,calls};
  }
- return {syncCallbacks,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
- return {rememberDelivery,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ return {rememberDelivery,syncCallbacks,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };

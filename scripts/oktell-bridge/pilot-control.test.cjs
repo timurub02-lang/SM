@@ -64,6 +64,20 @@ async function main(){
  const afterCancel=ring('E-four',items[0].phone);assert.notEqual(p.read('E-four').current.chain,afterCancel);
  emit('phoneevent_commstarted','E-four',{istask:true,taskid:config.taskId,chainid:uploaded,callerid:items[0].phone,commutationid:randomUUID()});
  assert.equal(p.read('E-four').current.chain,uploaded);
+ // The source scenario marks SM CRM (formerly NEW ZAKAZ) as intermediate, not success.
+ for(const outcome of ['СМ СРМ','NEW ZAKAZ','Заказ']){
+  const packets=[],single=make({file:':memory:',load:()=>({...config,results:[outcome]}),identity,connected:()=>true,send:(m,a)=>packets.push([m,a])});
+  const chainid=randomUUID(),idshow=randomUUID(),actor='E-one';
+  const fire=(method,fields)=>single.event(method,{qid:randomUUID(),...identity(actor),chainid,...fields});
+  fire('phoneevent_ringstarted',{istask:true,taskid:config.taskId,callerid:config.contacts[0].phone});
+  await single.incoming(actor,config.contacts[0].phone,'fixture-sip');
+  fire('phoneevent_commstarted',{istask:true,taskid:config.taskId,callerid:config.contacts[0].phone,commutationid:randomUUID()});
+  fire('phoneevent_commstopped',{});
+  fire('dlgcard_showformstop',{idshow,userresults:[{id:9,name:outcome,issuccess:outcome==='Заказ'}]});
+  single.result(actor,{id:randomUUID(),chain:chainid,outcome,comment:'Fixture'});
+  const payload=packets.find(([m])=>m==='dlgcard_setstopformresult')[1];
+  assert.equal(payload.issuccess,outcome==='Заказ');assert.equal(payload.userresult,9);single.close();
+ }
  p.close();console.log('PASS: native pilot isolation, incoming correlation, callbacks, idempotent result, separate operators, no dial commands');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
