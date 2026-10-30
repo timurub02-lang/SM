@@ -1,0 +1,27 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {resolvePhoneTimezone,callTimeDecision}=require('../lib/phone-timezone.cjs');
+const registry=require('../data/phone-timezones/ranges.json');
+const date=new Date('2026-10-30T10:00:00Z');
+const numberFor=zone=>String(registry.ranges.find(r=>r[2].length===1&&registry.zones[r[2][0]]===zone)[0]);
+const moscow=numberFor('Europe/Moscow'),east=numberFor('Asia/Kamchatka');
+const policy={timezone:'Europe/Moscow',clientWindow:{from:'09:00',to:'20:00'},schedule:Array.from({length:7},(_,i)=>({day:i+1,from:'06:00',to:'21:00'}))};
+assert.equal(resolvePhoneTimezone('8'+moscow.slice(1),date).status,'resolved');
+assert.equal(resolvePhoneTimezone('+7 ('+moscow.slice(1,4)+') '+moscow.slice(4),date).zones[0],'Europe/Moscow');
+assert.equal(resolvePhoneTimezone('7garbage'+moscow.slice(1),date).status,'invalid');
+assert.equal(resolvePhoneTimezone(moscow,new Date('2027-02-01T10:00:00Z')).status,'stale');
+assert.equal(callTimeDecision(moscow,policy,new Date('2026-10-30T05:59:59Z')).reason,'client_closed');
+assert.equal(callTimeDecision(moscow,policy,new Date('2026-10-30T06:00:00Z')).allowed,true);
+assert.equal(callTimeDecision(moscow,policy,new Date('2026-10-30T16:59:59Z')).allowed,true);
+assert.equal(callTimeDecision(moscow,policy,new Date('2026-10-30T17:00:00Z')).reason,'client_closed');
+assert.equal(callTimeDecision(east,policy,new Date('2026-10-30T07:59:59Z')).allowed,true);
+assert.equal(callTimeDecision(east,policy,new Date('2026-10-30T08:00:00Z')).reason,'client_closed');
+assert.equal(callTimeDecision(east,policy,new Date('2026-10-30T22:00:00Z')).reason,'project_closed');
+assert.equal(callTimeDecision(moscow,{...policy,schedule:[]},date).reason,'invalid_policy');
+const multi=registry.ranges.find(r=>r[2].length>1);assert.ok(multi);
+const decision=callTimeDecision(String(multi[0]),policy,date);
+assert.equal(decision.allowed,decision.zones.every(z=>{const h=Number(new Intl.DateTimeFormat('en-GB',{timeZone:z,hour:'numeric',hourCycle:'h23'}).format(date));return h>=9&&h<20;}));
+const unknown=registry.ranges.find(r=>r[2].length===0);assert.equal(callTimeDecision(String(unknown[0]),policy,date).reason,'timezone_unknown');
+let previous=0;
+for(const [start,end,ids] of registry.ranges){assert.ok(start>previous&&end>=start);previous=end;assert.ok(ids.every(id=>registry.zones[id]));for(const phone of [start,end])assert.deepEqual(resolvePhoneTimezone(String(phone),date).zones,ids.map(id=>registry.zones[id]));}
+console.log('PASS: full range boundaries, phone normalization, stale/unknown, Moscow schedule, local midnight and 09:00/20:00 boundaries; no calls');

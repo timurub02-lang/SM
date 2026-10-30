@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {previewOktellDelivery,reserveOktellDelivery,sendOktellDelivery,cancelOktellDelivery} from '../lib/oktell-delivery.ts';
+import {previewOktellDelivery,reserveOktellDelivery,sendOktellDelivery,cancelOktellDelivery,completeOktellDelivery} from '../lib/oktell-delivery.ts';
 const d=openDatabase(':memory:');
 await d.prepare('CREATE TABLE clients(id TEXT PRIMARY KEY,phone TEXT,data TEXT,version INTEGER DEFAULT 1)').run();
 await d.prepare('CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)').run();
@@ -42,4 +42,23 @@ const late=sendOktellDelivery(d,raceId,lateRequest);await started;
 await cancelOktellDelivery(d,raceId,request);finishLate();await late;
 assert.equal((await d.prepare('SELECT state FROM oktell_deliveries WHERE id=?').bind(raceId).first()).state,'cancelled');
 assert.equal((await d.prepare("SELECT COUNT(*) n FROM oktell_delivery_items WHERE job_id=? AND state<>'cancelled'").bind(raceId).first()).n,0);
+
+await d.prepare("INSERT INTO settings VALUES('oktell-pilot-t1',?)").bind(JSON.stringify({native:{taskId:selection.taskId}})).run();
+const finalPreview=await previewOktellDelivery(d,selection,now),finalId=crypto.randomUUID();
+await reserveOktellDelivery(d,'admin',finalId,selection,finalPreview.fingerprint,now);
+await sendOktellDelivery(d,finalId,request);
+let unfinished=true,wrong=false;
+const finishRequest=async(path,b)=>{
+ if(path.startsWith('/pilot-changes?'))return {after:0,through:0,calls:[]};
+ assert.equal(b.action,'complete');assert.equal(b.through,0);
+ if(unfinished)throw Error('Native queue still contains unfinished clients');
+ return {...native.get(finalId),id:wrong?crypto.randomUUID():finalId,completed:true};
+};
+await assert.rejects(()=>completeOktellDelivery(d,finalId,finishRequest),/unfinished/);
+await assert.rejects(()=>d.prepare("UPDATE clients SET phone='79990000999' WHERE id='C-1'").run(),/Oktell/);
+unfinished=false;wrong=true;await assert.rejects(()=>completeOktellDelivery(d,finalId,finishRequest),/другой/);wrong=false;
+assert.equal((await completeOktellDelivery(d,finalId,finishRequest)).state,'completed');
+assert.equal((await completeOktellDelivery(d,finalId,finishRequest)).state,'completed');
+await d.prepare("UPDATE clients SET data=json_set(data,'$.note','After completion'),phone='79990000001' WHERE id='C-1'").run();
+assert.ok((await previewOktellDelivery(d,selection,now)).selected>0);
 d.close();console.log('PASS: Oktell selection, blacklist sheets, cooling, duplicate phones, durable reservation, stale preview and idempotency; no calls');
