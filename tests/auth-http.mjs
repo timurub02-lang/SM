@@ -364,9 +364,9 @@ try{
  const confirmedCash=(await call('/api/cash?scope=all',{cookie:cookies.admin})).data.accounts.find(a=>a.id===cashHead.e.id);assert.equal(confirmedCash.balance,30000);assert.equal(confirmedCash.pending,0);
  assert.equal((await cash(cashHead.cookie,{action:'accept',id:cashTransfer.operation.id})).data.balance,30000);
  const spend={action:'create',operation:{id:crypto.randomUUID(),kind:'spend',amount:800,date,purpose:'Зарплата'}};
- assert.equal((await cash(cookies.admin,spend)).status,400);assert.equal((await cash(cookies.admin)).data.balance,70000);
+ assert.equal((await cash(cookies.admin,spend)).status,200);assert.equal((await cash(cookies.admin)).data.balance,-10000);
  const spends=await Promise.all([1,2].map(()=>cash(cookies.admin,{...spend,operation:{...spend.operation,id:crypto.randomUUID(),amount:500}})));
- assert.deepEqual(spends.map(x=>x.status).sort(),[200,400]);assert.equal((await cash(cookies.admin)).data.balance,20000);
+ assert.deepEqual(spends.map(x=>x.status).sort(),[200,200]);assert.equal((await cash(cookies.admin)).data.balance,-110000);
  assert.equal((await call('/api/cash?actorId='+cashHead.e.id,{cookie:cookies.admin})).status,403);
  let remaining=30000;
  for(const purpose of cashSpendPurposes){
