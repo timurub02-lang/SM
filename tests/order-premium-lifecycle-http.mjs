@@ -106,21 +106,21 @@ try{
  assert.deepEqual(approval.data.lifecycle.administrativeIds,['head2']);
  assert.equal(approval.data.lifecycle.allSigned,true);
  const frozen=JSON.stringify(ledger());
- assert.equal((await act('admin','pay')).status,400,'Empty cash must block payment');
- assert.equal(JSON.stringify(ledger()),frozen,'Failed debit must roll back period');
- assert.equal(db.prepare("SELECT count(*) AS n FROM cash_operations WHERE kind='spend'").get().n,0);
- const fund=id=>db.prepare("INSERT INTO cash_operations VALUES(?, 'add',NULL,?,100000,'Test funding','2026-10-29','2026-10-29','2026-10-29','admin','','Test',NULL)").run('fund-'+id,id);
- fund('head');
- assert.equal((await act('admin','pay')).status,400,'Second cash shortage must roll back first debit');
+ assert.equal((await call('/api/cash',{cookie:cookies.admin})).status,200);
+ db.exec("CREATE TRIGGER test_cash_failure BEFORE INSERT ON cash_operations WHEN NEW.sender='head2' BEGIN SELECT RAISE(ABORT,'Test storage failure'); END");
+ assert.equal((await act('admin','pay')).status,400,'Second cash write failure must roll back first debit');
  assert.equal(JSON.stringify(ledger()),frozen);
  assert.equal(db.prepare("SELECT count(*) AS n FROM cash_operations WHERE kind='spend'").get().n,0);
  assert.equal(JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-draft:2026-11-1:debtor'").get().data).debt,5,'Failed cash must not carry debt');
- fund('head2');
+ db.exec('DROP TRIGGER test_cash_failure');
+ // An existing installation still has this trigger until the cash initializer migrates it.
+ db.exec("CREATE TRIGGER cash_no_overdraft BEFORE INSERT ON cash_operations BEGIN SELECT RAISE(ABORT,'Old overdraft guard'); END");
  assert.equal((await act('admin','pay','stale')).status,409);
  assert.equal((await act('admin','pay')).status,200);
  const spends=db.prepare("SELECT sender,amount FROM cash_operations WHERE kind='spend' ORDER BY sender").all();
  assert.deepEqual(spends.map(r=>({...r})),[{sender:'head',amount:20000},{sender:'head2',amount:10000}],'Н includes head/operator, SZ excluded');
 
+ assert.deepEqual(db.prepare('SELECT employee,balance FROM cash_balances ORDER BY employee').all().map(r=>({...r})),[{employee:'head',balance:-20000},{employee:'head2',balance:-10000}]);
  assert.equal(ledger().activePeriod,'2026-11-1');
  const result=await stages();assert.equal(result['o-one'],'paid');assert.equal(result['o-two'],'paid');assert.equal(result.late,'accrued');
  assert.equal((await act('admin','pay')).status,400);
@@ -175,6 +175,14 @@ try{
  db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(JSON.stringify(historical));
  const confirmed=await call('/api/premium?period='+period,{cookie:cookies.admin});assert.equal(confirmed.data.periodCounts[period],3);
  const archive=await call('/api/premium/archive',{cookie:cookies.admin});assert.equal(archive.data.periods[0].count,3);assert.equal(archive.data.periods[0].historyOrders[0].externalId,'legacy-paid-only');
+ const expense={id:'10000000-0000-4000-8000-000000000001',kind:'spend',amount:10,purpose:'Зарплата',date:'2026-01-01'};
+ const expenseRequest={cookie:cookies.head,body:{action:'create',operation:expense}};
+ assert.equal((await call('/api/cash',expenseRequest)).status,200);
+ assert.equal((await call('/api/cash',expenseRequest)).data.balance,-21000,'Retry must not debit twice');
+ const transfer={...expense,id:'10000000-0000-4000-8000-000000000002',kind:'transfer',recipient:'head2',purpose:'Перевод другому сотруднику'};
+ assert.equal((await call('/api/cash',{cookie:cookies.head,body:{action:'create',operation:transfer}})).data.balance,-22000);
+ assert.equal((await call('/api/cash',{cookie:cookies.head2})).data.balance,-10000,'Unaccepted transfer is not credited');
+ assert.equal((await call('/api/cash',{cookie:cookies.head2,body:{action:'accept',id:transfer.id}})).data.balance,-9000);
  console.log('Payroll HTTP: roles, signatures, reopen audit, cash rollback, exact debt carry, repeat protection, scoped statistics, official part and order rollover passed. Synthetic data only.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
