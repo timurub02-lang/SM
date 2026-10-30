@@ -4,10 +4,10 @@ export type Product=z.infer<typeof productSchema>&{id:string;version:number;stoc
 export const productReady=(p:z.infer<typeof productSchema>)=>!!p.name&&!!p.sku&&p.weight!==null&&p.cost!==null;
 
 export function parcelDefaults(items:{name:string;quantity:number}[],products:Product[]){
- const matches=items.map(i=>({item:i,p:products.find(p=>p.name.trim().toLowerCase()===i.name.trim().toLowerCase())}));
- if(!matches.length||matches.some(x=>!x.p?.packedWeight))return null;
- const single=matches.length===1&&matches[0].item.quantity===1?matches[0].p:null;
- return {weight:0.875,length:single?.length??null,width:single?.width??null,height:single?.height??null,originMode:single?.originMode||'warehouse',single:!!single};
+ const matches=items.map(i=>products.find(p=>p.name.trim().toLowerCase()===i.name.trim().toLowerCase()));
+ if(!matches.length||matches.some(p=>!p))return null;
+ const dimension=(key:'length'|'width'|'height')=>matches.every(p=>p?.[key])?Math.max(...matches.map(p=>p![key]!)):null;
+ return {weight:0.875,length:dimension('length'),width:dimension('width'),height:dimension('height'),originMode:matches[0]!.originMode};
 }
 
 export const warehouseAddressSchema=z.string().trim().min(1).max(500).refine(v=>/(?:^|\D)\d{6}(?!\d)/.test(v),"Укажите в адресе шестизначный индекс").transform(address=>({address,postalCode:address.match(/(?:^|\D)(\d{6})(?!\d)/)![1]}));
