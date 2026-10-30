@@ -224,6 +224,18 @@ try{
  await step(editor.cookie,'rework');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,3);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
  console.log('Return workflow: cancellation denied before return in each stage; second return permits cancellation.');
+ const redemptionLead=await fixture('redemption-lead',undefined,'redemption');
+ db.prepare("UPDATE employees SET data=json_set(data,'$.canCreateRedemptionStaff',json('true')) WHERE id=?").run(redemptionLead.e.id);
+ const redemptionOrdinary=await fixture('redemption-ordinary',undefined,'redemption');
+ const redemptionInput={...staff[1],id:undefined,login:'redemption-created',role:'admin',department:undefined,canCreateRedemptionStaff:true,password,accessEnabled:true};
+ const redemptionCreated=await call('/api/crm',{cookie:redemptionLead.cookie,body:{action:'saveEmployee',employee:redemptionInput}});
+ assert.equal(redemptionCreated.status,200,redemptionCreated.text);
+ const redemptionNew=redemptionCreated.data.state.employees.find(e=>e.login==='redemption-created');
+ assert.equal(redemptionNew.role,'redemption');assert.equal(redemptionNew.department,undefined);assert.equal(redemptionNew.canCreateRedemptionStaff,undefined);
+ assert.equal((await login('redemption-created')).status,200);
+ for(const cookie of [redemptionOrdinary.cookie,(await login('redemption-created')).headers.get('set-cookie').split(';')[0]])assert.equal((await call('/api/crm',{cookie,body:{action:'saveEmployee',employee:{...redemptionInput,login:'denied'}}})).status,400);
+ assert.equal((await call('/api/crm',{cookie:redemptionLead.cookie,body:{action:'saveEmployee',id:staff[0].id,version:1,employee:redemptionInput}})).status,400);
+ assert.equal((await call('/api/crm',{cookie:redemptionLead.cookie,body:{action:'deleteEmployee',id:redemptionNew.id,version:1,mode:'release'}})).status,400);
  const chief=await fixture('chief-logistic',undefined,'chief_logistic');
  const dispatchCourier=await fixture('dispatch-courier',undefined,'courier'),strangerCourier=await fixture('stranger-courier',undefined,'courier');
  for(const [delivery,section] of [['moscow_courier','moscow'],['russian_post','post']]){

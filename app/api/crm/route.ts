@@ -511,7 +511,7 @@ async function handlePOST(request:Request){
    if(enabled&&!account&&!passwordHash)throw Error("Задайте пароль для включения входа сотрудника");
   }
   const oktell=prepareOktellLink(employee,data,existing,p.employee.oktellRequested);
-  const saved=json({...data,...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
+  const saved=json({...data,...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
   const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?").bind(saved,eid,p.version):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
   const guard="EXISTS(SELECT 1 FROM employees WHERE id=? AND data=? AND version=?)";
   const args=[eid,saved,p.id?p.version+1:1];
