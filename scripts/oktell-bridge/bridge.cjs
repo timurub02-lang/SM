@@ -51,7 +51,7 @@ const browserOperators={...operators,prepare:async(actor,owner)=>{
  catch(e){await operators.release(actor,owner);throw e;}
 }};
 const browserPhone=require('./browser-phone.cjs')({operators:browserOperators,connected:()=>publicState().connected,incoming:pilot.incoming,canAuthorize:pilot.canAuthorize});
-const delivery=require('./delivery-control.cjs')({request,connected:()=>publicState().connected});
+const delivery=require('./delivery-control.cjs')({request,connected:()=>publicState().connected,rememberDelivery:pilot.rememberDelivery});
 const control=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
  if(req.method==='GET'&&req.url==='/status'){res.end(JSON.stringify(publicState()));return;}

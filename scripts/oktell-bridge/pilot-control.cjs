@@ -25,6 +25,31 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  db.exec("UPDATE pilot_commands SET state='unknown' WHERE state='sent'; UPDATE pilot_calls SET command_state='unknown' WHERE command_state='sent'");
  db.exec("CREATE TABLE IF NOT EXISTS pilot_callback_sync(command_id TEXT PRIMARY KEY, attempted_at TEXT NOT NULL, synced_at TEXT)");
  let syncing=false;
+ const columns=new Set(db.prepare('PRAGMA table_info(pilot_calls)').all().map(c=>c.name));
+ for(const column of ['task_id','delivery_id'])if(!columns.has(column))db.exec('ALTER TABLE pilot_calls ADD COLUMN '+column+' TEXT');
+ db.exec(`CREATE TABLE IF NOT EXISTS pilot_deliveries(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,fingerprint TEXT NOT NULL,items TEXT,state TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS pilot_delivery_contacts(delivery_id TEXT NOT NULL,task_id TEXT NOT NULL,client_id TEXT NOT NULL,phone TEXT NOT NULL,active INTEGER NOT NULL,PRIMARY KEY(delivery_id,client_id));
+ CREATE UNIQUE INDEX IF NOT EXISTS pilot_delivery_number ON pilot_delivery_contacts(task_id,phone) WHERE active=1;
+ CREATE UNIQUE INDEX IF NOT EXISTS pilot_delivery_client ON pilot_delivery_contacts(task_id,client_id) WHERE active=1;`);
+ function rememberDelivery(receipt,items){
+  if(!receipt||!uuid(receipt.id)||!uuid(receipt.taskId)||!/^[a-f0-9]{64}$/.test(receipt.fingerprint)||typeof receipt.cancelled!=='boolean')throw fail('Invalid delivery receipt',502);
+  const id=lower(receipt.id),task=lower(receipt.taskId),old=db.prepare('SELECT * FROM pilot_deliveries WHERE id=?').get(id);
+  if(old&&(old.task_id!==task||old.fingerprint!==receipt.fingerprint))throw fail('Delivery receipt changed',502);
+  let payload=null;
+  if(items){
+   if(!Array.isArray(items)||!items.length||items.length>1000||items.some(c=>!/^C-[\w-]+$/.test(c.clientId)||!phone(c.phone))||new Set(items.map(c=>c.clientId)).size!==items.length||new Set(items.map(c=>phone(c.phone))).size!==items.length)throw fail('Invalid delivery contacts',502);
+   payload=JSON.stringify(items.map(c=>({clientId:c.clientId,phone:phone(c.phone)})).sort((a,b)=>a.clientId.localeCompare(b.clientId)));
+   if(receipt.accepted!==items.length||old?.items&&old.items!==payload)throw fail('Delivery composition changed',502);
+  }else if(!receipt.cancelled)throw fail('Delivery contacts required',502);
+  // Cancellation is terminal even when an earlier import response arrives late.
+  const cancelled=receipt.cancelled||old?.state==='cancelled';
+  db.exec('BEGIN IMMEDIATE');try{
+   db.prepare("INSERT INTO pilot_deliveries VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET items=COALESCE(pilot_deliveries.items,excluded.items),state=excluded.state").run(id,task,receipt.fingerprint,payload,cancelled?'cancelled':'delivered');
+   if(cancelled)db.prepare('UPDATE pilot_delivery_contacts SET active=0 WHERE delivery_id=?').run(id);
+   else for(const c of JSON.parse(payload))db.prepare('INSERT INTO pilot_delivery_contacts VALUES(?,?,?,?,1) ON CONFLICT(delivery_id,client_id) DO NOTHING').run(id,task,c.clientId,c.phone);
+   db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
+ }
  const stamp=()=>new Date(now()).toISOString();
  function config(){
   const p=load();if(!p)return null;
@@ -32,7 +57,7 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
    p.operators.some(o=>!/^E-[\w-]+$/.test(o.actor)||!uuid(o.userid))||new Set(p.operators.map(o=>o.actor)).size!==p.operators.length||new Set(p.operators.map(o=>lower(o.userid))).size!==p.operators.length||
    p.contacts.some(c=>!phone(c.phone)||!/^C-[\w-]+$/.test(c.clientId))||new Set(p.contacts.map(c=>phone(c.phone))).size!==3||
    !Array.isArray(p.results)||p.results.some(r=>typeof r!=='string')||p.results.length<1)throw fail('ÐŸÑ€Ð¾Ð²ÐµÑ€ÑŒÑ‚Ðµ ÐºÐ¾Ð½Ñ„Ð¸Ð³ÑƒÑ€Ð°Ñ†Ð¸ÑŽ Ð¢1',503);
-  if(callbackRouting&&!uuid(p.listId))throw fail('Íå çàäàí ñïèñîê äëÿ ïðèâÿçêè ïåðåçâîíîâ Ò1',503);
+  if(callbackRouting&&!uuid(p.listId))throw fail('T1 callback list is not configured',503);
   return p;
  }
  function operator(actor){const p=config(),o=p?.operators.find(o=>o.actor===actor);if(!o)throw fail('ÐÐµÑ‚ Ð´Ð¾ÑÑ‚ÑƒÐ¿Ð° Ðº Ð¢1',403);const current=identity(actor);if(lower(current.userid)!==lower(o.userid))throw fail('ÐŸÑ€Ð¸Ð²ÑÐ·ÐºÐ° Ð¾Ð¿ÐµÑ€Ð°Ñ‚Ð¾Ñ€Ð° Ð¢1 Ð¸Ð·Ð¼ÐµÐ½Ð¸Ð»Ð°ÑÑŒ',403);return current;}
@@ -44,11 +69,13 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   if(db.prepare('SELECT 1 FROM pilot_events WHERE qid=?').get(a.qid)){if(method==='dlgcard_showformstop'&&current(o.actor)?.form_id===lower(a.idshow))send('dlgcard_showformdone',{...operator(o.actor),qid:randomUUID()});return;}
   const time=stamp(),chain=lower(a.chainid);
   if(['phoneevent_ringstarted','phoneevent_commstarted'].includes(method)){
-   const contact=p.contacts.find(c=>phone(c.phone)===phone(a.callerid));
-   if(a.istask!==true||lower(a.taskid)!==lower(p.taskId)||!uuid(chain)||!contact)return;
+   if(a.istask!==true||lower(a.taskid)!==lower(p.taskId)||!uuid(chain))return;
    const previous=db.prepare('SELECT * FROM pilot_calls WHERE chain=?').get(chain);
+   const delivered=db.prepare('SELECT client_id clientId,phone,delivery_id deliveryId FROM pilot_delivery_contacts WHERE task_id=? AND phone=? AND active=1').get(lower(p.taskId),phone(a.callerid)||'');
+   const contact=previous?{clientId:previous.client_id,phone:previous.phone,deliveryId:previous.delivery_id}:delivered||p.contacts.find(c=>phone(c.phone)===phone(a.callerid));
+   if(!contact||phone(contact.phone)!==phone(a.callerid))return;
    if(previous&&(previous.actor!==o.actor||previous.phone!==phone(contact.phone)))return;
-   db.prepare('INSERT OR IGNORE INTO pilot_calls(chain,actor,phone,client_id,started_at,status,updated_at) VALUES(?,?,?,?,?,?,?)').run(chain,o.actor,phone(contact.phone),contact.clientId,time,'ringing',time);
+   db.prepare('INSERT OR IGNORE INTO pilot_calls(chain,actor,phone,client_id,started_at,status,updated_at,task_id,delivery_id) VALUES(?,?,?,?,?,?,?,?,?)').run(chain,o.actor,phone(contact.phone),contact.clientId,time,'ringing',time,lower(p.taskId),contact.deliveryId||null);
    if(method==='phoneevent_commstarted')db.prepare("UPDATE pilot_calls SET answered_at=COALESCE(answered_at,?),commutation=?,status=CASE WHEN ended_at IS NULL THEN 'connected' ELSE status END,updated_at=? WHERE chain=?").run(time,uuid(a.commutationid)?lower(a.commutationid):null,time,chain);
   }else if(['phoneevent_ringstopped','phoneevent_commstopped'].includes(method)){
    const c=db.prepare('SELECT * FROM pilot_calls WHERE chain=? AND actor=?').get(chain,o.actor);if(!c)return;
@@ -135,4 +162,5 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   return {after,through:calls.at(-1)?.seq??after,calls};
  }
  return {syncCallbacks,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ return {rememberDelivery,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };
