@@ -67,4 +67,20 @@ await assert.rejects(()=>d.prepare("UPDATE clients SET phone='79990000008' WHERE
 await syncPilot(d,[{...uploaded,result:JSON.stringify({outcome:'Отказ',comment:'fixture',callbackAt:null}),command_id:uuid(),command_state:'confirmed',updated_at:'2026-10-30T12:01:00Z'}]);
 assert.equal((await d.prepare('SELECT state FROM oktell_delivery_items WHERE job_id=?').bind(deliveryId).first()).state,'handed_off');
 await assert.rejects(()=>d.prepare("UPDATE oktell_deliveries SET state='cancelled' WHERE id=?").bind(deliveryId).run(),/reconciliation/);
+// Follow-up membership requires a confirmed selected outcome, never a raw no-answer event.
+assert.equal((await d.prepare('SELECT COUNT(*) n FROM oktell_followup').first()).n,0);
+const beforeQueue=JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data);
+const missed={...c,command_id:uuid(),command_state:'unknown',updated_at:'2026-10-30T14:00:00Z',result:JSON.stringify({outcome:'Нет Ответа ',comment:'fixture',callbackAt:null})};
+await syncPilot(d,[missed]);
+assert.equal((await d.prepare('SELECT COUNT(*) n FROM oktell_followup').first()).n,0);
+await syncPilot(d,[{...missed,command_state:'confirmed'}]);
+await syncPilot(d,[{...missed,command_state:'confirmed'}]);
+assert.equal((await d.prepare('SELECT COUNT(*) n FROM oktell_followup').first()).n,1);
+const robot={...missed,command_id:uuid(),command_state:'confirmed',updated_at:'2026-10-30T15:00:00Z',result:JSON.stringify({outcome:'Робот- защитник',comment:'fixture',callbackAt:null})};
+await syncPilot(d,[robot]);await syncPilot(d,[{...missed,command_state:'confirmed'}]);
+assert.equal((await d.prepare('SELECT reason FROM oktell_followup').first()).reason,'Робот-защитник');
+assert.deepEqual(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-0'").first()).data),beforeQueue);
+const {readOktellFollowup}=await import('../lib/oktell-followup.ts');
+assert.equal((await readOktellFollowup(d)).total,1);
+assert.equal((await readOktellFollowup(d,1)).rows.length,0);
 d.close();console.log('PASS: T1 CRM assignment, history, durations, idempotent results, private three-contact scope');

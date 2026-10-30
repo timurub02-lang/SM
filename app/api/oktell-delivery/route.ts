@@ -2,6 +2,7 @@ import {z} from 'zod';
 import {sessionEmployee,trustedOrigin} from '@/lib/auth';
 import {db} from '@/lib/db';
 import {pilotControl} from '@/lib/oktell-pilot-control';
+import {readOktellFollowup} from '@/lib/oktell-followup';
 import {deliverySelection,initOktellDelivery,previewOktellDelivery,reserveOktellDelivery,sendOktellDelivery,cancelOktellDelivery,completeOktellDelivery} from '@/lib/oktell-delivery';
 export const dynamic='force-dynamic';
 const command=z.discriminatedUnion('action',[
@@ -17,7 +18,9 @@ export async function GET(req:Request){
   const d=db();await initOktellDelivery(d);
   const jobs=(await d.prepare('SELECT j.*,COUNT(i.client_id) total FROM oktell_deliveries j LEFT JOIN oktell_delivery_items i ON i.job_id=j.id GROUP BY j.id ORDER BY j.created_at DESC LIMIT 20').all()).results.map((r:any)=>({...r,selection:JSON.parse(r.selection)}));
   let source=null,error='';try{source=await pilotControl('/delivery');}catch(e){error=e instanceof Error?e.message:'Нет связи с Oktell';}
-  return Response.json({source,error,jobs},{headers:{'Cache-Control':'no-store'}});
+  const page=z.coerce.number().int().min(0).max(100000).parse(new URL(req.url).searchParams.get('queuePage')||0);
+  const followup=await readOktellFollowup(d,page);
+  return Response.json({source,error,jobs,followup},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось прочитать загрузки'},{status:502});}
 }
 export async function POST(req:Request){

@@ -6,13 +6,14 @@ import {pilotControl} from './oktell-pilot-control.ts';
 import {initClientReminders} from './client-reminders.ts';
 import {clientAssignment} from './crm.ts';
 import {initOktellDelivery} from './oktell-delivery.ts';
+import {initOktellFollowup,followupReason} from './oktell-followup.ts';
 const call=z.object({task_id:z.string().uuid().nullable().optional(),delivery_id:z.string().uuid().nullable().optional(),chain:z.string().uuid(),actor:z.string(),phone:z.string(),client_id:z.string(),started_at:z.string().datetime(),answered_at:z.string().datetime().nullable(),ended_at:z.string().datetime().nullable(),status:z.enum(['ringing','connected','no_answer','completed']),updated_at:z.string().datetime(),result:z.string().nullable(),command_id:z.string().uuid().nullable(),command_state:z.enum(['sent','unknown','confirmed']).nullable()});
 // The private bridge is the authority for native task events; browser input never assigns clients.
 export async function syncPilot(d:ActivityDb,rows?:unknown){
  const setting=await d.prepare('SELECT data FROM settings WHERE id=?').bind(pilotSetting).first();if(!setting)return;
  const p=pilotSchema.parse(JSON.parse(setting.data));if(!p.native)return;
  const calls=z.array(call).max(100).parse(rows??await pilotControl('/pilot-history'));
- await initPhone(d);await initClientReminders(d);await initOktellDelivery(d);
+ await initPhone(d);await initClientReminders(d);await initOktellDelivery(d);await initOktellFollowup(d);
  for(const c of calls.sort((a,b)=>a.started_at.localeCompare(b.started_at))){
   if(!p.operatorIds.includes(c.actor))throw Error('Состав Т1 изменился');
   let delivery=null;
@@ -49,6 +50,13 @@ export async function syncPilot(d:ActivityDb,rows?:unknown){
   }
   statements.push(d.prepare("UPDATE phone_calls SET answered_at=?,ended_at=?,status=?,bill_seconds=?,duration=?,detail=?,provider_at=? WHERE id=? AND actor_id=? AND detail LIKE 'Т1 · %' AND (provider_at IS NULL OR provider_at<=?)").bind(c.answered_at,c.ended_at,c.status==='ringing'?'dialing':c.status,c.answered_at&&c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.answered_at))/1000)):0,c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.started_at))/1000)):0,text+(result?' · '+(c.command_state==='confirmed'?'Oktell подтвердил':'подтверждение Oktell ожидается'):''),c.updated_at,id,c.actor,c.updated_at));
   if(result&&c.command_id){
+   const reason=followupReason(result.outcome);
+   if(c.command_state==='confirmed'&&reason){
+    statements.push(d.prepare(`INSERT INTO oktell_followup(task_id,client_id,reason,command_id,created_at,updated_at)
+     VALUES(?,?,?,?,?,?) ON CONFLICT(task_id,client_id) DO UPDATE SET
+     reason=excluded.reason,command_id=excluded.command_id,updated_at=excluded.updated_at
+     WHERE oktell_followup.updated_at<excluded.updated_at`).bind(p.native.taskId,c.client_id,reason,c.command_id,c.updated_at,c.updated_at));
+   }
    const event={id:c.command_id,clientId:c.client_id,orderId:'',at:c.updated_at,actor:e.name,actorId:c.actor,pilotTask:p.native.taskId,text:text+' · '+(c.command_state==='confirmed'?'Oktell подтвердил':'ожидается подтверждение Oktell')};
    statements.push(d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,'',?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,at=excluded.at WHERE events.at<=excluded.at").bind(c.command_id,c.client_id,c.updated_at,JSON.stringify(event)));
    if(c.command_state==='confirmed'&&result.callbackAt){
