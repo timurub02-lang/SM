@@ -744,6 +744,13 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(retentionClient.id,retentionClient.phone,JSON.stringify(retentionClient));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(retentionOrder.id,retentionClient.id,JSON.stringify(retentionOrder));
  await call('/api/crm',{cookie:cookies.admin});
+ const heldRetention=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(retentionClient.id).data);
+ assert.equal(heldRetention.owner,'one','Unpaid redeemed order must retain its owner');
+ const savedLedger=db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get();
+ const retentionLedger=savedLedger?JSON.parse(savedLedger.data):{periods:{}};
+ retentionLedger.periods['2026-01-1']={status:'paid',signatures:{},orders:[{externalId:retentionOrder.id,employeeId:'one',login:'one',department:'1',amount:0}]};
+ db.prepare("INSERT INTO settings(id,data) VALUES('premium-ledger',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify(retentionLedger));
+ await call('/api/crm',{cookie:cookies.admin});
  const releasedRetention=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(retentionClient.id).data);
  assert.equal(releasedRetention.owner,'');assert.equal(releasedRetention.sheet,'П');
  console.log('Operator retention: departments, persisted weeks, admin guard, conflict, validation and actual release overriding imported deadline passed.');

@@ -1,3 +1,4 @@
+import {ledgerKey,orderKey,type PremiumLedger} from './premium-ledger.ts';
 import {courierDoorRefusal,courierDeadline,courierToOperator,cancelCourierWork} from './courier.ts';
 import {courierReminderStatements} from './reminder-store.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
@@ -42,16 +43,19 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
 export async function reconcileClients(d:Db,clients:Client[],orders:Order[]){
 
   let changed=false;
+  const ledgerRow=await d.prepare("SELECT data FROM settings WHERE id=?").bind(ledgerKey).first() as {data:string}|null;
+  const ledger=ledgerRow?JSON.parse(ledgerRow.data) as PremiumLedger:null;
+  const paidKeys=new Set(Object.values(ledger?.periods||{}).filter(p=>p.status==='paid').flatMap(p=>(p.orders||[]).map(o=>o.externalId)));
   const baseConfigRow=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first();const baseConfig=baseSettingsSchema.parse(baseConfigRow?JSON.parse(baseConfigRow.data).config:initialBaseSettings());const period=baseConfig.retention.from&&baseConfig.retention.to?baseConfig.retention:previousThreeMonths();const sales=repeatSales(orders,period.from,period.to);
   const byClient=new Map<string,Order[]>();for(const order of orders){const group=byClient.get(order.clientId)||[];group.push(order);byClient.set(order.clientId,group);}
   for(const c of clients){
    const related=byClient.get(c.id)||[];
-   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent),!!baseConfig.retention.operators[c.owner]);
+   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent),!!baseConfig.retention.operators[c.owner],related.some(o=>o.manager===c.owner&&o.status==='redeemed'&&!paidKeys.has(orderKey(o))));
    if(JSON.stringify(next)===JSON.stringify(c))continue;
    const at=new Date().toISOString();const eid="EV-"+crypto.randomUUID();
    const event:Event={id:eid,clientId:c.id,orderId:"",at,actor:"Система",text:next.owner?"Правило К · закрепление обновлено":"Правило К · откреплён, возвращён в "+(clientSheet(next)||"исходную базу")};
-   const guard=" AND (SELECT COUNT(*) FROM orders WHERE client_id=?)=?"+related.map(()=>" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)").join("");
-   const args=[c.id,related.length,...related.flatMap(o=>[o.id,o.version])];
+   const guard=" AND COALESCE((SELECT data FROM settings WHERE id='premium-ledger'),'')=? AND (SELECT COUNT(*) FROM orders WHERE client_id=?)=?"+related.map(()=>" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)").join("");
+   const args=[ledgerRow?.data||'',c.id,related.length,...related.flatMap(o=>[o.id,o.version])];
    const result=await d.batch([
     d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?"+guard+")").bind(eid,c.id,"",at,json(event),c.id,c.version,...args),
     d.prepare("UPDATE clients SET data=?,version=version+1 WHERE id=? AND version=?"+guard).bind(json(next),c.id,c.version,...args)

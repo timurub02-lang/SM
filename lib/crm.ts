@@ -128,14 +128,14 @@ export function clientAssignment(c:Client,owner:string,now:string,firstSheet="Т
  const until=new Date(Date.parse(now)+86400000).toISOString();
  return {importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:clientSheet(c)||firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
 }
-function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35,explicitPolicy=false):Client{
+function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35,explicitPolicy=false,unpaidPremium=false):Client{
  if(!c.owner)return c;
  const original=c.returnSheet??(clientSheet(c)==="К"?"П":clientSheet(c));
  const own=orders.filter(o=>o.clientId===c.id&&o.manager===c.owner&&(!c.assignmentStartedAt||o.createdAt>=c.assignmentStartedAt));
  const active=orders.some(o=>o.clientId===c.id&&["new","accepted","sent"].includes(orderGroup(o.status).id));
- if(c.trialUntil&&!own.length&&!active){return Date.parse(c.trialUntil)>now?c:{...c,owner:"",distributedAt:new Date(now).toISOString(),releasedAt:new Date(now).toISOString(),sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
+ if(c.trialUntil&&!own.length&&!active&&!unpaidPremium){return Date.parse(c.trialUntil)>now?c:{...c,owner:"",distributedAt:new Date(now).toISOString(),releasedAt:new Date(now).toISOString(),sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
  const base={...c,trialUntil:undefined,trialReturnSheet:undefined,sheet:"К",returnSheet:original,assignedUntil:"",assignmentStartedAt:c.assignmentStartedAt||own.map(o=>o.createdAt).filter(Boolean).sort()[0]};
- if(active||(!own.length&&!c.importRetentionUntil))return base;
+ if(active||unpaidPremium||(!own.length&&!c.importRetentionUntil))return base;
  const paid=own.filter(o=>o.status==="redeemed");
  // Missing historical redemption dates must not silently release a client.
  if(paid.some(o=>!o.redeemedAt||!Number.isFinite(Date.parse(o.redeemedAt))))return base;
@@ -145,8 +145,8 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
  return {...base,owner:"",releasedAt:new Date(now).toISOString(),sheet:paid.length?"П":original,returnSheet:undefined,assignmentStartedAt:undefined};
 }
 
-export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,explicitPolicy=false):Client{
- const next=retentionResult(c,orders,now,days,explicitPolicy),related=orders.filter(o=>o.clientId===c.id);
+export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,explicitPolicy=false,unpaidPremium=false):Client{
+ const next=retentionResult(c,orders,now,days,explicitPolicy,unpaidPremium),related=orders.filter(o=>o.clientId===c.id);
  if(!related.some(o=>o.pv))return next;
  const events=related.flatMap(o=>o.status==='redeemed'&&o.redeemedAt?[{at:o.redeemedAt,sheet:next.owner?'К':'П',startedAt:''}]:o.pv?[{at:o.status==='returned'?o.returnedAt||o.updatedAt:o.status==='refused'?o.cancelledAt||o.updatedAt:o.pvMarkedAt||o.createdAt,sheet:['returned','refused'].includes(o.status)?'ЧС':'ПВ',startedAt:o.createdAt}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
  const latest=events[0];if(!latest)return next;
