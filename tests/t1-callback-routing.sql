@@ -30,6 +30,12 @@ IF @id<>'1' THROW 51100,'Original due priority lost',1;
 DECLARE @operators TABLE(Id uniqueidentifier);
 INSERT @operators EXEC dbo.A_TaskManager_OperatorsAll_Get_Custom @task,@list,1;
 IF (SELECT COUNT(*) FROM @operators)<>1 OR NOT EXISTS(SELECT 1 FROM @operators WHERE Id=@owner) THROW 51100,'Owner affinity lost',1;
+-- Callback priority survives a cleared native retry date.
+UPDATE dbo.A_TaskManager_SubTasks SET NextEffortTime=NULL WHERE IdInList=1;
+DELETE dbo.CRM_T1SelectionOffers;
+EXEC dbo.CRM_T1_Select @list,@id OUTPUT,@phone OUTPUT;
+IF @id<>'1' THROW 51100,'Callback lost priority without native retry date',1;
+UPDATE dbo.A_TaskManager_SubTasks SET NextEffortTime='2026-10-30T11:55:00' WHERE IdInList=1;
 -- Offline owner does not stall other contacts, and is not replaced before 30 minutes.
 INSERT dbo.A_UserStateHistory VALUES(@owner,0,3);
 DELETE dbo.CRM_T1SelectionOffers;

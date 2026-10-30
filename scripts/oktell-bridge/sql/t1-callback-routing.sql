@@ -125,7 +125,7 @@ BEGIN
  -- Brief offer lease lets parallel searches try different contacts; native in-flight
  -- and attempt-limit checks remain authoritative. Rejected offers expire automatically.
  AND (o.OfferedUtc IS NULL OR o.OfferedUtc<=DATEADD(second,-2,@now))
- ORDER BY CASE WHEN timing.DueAt IS NOT NULL THEN 0 ELSE 1 END,COALESCE(affinity.DueUtc,DATEADD(minute,DATEDIFF(minute,@local,@now),timing.DueAt)),
+ ORDER BY CASE WHEN affinity.DueUtc IS NOT NULL OR timing.DueAt IS NOT NULL THEN 0 ELSE 1 END,COALESCE(affinity.DueUtc,DATEADD(minute,DATEDIFF(minute,@local,@now),timing.DueAt)),
    CASE WHEN c.Id>@last THEN 0 ELSE 1 END,c.Id;
  IF @next IS NOT NULL BEGIN
    UPDATE dbo.CRM_T1TimeCursor SET LastId=@next WHERE ListId=@list;
