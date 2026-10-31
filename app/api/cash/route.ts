@@ -1,5 +1,6 @@
 import {courierBalance} from '@/lib/courier';
 import {authenticated} from '@/lib/api-auth';
+import {personalAuth} from '@/lib/auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {cashInput,hasCash} from '@/lib/cash';
@@ -7,13 +8,13 @@ import {initCash} from '@/lib/cash-db';
 import {type Employee,type Order} from '@/lib/crm';
 import {z} from 'zod';
 export const dynamic='force-dynamic';
-async function employee(id:string){const row=await db().prepare('SELECT data FROM employees WHERE id=?').bind(id).first<{data:string}>();return row?JSON.parse(row.data) as Employee:null;}
+async function employee(id:string){const row=await db().prepare(personalAuth()?'SELECT e.data,e.version,COALESCE(a.enabled,0) enabled FROM employees e LEFT JOIN auth_accounts a ON a.employee_id=e.id WHERE e.id=?':'SELECT data,version FROM employees WHERE id=?').bind(id).first<{data:string;version:number;enabled?:number}>();return row?{...JSON.parse(row.data),version:row.version,...(personalAuth()?{accessEnabled:row.enabled===1}:{})} as Employee:null;}
 async function handle(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  try{
   const p:any=req.method==='GET'?null:await req.json();
   const actor=await employee(p?.actorId||new URL(req.url).searchParams.get('actorId')||'');
-  if(!actor||!hasCash(actor.role))return Response.json({error:'Касса недоступна'},{status:403});
+  if(!actor||!hasCash(actor.role)||actor.accessEnabled===false)return Response.json({error:'Касса недоступна'},{status:403});
   await initCash();const d=db();
   const query=new URL(req.url).searchParams;
   if(query.has('employeeId')||query.get('scope')==='all'){
@@ -50,12 +51,15 @@ async function handle(req:Request){
     const sender=input.kind==='add'?null:actor;const now=new Date().toISOString();
     const old=await d.prepare('SELECT * FROM cash_operations WHERE id=?').bind(input.id).first<any>();
     if(old){if(old.actor!==actor.id||old.kind!==input.kind||old.amount!==input.amount||old.purpose!==input.purpose||old.date!==input.date||old.recipient!==(recipient?.id||null))throw Error('Операция уже сохранена с другими данными');}
-    else await d.prepare('INSERT INTO cash_operations(id,kind,sender,recipient,amount,purpose,date,created_at,accepted_at,actor,sender_name,recipient_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(input.id,input.kind,sender?.id||null,recipient?.id||null,input.amount,input.purpose,input.date,now,input.kind==='transfer'?null:now,actor.id,sender?.name||'',recipient?.name||'').run();
+    else {
+     const inserted=await d.prepare("INSERT INTO cash_operations(id,kind,sender,recipient,amount,purpose,date,created_at,accepted_at,actor,sender_name,recipient_name) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM employees WHERE id=? AND version=?) AND (? IS NULL OR EXISTS(SELECT 1 FROM employees WHERE id=? AND version=?))").bind(input.id,input.kind,sender?.id||null,recipient?.id||null,input.amount,input.purpose,input.date,now,input.kind==='transfer'?null:now,actor.id,sender?.name||'',recipient?.name||'',actor.id,actor.version,recipient?.id||null,recipient?.id||null,recipient?.version??null).run();
+     if(!inserted.meta.changes)throw Error('Сотрудник изменён или удалён. Обновите кассу перед сохранением');
+    }
    }else throw Error('Неизвестная операция');
   }
   const balance=await d.prepare('SELECT balance FROM cash_balances WHERE employee=?').bind(actor.id).first<{balance:number}>();
   const rows=await d.prepare('SELECT * FROM cash_operations WHERE sender=? OR recipient=? ORDER BY created_at DESC,id DESC').bind(actor.id,actor.id).all();
-  const staff=await d.prepare("SELECT id,data FROM employees WHERE json_extract(data,'$.role') IN ('admin','department_head','chief_logistic','purchasing') ORDER BY id").all<{id:string;data:string}>();
+  const staff=await d.prepare("SELECT id,data FROM employees WHERE json_extract(data,'$.role') IN ('admin','department_head','chief_logistic','purchasing')"+(personalAuth()?" AND EXISTS(SELECT 1 FROM auth_accounts a WHERE a.employee_id=employees.id AND a.enabled=1)":"")+" ORDER BY id").all<{id:string;data:string}>();
   return Response.json({balance:balance?.balance||0,operations:rows.results,recipients:staff.results.map(r=>JSON.parse(r.data) as Employee).filter(e=>e.id!==actor.id&&e.accessEnabled!==false).map(e=>({id:e.id,name:e.name,login:e.login}))},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(i=>i.message).join('; '):e instanceof Error?e.message:'Не удалось сохранить операцию'},{status:400});}
 }

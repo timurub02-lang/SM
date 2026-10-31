@@ -10,7 +10,7 @@ async function actor(req:Request){if(!await getChatGPTUser())return null;const r
 async function get(req:Request){
  const e=await actor(req);if(!e||!['admin','department_head'].includes(e.role))return Response.json({error:'Недостаточно прав'},{status:403});
  const d=db();await initActivity(d);const result=await readActivity(d),allowed=new Set(result.staff.filter((s:Employee)=>visibleActivityEmployee(e,s)).map((s:Employee)=>s.id));
- const incidents=(await d.prepare('SELECT id,employee_id AS employeeId,started_at AS startedAt,detected_at AS detectedAt,ended_at AS endedAt,reason FROM activity_incidents ORDER BY detected_at DESC LIMIT 500').all()).results.filter((r:any)=>allowed.has(r.employeeId)).slice(0,100);
+ const incidents=(await d.prepare('SELECT id,employee_id AS employeeId,started_at AS startedAt,detected_at AS detectedAt,ended_at AS endedAt,reason FROM activity_incidents WHERE employee_id IN (SELECT value FROM json_each(?)) ORDER BY detected_at DESC,id DESC LIMIT 100').bind(JSON.stringify([...allowed])).all()).results;
  return Response.json({rows:result.rows.filter((r:any)=>allowed.has(r.id)),schedules:Object.fromEntries(Object.entries(result.schedules).filter(([id])=>e.role==='admin'||e.department===id)),health:result.health,incidents,now:new Date().toISOString()},{headers:{'Cache-Control':'no-store'}});
 }
 const schedule=z.object({department:z.enum(['1','2','3','4','5']),days:z.array(z.number().int().min(0).max(6)).min(1).max(7),start:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),end:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),breakMinutes:z.number().int().min(0).max(180)}).refine(v=>v.start<v.end,'Окончание смены должно быть позже начала');

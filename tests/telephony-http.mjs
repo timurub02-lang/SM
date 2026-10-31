@@ -121,6 +121,17 @@ try{
  assert.equal((await pbx('GET',callId,undefined,'wrong-key')).status,403);
  assert.equal((await call('/api/telephony/pbx?callId='+callId+'&endpoint='+ownCall.data.username,{headers:{'X-CRM-PBX-Key':pbxKey}})).status,403,'Cannot use another employee call token');
  const claimed=await pbx('GET',callId);assert.equal(claimed.status,200);assert.equal(claimed.data.destination,'79990000001');
+ // Preparation is not a lasting permission: recheck ownership and phone at claim time.
+ for(const patch of [{owner:'two'},{phone:'+79990000999'}]){
+  const prepared=await call('/api/telephony',{cookie:cookies.one,body:{mode:'client',clientId:'c-one'}});
+  assert.equal(prepared.status,200,prepared.text);
+  const before=db.prepare("SELECT data,phone FROM clients WHERE id='c-one'").get();
+  db.prepare("UPDATE clients SET data=json_patch(data,?),phone=? WHERE id='c-one'").run(JSON.stringify(patch),patch.phone||before.phone);
+  const claim=await call('/api/telephony/pbx?callId='+prepared.data.callId+'&endpoint='+prepared.data.username,{headers:{'X-CRM-PBX-Key':pbxKey}});
+  assert.equal(claim.status,403,claim.text);
+  assert.equal(db.prepare('SELECT claimed_at FROM phone_calls WHERE id=?').get(prepared.data.callId).claimed_at,null);
+  db.prepare("UPDATE clients SET data=?,phone=? WHERE id='c-one'").run(before.data,before.phone);
+ }
  const accounts=await call('/api/telephony/pbx?accounts=1',{headers:{'X-CRM-PBX-Key':pbxKey}});assert.equal(accounts.data.accounts.length,10);
  assert.equal((await call('/api/telephony/pbx?accounts=1')).status,403);
  assert.equal((await pbx('GET',callId)).status,409,'Same call ID cannot dial twice');

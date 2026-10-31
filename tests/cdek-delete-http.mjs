@@ -1,3 +1,4 @@
+import {pathToFileURL} from 'node:url';
 // Run after the Miran standalone build. No real CDEK requests or customer data.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -18,7 +19,7 @@ try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of [...authSchema,...inventorySQL])db.exec(sql);
  const hash=await hashPassword(password),cookies={};
  for(const role of ['admin','chief_logistic','logistic','operator','department_head']){
-  const e={id:role,login:role,name:role,role,department:'1',salary:0,bonus:0,alias:'',skLogin:'',version:1};
+  const e={id:role,login:role,name:role,role,department:'1',salary:0,bonus:0,alias:'Fixture '+role,skLogin:'',version:1};
   db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(role,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(role,hash);
  }
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:35}));
@@ -27,13 +28,13 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(client.id,client.phone,JSON.stringify(client));
  const product={id:'product',name:'Synthetic product',sku:'TEST',weight:100,cost:100,payment:100,version:1};db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run(product.id,product.name.toLowerCase(),JSON.stringify(product));
  db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('initial',product.id,100,'Test stock','admin',new Date().toISOString());
- server=spawn(process.execPath,['--import',resolve('tests/fixtures/cdek-fetch.mjs'),resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),CDEK_TEST_FIXTURE:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,['--import',pathToFileURL(resolve('tests/fixtures/cdek-fetch.mjs')).href,resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),CDEK_TEST_FIXTURE:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<100;i++){try{await fetch(base+'/login');break;}catch{await new Promise(r=>setTimeout(r,100));}}
  async function call(path,role='admin',body){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{...(cookies[role]?{cookie:cookies[role]}:{}),...(body?{Origin:origin,'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}return {status:r.status,data,text,headers:r.headers};}
  for(const role of ['admin','chief_logistic','logistic','operator','department_head']){const r=await call('/api/auth/login',role,{login:role,password});assert.equal(r.status,200,r.text);cookies[role]=r.headers.get('set-cookie').split(';')[0];}
  async function worker(){
-  const process=spawn(globalThis.process.execPath,['--experimental-strip-types','--import',resolve('tests/fixtures/cdek-fetch.mjs'),resolve('scripts/sync-cdek-deletions.mjs')],{env:{...globalThis.process.env,CRM_DATABASE_PATH:join(dir,'test.sqlite'),CDEK_TEST_FIXTURE:file},stdio:['ignore','pipe','pipe']});
+  const process=spawn(globalThis.process.execPath,['--experimental-strip-types','--import',pathToFileURL(resolve('tests/fixtures/cdek-fetch.mjs')).href,resolve('scripts/sync-cdek-deletions.mjs')],{env:{...globalThis.process.env,CRM_DATABASE_PATH:join(dir,'test.sqlite'),CDEK_TEST_FIXTURE:file},stdio:['ignore','pipe','pipe']});
   let output='',errors='';process.stdout.on('data',x=>output+=x);process.stderr.on('data',x=>errors+=x);const [code]=await once(process,'exit');
   assert.ok(output.trim(),errors);return {code,...JSON.parse(output.trim())};
  }
@@ -42,7 +43,7 @@ try{
  const shipment=id=>{const r=db.prepare('SELECT data FROM settings WHERE id=?').get('cdek-shipment-'+id);return r&&JSON.parse(r.data);};
  function fixture(id){
   const now=new Date().toISOString(),uuid=crypto.randomUUID();
-  const order={id,clientId:'client',manager:'operator',logistic:'logistic',status:'shipping',delivery:'cdek_courier',items:[{name:product.name,quantity:1,price:100}],address:client.address,addressParts:{postalCode:'101000',region:'',city:'Москва',street:'Тестовая',house:'1',flat:''},comment:'',reason:'',contact:'none',due:'',extra:false,round:1,createdAt:now,updatedAt:now,shippedAt:now,cdekTransferredAt:now,cdekStatus:{code:'CREATED',at:now,revision:''},packingWaybillAt:now,cdekTariff:{code:139,slot:1,account:'Synthetic CDEK',name:'Test',amount:100,min:1,max:2,calculatedAt:now,params:{delivery:'cdek_courier',originPostalCode:'101000',originMode:'door',weight:1,length:10,width:10,height:10}},version:1};
+  const order={id,clientId:'client',manager:'operator',logistic:'logistic',status:'shipping',delivery:'cdek_courier',items:[{name:product.name,quantity:1,price:100}],address:client.address,addressParts:{postalCode:'101000',region:'',city:'Москва',street:'Тестовая',house:'1',flat:''},comment:'',reason:'',contact:'none',due:'',extra:false,round:1,createdAt:now,updatedAt:now,shippedAt:now,cdekTransferredAt:now,cdekStatus:{code:'CREATED',at:now,revision:''},packingWaybillAt:now,cdekTariff:{code:139,slot:1,account:'Synthetic CDEK',name:'Test',amount:100,min:1,max:2,calculatedAt:now,params:{delivery:'cdek_courier',originPostalCode:'101000',originMode:'door',weight:0.875,length:10,width:10,height:10}},version:1};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,'client',JSON.stringify(order));
   db.prepare('INSERT INTO settings VALUES(?,?)').run('cdek-shipment-'+id,JSON.stringify({attempt:crypto.randomUUID(),slot:1,account:'Synthetic CDEK',state:'ready',uuid,number:'OLD-'+id,createdAt:now,downloadedAt:now,printId:crypto.randomUUID(),form:{shipmentPoint:'',deliveryPoint:'',senderAddress:'Москва, ул. Складская, д. 1',payment:'cod',deliveryCost:0}}));
   change(s=>{s.orders[uuid]={number:id,cdek_number:'OLD-'+id,status:'CREATED'};s.mode='pending';});return {order,uuid};

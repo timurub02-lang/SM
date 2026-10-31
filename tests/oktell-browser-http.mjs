@@ -1,3 +1,4 @@
+import {controlSocket} from './fixtures/control-socket.mjs';
 // Isolated database and fake Oktell control socket. Never contacts an actual PBX.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -5,13 +6,15 @@ import {mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawn} from 'node:child_process';
+import {once} from 'node:events';
 import http from 'node:http';
 import {authSchema} from '../lib/auth-schema.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'oktell-browser-test-')),db=new DatabaseSync(join(dir,'test.sqlite'));
-const id='E-43a21d76-351',port=process.env.PREVIEW?'3337':'3097',origin=process.env.PREVIEW?'http://127.0.0.1:3337':'https://crm.test',base=`http://127.0.0.1:${port}`,socket=join(dir,'control.sock');
+const id='E-43a21d76-351',port=process.env.PREVIEW?'3337':'3097',origin=process.env.PREVIEW?'http://127.0.0.1:3337':'https://crm.test',base=`http://127.0.0.1:${port}`,socket=controlSocket(join(dir,'control.sock'));
+let breakResponse=false;
 let server,logs='',owner='',call=null,connected=false;const commands=[],leases=new Map();
-const bridge=http.createServer(async(req,res)=>{let body='';for await(const x of req)body+=x;res.setHeader('Content-Type','application/json');if(req.url.startsWith('/operator')){res.end(JSON.stringify({state:'offline',checkedAt:new Date().toISOString(),hasLine:false,busy:false,login:'preview'}));return;}if(!body){const actor=new URL(req.url,'http://localhost').searchParams.get('actor');res.end(JSON.stringify({connected:true,prepared:!!leases.get(actor)?.connected,registered:!!leases.get(actor)?.connected}));return;}const b=JSON.parse(body);({owner='',connected=false}=leases.get(b.actor)||{});commands.push(b);if(owner&&owner!==b.owner){res.writeHead(409).end(JSON.stringify({error:'Телефон уже подключён в другой вкладке'}));return;}if(b.action==='connect'){owner=b.owner;connected=true;}if(b.action==='disconnect'){owner='';connected=false;}leases.set(b.actor,{owner,connected});if(b.action==='authorize')assert.match(b.destination,/^7\d{10}$/);res.end(JSON.stringify({username:'fixture',authorizationUsername:'fixture',password:'fixture',domain:'example.invalid',token:'fixture',connected:true,prepared:connected,registered:connected,call}));});
+const bridge=http.createServer(async(req,res)=>{if(breakResponse){res.writeHead(200,{'Content-Type':'application/json'});res.write('{');setTimeout(()=>res.destroy(),10);return;}let body='';for await(const x of req)body+=x;res.setHeader('Content-Type','application/json');if(req.url.startsWith('/operator')){res.end(JSON.stringify({state:'offline',checkedAt:new Date().toISOString(),hasLine:false,busy:false,login:'preview'}));return;}if(!body){const actor=new URL(req.url,'http://localhost').searchParams.get('actor');res.end(JSON.stringify({connected:true,prepared:!!leases.get(actor)?.connected,registered:!!leases.get(actor)?.connected}));return;}const b=JSON.parse(body);({owner='',connected=false}=leases.get(b.actor)||{});commands.push(b);if(owner&&owner!==b.owner){res.writeHead(409).end(JSON.stringify({error:'Телефон уже подключён в другой вкладке'}));return;}if(b.action==='connect'){owner=b.owner;connected=true;}if(b.action==='disconnect'){owner='';connected=false;}leases.set(b.actor,{owner,connected});if(b.action==='authorize')assert.match(b.destination,/^7\d{10}$/);res.end(JSON.stringify({username:'fixture',authorizationUsername:'fixture',password:'fixture',domain:'example.invalid',token:'fixture',connected:true,prepared:connected,registered:connected,call}));});
 try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of authSchema)db.exec(sql);
  const hash=await hashPassword('synthetic-browser-preview-2026');
@@ -24,6 +27,7 @@ try{
  let ready=false;for(let i=0;i<150;i++){try{await fetch(address+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}assert.ok(ready,logs);
  async function req(path,body,cookie='',extra={}){const r=await fetch(address+path,{method:body?'POST':'GET',headers:{Cookie:cookie,Origin:origin,'Content-Type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
  const cookies={};for(const who of ['irina','other','admin','E-second']){const r=await req('/api/auth/login',{login:who,password:'synthetic-browser-preview-2026'});assert.equal(r.status,200);cookies[who]=r.cookie;}
+ breakResponse=true;assert.equal((await req('/api/oktell-phone',null,cookies.irina)).status,502);breakResponse=false;assert.equal((await req('/api/oktell-phone',null,cookies.irina)).status,200,'Interrupted bridge response must not crash CRM');
  const closeCalls=()=>db.prepare("UPDATE phone_calls SET status='cancelled',ended_at=? WHERE ended_at IS NULL").run(new Date().toISOString());
  const tab=crypto.randomUUID();
  assert.equal((await req('/api/oktell-phone')).status,403);
@@ -100,4 +104,4 @@ try{
  const ui=await req('/api/crm',null,cookies.other);assert.equal(ui.status,200,logs);
  console.log('PASS: existing/new cards, both carriers, linked phone selection, ownership and reassignment, no arbitrary destinations, single active call, failed grants, native actor scope, history. No real calls.');
  if(process.env.PREVIEW){db.exec('DELETE FROM phone_calls');writeFileSync('/tmp/oktell-browser-preview.json',JSON.stringify({pid:server.pid,dir}));console.log('Preview ready on 3337');await new Promise(()=>{});}
-}finally{server?.kill('SIGTERM');bridge.close();db.close();rmSync(dir,{recursive:true,force:true});}
+}finally{if(server){server.kill('SIGTERM');await once(server,'exit');}await new Promise(r=>bridge.close(r));db.close();rmSync(dir,{recursive:true,force:true});}

@@ -13,10 +13,10 @@ async function handleGET(req:Request){
  const row=await db().prepare("SELECT data FROM settings WHERE id='postal-form'").first<{data:string}>();
  const settings=row?JSON.parse(row.data):{sender:emptyPostalSender,revision:''};
  if(!q.has('orderId'))return Response.json(settings,{headers:{'Cache-Control':'no-store'}});
- const found=await db().prepare('SELECT data FROM orders WHERE id=?').bind(q.get('orderId')).first<{data:string}>();
+ const found=await db().prepare('SELECT data,version FROM orders WHERE id=?').bind(q.get('orderId')).first<{data:string;version:number}>();
  if(!found)return Response.json({error:'Заказ не найден'},{status:404});
  const order=JSON.parse(found.data);
- if(String(order.version)!==q.get('version'))return Response.json({error:'Заказ изменён. Откройте его заново перед скачиванием бланка.'},{status:409});
+ if(String(found.version)!==q.get('version'))return Response.json({error:'Заказ изменён. Откройте его заново перед скачиванием бланка.'},{status:409});
  const client=await db().prepare('SELECT data FROM clients WHERE id=?').bind(order.clientId).first<{data:string}>();
  if(!client)return Response.json({error:'Клиент не найден'},{status:404});
  try{return Response.json(postalFormData(order,JSON.parse(client.data),settings.sender),{headers:{'Cache-Control':'no-store'}});}

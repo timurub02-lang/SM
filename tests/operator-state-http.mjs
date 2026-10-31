@@ -1,3 +1,4 @@
+import {controlSocket} from './fixtures/control-socket.mjs';
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -11,7 +12,7 @@ import {hashPassword} from '../lib/auth-crypto.ts';
 
 const dir=mkdtempSync(join(tmpdir(),'oktell-reset-')),file=join(dir,'test.sqlite');
 const db=new DatabaseSync(file),origin='https://crm.test',base='http://127.0.0.1:3326';
-const sock=join(dir,'bridge.sock');let server,logs='',bridgeRequests=0,lastBody,lastUrl; const actor='E-43a21d76-351';
+const sock=controlSocket(join(dir,'bridge.sock'));let server,logs='',bridgeRequests=0,lastBody,lastUrl; const actor='E-43a21d76-351';
 const bridge=http.createServer((req,res)=>{bridgeRequests++;lastUrl=req.url;let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{lastBody=raw?JSON.parse(raw):null;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({state:'break',checkedAt:new Date().toISOString()}));});});
 await new Promise(r=>bridge.listen(sock,r));
 async function boot(){

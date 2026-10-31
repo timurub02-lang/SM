@@ -33,7 +33,14 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
   const staff=(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data));
   const ids=Object.entries(mapping).filter(([id])=>staff.some((e:any)=>e.id===id)).map(([,id])=>id),reverse=new Map(Object.entries(mapping).map(([id,sk])=>[sk,id]));
   if(new Set(ids).size!==ids.length)throw Error('Повторяющиеся связи сотрудников Скорозвона');
-  const usersRaw=await api('/api/v2/users?length=100'),users=Array.isArray(usersRaw)?usersRaw:usersRaw.data;if(!Array.isArray(users))throw Error('Скорозвон: неожиданный список сотрудников');
+  const users:any[]=[],seenUsers=new Set();
+  for(let page=1;page<=100;page++){
+   const raw=await api('/api/v2/users?length=100&page='+page),part=Array.isArray(raw)?raw:raw.data;
+   if(!Array.isArray(part))throw Error('Скорозвон: неожиданный список сотрудников');
+   for(const user of part){if(user?.id===undefined||seenUsers.has(user.id))throw Error('Скорозвон: повтор или некорректная страница сотрудников');seenUsers.add(user.id);users.push(user);}
+   if(part.length<100)break;
+   if(page===100)throw Error('Скорозвон: список сотрудников неполный');
+  }
   if(ids.some(id=>!users.some((u:any)=>u.id===id)))throw Error('Скорозвон: не все связанные сотрудники доступны');
   const previous=await read('activity-samples')||{},schedules=await read('activity-schedules')||{};
   const firstSample=ids.some(skId=>previous[reverse.get(skId)!]?.day!==day);

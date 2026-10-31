@@ -39,4 +39,16 @@ assert.equal((await syncSkOrders(d,request,now,async()=>{})).imported,1);
 assert.equal((await syncSkOrders(d,request,now,async()=>{})).imported,0);
 const count=(await d.prepare('SELECT count(*) n FROM orders').first()).n;
 await assert.rejects(syncSkOrders(d,async()=>new Response('',{status:503}),now,async()=>{}));assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,count);
-d.close();console.log('SK orders: assignment, sheet K, duplicate delivery, conflict approval, address preservation, unknown sender, permissions, polling and provider errors passed');
+// Production access is stored outside employees.data.
+await d.prepare('CREATE TABLE auth_accounts(employee_id TEXT PRIMARY KEY,enabled INTEGER)').run();
+await d.prepare('INSERT INTO auth_accounts VALUES(?,0)').bind(sender.id).run();
+const disabled={...input,callId:'6',phone:'79990000006'};
+assert.equal((await acceptSkOrder(d,disabled)).state,'pending');
+assert.equal(await d.prepare("SELECT id FROM orders WHERE id='SM-SK-6'").first(),null);
+await d.prepare('UPDATE auth_accounts SET enabled=1 WHERE employee_id=?').bind(sender.id).run();
+assert.equal((await acceptSkOrder(d,disabled)).state,'imported','An explicitly re-enabled operator can receive the pending order');
+let raced=false;
+const raceDb={...d,async batch(statements){if(!raced&&statements.some(s=>s.sql.startsWith('INSERT INTO orders'))){raced=true;await d.prepare('UPDATE auth_accounts SET enabled=0 WHERE employee_id=?').bind(sender.id).run();}return d.batch(statements);}};
+await assert.rejects(acceptSkOrder(raceDb,{...input,callId:'7',phone:'79990000007'}),/сотрудник изменился/);
+assert.equal(raced,true);assert.equal(await d.prepare("SELECT id FROM orders WHERE id='SM-SK-7'").first(),null);assert.equal(await d.prepare("SELECT id FROM clients WHERE id='C-SK-7'").first(),null);
+d.close();console.log('SK orders: assignment, sheet K, duplicate delivery, conflict approval, address preservation, unknown/disabled sender, permissions, polling and provider errors passed');

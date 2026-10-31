@@ -85,6 +85,20 @@ await assert.rejects(syncActivity(d,async(url,options)=>{if(new URL(url).pathnam
 assert.equal(dateFailures,1);assert.equal((await saved('activity-health')).retryAt,new Date(now+720000).toISOString());
 assert.equal((await syncActivity(d,async()=>{assert.fail('HTTP-date cooldown must be respected');},now+600000)).deferred,true);
 await syncActivity(d,request,now+721000);
+// Linked employees can be beyond the first provider page (100 operators plus other staff).
+const userPages=[];
+await syncActivity(d,async(url,options)=>{
+ const u=new URL(url);
+ if(u.pathname==='/api/v2/users'){
+  const page=Number(u.searchParams.get('page'));userPages.push(page);
+  return Response.json(page===1?Array.from({length:100},(_,i)=>({id:1000+i,uuid:'other-'+i})):users);
+ }
+ return request(url,options);
+},now+722000);
+assert.deepEqual(userPages,[1,2]);
+assert.equal((await saved('activity-health')).ok,true);
+await assert.rejects(syncActivity(d,async(url,options)=>new URL(url).pathname==='/api/v2/users'?Response.json(Array.from({length:100},(_,i)=>({id:1000+i}))):request(url,options),now+723000));
+assert.equal((await saved('activity-health')).lastSuccessAt,new Date(now+722000).toISOString(),'A repeated user page cannot advance the successful checkpoint');
 await assert.rejects(syncActivity(d,async()=>{throw Error('secret token must not be exposed')},now+180000));
 const health=JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='activity-health'").first()).data);assert.equal(health.ok,false);assert.ok(!health.message.includes('secret'));
 d.close();console.log('Activity: schedules, live states, breaks, department isolation, pagination, UTC dates, idempotent alerts, rate-limit pacing, bounded retries, cooldown, recovery and outage checks passed');

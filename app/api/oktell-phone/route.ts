@@ -11,7 +11,7 @@ import {clientPhones} from '@/lib/client-call-targets';
 export const dynamic='force-dynamic';
 const input=z.object({action:z.enum(['connect','heartbeat','disconnect','call']),tab:z.string().uuid(),mode:z.enum(['client','order','incoming']).optional(),orderId:z.string().min(1).max(100).optional(),incomingId:z.string().min(1).max(100).optional(),clientId:z.string().max(100).optional(),phoneKey:z.string().max(64).optional()}).strict();
 function control(actorId:string,body?:unknown){return new Promise<any>((resolve,reject)=>{
- const r=http.request({socketPath:process.env.OKTELL_CONTROL_SOCKET||'/run/sm-oktell-bridge/control.sock',path:'/browser-phone?actor='+encodeURIComponent(actorId),method:body?'POST':'GET',headers:{'Content-Type':'application/json'}},s=>{let raw='';s.on('data',x=>{raw+=x;if(raw.length>16000)r.destroy(Error('Invalid bridge response'));});s.on('end',()=>{try{const data=JSON.parse(raw);if(s.statusCode!==200)reject(Object.assign(Error(data.error||'Oktell недоступен'),{status:s.statusCode}));else resolve(data);}catch(e){reject(e);}});});
+ const r=http.request({socketPath:process.env.OKTELL_CONTROL_SOCKET||'/run/sm-oktell-bridge/control.sock',path:'/browser-phone?actor='+encodeURIComponent(actorId),method:body?'POST':'GET',headers:{'Content-Type':'application/json'}},s=>{let raw='';s.on('error',reject);s.on('data',x=>{raw+=x;if(raw.length>16000)r.destroy(Error('Invalid bridge response'));});s.on('end',()=>{try{const data=JSON.parse(raw);if(s.statusCode!==200)reject(Object.assign(Error(data.error||'Oktell недоступен'),{status:s.statusCode}));else resolve(data);}catch(e){reject(e);}});});
  r.on('error',reject);r.setTimeout(20000,()=>r.destroy(Error('Oktell не ответил вовремя')));r.end(body?JSON.stringify(body):undefined);
 });}
 async function actor(req:Request){const a=await sessionEmployee(req.headers);return hasOktellLink(a)?a:null;}
@@ -33,8 +33,7 @@ export async function POST(req:Request){
     else{const result=await clientPhones(a,mode==='order'?{mode,orderId:b.orderId}:{mode,clientId:b.clientId});clientId=result.clientId;const selected=b.phoneKey?result.phones.find(p=>p.key===b.phoneKey):result.phones[0];if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');number=selected.number;}
    }catch(e){throw Object.assign(e instanceof Error?e:Error('Нет доступа к номеру клиента'),{status:403});}
    await initPhone(db());const callId=crypto.randomUUID().replaceAll('-','');
-   await db().prepare("INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status,detail) VALUES(?,?,?,?,?,?,?,'preparing',?)").bind(callId,clientId,mode==='order'?b.orderId:null,a.id,a.name,'',new Date().toISOString(),'Oktell / МТС · звонок клиенту').run();
-   if(mode==='incoming')await db().prepare('INSERT INTO phone_call_incoming(call_id,incoming_id) VALUES(?,?)').bind(callId,b.incomingId).run();
+   await db().batch([db().prepare("INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status,detail) VALUES(?,?,?,?,?,?,?,'preparing',?)").bind(callId,clientId,mode==='order'?b.orderId:null,a.id,a.name,'',new Date().toISOString(),'Oktell / МТС · звонок клиенту'),...(mode==='incoming'?[db().prepare('INSERT INTO phone_call_incoming(call_id,incoming_id) VALUES(?,?)').bind(callId,b.incomingId)]:[])]);
    try{await control(a.id,{action:'authorize',actor:a.id,owner,destination:number,callId});}
    catch(e){await db().prepare("UPDATE phone_calls SET status='failed',ended_at=?,detail=? WHERE id=?").bind(new Date().toISOString(),'Oktell / МТС · не удалось подготовить вызов',callId).run();throw e;}
    return Response.json({callId,destination:number},{headers:{'Cache-Control':'no-store'}});
