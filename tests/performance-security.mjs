@@ -5,6 +5,11 @@ import {readLimitedText,BodyTooLarge} from '../lib/request-body.ts';
 import {byteRange} from '../lib/byte-range.ts';
 import {visibleState} from '../lib/permissions.ts';
 const url='https://crm.test/api/crm';
+const originalFetch=globalThis.fetch;
+try{
+ globalThis.fetch=function(){assert.ok(this===undefined||this===globalThis,'Fetch must not receive SnapshotReader as its browser receiver');return Promise.resolve(Response.json({ok:true}));};
+ assert.deepEqual(await new SnapshotReader(url).read(),{ok:true});
+}finally{globalThis.fetch=originalFetch;}
 let requests=0,finish;
 const reader=new SnapshotReader(url,()=>{requests++;return new Promise(resolve=>finish=resolve);});
 const first=reader.read(),second=reader.read();assert.equal(first,second);assert.equal(requests,1);
