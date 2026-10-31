@@ -21,7 +21,8 @@ export async function GET(req:Request){
   let source=null,error='';try{source=await pilotControl('/delivery');}catch(e){error=e instanceof Error?e.message:'Нет связи с Oktell';}
   const page=z.coerce.number().int().min(0).max(100000).parse(new URL(req.url).searchParams.get('queuePage')||0);
   const followup=await readOktellFollowup(d,page);
-  return Response.json({source,error,jobs,followup},{headers:{'Cache-Control':'no-store'}});
+  const imports=(await d.prepare('SELECT session,base,filename,MIN(created_at) created_at,COUNT(*) total FROM base_import_members GROUP BY session,base,filename ORDER BY created_at DESC LIMIT 100').all()).results;
+  return Response.json({source,error,jobs,followup,imports},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось прочитать загрузки'},{status:502});}
 }
 export async function POST(req:Request){

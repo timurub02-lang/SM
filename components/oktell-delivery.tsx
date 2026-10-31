@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
+type ImportBatch={session:string;base:string;filename:string;created_at:string;total:number};
 type Source={taskId:string;sourcePresent:boolean;sourceAttached:boolean;paused:boolean;contacts:number;sessions:number};
 type Job={id:string;state:string;created_at:string;error:string;total:number;selection:{base:'M'|'J';sheet:string;count:number}};
 type Followup={total:number;page:number;rows:{task_id:string;client_id:string;name:string|null;phone:string|null;reason:string;updated_at:string}[]};
@@ -10,14 +11,15 @@ const skipNames:Record<string,string>={assigned:'Закреплены за оп�
 export function OktellDelivery({base,sheet,onDone}:{base:'M'|'J';sheet:string;onDone:()=>void}){
  const [open,setOpen]=useState(false),[source,setSource]=useState<Source|null>(null),[jobs,setJobs]=useState<Job[]>([]),[count,setCount]=useState('100'),[preview,setPreview]=useState<Preview|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState(''),[sourceError,setSourceError]=useState(''),[notice,setNotice]=useState('');
  const [followup,setFollowup]=useState<Followup>({total:0,page:0,rows:[]});
+ const [imports,setImports]=useState<ImportBatch[]>([]),[importSession,setImportSession]=useState('');
  const uploadId=useRef('');
  async function api<T>(body?:unknown,page=0):Promise<T>{const r=await fetch('/api/oktell-delivery?queuePage='+page,{method:body?'POST':'GET',cache:'no-store',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(25000)});const data=await r.json() as T&{error?:string};if(!r.ok)throw Error(data.error||'Не удалось выполнить действие');return data;}
- async function refresh(page=0){const data=await api<{source:Source|null;error:string;jobs:Job[];followup:Followup}>(undefined,page);setFollowup(data.followup);setSource(data.source);setSourceError(data.error||'');setJobs(data.jobs);}
+ async function refresh(page=0){const data=await api<{source:Source|null;error:string;jobs:Job[];followup:Followup;imports:ImportBatch[]}>(undefined,page);setImports(data.imports);setFollowup(data.followup);setSource(data.source);setSourceError(data.error||'');setJobs(data.jobs);}
  async function queuePage(page:number){setBusy('queue');setError('');try{await refresh(page);}catch(e){setError(e instanceof Error?e.message:'Не удалось прочитать очередь');}finally{setBusy('');}}
  async function load(){setBusy('load');setError('');try{await refresh();}catch(e){setError(e instanceof Error?e.message:'Нет связи с CRM');}finally{setBusy('');}}
  useEffect(()=>{if(open){setPreview(null);setNotice('');uploadId.current='';void load();}},[open,base,sheet]);
  const available=!!source?.sourcePresent&&source.paused&&source.sessions===0;
- const selection={base,sheet,count:Number(count),taskId:source?.taskId};
+ const selection={base,sheet,...(importSession?{importSession}:{}),count:Number(count),taskId:source?.taskId};
  async function check(){setBusy('preview');setError('');setNotice('');setPreview(null);try{const data=await api<Preview>({action:'preview',selection});setPreview(data);uploadId.current=crypto.randomUUID();}catch(e){setError(e instanceof Error?e.message:'Не удалось проверить состав');}finally{setBusy('');}}
  async function upload(){if(!preview||!uploadId.current)return;setBusy('upload');setError('');try{const r=await api<{state:string;accepted?:number}>({action:'upload',selection,id:uploadId.current,fingerprint:preview.fingerprint});setNotice(r.state==='cancelled'?'Эта загрузка уже отменена.':`Oktell подтвердил приём ${r.accepted??preview.selected} клиентов. Звонки не запускались.`);setPreview(null);onDone();}catch(e){setError((e instanceof Error?e.message:'Ответ не получен')+' Проверьте журнал загрузок ниже перед новой отправкой.');}finally{try{await refresh();}catch{}setBusy('');}}
  async function act(action:'retry'|'cancel'|'complete',id:string){setBusy(id);setError('');setNotice('');try{const r=await api<{state:string}>({action,id});setNotice(r.state==='completed'?'Oktell подтвердил завершение. Резерв партии снят, история сохранена.':r.state==='cancelled'?'Загрузка отменена. Клиенты снова доступны в CRM.':'Приём клиентов подтверждён Oktell. Звонки не запускались.');setPreview(null);onDone();}catch(e){setError(e instanceof Error?e.message:'Нет подтверждения Oktell');}finally{try{await refresh();}catch{}setBusy('');}}
@@ -29,6 +31,7 @@ export function OktellDelivery({base,sheet,onDone}:{base:'M'|'J';sheet:string;on
    {(sourceError||!source?.sourcePresent)&&!busy&&<p role="alert">{sourceError||'Источник клиентов в Oktell пока недоступен.'}</p>}
    {source&&source.sessions>0&&<p role="status">Дождитесь завершения текущих звонков, затем обновите состояние.</p>}
    <form className="stack" onSubmit={e=>{e.preventDefault();void check();}}>
+    <label className="field"><span>Состав загрузки</span><select disabled={!!busy} value={importSession} onChange={e=>{setImportSession(e.target.value);setPreview(null);uploadId.current='';}}><option value="">Весь выбранный лист</option>{imports.filter(i=>i.base===base).map(i=><option key={i.session} value={i.session}>{i.filename} · {new Date(i.created_at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} · {i.total} клиентов</option>)}</select><small>При выборе файла берутся только его клиенты, находящиеся в этом листе. Ограничения обзвона сохраняются.</small></label>
     <label className="field"><span>Количество клиентов</span><input type="number" min="1" max="1000" step="1" required value={count} disabled={!!busy} onChange={e=>{setCount(e.target.value);setPreview(null);uploadId.current='';}}/><small>До 1 000 за одну загрузку. Закреплённые, недоступные и уже отправленные клиенты будут исключены.</small></label>
     <div className="action-buttons"><button className="secondary" type="submit" disabled={!!busy||!available}>{busy==='preview'?'Проверяем состав…':'Проверить состав'}</button><button className="secondary" type="button" disabled={!!busy} onClick={()=>void load()}>Обновить состояние</button></div>
    </form>
