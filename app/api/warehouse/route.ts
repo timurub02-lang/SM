@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -28,7 +29,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>4000)throw Error();const p=JSON.parse(raw);
+  const raw=await readLimitedText(req,16000);if(raw.length>4000)throw Error();const p=JSON.parse(raw);
   if(!await permitted(z.string().parse(p.actorId)))return Response.json({error:'Склад доступен администратору и логисту'},{status:403});
   await init();if(p.action==='stock'){
    const movement=z.object({id:z.string().uuid(),productId:z.string().min(1),quantity:z.number().int().min(1).max(1000000),kind:z.enum(['add','remove']),reason:z.string().trim().min(1,'Укажите основание движения').max(500)}).parse(p.movement);

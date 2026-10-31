@@ -1,4 +1,6 @@
-import {readFile} from 'node:fs/promises';
+import {open} from 'node:fs/promises';
+import {Readable} from 'node:stream';
+import {byteRange} from '@/lib/byte-range';
 import {join} from 'node:path';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -13,10 +15,19 @@ export const GET=authenticated(async req=>{
  await initPhone(db());const c=await db().prepare(masked?'SELECT * FROM replacement_calls WHERE id=?':'SELECT * FROM phone_calls WHERE id=?').bind(id).first<PhoneCall>();
  if(!c||!c.recording||!masked&&!(await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
  try{
-  const audio=await readFile(join(process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings',id+'.wav'));
+  const file=await open(join(process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings',id+'.wav'),'r');
+  let streaming=false;
+  try{
+  const {size}=await file.stat();
   const headers:Record<string,string>={'Content-Type':'audio/wav','Cache-Control':'private, no-store','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff','Content-Disposition':`inline; filename="call-${id}.wav"`};
-  const range=req.headers.get('range');let start=0,end=audio.length-1;
-  if(range){const m=/^bytes=(\d*)-(\d*)$/.exec(range);if(!m||(!m[1]&&!m[2]))return new Response(null,{status:416,headers:{'Content-Range':`bytes */${audio.length}`}});start=m[1]?Number(m[1]):Math.max(0,audio.length-Number(m[2]));end=m[1]&&m[2]?Math.min(Number(m[2]),end):end;if(!Number.isSafeInteger(start)||start<0||start>end)return new Response(null,{status:416,headers:{'Content-Range':`bytes */${audio.length}`}});headers['Content-Range']=`bytes ${start}-${end}/${audio.length}`;}
-  headers['Content-Length']=String(end-start+1);return new Response(new Uint8Array(audio.subarray(start,end+1)),{status:range?206:200,headers});
+  const range=req.headers.get('range'),selected=byteRange(range,size);
+  if(!selected)return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`}});
+  const {start,end}=selected;
+  if(range)headers['Content-Range']=`bytes ${start}-${end}/${size}`;
+  headers['Content-Length']=String(end-start+1);
+  if(!size)return new Response(null,{headers});
+  const stream=file.createReadStream({start,end,autoClose:true});streaming=true;
+  return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>,{status:range?206:200,headers});
+  }finally{if(!streaming)await file.close();}
  }catch{return new Response('Запись пока недоступна. Обновите историю позже.',{status:404});}
 });

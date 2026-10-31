@@ -1,7 +1,9 @@
 import {initBaseMovements} from './base-movements.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
+export const workingClientsQuery="SELECT data,version FROM clients WHERE id IN (SELECT id FROM clients WHERE COALESCE(json_extract(data,'$.owner'),'')<>'' UNION SELECT client_id FROM orders UNION SELECT ?) ORDER BY id";
 export async function initBaseStorage(d:Db){
  await initBaseMovements(d);
+ await d.prepare("CREATE INDEX IF NOT EXISTS idx_clients_owned ON clients(id) WHERE COALESCE(json_extract(data,'$.owner'),'')<>''").run();
  await d.prepare('CREATE TABLE IF NOT EXISTS client_phone_index(phone TEXT PRIMARY KEY,client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE)').run();
  const source="SELECT phone AS value FROM clients WHERE id=NEW.id UNION SELECT value FROM json_each(COALESCE(json_extract(NEW.data,'$.linkedPhones'),'[]'))";
  const clean="replace(replace(replace(replace(replace(value,'+',''),' ',''),'-',''),'(',''),')','')";

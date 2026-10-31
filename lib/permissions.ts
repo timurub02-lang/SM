@@ -12,6 +12,10 @@ export function seesOrder(e:Employee,o:Order,staff:Employee[]){
  if(isLogistic(e.role))return true;
  return e.role==='redemption'&&['shipping','pickup','redeemed','returned'].includes(o.status);
 }
+export function hideClientNumbers(c:Client):Client{
+ // Imported columns can repeat the main and linked phone numbers.
+ return {...c,phone:'',linkedPhones:undefined,importFields:undefined};
+}
 export function visibleState(s:State,e:Employee):State{
  if(e.role==='admin')return s;
  if(e.role==='purchasing')return {clients:[],orders:[],employees:[e],events:[],incoming:[],settings:{retentionDays:0}};
@@ -21,11 +25,12 @@ export function visibleState(s:State,e:Employee):State{
  }
  const ownedClientIds=new Set(s.clients.filter(c=>ownsClient(e,c,s.employees)).map(c=>c.id));
  const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)||ownedClientIds.has(o.clientId));const orderIds=new Set(orders.map(o=>o.id));
- const clients=s.clients.filter(c=>ownsClient(e,c,s.employees)||orders.some(o=>o.clientId===c.id));const ids=new Set(clients.map(c=>c.id));
+ const orderClientIds=new Set(orders.map(o=>o.clientId));
+ const clients=s.clients.filter(c=>ownedClientIds.has(c.id)||orderClientIds.has(c.id));const ids=new Set(clients.map(c=>c.id));
  const staffIds=new Set([e.id,...orders.flatMap(o=>[o.manager,o.logistic]),...clients.map(c=>c.owner)]);
  const employees=s.employees.filter(x=>staffIds.has(x.id)||canCreateRedemptionStaff(e)&&x.role==='redemption'||isLogistic(e.role)&&x.role==='courier'||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&!!e.department&&x.department===e.department).map(x=>({...x,leaderPremium:x.id===e.id?x.leaderPremium:undefined,salary:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.salary:0,bonus:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.bonus:0}));
  const hidePhone=e.role==='operator'||e.role==='department_head';
- return {...s,clients:clients.map(c=>hidePhone?{...c,phone:''}:c),orders:orders.map(o=>{if(isLogistic(e.role))return o;const {paymentReceipt,...rest}=o;return {...rest,paymentReceivedAmount:paymentReceipt?.amount};}),employees,events:s.events.filter(x=>ids.has(x.clientId)&&(!x.orderId||orderIds.has(x.orderId))),incoming:(s.incoming||[]).filter(x=>ids.has(x.clientId||''))};
+ return {...s,clients:clients.map(c=>hidePhone?hideClientNumbers(c):c),orders:orders.map(o=>{if(isLogistic(e.role))return o;const {paymentReceipt,...rest}=o;return {...rest,paymentReceivedAmount:paymentReceipt?.amount};}),employees,events:s.events.filter(x=>ids.has(x.clientId)&&(!x.orderId||orderIds.has(x.orderId))),incoming:(s.incoming||[]).filter(x=>ids.has(x.clientId||''))};
 }
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};

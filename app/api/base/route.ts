@@ -26,7 +26,7 @@ export const POST=authenticated(async req=>{if(!await admin(req))return Response
  if(input.action==='dispatch'){const p=z.object({base:z.enum(['M','J']),sheet:z.string().max(60),project:z.string().regex(/^\d+$/),count:z.number().int().min(1).max(100000)}).parse(input);return Response.json(await queueBaseDispatch(db(),p));}
  if(input.action==='import')return Response.json(await importBase(input,new URL(req.url).searchParams.get('actorId')||''));
  if(input.action==='assign'){
- const p=z.object({base:z.enum(['M','J']),sheet:z.string().min(1).max(60),operator:z.string().min(1).max(100),count:z.number().int().min(1).max(1000),freshOnly:z.boolean().default(false)}).parse(input);
+ const p=z.object({base:z.enum(['M','J']),sheet:z.string().min(1).max(60),operator:z.string().min(1).max(100),count:z.number().int().min(1).max(1000),freshOnly:z.boolean().prefault(false)}).parse(input);
  if(['К','ЧС','ПВ'].includes(p.sheet))throw Error('Этот лист не участвует в раздаче');
  const employee=await db().prepare("SELECT data FROM employees WHERE id=?").bind(p.operator).first<{data:string}>();const operator:Employee=employee?JSON.parse(employee.data):null;
  if(!operator||operator.role!=='operator'||operator.baseAccess&&operator.baseAccess!=='both'&&operator.baseAccess!==p.base)throw Error('Оператор не обрабатывает выбранную базу');

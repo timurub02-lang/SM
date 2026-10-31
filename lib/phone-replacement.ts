@@ -3,7 +3,7 @@ import type {ActivityDb as Db} from './activity-store.ts';
 import {initPhone,normalizeOutgoingNumber} from './phone-store.ts';
 import {statuses,normalizePhone,type Order} from './crm.ts';
 import {cdekStatuses} from './cdek-statuses.ts';
-const rule=z.object({crm:z.array(z.string()).default([]),cdek:z.array(z.string()).default([])});
+const rule=z.object({crm:z.array(z.string()).prefault([]),cdek:z.array(z.string()).prefault([])});
 export const replacementSchema=z.object({enabled:z.boolean(),threshold:z.number().int().min(0).max(1000000),enable:rule,release:rule}).superRefine((v,c)=>{
  for(const name of ['enable','release'] as const){for(const value of v[name].crm)if(!(value in statuses))c.addIssue({code:'custom',message:'Неизвестный статус CRM'});for(const value of v[name].cdek)if(!cdekStatuses.some(s=>s.code===value))c.addIssue({code:'custom',message:'Неизвестный статус СДЭК'});}
 });

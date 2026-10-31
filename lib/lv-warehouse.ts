@@ -2,7 +2,7 @@ import {z} from 'zod';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {inventorySQL,migrateCourierStock,migrateLegacyLvStock} from './inventory-sql.ts';
 
-export const lvConfigSchema=z.object({host:z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]*\.leadvertex\.ru$/,'Укажите адрес проекта вида project.leadvertex.ru'),token:z.string().trim().min(1).max(512),enabled:z.boolean(),trackCrm:z.boolean(),links:z.record(z.string(),z.string()).default({})});
+export const lvConfigSchema=z.object({host:z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]*\.leadvertex\.ru$/,'Укажите адрес проекта вида project.leadvertex.ru'),token:z.string().trim().min(1).max(512),enabled:z.boolean(),trackCrm:z.boolean(),links:z.record(z.string(),z.string()).prefault({})});
 export type LvConfig=z.infer<typeof lvConfigSchema>;
 type Good={id:string;name:string;available:number;active:boolean;weight:number|null;length:number|null;width:number|null;height:number|null;tag:string;price:number|null};
 const integer=z.coerce.number().int().safe();

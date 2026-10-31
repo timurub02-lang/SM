@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import http from 'node:http';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
@@ -21,7 +22,7 @@ export async function GET(req:Request){
 export async function POST(req:Request){
  const a=await actor(req);if(!a||!trustedOrigin(req.headers))return Response.json({error:'Нет доступа'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>2048)return Response.json({error:'Слишком большой запрос'},{status:413});
+  const raw=await readLimitedText(req,8192);if(raw.length>2048)return Response.json({error:'Слишком большой запрос'},{status:413});
   const b=input.parse(JSON.parse(raw)),owner=createHash('sha256').update(cookieToken(req.headers)+':'+b.tab).digest('hex');
   if(b.action==='call'){
    const mode=b.mode||'client';
