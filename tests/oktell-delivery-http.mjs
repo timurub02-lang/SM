@@ -52,6 +52,23 @@ try{
   assert.equal((await call('/api/oktell-delivery',cookie,upload)).data.state,'delivered');assert.equal(receipts.size,1);
   assert.equal((await call('/api/oktell-delivery',cookie,{action:'cancel',id})).data.state,'cancelled');
   const history=await call('/api/oktell-delivery',cookie);assert.equal(history.data.jobs[0].state,'cancelled');assert.equal(history.data.source.contacts,0);
+  const session=crypto.randomUUID(),revision=JSON.parse(d.prepare("SELECT data FROM settings WHERE id='base-settings'").get().data).revision;
+  const original=JSON.parse(d.prepare("SELECT data FROM clients WHERE id='C-fixture-4'").get().data);
+  const importBody={action:'import',base:'M',filename:'synthetic.xlsx',session,offset:0,revision,copyFields:true,rows:[
+   {row:2,phone:'79990000001',name:'File name',fields:{Город:'Тест',ДАТА:'2026-01-02','Круг 1 — партия':'4'}},
+   {row:3,phone:'79990000004',name:'Must not overwrite',fields:{'Круг 1 — заказы':'2'}},
+   {row:4,phone:'79990000007',name:'New file client',fields:{ДАТА:'2026-02-03'}}]};
+  assert.equal((await call('/api/base?actorId=admin',cookie,{...importBody,apply:false})).data.applied,false);
+  assert.equal(d.prepare('SELECT COUNT(*) n FROM base_import_members').get().n,0);
+  const imported=await call('/api/base?actorId=admin',cookie,{...importBody,apply:true});assert.equal(imported.status,200);assert.equal(imported.data.fieldsUpdated,2);assert.equal(imported.data.added,1);
+  assert.equal((await call('/api/base?actorId=admin',cookie,{...importBody,apply:true})).data.applied,true);
+  assert.equal(d.prepare('SELECT COUNT(*) n FROM base_import_members').get().n,3);
+  const changed=JSON.parse(d.prepare("SELECT data FROM clients WHERE id='C-fixture-4'").get().data);
+  assert.equal(changed.owner,original.owner);assert.equal(changed.name,original.name);assert.equal(changed.importFields['Круг 1 — заказы'],'2');
+  const scoped=await call('/api/oktell-delivery',cookie,{action:'preview',selection:{...selection,count:100,importSession:session}});
+  assert.equal(scoped.status,200);assert.equal(scoped.data.total,3);assert.equal(scoped.data.selected,2);assert.equal(scoped.data.skipped.assigned,1);
+  assert.equal((await call('/api/oktell-delivery',cookie,{action:'preview',selection:{...selection,importSession:crypto.randomUUID()}})).status,409);
+  assert.equal((await call('/api/oktell-delivery',cookie)).data.imports[0].total,3);
   assert.ok(requests.every(p=>p==='/delivery'));console.log('PASS: admin-only delivery HTTP, origin checks, bounded preview, durable uncertain upload, replay and confirmed cancellation; no calls');
  }
 }catch(e){console.error(logs.slice(-5000));throw e;}finally{await cleanup();}

@@ -4,7 +4,7 @@ export type ExistingClient={id:string;phone:string;linkedPhones?:string[];baseTy
 export function planImport(rows:ImportRow[],existing:ExistingClient[],base:'M'|'J',target:string,choices:Record<string,'M'|'J'>={}){
  const byPhone=new Map<string,ExistingClient[]>();for(const c of existing)for(const raw of [c.phone,...c.linkedPhones||[]]){const n=normalizedPhone(raw);if(n)byPhone.set(n,[...byPhone.get(n)||[],c]);}
  const seen=new Set<string>(),protectedSheets=new Set(['К','П','ЧС','ПВ',target]);
- const result={added:[] as ImportRow[],moved:[] as {client:ExistingClient;sheet:string;baseType:'M'|'J'}[],skipped:0,duplicates:0,invalid:[] as {row:number;phone:string;reason:string}[],conflicts:[] as {phone:string;clientId:string;name:string;baseType:string}[]};
+ const result={added:[] as ImportRow[],matched:[] as {client:ExistingClient;row:ImportRow}[],moved:[] as {client:ExistingClient;sheet:string;baseType:'M'|'J'}[],skipped:0,duplicates:0,invalid:[] as {row:number;phone:string;reason:string}[],conflicts:[] as {phone:string;clientId:string;name:string;baseType:string}[]};
  for(const row of rows){const phone=normalizedPhone(row.phone);if(!phone){result.invalid.push({row:row.row,phone:row.phone,reason:row.phone?'Некорректный российский телефон':'Пустой телефон'});continue;}
  const phones=[...new Set([phone,...(row.linkedPhones||[]).map(normalizedPhone).filter(Boolean)])];
  const matches=[...new Map(phones.flatMap(n=>byPhone.get(n)||[]).map(c=>[c.id,c])).values()];
@@ -15,6 +15,7 @@ export function planImport(rows:ImportRow[],existing:ExistingClient[],base:'M'|'
  if(c){const current=c.baseType||'M';if(current!==base&&!choices[c.id]){result.conflicts.push({phone,clientId:c.id,name:String(c.name||''),baseType:current});continue;}
  const destination=choices[c.id]||base;
  if(destination!==base){result.skipped++;continue;}
+ result.matched.push({client:c,row});
  const sheet=c.owner?'К':String(c.sheet||'Т1');
  if(protectedSheets.has(sheet)){if(current!==base)result.moved.push({client:c,sheet,baseType:base});else result.skipped++;continue;}
  result.moved.push({client:c,sheet:target,baseType:base});

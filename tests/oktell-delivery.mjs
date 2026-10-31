@@ -11,6 +11,10 @@ for(const [id,phone,owner,sheet,releasedAt] of [['C-1','+79990000001','','Т1',n
 }
 const p=await previewOktellDelivery(d,selection,now);assert.equal(p.selected,1);assert.equal(p.skipped.assigned,1);assert.equal(p.skipped.invalid,1);assert.equal(p.skipped.cooling,1);assert.equal(p.skipped.duplicate,1);
 await assert.rejects(()=>previewOktellDelivery(d,{...selection,sheet:'ЧС'},now),/не участвуют/);
+const fileSession=crypto.randomUUID();
+await d.prepare('INSERT INTO base_import_members VALUES(?,?,?,?,?)').bind(fileSession,'C-2','M','fixture.xlsx',now.toISOString()).run();
+const filePreview=await previewOktellDelivery(d,{...selection,importSession:fileSession},now);assert.equal(filePreview.total,1);assert.equal(filePreview.selected,0);assert.equal(filePreview.skipped.assigned,1);
+await assert.rejects(()=>previewOktellDelivery(d,{...selection,importSession:crypto.randomUUID()},now),/не найден/);
 const id=crypto.randomUUID();assert.equal((await reserveOktellDelivery(d,'admin',id,selection,p.fingerprint,now)).state,'reserved');
 assert.equal((await reserveOktellDelivery(d,'admin',id,selection,p.fingerprint,now)).replayed,true);
 await assert.rejects(()=>reserveOktellDelivery(d,'someone',id,selection,p.fingerprint,now),/уже использован/);

@@ -1,3 +1,4 @@
+import {initImportMembers} from './base-import-members.ts';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import type {ActivityDb as Db} from './activity-store.ts';
@@ -7,10 +8,10 @@ import {initBaseDispatch} from './base-dispatch.ts';
 import {pilotControl} from './oktell-pilot-control.ts';
 import phoneTime from './phone-timezone.cjs';
 
-export const deliverySelection=z.object({taskId:z.string().uuid().transform(v=>v.toLowerCase()),base:z.enum(['M','J']),sheet:z.string().trim().min(1).max(60),count:z.number().int().min(1).max(1000)}).strict();
+export const deliverySelection=z.object({importSession:z.string().uuid().optional(),taskId:z.string().uuid().transform(v=>v.toLowerCase()),base:z.enum(['M','J']),sheet:z.string().trim().min(1).max(60),count:z.number().int().min(1).max(1000)}).strict();
 type Selection=z.infer<typeof deliverySelection>;
 export async function initOktellDelivery(d:Db){
- await initBaseDispatch(d);
+ await initBaseDispatch(d);await initImportMembers(d);
  await d.prepare(`CREATE TABLE IF NOT EXISTS oktell_deliveries(id TEXT PRIMARY KEY,actor TEXT NOT NULL,selection TEXT NOT NULL,fingerprint TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,error TEXT NOT NULL DEFAULT '')`).run();
  await d.prepare(`CREATE TABLE IF NOT EXISTS oktell_delivery_items(job_id TEXT NOT NULL REFERENCES oktell_deliveries(id),client_id TEXT NOT NULL,phone TEXT NOT NULL,client_version INTEGER NOT NULL,name TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'reserved',PRIMARY KEY(job_id,client_id))`).run();
  await d.prepare("CREATE UNIQUE INDEX IF NOT EXISTS oktell_delivery_client ON oktell_delivery_items(client_id) WHERE state IN ('reserved','delivered')").run();
@@ -28,7 +29,8 @@ export async function initOktellDelivery(d:Db){
 export async function previewOktellDelivery(d:Db,input:unknown,now=new Date()){
  const p=deliverySelection.parse(input);if(blockedSheets.includes(p.sheet as any))throw Error('Листы К, ЧС и ПВ не участвуют в обзвоне');
  await initOktellDelivery(d);
- const rows=(await d.prepare(`SELECT id,data,version FROM clients WHERE COALESCE(json_extract(data,'$.baseType'),'M')=? AND json_extract(data,'$.sheet')=? ORDER BY COALESCE(json_extract(data,'$.distributedAt'),''),id`).bind(p.base,p.sheet).all()).results;
+ if(p.importSession&&!await d.prepare('SELECT 1 FROM base_import_members WHERE session=? AND base=? LIMIT 1').bind(p.importSession,p.base).first())throw Error('Импорт файла не найден в выбранной базе');
+ const rows=(await d.prepare(`SELECT id,data,version FROM clients WHERE COALESCE(json_extract(data,'$.baseType'),'M')=? AND json_extract(data,'$.sheet')=? AND (? IS NULL OR id IN (SELECT client_id FROM base_import_members WHERE session=? AND base=?)) ORDER BY COALESCE(json_extract(data,'$.distributedAt'),''),id`).bind(p.base,p.sheet,p.importSession??null,p.importSession??null,p.base).all()).results;
  const reserved=new Set((await d.prepare("SELECT client_id FROM oktell_delivery_items WHERE state IN ('reserved','delivered','handed_off')").all()).results.map((r:any)=>r.client_id));
  const phones=new Set((await d.prepare("SELECT phone FROM oktell_delivery_items WHERE state IN ('reserved','delivered','handed_off')").all()).results.map((r:any)=>r.phone));
  const pendingSk=new Set((await d.prepare("SELECT client_id FROM base_dispatch_items WHERE state IN ('pending','sending','unknown')").all()).results.map((r:any)=>r.client_id));
