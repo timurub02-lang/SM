@@ -37,10 +37,18 @@ export type Employee={canCreateRedemptionStaff?:boolean;sz?:boolean;leaderPremiu
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
 export type IncomingRequest={spam?:boolean;spamReason?:string;callCount?:number;lastAt?:string;blocked?:boolean;sharedQueue?:boolean;id:string;clientId:string;at:string;text:string;source:string;clientName?:string;assigneeId?:string;assigneeName?:string;department?:string;phone?:string;calledNumber?:string;hasActiveOrder?:boolean;orderIds?:string[];closedAt?:string;closedBy?:string;reason?:string;orderId?:string};
 export type State={premiumActivePeriod?:string;premiumNextPeriod?:string;redemptionResults?:Record<string,import("./redemption-summary").RedemptionSummary>;redemptionStatuses?:string[];clientWork?:import("./client-work.ts").ClientWork[];clientReminders?:import("./client-reminders.ts").ClientReminder[];incomingOperators?:Pick<Employee,"id"|"name"|"department">[];tasks?:Reminder[];reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
-export const money=(n:number)=>new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:0,maximumFractionDigits:2}).format(n);
+const rubles=new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:0,maximumFractionDigits:2});
+export const money=(n:number)=>rubles.format(n);
 export const total=(o:Order)=>o.items.reduce((n,i)=>n+i.quantity*Math.round(i.price*100),0)/100;
 export const initials=(s:string)=>s.split(" ").slice(0,2).map(x=>x[0]).join("");
-export const stamp=(s:string,timeZone?:string)=>s?new Date(s).toLocaleString("ru-RU",{timeZone,day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+const dateFormats=new Map<string|undefined,Intl.DateTimeFormat>();
+export const stamp=(s:string,timeZone?:string)=>{
+ if(!s)return "—";
+ const date=new Date(s);if(Number.isNaN(date.getTime()))return "Invalid Date";
+ let format=dateFormats.get(timeZone);
+ if(!format){format=new Intl.DateTimeFormat("ru-RU",{timeZone,day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});dateFormats.set(timeZone,format);}
+ return format.format(date);
+};
 export const normalizePhone=(v:string)=>{let p=v.replace(/\D/g,"");if(p.length===10)p="7"+p;if(p.length===11&&p.startsWith("8"))p="7"+p.slice(1);return p.length===11&&p.startsWith("7")?"+"+p:"";};
 export const daysLeft=(c:Client)=>c.assignedUntil?Math.ceil((Date.parse(c.assignedUntil)-Date.now())/86400000):0;
 export const clientSchema=z.object({biography:z.string().trim().max(5000).optional(),name:z.string().trim().min(2,"Укажите имя клиента").max(150),phone:z.string().transform(normalizePhone).refine(Boolean,"Укажите российский телефон из 11 цифр"),city:z.string().trim().max(250).prefault(""),address:z.string().trim().max(500).prefault(""),addressParts:addressPartsSchema.optional(),source:z.string().trim().max(200).prefault("Вручную"),owner:z.string().max(100).prefault("")});
