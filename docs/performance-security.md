@@ -19,9 +19,13 @@ The CRM serves client cards, orders and telephony integrations. The target is up
 
 `tests/performance-security.mjs` exercises coalesced reads, late replies, private conditional responses, chunked/Unicode body limits, ranges and phone masking. `tests/working-clients.mjs` checks indexed selection, explicit cards, ownership changes and duplicate order clients. `tests/auth-http.mjs` checks 304 after authentication, account isolation and hidden imported phone numbers in the actual built HTTP API. Existing release checks continue to cover authorization, orders and telephony without calls.
 
-Dependency validation: `npm audit --omit=dev` reports zero advisories at the time of this change. The full development tree retains moderate minimatch warnings through ESLint's legacy API. These tools consume repository-controlled file patterns, are not part of the CRM request path, and are not fixed by forcing the incompatible minimatch 11 default export into ESLint. No claim of a completely vulnerability-free repository is made.
+Dependency validation: both full `npm audit` and `npm audit --omit=dev` report zero advisories at the time of the follow-up change on 2026-10-31. The 15 moderate development warnings were one minimatch advisory propagated through ESLint's dependency tree. ESLint and its React/import/accessibility plugins still require the v3 callable CommonJS export, while the patched upstream v11 uses a named export and removes regex generation.
 
-Security references: [Next.js October 14 update](https://nextjs.org/blog/nextjs-security-update-october-14-2026), [React RSC advisory](https://github.com/react/react/security/advisories/GHSA-xqc2-xf4c-x3h3).
+The development-only `tools/minimatch-compat` package delegates matching to pinned upstream minimatch 11.0.3. The scoped override replaces only v3 consumers; existing modern runtime dependencies retain their pins. The adapter exposes the callable export and the `makeRe(...).test(path)` interface consumed by `import/no-internal-modules`, using the upstream matcher instead of generating a regex. It is not a general v3 polyfill: callers requiring an actual RegExp are not supported. Remove the adapter and its direct development dependency once these ESLint consumers support patched minimatch natively. No vulnerability is suppressed or relabeled; the audited dependency graph includes the actual upstream matcher.
+
+`tests/lint-dependencies.mjs` verifies consumer resolution, file matching/ignores, the loaded Next/TypeScript configuration, and accepting/rejecting cases in React, import and accessibility rules. Release CI runs this check and the full dependency audit before building. Existing repository lint findings are not disabled by this change. No claim of a completely vulnerability-free repository is made.
+
+Security references: [Next.js October 14 update](https://nextjs.org/blog/nextjs-security-update-october-14-2026), [React RSC advisory](https://github.com/react/react/security/advisories/GHSA-xqc2-xf4c-x3h3), [minimatch advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
 
 ## Remaining limits
 

@@ -41,6 +41,10 @@ jobs:
           node-version: '24.21.0'
           cache: npm
       - run: npm ci --include=dev --include=optional --no-audit --no-fund
+      - name: Verify development dependency security and ESLint compatibility
+        run: |
+          npm audit --audit-level=moderate
+          node tests/lint-dependencies.mjs
       - run: npx next build --webpack
       - run: npx tsc --noEmit
       - name: Verify authentication and both calling routes without real calls
