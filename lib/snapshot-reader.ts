@@ -7,7 +7,7 @@ export class SnapshotReader<T> {
  private value:T|undefined;
  private url:string;
  private request:typeof fetch;
- constructor(url:string,request:typeof fetch=fetch){this.url=url;this.request=request;}
+ constructor(url:string,request:typeof fetch=(...args)=>fetch(...args)){this.url=url;this.request=request;}
  invalidate(){this.generation++;this.controller?.abort();this.pending=undefined;this.etag='';this.value=undefined;}
  read():Promise<T|null>{
   if(this.pending)return this.pending;
