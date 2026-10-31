@@ -1,0 +1,18 @@
+PBX call-result uploader
+
+scripts/pbx/crm-call.py requires a separate verified installation on the PBX host
+(MIRAN VM101), not on CRM VM100. The GitHub CRM runtime release does not install it.
+
+An answered recording larger than the 32 MiB API limit remains in the spool,
+with the original metadata renamed from <call-id>.json to <call-id>.deferred.
+A metadata acknowledgement does not acknowledge unsent audio. Deferred records
+are excluded from automatic upload retries so other calls continue.
+
+Monitor deferred-file counts in /var/spool/asterisk/crm-calls and recover those
+recordings separately. Do not remove their audio as part of normal queue cleanup.
+The CRM history will not advertise an uploaded recording until one is available.
+
+Replace the helper atomically after matching its installed source hash and
+running synthetic queue tests. An Asterisk restart is not required. Keep the
+previous helper outside the upload queue for rollback. The deferred data itself
+must be preserved across code rollback.

@@ -47,6 +47,22 @@ print('PBX queue: offline retry preserves audio, successful upload removes ackno
 
 with tempfile.TemporaryDirectory() as root:
     module.ROOT = Path(root)
+    call_id = 'b' * 32
+    result = module.ROOT / (call_id + '.json')
+    audio = module.ROOT / (call_id + '.wav')
+    result.write_text(json.dumps({**payload, 'id': call_id, 'analysis': analysis}))
+    with audio.open('wb') as large:
+        large.truncate(32*1024*1024 + 1)
+    with patch.object(module, 'api', return_value={'ok': True}) as send:
+        module.upload()
+        module.upload()
+    assert send.call_count == 1 and 'audio' not in send.call_args.kwargs['payload']
+    assert audio.exists() and result.with_suffix('.deferred').exists()
+    assert not result.exists(), 'Oversized audio must not block or repeat the normal queue'
+print('Oversized recording retained with recovery metadata; metadata acknowledgement never deletes unsent audio.')
+
+with tempfile.TemporaryDirectory() as root:
+    module.ROOT = Path(root)
     env = 'agi_arg_1: incoming\nagi_arg_2: 79000000000\nagi_extension: s\nagi_uniqueid: 123456.789\nagi_callerid: +79990000001\n\n'
     with patch.object(module.sys, 'stdin', io.StringIO(env)), patch.object(module, 'agi') as agi:
         module.run_agi()

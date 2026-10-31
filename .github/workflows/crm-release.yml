@@ -75,6 +75,10 @@ jobs:
           node scripts/oktell-bridge/bridge.test.cjs
           node scripts/oktell-bridge/test-control.cjs
           python3 tests/deployment.py
+          python3 tests/inventory.py
+          python3 tests/pbx-call-queue.py
+          python3 tests/phone-analysis.py
+          python3 tests/phone-replacement-pbx.py
       - name: Package standalone runtime
         run: python3 scripts/package-crm.py "$GITHUB_SHA"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
