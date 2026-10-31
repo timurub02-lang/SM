@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import {initBaseStorage,workingClientsQuery} from '../lib/base-storage.ts';
+const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));
+const d={prepare(text){return {bind(...args){return {async all(){return {results:sql.prepare(text).all(...args)};},async first(){return sql.prepare(text).get(...args)||null;},async run(){return sql.prepare(text).run(...args);}};},async all(){return {results:sql.prepare(text).all()};},async first(){return sql.prepare(text).get()||null;},async run(){return sql.prepare(text).run();}};},async batch(statements){return Promise.all(statements.map(s=>s.run()));}};
+await initBaseStorage(d);
+let number=0;
+for(const [id,owner] of [['owned','one'],['ordered',''],['free',''],['extra','']])sql.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(id,'+7999000000'+(++number),JSON.stringify({id,owner}));
+sql.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run('order','ordered','{}');
+sql.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run('second','ordered','{}');
+const ids=extra=>sql.prepare(workingClientsQuery).all(extra).map(r=>JSON.parse(r.data).id);
+assert.deepEqual(ids(''),['ordered','owned']);assert.deepEqual(ids('extra'),['extra','ordered','owned']);
+assert.match(sql.prepare('EXPLAIN QUERY PLAN '+workingClientsQuery).all('').map(r=>r.detail).join('\n'),/idx_clients_owned/);
+sql.prepare("UPDATE clients SET data=json_set(data,'$.owner','') WHERE id='owned'").run();assert.deepEqual(ids(''),['ordered']);
+sql.prepare("UPDATE clients SET data=json_set(data,'$.owner','one') WHERE id='free'").run();assert.deepEqual(ids(''),['free','ordered']);
+sql.close();console.log('PASS: indexed working clients, unowned clients with orders, extra card, deduplication and ownership changes');

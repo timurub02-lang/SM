@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {db} from '@/lib/db';
 import {trustedPbx} from '@/lib/phone-pbx-auth';
 import {initReplacement,replacementRoute} from '@/lib/phone-replacement';
@@ -5,7 +6,7 @@ export const dynamic='force-dynamic';
 export async function GET(req:Request){if(!trustedPbx(req))return Response.json({error:'Запрещено'},{status:401});await initReplacement(db());return Response.json({numbers:(await db().prepare('SELECT number FROM replacement_numbers ORDER BY number').all()).results.map((r:any)=>r.number)});}
 export async function POST(req:Request){
  if(!trustedPbx(req))return Response.json({error:'Запрещено'},{status:401});
- try{const raw=await req.text();if(raw.length>250000)throw Error();const p=JSON.parse(raw);await initReplacement(db());
+ try{const raw=await readLimitedText(req,1000000);if(raw.length>250000)throw Error();const p=JSON.parse(raw);await initReplacement(db());
  if(p.action==='heartbeat'){
  const numbers=(await db().prepare('SELECT number FROM replacement_numbers ORDER BY number').all()).results.map((r:any)=>r.number);
  if(JSON.stringify(p.numbers)!==JSON.stringify(numbers))throw Error('Пул АТС устарел');

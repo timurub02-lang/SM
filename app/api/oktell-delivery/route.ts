@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {z} from 'zod';
 import {sessionEmployee,trustedOrigin} from '@/lib/auth';
 import {db} from '@/lib/db';
@@ -26,7 +27,7 @@ export async function GET(req:Request){
 export async function POST(req:Request){
  const actor=await sessionEmployee(req.headers);if(actor?.role!=='admin'||!trustedOrigin(req.headers))return Response.json({error:'Нет доступа'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>4000)return Response.json({error:'Слишком большой запрос'},{status:413});
+  const raw=await readLimitedText(req,16000);if(raw.length>4000)return Response.json({error:'Слишком большой запрос'},{status:413});
   const b=command.parse(JSON.parse(raw)),d=db();
   if(b.action==='retry')return Response.json(await sendOktellDelivery(d,b.id));
   if(b.action==='complete')return Response.json(await completeOktellDelivery(d,b.id));

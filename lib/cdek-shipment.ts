@@ -2,7 +2,7 @@ import {z} from 'zod';
 import type {Order,Client} from './crm.ts';
 import {itemsSchema,normalizePhone} from './crm.ts';
 import type {Product} from './warehouse.ts';
-export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).default(''),deliveryPoint:z.string().trim().max(255).default(''),senderAddress:z.string().trim().max(255).default(''),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
+export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).prefault(''),deliveryPoint:z.string().trim().max(255).prefault(''),senderAddress:z.string().trim().max(255).prefault(''),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
 export type ShipmentDeletion={at:string;reason:string;actor:string;requestId?:string;previousRequests:string[]};
 export type Shipment={replacementAssignmentId?:string;replacementFallback?:boolean;checkedAt?:string;syncError?:string;deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};

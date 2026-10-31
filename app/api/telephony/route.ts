@@ -46,7 +46,7 @@ export const POST=authenticated(async(req:Request)=>{
 export const PATCH=authenticated(async req=>{
  if(!await allowed())return Response.json({error:'Недостаточно прав'},{status:403});
  try{
-  const p=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),status:z.enum(['dialing','connected','cancelled','failed','unknown','busy','no_answer']),detail:z.string().max(500).default('')}).parse(await req.json());
+  const p=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),status:z.enum(['dialing','connected','cancelled','failed','unknown','busy','no_answer']),detail:z.string().max(500).prefault('')}).parse(await req.json());
   await initPhone(db());const e=(await getChatGPTUser())!.employee!,final=['cancelled','failed','unknown','busy','no_answer'].includes(p.status);
   await db().prepare("UPDATE phone_calls SET status=?,detail=?,ended_at=? WHERE id=? AND actor_id=? AND detail NOT LIKE 'Oktell / МТС%' AND provider_at IS NULL AND (ended_at IS NULL OR (?=1 AND status='unknown')) AND (status<>'connected' OR ?=1)").bind(p.status,p.detail,final?new Date().toISOString():null,p.id,e.id,final?1:0,final?1:0).run();
   return Response.json({ok:true});

@@ -177,5 +177,5 @@ export const cdekStatuses = [
     "description": "Заказ содержит некорректные данные"
   }
 ] as const;
-export const cdekMappingSchema=z.record(z.enum(cdekStatuses.map(s=>s.code) as [string,...string[]]),z.enum(["","new","accepted","cancelled","sent","paid","returned"]));
+export const cdekMappingSchema=z.partialRecord(z.enum(cdekStatuses.map(s=>s.code) as [string,...string[]]),z.enum(["","new","accepted","cancelled","sent","paid","returned"]));
 export type CdekMapping=z.infer<typeof cdekMappingSchema>;

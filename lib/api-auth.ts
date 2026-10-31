@@ -1,4 +1,5 @@
 import {sharedIncomingClientAccess} from './incoming';
+import {readLimitedText,BodyTooLarge} from './request-body';
 import {personalAuth,sessionEmployee,trustedOrigin} from './auth';
 import {db} from './db';
 import {isLogistic} from './crm';
@@ -15,7 +16,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    const write=!['GET','HEAD'].includes(req.method);
    if(write&&!trustedOrigin(req.headers))return Response.json({error:'Запрос отклонён'},{status:403});
    const url=new URL(req.url);let body:any;
-   if(write){const raw=await req.text();if(raw.length>1500000)return Response.json({error:'Слишком большой запрос'},{status:413});body=JSON.parse(raw);}
+   if(write){const raw=await readLimitedText(req,6000000);if(raw.length>1500000)throw new BodyTooLarge('Слишком большой запрос');body=JSON.parse(raw);}
    if(!mayCallEndpoint(employee,url,req.method,body))return Response.json({error:'Недостаточно прав'},{status:403});
    if((body?.actorId&&body.actorId!==employee.id)||(url.searchParams.has('actorId')&&url.searchParams.get('actorId')!==employee.id))return Response.json({error:'Нельзя действовать от имени другого сотрудника'},{status:403});
    const crmOrderWrite=url.pathname==='/api/crm'&&['clientWaiting','markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment','incomingResult'].includes(body?.action);
@@ -38,7 +39,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    const response=await handler(new Request(url,{method:req.method,headers:req.headers,...(write?{body:JSON.stringify(body)}:{})}));
    response.headers.set('Cache-Control','no-store');
    return response;
-  }catch{return Response.json({error:'Не удалось выполнить запрос'},{status:400});}
+  }catch(error){return Response.json({error:error instanceof BodyTooLarge?error.message:'Не удалось выполнить запрос'},{status:error instanceof BodyTooLarge?413:400});}
   finally{if(operationLease)await releaseOrderAccess(operationLease.employeeId,operationLease.token).catch(console.error);}
  };
 }

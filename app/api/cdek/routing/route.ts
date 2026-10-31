@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {initInventory} from '@/lib/inventory';
 import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
@@ -16,7 +17,7 @@ async function handleGET(req:Request){try{
 async function handlePOST(req:Request){try{
  const employee=await actor(req);if(employee.role!=='admin')return Response.json({error:'Настройки доступны администратору'},{status:403});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
- const raw=await req.text();if(raw.length>100000)throw Error('Слишком много правил');const p=routingSchema.parse(JSON.parse(raw));
+ const raw=await readLimitedText(req,400000);if(raw.length>100000)throw Error('Слишком много правил');const p=routingSchema.parse(JSON.parse(raw));
  const current=await routingSettings();if(p.revision!==current.config.revision)throw Error('Настройки изменены. Откройте их заново');
  if(p.rules.some(r=>r.enabled&&!current.accounts.some(a=>a.slot===r.slot&&a.configured)))throw Error('В правиле выбран неподключённый аккаунт');
  if(p.enabled&&!p.rules.some(r=>r.enabled))throw Error('Добавьте хотя бы одно включённое правило');

@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -13,7 +14,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>12000)return Response.json({error:'Слишком большой запрос'},{status:413});
+  const raw=await readLimitedText(req,48000);if(raw.length>12000)return Response.json({error:'Слишком большой запрос'},{status:413});
   const p=schema.parse(JSON.parse(raw));
   const actor=await db().prepare('SELECT data FROM employees WHERE id=?').bind(p.actorId).first<{data:string}>();
   if(!actor||JSON.parse(actor.data).role!=='admin')return Response.json({error:'Настройка доступна администратору'},{status:403});

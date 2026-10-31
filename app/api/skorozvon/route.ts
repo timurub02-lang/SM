@@ -13,7 +13,7 @@ async function admin(req:Request){
 async function read(){const row=await db().prepare("SELECT data FROM settings WHERE id='skorozvon'").first<{data:string}>();return row?JSON.parse(row.data) as Config:null;}
 function status(c:Config|null){return {configured:!!(c?.login&&c.apiKey&&c.clientId&&c.clientSecret),login:c?.login||'',checkedAt:c?.checkedAt||'',revision:c?.revision||'',syncEnabled:false};}
 async function get(req:Request){if(!await admin(req))return Response.json({error:'Подключение настраивает администратор'},{status:403});return Response.json(status(await read()));}
-const field=z.string().trim().max(500).default('');
+const field=z.string().trim().max(500).prefault('');
 const input=z.object({login:field,apiKey:field,clientId:field,clientSecret:field,revision:z.string().max(100)});
 async function post(req:Request){
  if(!await admin(req))return Response.json({error:'Подключение настраивает администратор'},{status:403});

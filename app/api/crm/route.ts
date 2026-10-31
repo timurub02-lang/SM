@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {canCreateRedemptionStaff} from '@/lib/crm';
 import {applyPremiumStages,nextPremiumPreview,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
 import {prepareOktellLink} from "@/lib/oktell-provisioning";
@@ -14,7 +15,7 @@ import {employeeTasks} from '@/lib/reminder-tasks';
 import {courierReminderStatements} from '@/lib/reminder-store';
 import {baseTypes,baseSettingsSchema,initialBaseSettings} from '@/lib/base-policy';
 import {reconcileOrderTimers,reconcileClients} from '@/lib/base-retention-store';
-import {initBaseStorage} from '@/lib/base-storage';
+import {initBaseStorage,workingClientsQuery} from '@/lib/base-storage';
 import {moscowDate,normalizedPhone} from '@/lib/base-distribution';
 import {orderSettings} from '@/lib/order-policy-store';
 import {orderDataEditingEnabled} from '@/lib/order-policy';
@@ -27,7 +28,8 @@ import {removalPlan} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
 import {departmentWorkStage,isDepartmentOrder} from "@/lib/department-orders";
-import {visibleState,authorizeCrm} from '@/lib/permissions';
+import {conditionalJson} from '@/lib/conditional-json';
+import {visibleState,authorizeCrm,hideClientNumbers} from '@/lib/permissions';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
 import {canManageDelivery} from "@/lib/cdek-calculator";
@@ -41,7 +43,7 @@ export const dynamic="force-dynamic";
 const json=JSON.stringify;
 async function identity(){const u=await getChatGPTUser();if(!u)throw new Error("Требуется вход в CRM");return u;}
 async function readState(reconcile=true,extraClientId='',includeFree=false):Promise<State>{
- await initInventory();const d=db();await initBaseStorage(d);const tables=await Promise.all([d.prepare("SELECT data,version FROM clients WHERE ?=1 OR id=? OR COALESCE(json_extract(data,'$.owner'),'')<>'' OR EXISTS(SELECT 1 FROM orders WHERE orders.client_id=clients.id) ORDER BY id").bind(includeFree?1:0,extraClientId).all(),d.prepare("SELECT o.data,o.version,(SELECT json_extract(s.data,'$.number') FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting')) AS cdek_tracking_number,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting') AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='deleting') AS cdek_deleting,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
+ await initInventory();const d=db();await initBaseStorage(d);const tables=await Promise.all([(includeFree?d.prepare("SELECT data,version FROM clients ORDER BY id"):d.prepare(workingClientsQuery).bind(extraClientId)).all(),d.prepare("SELECT o.data,o.version,(SELECT json_extract(s.data,'$.number') FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting')) AS cdek_tracking_number,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting') AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='deleting') AS cdek_deleting,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
  const state:State={clients:tables[0].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),orders:tables[1].results.map((r:any)=>({...JSON.parse(r.data),version:r.version,cdekTrackingNumber:r.cdek_tracking_number?String(r.cdek_tracking_number):undefined,cdekExported:!!r.cdek_exported||(JSON.parse(r.data).testOnly===true&&JSON.parse(r.data).cdekExported===true),cdekDeleting:!!r.cdek_deleting,cdekWaybillReceived:!!r.cdek_waybill_received})),employees:tables[2].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),events:tables[3].results.map((r:any)=>JSON.parse(r.data)),settings:tables[4]?JSON.parse(tables[4].data):{retentionDays:30}};
  state.settings.orderPolicy=(await orderSettings()).policy;
  if(reconcile){
@@ -76,7 +78,7 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
  const incoming=await readIncoming(db(),user.employee,state.employees,state.orders);
  if(user.employee.role==='department_head'){
   const sharedIds=new Set(incoming.filter(i=>!i.closedAt&&i.clientId&&i.sharedQueue).map(i=>i.clientId));
-  visible.clients.push(...state.clients.filter(c=>sharedIds.has(c.id)&&!visible.clients.some(v=>v.id===c.id)).map(c=>({...c,phone:''})));
+  visible.clients.push(...state.clients.filter(c=>sharedIds.has(c.id)&&!visible.clients.some(v=>v.id===c.id)).map(hideClientNumbers));
   visible.orders.push(...state.orders.filter(o=>sharedIds.has(o.clientId)&&!visible.orders.some(v=>v.id===o.id)).map(({paymentReceipt,...o})=>o));
   visible.events.push(...state.events.filter(e=>sharedIds.has(e.clientId)&&!visible.events.some(v=>v.id===e.id)));
  }
@@ -85,12 +87,12 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>){
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
  return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
-async function handleGET(){try{const user=await identity();await initialize();return Response.json(await responseState(user),{headers:{"Cache-Control":"no-store"}});}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
+async function handleGET(request:Request){try{const user=await identity();await initialize();return conditionalJson(request,await responseState(user));}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
 async function handlePOST(request:Request){
  try{
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
- const raw=await request.text();if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
+ const raw=await readLimitedText(request,6000000);if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
  const p=JSON.parse(raw);const d=db();const s=await readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import'].includes(p.action));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
@@ -199,7 +201,7 @@ async function handlePOST(request:Request){
   message='Обращение закрыто';
  }else if(p.action==="createClient"){
   if(!employee||!["admin","department_head"].includes(employee.role))throw Error("Добавлять клиентов могут только администратор и руководитель отдела");
-  const data=clientSchema.parse(p.client);ownerValid(data.owner);const baseType=z.enum(baseTypes).default("M").parse(p.baseType);
+  const data=clientSchema.parse(p.client);ownerValid(data.owner);const baseType=z.enum(baseTypes).prefault("M").parse(p.baseType);
   if(employee.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");
   const duplicateRow=await d.prepare("SELECT c.data,c.version FROM clients c JOIN client_phone_index p ON p.client_id=c.id WHERE p.phone=?").bind(normalizedPhone(data.phone)).first<{data:string;version:number}>();const duplicate:Client|undefined=duplicateRow?{...JSON.parse(duplicateRow.data),version:duplicateRow.version}:undefined;
   if(duplicate?.owner)throw Error("Клиент уже существует и закреплён за "+(s.employees.find(e=>e.id===duplicate.owner)?.login||duplicate.owner));

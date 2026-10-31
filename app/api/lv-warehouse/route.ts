@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -22,7 +23,7 @@ async function handlePOST(req:Request){
  if(!await admin(req))return Response.json({error:'Настройка доступна администратору'},{status:403});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>12000)throw Error('Слишком большой запрос');const p=JSON.parse(raw),d=db();await initLvWarehouse(d);
+  const raw=await readLimitedText(req,48000);if(raw.length>12000)throw Error('Слишком большой запрос');const p=JSON.parse(raw),d=db();await initLvWarehouse(d);
   if(p.action==='save'){
    await withLvLock(d,async()=>{
     const old=await readLvConfig(d);const c=lvConfigSchema.parse({...p,token:p.token||old?.token,links:p.links||old?.links||{}});

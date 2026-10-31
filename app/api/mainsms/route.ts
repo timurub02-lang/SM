@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {isLogistic} from '@/lib/crm';
 import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
@@ -15,7 +16,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
- const raw=await req.text();if(raw.length>150000)throw Error('Слишком большой запрос');const p=JSON.parse(raw);const e=await actor(z.string().parse(p.actorId));const c=await read('mainsms');
+ const raw=await readLimitedText(req,600000);if(raw.length>150000)throw Error('Слишком большой запрос');const p=JSON.parse(raw);const e=await actor(z.string().parse(p.actorId));const c=await read('mainsms');
  if(p.action==='save'){
  if(e.role!=='admin')throw Error('Настройки доступны администратору');const config=smsConfig.parse(p.config);config.apiKey=config.apiKey||c?.apiKey||'';if(!config.apiKey)throw Error('Введите API-ключ');for(const t of config.templates)smsText(t.text,'Клиент','Заказ');
  const data={...config,revision:crypto.randomUUID()};const revision=z.string().parse(p.revision);

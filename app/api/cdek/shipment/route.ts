@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {cdekPrintStatus} from "@/lib/cdek-print-status";
 import {replacementPhone} from '@/lib/phone-replacement';
 import {applyCdekDeletion} from '@/lib/cdek-deletion';
@@ -57,7 +58,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>6000)throw Error('Слишком большой запрос');
+  const raw=await readLimitedText(req,24000);if(raw.length>6000)throw Error('Слишком большой запрос');
   const p=z.object({actorId:z.string().min(1),orderId:z.string().min(1),action:z.enum(['create','refresh','print','delete']),version:z.number().int().optional(),form:shipmentFormSchema.optional(),recoveryUuid:uuidSchema.optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional()}).parse(JSON.parse(raw));
   const c=await context(p.actorId,p.orderId);const d=db();
   const save=async(next:Shipment,previous:string)=>{

@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -13,7 +14,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>3000)throw new Error('Слишком большой запрос');const p=JSON.parse(raw);
+  const raw=await readLimitedText(req,12000);if(raw.length>3000)throw new Error('Слишком большой запрос');const p=JSON.parse(raw);
   if(p.action==='save'){
    // Employee selection is a demo context; access remains restricted to the signed-in site owner.
    const employee=await db().prepare('SELECT data FROM employees WHERE id=?').bind(z.string().parse(p.actorId)).first<{data:string}>();

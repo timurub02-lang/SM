@@ -1,3 +1,4 @@
+import {readLimitedText} from '@/lib/request-body';
 import {orderRouting} from '@/lib/cdek-routing-store';
 import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
@@ -10,7 +11,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>3000)throw Error('Слишком большой запрос');const p=calculationSchema.parse(JSON.parse(raw));
+  const raw=await readLimitedText(req,12000);if(raw.length>3000)throw Error('Слишком большой запрос');const p=calculationSchema.parse(JSON.parse(raw));
   const employee=await db().prepare('SELECT data FROM employees WHERE id=?').bind(p.actorId).first<{data:string}>();
   const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(p.orderId).first<{data:string}>();
   if(!row)return Response.json({error:'Заказ не найден'},{status:404});

@@ -1,9 +1,10 @@
+import {readLimitedText} from '@/lib/request-body';
 import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {authorizeCdek} from '@/lib/cdek';
 import {z} from 'zod';
-const input=z.object({actorId:z.string(),slot:z.number().int().min(1).max(4),name:z.string().trim().min(1).max(80),clientId:z.string().trim().max(200).default(''),clientSecret:z.string().trim().max(200).default('')});
+const input=z.object({actorId:z.string(),slot:z.number().int().min(1).max(4),name:z.string().trim().min(1).max(80),clientId:z.string().trim().max(200).prefault(''),clientSecret:z.string().trim().max(200).prefault('')});
 async function handleGET(){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  const rows=await db().prepare("SELECT id,data FROM settings WHERE id IN ('cdek-1','cdek-2','cdek-3','cdek-4')").all<{id:string;data:string}>();
@@ -13,7 +14,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await req.text();if(raw.length>3000)throw new Error('Слишком большой запрос');const p=input.parse(JSON.parse(raw));
+  const raw=await readLimitedText(req,12000);if(raw.length>3000)throw new Error('Слишком большой запрос');const p=input.parse(JSON.parse(raw));
   // Employee selection is the existing demo context, not separate employee authentication.
   const employee=await db().prepare('SELECT data FROM employees WHERE id=?').bind(p.actorId).first<{data:string}>();
   if(!employee||JSON.parse(employee.data).role!=='admin')return Response.json({error:'Аккаунты настраивает администратор'},{status:403});
