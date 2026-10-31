@@ -77,10 +77,11 @@ def run_agi():
             path = ROOT / ('incoming-' + call_id + '.json')
             if not path.exists():
                 temp = path.with_suffix('.tmp')
-                temp.write_text(json.dumps(payload))
-                temp.chmod(0o600)
-                with temp.open('rb') as saved:
+                with temp.open('w') as saved:
+                    saved.write(json.dumps(payload))
+                    saved.flush()
                     os.fsync(saved.fileno())
+                temp.chmod(0o600)
                 temp.replace(path)
             agi('SET VARIABLE CRM_INCOMING_SAVED 1')
         except Exception:
@@ -146,6 +147,12 @@ def upload_one(path):
             payload['audio'] = base64.b64encode(audio.read_bytes()).decode('ascii')
         response = api('POST', payload=payload)
         if response.get('ok'):
+            if payload['answered'] and audio.exists() and audio.stat().st_size > 32*1024*1024:
+                # The API acknowledged metadata, not this oversized recording.
+                # Keep audio and recovery metadata outside the retry queue.
+                path.replace(path.with_suffix('.deferred'))
+                print('CRM recording retained locally: upload size limit exceeded', file=sys.stderr)
+                return
             path.unlink()
             audio.unlink(missing_ok=True)
             remote.unlink(missing_ok=True)

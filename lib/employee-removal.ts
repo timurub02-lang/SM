@@ -1,4 +1,6 @@
 import {clientSheet,sourceSheet,orderGroup,type Client,type Employee,type Order,type State} from './crm.ts';
+// Frozen/returned payroll rows and their cash signers must survive until settlement.
+export const settledPayrollGuard="NOT EXISTS(SELECT 1 FROM settings s,json_each(s.data,'$.periods') p WHERE s.id='premium-ledger' AND json_extract(p.value,'$.status')<>'paid' AND (EXISTS(SELECT 1 FROM json_each(p.value,'$.rows') r WHERE json_extract(r.value,'$.employeeId')=?) OR EXISTS(SELECT 1 FROM json_each(p.value,'$.signers') h WHERE json_extract(h.value,'$.id')=?)))";
 export function releasedClient(c:Client,orders:Order[]):Client{
  const related=orders.filter(o=>o.clientId===c.id);
  const active=related.some(o=>['new','accepted','sent'].includes(orderGroup(o.status).id));

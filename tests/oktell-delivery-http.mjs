@@ -1,3 +1,4 @@
+import {controlSocket} from './fixtures/control-socket.mjs';
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -12,7 +13,7 @@ import {initialBaseSettings} from '../lib/base-policy.ts';
 const ui=process.argv.includes('--ui'),dev=ui||process.argv.includes('--dev');
 const dir=mkdtempSync(join(tmpdir(),'oktell-delivery-')),file=join(dir,'fixture.sqlite'),d=new DatabaseSync(file);
 const base='http://127.0.0.1:3341',origin=base,taskId='10000000-0000-4000-8000-000000000001';
-const sock=process.platform==='win32'?'\\\\.\\pipe\\oktell-delivery-'+crypto.randomUUID():join(dir,'bridge.sock');
+const sock=process.platform==='win32'?'\\\\.\\pipe\\oktell-delivery-'+crypto.randomUUID():controlSocket(join(dir,'bridge.sock'));
 const receipts=new Map(),requests=[];let loseReply=false,server,logs='';
 const bridge=http.createServer((req,res)=>{let raw='';req.on('data',b=>raw+=b);req.on('end',()=>{
  requests.push(req.url);res.setHeader('Content-Type','application/json');assert.equal(req.url,'/delivery');

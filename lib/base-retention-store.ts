@@ -9,6 +9,8 @@ import {defaultOrderPolicy,orderPolicySchema} from './order-policy.ts';
 const json=JSON.stringify;
 export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
   let orderChanged=false;
+  const returnedAt=new Map<string,string>();
+  for(const event of events)if(!returnedAt.has(event.orderId)&&event.text.includes("→ Возврат оператору"))returnedAt.set(event.orderId,event.at);
   const saved=await d.prepare("SELECT data FROM settings WHERE id='order-policy'").first();
   const policy=orderPolicySchema.parse(saved?JSON.parse(saved.data).policy:defaultOrderPolicy);
   for(const stored of orders.filter(o=>["draft","rework","confirm","extra"].includes(o.status)||courierDeadline(o)||o.delivery==='moscow_courier'&&o.courier?.phase==='logistic'&&!['redeemed','returned','refused'].includes(o.status))){
@@ -19,7 +21,7 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
    const initialize=["confirm","extra"].includes(stored.status)&&!stored.finalHandoffAt&&!stored.confirmationStartedAt;
    const at=new Date().toISOString();
    const o=initialize?{...stored,confirmationStartedAt:at,confirmationHours:stored.status==="extra"?policy.extraConfirmationHours:policy.confirmationHours}:stored;
-   const received=events.find(e=>e.orderId===o.id&&e.text.includes("→ Возврат оператору"))?.at||o.updatedAt;
+   const received=returnedAt.get(o.id)||o.updatedAt;
    const courierDue=courierDeadline(o);
    const draft=o.status==="draft",confirmation=["confirm","extra"].includes(o.status);
    const deadline=courierDue|| (draft?draftDeadline(o):confirmation?confirmationDeadline(o):o.reworkHours===null?undefined:(o.reworkDeadline||reworkDeadlineFrom(received,o.reworkHours??96)));

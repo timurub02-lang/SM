@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {join,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {openDatabase} from '../server/sqlite.ts';
@@ -71,7 +72,7 @@ try{
  await reset();for(let i=0;i<20;i++)await fixture('LIMIT-'+i);mode='throttle';assert.equal((await syncCdekShipments(db,request)).failed,20);assert.ok(calls.filter(x=>x.startsWith('/v2/orders/')).length<=4);
  console.log('Bounded queue, failure fairness and rate-limit backoff passed.');
  await reset();const cli=await fixture('CLI');const fixtureFile=join(dir,'upstream.json');writeFileSync(fixtureFile,JSON.stringify({orders:{[cli.s.uuid]:{number:'CLI',cdek_number:'S-CLI',status:'DELIVERED'}},calls:[]}));
- const child=spawnSync(process.execPath,['--experimental-strip-types','--import',resolve('tests/fixtures/cdek-fetch.mjs'),resolve('scripts/sync-cdek-shipments.mjs')],{env:{...process.env,CRM_DATABASE_PATH:file,CDEK_TEST_FIXTURE:fixtureFile},encoding:'utf8'});
+ const child=spawnSync(process.execPath,['--experimental-strip-types','--import',pathToFileURL(resolve('tests/fixtures/cdek-fetch.mjs')).href,resolve('scripts/sync-cdek-shipments.mjs')],{env:{...process.env,CRM_DATABASE_PATH:file,CDEK_TEST_FIXTURE:fixtureFile},encoding:'utf8'});
  assert.equal(child.status,0,child.stderr);assert.equal(JSON.parse(child.stdout.trim()).changed,1);assert.equal((await row('CLI')).status,'redeemed');
  console.log('Standalone background script updated a shipment with no web server or browser running.');
  await reset();const legacy=await fixture('LV-123',{legacyLv:{orderId:'123',cdekOrderNumber:'OLD-EXTERNAL-123',trial:true}});

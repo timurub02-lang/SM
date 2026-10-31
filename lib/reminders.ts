@@ -29,15 +29,16 @@ function activeReminder(r:Reminder,s:State,e:Employee){
  if(r.kind==='courier-delivery')return !!o&&courierStage(o)==='delivery'&&o.courier?.postponement?.state==='approved'&&o.courier.postponement.at===r.due;
  return false;
 }
-export async function saveReminders(s:State){
+export async function saveReminders(s:State,employeeId?:string){
  const d=db();await initReminders();
  const writes=[];
- const saved=(await d.prepare('SELECT employee_id,data,read_at FROM reminders').all<{employee_id:string;data:string;read_at:string|null}>()).results;
+ const saved=(await (employeeId?d.prepare('SELECT employee_id,data,read_at FROM reminders WHERE employee_id=?').bind(employeeId):d.prepare('SELECT employee_id,data,read_at FROM reminders')).all<{employee_id:string;data:string;read_at:string|null}>()).results;
+ const clients=new Map(s.clients.map(c=>[c.id,c]));
  const stored=new Map<string,Reminder[]>();
  for(const row of saved){const list=stored.get(row.employee_id)||[];list.push({...JSON.parse(row.data),readAt:row.read_at||undefined});stored.set(row.employee_id,list);}
- for(const e of s.employees){
-  const calls:Reminder[]=scheduledCalls(s.orders,e,s.employees).map(o=>({kind:"call",id:`call:${o.id}:${o.due}`,orderId:o.id,clientId:o.clientId,title:s.clients.find(c=>c.id===o.clientId)?.name||o.id,text:(o.contact==='missed'?'Недозвон — повторная попытка':'Перезвон')+(o.reason?' · '+o.reason:'')+(callAuthor(o,s.employees)?' · Кто назначил: '+callAuthor(o,s.employees):''),at:o.contactAuthor?.at||o.updatedAt,due:o.due}));
-  const drafts:Reminder[]=e.role==='operator'?s.orders.filter(o=>o.manager===e.id&&draftDeadline(o)).map(o=>({kind:'draft',id:`draft:${o.id}:${draftDeadline(o)}`,orderId:o.id,clientId:o.clientId,title:s.clients.find(c=>c.id===o.clientId)?.name||o.id,text:'Передайте заказ логисту',at:o.createdAt,due:draftDeadline(o)})):[];
+ for(const e of s.employees.filter(e=>!employeeId||e.id===employeeId)){
+  const calls:Reminder[]=scheduledCalls(s.orders,e,s.employees).map(o=>({kind:"call",id:`call:${o.id}:${o.due}`,orderId:o.id,clientId:o.clientId,title:clients.get(o.clientId)?.name||o.id,text:(o.contact==='missed'?'Недозвон — повторная попытка':'Перезвон')+(o.reason?' · '+o.reason:'')+(callAuthor(o,s.employees)?' · Кто назначил: '+callAuthor(o,s.employees):''),at:o.contactAuthor?.at||o.updatedAt,due:o.due}));
+  const drafts:Reminder[]=e.role==='operator'?s.orders.filter(o=>o.manager===e.id&&draftDeadline(o)).map(o=>({kind:'draft',id:`draft:${o.id}:${draftDeadline(o)}`,orderId:o.id,clientId:o.clientId,title:clients.get(o.clientId)?.name||o.id,text:'Передайте заказ логисту',at:o.createdAt,due:draftDeadline(o)})):[];
   const existing=stored.get(e.id)||[];
   const courierNotices:Reminder[]=[];
   for(const o of s.orders){
@@ -57,7 +58,8 @@ export async function saveReminders(s:State){
   const requests:Reminder[]=s.clients.filter(c=>c.orderRequest?.status==='pending'&&(e.role==='admin'||e.role==='department_head'&&!!e.department&&c.orderRequest.department===e.department)).map(c=>({id:'request:'+c.orderRequest!.id,requestId:c.orderRequest!.id,clientId:c.id,title:'Запрос на повторный заказ',text:c.name+' · '+(s.employees.find(x=>x.id===c.orderRequest!.manager)?.login||''),at:c.orderRequest!.at}));
   const decisions=s.clients.filter(c=>c.orderRequest?.actorId===e.id).map(c=>orderDecisionReminder(c,s.employees)).filter((r):r is Reminder=>!!r);
   const generated=[...calls,...drafts,...requests,...decisions,...courierNotices];
-  for(const r of generated)writes.push(d.prepare(r.kind==='call'?'INSERT INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?) ON CONFLICT(employee_id,id) DO UPDATE SET data=excluded.data,at=excluded.at WHERE excluded.at>=reminders.at':'INSERT OR IGNORE INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?)').bind(e.id,r.id,JSON.stringify(r),r.at));
+  const prior=new Map(existing.map(r=>[r.id,r]));
+  for(const r of generated){const old=prior.get(r.id);if(old){const {readAt,...data}=old;if(r.kind!=='call'||JSON.stringify(data)===JSON.stringify(r))continue;}writes.push(d.prepare(r.kind==='call'?'INSERT INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?) ON CONFLICT(employee_id,id) DO UPDATE SET data=excluded.data,at=excluded.at WHERE excluded.at>=reminders.at AND excluded.data<>reminders.data':'INSERT OR IGNORE INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?)').bind(e.id,r.id,JSON.stringify(r),r.at));}
   // Keep every current task, plus 20 history records. Only prune the inspected snapshot.
   const combined=new Map([...existing,...generated].map(r=>[r.id,r]));
   const expired=[...combined.values()].filter(r=>!activeReminder(r,s,e)).sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id)).slice(20).map(r=>r.id);

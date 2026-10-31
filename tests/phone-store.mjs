@@ -40,6 +40,11 @@ try{
  await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify({...client,owner:'one'}),'client').run();
  await assert.rejects(addCallComment(d,staff[2],calls[0].id,'Чужой клиент',crypto.randomUUID()));
  const fromClient=await createPhoneCall(d,{id:crypto.randomUUID().replaceAll('-',''),clientId:'client',orderId:null,actor:staff[1],echo:true});
+ const failedId=crypto.randomUUID().replaceAll('-','');
+ await d.prepare("CREATE TRIGGER reject_target BEFORE INSERT ON phone_call_targets BEGIN SELECT RAISE(ABORT,'synthetic target failure'); END").run();
+ await assert.rejects(createPhoneCall(d,{id:failedId,clientId:'client',orderId:null,actor:staff[1],echo:true,destination:'79990000001',sipUser:'fixture'}),/synthetic target failure/);
+ assert.equal(await d.prepare('SELECT id FROM phone_calls WHERE id=?').bind(failedId).first(),null,'A failed target write must roll back the prepared call');
+ await d.prepare('DROP TRIGGER reject_target').run();
  await addCallComment(d,staff[1],fromClient.id,'Из карточки клиента',crypto.randomUUID());
  console.log('Call comments: persistence, author, retry deduplication, validation and access passed');
  console.log('Phone store: 1000 → active 100 → replace with 20 → export 100 → remaining 900; round-robin, conflict rollback, authorization and stale calls passed.');

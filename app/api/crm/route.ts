@@ -23,8 +23,9 @@ import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
 import {courierDoorRefusal,canHandleCourierDoor,applyCourierCommand,canEditCourierOrder,canEditRecalledCourierOrder,courierRecalledAtWarehouse,pauseCourierOperatorBudget,courierPhase,courierStage,courierDeadline,courierWarehouseReturn,cancelCourierWork,courierOutstanding} from '@/lib/courier';
 import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
+import {clearCashGuard} from '@/lib/cash';
 import {normalizePhone,total,canReceivePayment,isLogistic} from '@/lib/crm';
-import {removalPlan} from '@/lib/employee-removal';
+import {removalPlan,settledPayrollGuard} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
 import {departmentWorkStage,isDepartmentOrder} from "@/lib/department-orders";
@@ -67,8 +68,8 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  ...s.events.map(e=>d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e))),
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
-async function responseState(user:Awaited<ReturnType<typeof identity>>){
- const state=await readState();await saveReminders(state);if(!user.employee)return state;
+async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false){
+ const state=await readState();await saveReminders(state,fanout?undefined:user.employee?.id);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
  if(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee)){
@@ -93,7 +94,7 @@ async function handlePOST(request:Request){
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
  const raw=await readLimitedText(request,6000000);if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
- const p=JSON.parse(raw);const d=db();const s=await readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import'].includes(p.action));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
+ const p=JSON.parse(raw);const d=db();const s=await readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
@@ -212,9 +213,10 @@ async function handlePOST(request:Request){
   const trial=data.owner?{trialUntil:new Date(Date.parse(now)+86400000).toISOString(),trialReturnSheet:duplicate?clientSheet(duplicate)||firstSheet:firstSheet,assignedUntil:new Date(Date.parse(now)+86400000).toISOString(),assignmentStartedAt:now,sheet:"К",returnSheet:duplicate?clientSheet(duplicate):firstSheet}:{};
   if(duplicate){
    const next={...duplicate,...trial,owner:data.owner};
-   const r=await d.prepare("UPDATE clients SET data=?,version=version+1 WHERE id=? AND version=? AND json_extract(data,'$.owner')=''").bind(json(next),duplicate.id,duplicate.version).run();
+   const event=ev(duplicate.id,"","Клиент передан оператору на 24 часа без заказа");
+   const [r]=await d.batch([d.prepare("UPDATE clients SET data=?,version=version+1 WHERE id=? AND version=? AND json_extract(data,'$.owner')=''").bind(json(next),duplicate.id,duplicate.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE changes()>0").bind(event.id,event.clientId,event.orderId,event.at,json(event))]);
    if(!r.meta.changes)throw Error("Клиент уже изменён. Обновите данные");
-   await eventSQL(ev(duplicate.id,"","Клиент передан оператору на 24 часа без заказа")).run();message="Клиент передан оператору";
+   message="Клиент передан оператору";
   }else{
    const c:Client={...data,baseType,sheet:firstSheet,id:id("C-"),assignedUntil:"",createdAt:now,version:1,...trial};
    await d.batch([d.prepare("INSERT INTO clients(id,phone,data) VALUES(?,?,?)").bind(c.id,c.phone,json(c)),eventSQL(ev(c.id,"","Клиент добавлен в базу"))]);message="Клиент добавлен";
@@ -252,9 +254,9 @@ async function handlePOST(request:Request){
   }
   const decision=orderDecisionReminder({...c,orderRequest:request},s.employees);
   if(decision)await initReminders();
-  const r=await d.batch([d.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest',json(?)),version=version+1 WHERE id=? AND version=?").bind(json(request),c.id,c.version),...(decision?[d.prepare("INSERT OR IGNORE INTO reminders(employee_id,id,data,at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=? AND json_extract(data,'$.orderRequest.id')=? AND json_extract(data,'$.orderRequest.status')=? AND json_extract(data,'$.orderRequest.decidedAt')=?)").bind(request.actorId,decision.id,json(decision),decision.at,c.id,c.version+1,request.id,request.status,request.decidedAt)]:[])]);
+  const event=ev(c.id,"",message);
+  const r=await d.batch([d.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest',json(?)),version=version+1 WHERE id=? AND version=?").bind(json(request),c.id,c.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE changes()>0").bind(event.id,event.clientId,event.orderId,event.at,json(event)),...(decision?[d.prepare("INSERT OR IGNORE INTO reminders(employee_id,id,data,at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=? AND json_extract(data,'$.orderRequest.id')=? AND json_extract(data,'$.orderRequest.status')=? AND json_extract(data,'$.orderRequest.decidedAt')=?)").bind(request.actorId,decision.id,json(decision),decision.at,c.id,c.version+1,request.id,request.status,request.decidedAt)]:[])]);
   if(!r[0].meta.changes)throw Error("Клиент изменился. Повторите действие");
-  await eventSQL(ev(c.id,"",message)).run();
  }else if(p.action==="createOrder"){
   const c=s.clients.find(c=>c.id===p.clientId);if(!c)throw new Error("Выберите клиента");
   if(employee?.role==="operator"&&c.owner!==employee.id)throw Error("Можно оформить заказ только своему клиенту");
@@ -267,7 +269,8 @@ async function handlePOST(request:Request){
   if(comment.trim()&&employee)o.operatorComments=[{text:comment,at:now,by:employee.id,name:employee.name}];
   const addressWarnings=orderAddressWarnings(o.address||'',o.addressParts);
   if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите создание заказа вручную.');
-  const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),eventSQL(ev(c.id,o.id,"Создан заказ · Оформление"+(addressWarnings.length?" · адрес проверен вручную, создание подтверждено несмотря на предупреждение: "+addressWarnings.map(w=>w.message).join(" "):"")+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":"")))]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
+  const created=ev(c.id,o.id,"Создан заказ · Оформление"+(addressWarnings.length?" · адрес проверен вручную, создание подтверждено несмотря на предупреждение: "+addressWarnings.map(w=>w.message).join(" "):"")+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":""));
+  const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(created.id,c.id,o.id,now,json(created),o.id)]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
  }else if(["updateLogisticComment","clientWaiting","markPV","courierAccept","courierOutcome","courierWorkflow","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
   const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(p.action==='updateLogisticComment'&&['admin','logistic','chief_logistic'].includes(employee.role))&&!(p.action==='clientWaiting'&&canOperatorReachClient(employee,o))&&!(p.action==='updateOrder'&&p.operatorFollowup===true&&canOperatorAmendMissed(employee,o))&&!(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee))&&!(p.action==='courierWorkflow'&&['claimDoor','resolveDoor'].includes(p.operation)&&canHandleCourierDoor(o,employee,s.employees))&&!(employee.role==="courier"&&["courierAccept","courierOutcome","courierWorkflow","contact"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");if(o.cdekDeleting)throw Error("СДЭК обрабатывает удаление. Дождитесь подтверждения");let next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
   if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,p.operatorFollowup===true&&canOperatorAmendMissed(employee,o)?'draft':canEditRecalledCourierOrder(o,employee)?'rework':o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
@@ -475,6 +478,7 @@ async function handlePOST(request:Request){
   await initCash();
   const cash=await d.prepare("SELECT COALESCE((SELECT balance FROM cash_balances WHERE employee=?),0) AS balance,EXISTS(SELECT 1 FROM cash_operations WHERE (sender=? OR recipient=?) AND kind='transfer' AND accepted_at IS NULL) AS pending").bind(p.id,p.id,p.id).first<{balance:number;pending:number}>();
   if(cash&&(cash.balance!==0||cash.pending))throw Error('Перед удалением сотрудника обнулите кассу и завершите ожидающие переводы');
+  if(!(await d.prepare('SELECT '+settledPayrollGuard+' AS settled').bind(p.id,p.id).first<{settled:number}>())?.settled)throw Error('Сотрудник участвует в невыплаченной ведомости. Сначала завершите расчёт; доступ к CRM можно отключить без удаления');
 
   if(personalAuth())await ensureAuth();
   const key="deleted-employee-"+plan.employee.id,mutation=crypto.randomUUID();
@@ -483,7 +487,7 @@ async function handlePOST(request:Request){
   const guard="EXISTS(SELECT 1 FROM settings WHERE id=? AND json_extract(data,'$.mutation')=?)";
   const args=[key,mutation];
   const summary=`Удалён сотрудник ${plan.employee.name} (${plan.employee.login}). `+(plan.target?`Клиенты и заказы переданы ${plan.target.name} (${plan.target.login})`:'Клиенты освобождены, заказы сохранены без оператора');
-  const statements=[d.prepare("INSERT INTO settings(id,data) SELECT ?,? WHERE (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM clients ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=?").bind(key,json({employee:plan.employee,at:now,actorId:employee!.id,mode:p.mode,targetId:plan.target?.id,mutation}),snapshot(s.employees),snapshot(s.clients),snapshot(s.orders))];
+  const statements=[d.prepare("INSERT INTO settings(id,data) SELECT ?,? WHERE (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM clients ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=? AND "+clearCashGuard+" AND "+settledPayrollGuard).bind(key,json({employee:plan.employee,at:now,actorId:employee!.id,mode:p.mode,targetId:plan.target?.id,mutation}),snapshot(s.employees),snapshot(s.clients),snapshot(s.orders),p.id,p.id,p.id,p.id,p.id)];
   for(const c of plan.clients)statements.push(d.prepare(`UPDATE clients SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(c),c.id,...args));
   for(const o of plan.orders)statements.push(d.prepare(`UPDATE orders SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(o),o.id,...args));
   const history=[ev('','',summary),...plan.clients.map(c=>ev(c.id,'',summary)),...plan.orders.map(o=>ev(o.clientId,o.id,summary))];
@@ -547,7 +551,7 @@ async function handlePOST(request:Request){
   // ponytail: bounded imports; background chunked jobs when files exceed 1000 clients.
   let actual=0;for(let i=0;i<statements.length;i+=50){const results=await d.batch(statements.slice(i,i+50));actual+=results.filter((_,j)=>j%2===0).reduce((n,r)=>n+r.meta.changes,0);}message=`Добавлено: ${actual}. Дубли: ${duplicates+added-actual}. Адресов требуют проверки: ${review}. Ошибки ДаДата: ${errors}`;
  }else throw new Error("Неизвестное действие");
- return Response.json({state:await responseState(user),message});
+ return Response.json({state:await responseState(user,true),message});
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400});}
 }
 

@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-sql = json.loads(subprocess.check_output(['node', '--experimental-strip-types', '--input-type=module', '-e', "import {inventorySQL} from './lib/inventory-sql.ts';console.log(JSON.stringify(inventorySQL))"], cwd=root, text=True))
+sql = json.loads(subprocess.check_output(['node', '--experimental-strip-types', '--input-type=module', '-e', "import {inventorySQL} from './lib/inventory-sql.ts';console.log(JSON.stringify(inventorySQL))"], cwd=root, text=True, encoding='utf-8'))
 db = sqlite3.connect(':memory:', isolation_level=None)
 db.execute('PRAGMA foreign_keys=ON')
 db.execute('CREATE TABLE orders(id TEXT PRIMARY KEY,data TEXT NOT NULL)')

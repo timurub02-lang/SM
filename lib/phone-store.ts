@@ -38,11 +38,12 @@ export async function replacePhonePool(d:ActivityDb,count:number,version:number,
 export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:string|null;orderId:string|null;actor:Employee;echo:boolean;destination?:string;sipUser?:string;incomingId?:string}){
  const {id,clientId,orderId,actor,echo}=input,now=new Date().toISOString();
  // One INSERT selects the least recently used active number; concurrent calls cannot select stale state.
- const r=await d.prepare(`INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status)
- SELECT ?,?,?,?,?,${echo?"''":"number"},?,'preparing' ${echo?'':"FROM phone_numbers n WHERE state='active' ORDER BY COALESCE((SELECT MAX(seq) FROM phone_calls c WHERE c.caller_number=n.number),0),number LIMIT 1"}`).bind(id,clientId,orderId,actor.id,actor.name,now).run();
+ const writes=[d.prepare(`INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status)
+ SELECT ?,?,?,?,?,${echo?"''":"number"},?,'preparing' ${echo?'':"FROM phone_numbers n WHERE state='active' ORDER BY COALESCE((SELECT MAX(seq) FROM phone_calls c WHERE c.caller_number=n.number),0),number LIMIT 1"}`).bind(id,clientId,orderId,actor.id,actor.name,now)];
+ if(input.destination&&input.sipUser)writes.push(d.prepare('INSERT INTO phone_call_targets(call_id,destination,sip_user) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM phone_calls WHERE id=?)').bind(id,input.destination,input.sipUser,id));
+ if(input.incomingId)writes.push(d.prepare('INSERT INTO phone_call_incoming(call_id,incoming_id) SELECT ?,? WHERE EXISTS(SELECT 1 FROM phone_calls WHERE id=?)').bind(id,input.incomingId,id));
+ const [r]=await d.batch(writes);
  if(!r.meta.changes)throw Error('Нет включённых исходящих номеров. Настройте интеграцию Билайн АТС.');
- if(input.destination&&input.sipUser)await d.prepare('INSERT INTO phone_call_targets(call_id,destination,sip_user) VALUES(?,?,?)').bind(id,input.destination,input.sipUser).run();
- if(input.incomingId)await d.prepare('INSERT INTO phone_call_incoming(call_id,incoming_id) VALUES(?,?)').bind(id,input.incomingId).run();
  return d.prepare('SELECT * FROM phone_calls WHERE id=?').bind(id).first() as Promise<PhoneCall>;
 }
 export async function phoneScope(d:ActivityDb,e:Employee,scope:{clientId?:string;orderId?:string}){

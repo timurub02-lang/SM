@@ -160,7 +160,7 @@ export default function Page(){
   try{
    const d=await reader.current!.read();if(!d||writing.current)return false;
    setLoadError("");setPersonalAuth(d.personalAuth===true);if(d.currentEmployeeId)setActor(d.currentEmployeeId);setCallOrders(d.orders);
-   setState(current=>remindersOnly?{...current,reminders:d.reminders,tasks:d.tasks,clientReminders:d.clientReminders,clientWork:d.clientWork,redemptionStatuses:d.redemptionStatuses,redemptionResults:d.redemptionResults,incoming:d.incoming,employees:d.employees,clients:[...current.clients,...d.clients.filter(c=>!current.clients.some(x=>x.id===c.id))]}:d);
+   setState(current=>{if(!remindersOnly)return d;const ids=new Set(current.clients.map(c=>c.id));return {...current,reminders:d.reminders,tasks:d.tasks,clientReminders:d.clientReminders,clientWork:d.clientWork,redemptionStatuses:d.redemptionStatuses,redemptionResults:d.redemptionResults,incoming:d.incoming,employees:d.employees,clients:[...current.clients,...d.clients.filter(c=>!ids.has(c.id))]};});
    setReady(true);return true;
   }catch(e){if((e as {status?:number}).status===401){window.location.replace("/login");return false;}setLoadError(e instanceof Error?e.message:"Не удалось загрузить данные");return false;}
  }
@@ -184,7 +184,7 @@ export default function Page(){
  const [listPage,setListPage]=useState(0);
  const mine=assignedClients(state.clients,state.employees,employee);const clientsWithActiveOrders=new Set(state.orders.filter(o=>["new","accepted","sent"].includes(orderGroup(o).id)).map(o=>o.clientId));const clientsInTransit=new Set(state.orders.filter(o=>orderGroup(o).id==="sent").map(o=>o.clientId));const withoutOrders=mine.filter(c=>!clientsWithActiveOrders.has(c.id));const inTransit=mine.filter(c=>clientsInTransit.has(c.id));const mineIds=new Set(mine.map(c=>c.id));const myOrders=state.orders.filter(o=>mineIds.has(o.clientId));const active=(o:Order)=>!["redeemed","refused","returned"].includes(o.status);
  const returnedOrders=myOrders.filter(o=>o.status==="rework");
- const clientCalls=allCalls.filter(o=>myOrders.some(order=>order.id===o.id));
+ const myOrderIds=new Set(myOrders.map(o=>o.id));const clientCalls=allCalls.filter(o=>myOrderIds.has(o.id));
  const attention=myOrders.filter(o=>o.status==="rework"||(o.due&&Date.parse(o.due)<=Date.now()));
  const todayCalls=myOrders.filter(o=>o.due&&new Date(o.due).toDateString()===new Date().toDateString());
  const latest=(id:string)=>(ordersByClient.get(id)||[]).filter(active).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0];
