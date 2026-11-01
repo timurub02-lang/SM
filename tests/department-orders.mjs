@@ -15,7 +15,7 @@ for(const [delivery,next] of [['cdek_pickup','check'],['cdek_courier','check'],[
  assert.throws(()=>authorizeCrm(foreign,{action:'transition',id:o.id,to:next},state(o)),/Недостаточно/);
 }
 for(const status of ['draft','check','packing','phone','shipping','pickup','redeemed','returned','refused']){
- const o={...base,status};assert.equal(departmentWorkStage(o),false);assert.equal(orderEditingLocked(head,o),true);assert.deepEqual(allowedOrderTransitions(o,head.role),[]);
+ const o={...base,status};assert.equal(departmentWorkStage(o),false);assert.equal(orderEditingLocked(head,o),status!=="draft");assert.deepEqual(allowedOrderTransitions(o,head.role),[]);
  assert.throws(()=>authorizeCrm(head,{action:'transition',id:o.id,to:'refused'},state(o)),/Недостаточно/);
 }
 for(const status of ['confirm','extra','rework']){
@@ -45,3 +45,9 @@ assert.throws(()=>applyCourierCommand(returned,{action:'courierWorkflow',operati
 assert.deepEqual(allowedOrderTransitions(returned,head.role),['refused']);
 assert.equal(usesOrderLease(operator,{...base,status:'rework'}),true);assert.equal(usesOrderLease(operator,base),false);
 console.log('Department heads: scope, routes, cancellation boundaries, calls, labels, tasks, shared leases and unchanged courier confirmation/budget passed');
+
+const draft={...base,status:'draft'};
+assert.doesNotThrow(()=>authorizeCrm(head,{action:'updateOrder',id:draft.id},state(draft)));
+assert(usesOrderLease(head,draft));
+assert.throws(()=>authorizeCrm(foreign,{action:'updateOrder',id:draft.id},state(draft)));
+for(const patch of [{courier:{id:'courier'}},{cdekExported:true},{cdekDeleting:true},{status:'confirm'},{status:'redeemed'}])assert.throws(()=>authorizeCrm(head,{action:'updateOrder',id:draft.id},state({...draft,...patch})));

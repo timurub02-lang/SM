@@ -25,3 +25,7 @@ console.log('Order policy: defaults, disabled and custom timers, warning thresho
 assert.equal(orderPolicySchema.parse({...defaults,confirmationHours:undefined,extraConfirmationHours:undefined}).confirmationHours,48);
 assert.equal(orderPolicySchema.safeParse({...defaults,confirmationHours:0}).success,false);
 assert.equal(orderPolicySchema.safeParse({...defaults,extraConfirmationHours:1.5}).success,false);
+
+assert.equal(orderDataEditingEnabled('department_head','draft',defaults),true);
+assert.equal(orderDataEditingEnabled('department_head','draft',{...defaults,operatorDraftEdit:false}),false);
+assert.equal(orderDataEditingEnabled('department_head','confirm',defaults),false);

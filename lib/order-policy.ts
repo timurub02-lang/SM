@@ -4,6 +4,7 @@ export const orderPolicySchema=z.object({courierDoorClaimMinutes:z.number().int(
 export type OrderPolicy=z.infer<typeof orderPolicySchema>;
 export const defaultOrderPolicy:OrderPolicy={courierDoorClaimMinutes:2,courierDoorDecisionMinutes:10,courierConfirmationHours:48,courierWarningHours:6,draftHours:24,confirmationHours:48,extraConfirmationHours:48,reworkHours:96,finalHours:24,reworkWarningHours:24,finalWarningHours:6,operatorDraftEdit:true,operatorReworkEdit:true,logisticDetailsEdit:true};
 export function orderDataEditingEnabled(role:string,status:string,policy:OrderPolicy=defaultOrderPolicy){
+ if(role==='department_head')return status==='draft'&&policy.operatorDraftEdit;
  if(role==='operator')return status==='draft'?policy.operatorDraftEdit:status==='rework'?policy.operatorReworkEdit:false;
  if(role==='logistic'||role==='chief_logistic')return policy.logisticDetailsEdit;
  return true; // This switch never replaces existing role, ownership and shipment guards.
