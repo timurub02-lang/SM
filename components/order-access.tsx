@@ -3,10 +3,10 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {canOperatorAmendMissed,type Employee,type Order} from '@/lib/crm';
 import {usesOrderLease} from '@/lib/department-orders';
 
-export function OrderAccess({order,employee,onAvailable,children}:{order:Order;employee:Employee;onAvailable:()=>void;children:(readOnly:boolean,beginFollowup:()=>void,followupEditing:boolean)=>ReactNode}){
+export function OrderAccess({order,employee,staff=[],onAvailable,children}:{order:Order;employee:Employee;staff?:Employee[];onAvailable:()=>void;children:(readOnly:boolean,beginFollowup:()=>void,followupEditing:boolean)=>ReactNode}){
  const [followupRequested,setFollowupRequested]=useState(false);
- const followup=canOperatorAmendMissed(employee,order);
- const orderId=order.id,enabled=usesOrderLease(employee,order)&&(!followup||followupRequested);
+ const followup=canOperatorAmendMissed(employee,order,staff);
+ const orderId=order.id,enabled=usesOrderLease(employee,order)&&(employee.role==="department_head"||!followup||followupRequested);
  const [access,setAccess]=useState<{editable:boolean;holder?:string;until:number;error?:string}>({editable:false,until:0});
  const [now,setNow]=useState(Date.now);
  const onAvailableRef=useRef(onAvailable);onAvailableRef.current=onAvailable;

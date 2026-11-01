@@ -29,3 +29,6 @@ assert.equal(orderPolicySchema.safeParse({...defaults,extraConfirmationHours:1.5
 assert.equal(orderDataEditingEnabled('department_head','draft',defaults),true);
 assert.equal(orderDataEditingEnabled('department_head','draft',{...defaults,operatorDraftEdit:false}),false);
 assert.equal(orderDataEditingEnabled('department_head','confirm',defaults),false);
+
+assert.equal(orderDataEditingEnabled('department_head','rework',defaults),true);
+assert.equal(orderDataEditingEnabled('department_head','rework',{...defaults,operatorReworkEdit:false}),false);

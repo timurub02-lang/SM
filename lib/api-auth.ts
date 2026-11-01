@@ -19,7 +19,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    if(write){const raw=await readLimitedText(req,6000000);if(raw.length>1500000)throw new BodyTooLarge('Слишком большой запрос');body=JSON.parse(raw);}
    if(!mayCallEndpoint(employee,url,req.method,body))return Response.json({error:'Недостаточно прав'},{status:403});
    if((body?.actorId&&body.actorId!==employee.id)||(url.searchParams.has('actorId')&&url.searchParams.get('actorId')!==employee.id))return Response.json({error:'Нельзя действовать от имени другого сотрудника'},{status:403});
-   const crmOrderWrite=url.pathname==='/api/crm'&&['clientWaiting','markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment','incomingResult'].includes(body?.action);
+   const crmOrderWrite=url.pathname==='/api/crm'&&['requestOrderCancellation','resolveOrderCancellation','clientWaiting','markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment','incomingResult'].includes(body?.action);
    const orderId=body?.orderId||url.searchParams.get('orderId')||(crmOrderWrite?body.id:undefined);
    let order;
    if(orderId&&(!crmOrderWrite||['operator','department_head'].includes(employee.role))){
@@ -28,7 +28,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
     if(!row||!seesOrder(employee,JSON.parse(row.data),staff.results.map(x=>JSON.parse(x.data)))&&!((url.pathname==='/api/call-history'&&!write||url.pathname==='/api/telephony'&&req.method==='POST')&&await sharedIncomingClientAccess(db(),employee,JSON.parse(row.data).clientId)))return Response.json({error:'Заказ недоступен'},{status:403});
     order=JSON.parse(row.data);
    }
-   if(write&&orderId&&(isLogistic(employee.role)||order&&usesOrderLease(employee,order))&&url.pathname!=='/api/order-access'){
+   if(write&&body?.action!=='requestOrderCancellation'&&orderId&&(isLogistic(employee.role)||order&&usesOrderLease(employee,order))&&url.pathname!=='/api/order-access'){
     const token=crypto.randomUUID();
     const access=await acquireOrderAccess(orderId,employee,token,300000);
     if(!access.editable)return Response.json({error:'Заказ сейчас обрабатывает '+(access.holder||'другой логист')+'. Доступен только просмотр.'},{status:409});

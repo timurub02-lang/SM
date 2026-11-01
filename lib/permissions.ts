@@ -1,7 +1,7 @@
 import {canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
 import {canOperatorAmendMissed,canOperatorReachClient,canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
-import {canHeadEditDraft,departmentWorkStage,isDepartmentOrder} from './department-orders.ts';
+import {headDraftStage,departmentWorkStage,isDepartmentOrder} from './department-orders.ts';
 export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'owner'>){return !!c&&(e.role!=='operator'||c.owner===e.id);}
 export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
 export function seesOrder(e:Employee,o:Order,staff:Employee[]){
@@ -49,14 +49,16 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
+ if(p.action==='requestOrderCancellation')return allow(['operator','department_head'].includes(e.role)&&typeof p.incomingId==='string');
+ if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
  if(p.action==='updateLogisticComment')return allow(isLogistic(e.role));
- if(p.action==='updateOrder'&&p.operatorFollowup===true)return allow(canOperatorAmendMissed(e,order));
- if(p.action==='clientWaiting')return allow(canOperatorReachClient(e,order));
+ if(p.action==='updateOrder'&&p.operatorFollowup===true)return allow(canOperatorAmendMissed(e,order,s.employees));
+ if(p.action==='clientWaiting')return allow(canOperatorReachClient(e,order,s.employees));
  if(p.action==='incomingResult')return;
  if(e.role==='department_head'){
-  if(p.action==='updateOrder')return allow(canHeadEditDraft(e,order,s.employees));
-  allow(isDepartmentOrder(e,order,s.employees)&&departmentWorkStage(order));
-  return allow(['transition','contact','comment'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','claimDoor','resolveDoor'].includes(p.operation));
+  if(p.action==='updateOrder')return allow(isDepartmentOrder(e,order,s.employees)&&(headDraftStage(order)||order.status==='rework'&&departmentWorkStage(order)||canEditRecalledCourierOrder(order,e,s.employees)));
+  allow(isDepartmentOrder(e,order,s.employees)&&(departmentWorkStage(order)||headDraftStage(order)));
+  return allow(['transition','contact','comment'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','requestRepack','claimDoor','resolveDoor'].includes(p.operation));
  }
  if(isLogistic(e.role)&&['updateOrder','updateDelivery','updateWaybillComment'].includes(p.action)){
   allow(canLogisticEditOrder(order));

@@ -2,14 +2,14 @@ import {canOperatorAmendMissed,type Employee,type Order} from './crm.ts';
 
 export const isDepartmentOrder=(e:Pick<Employee,'role'|'department'>,o:Pick<Order,'manager'>,staff:Employee[])=>
  e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&x.department===e.department);
+export const isOrderOperator=(e:Pick<Employee,'id'|'role'|'department'>,o:Pick<Order,'manager'>,staff:Employee[]=[])=>e.role==='operator'&&e.id===o.manager||isDepartmentOrder(e,o,staff);
 export const headDraftStage=(o:Pick<Order,'status'|'courier'|'cdekExported'|'cdekDeleting'>)=>o.status==='draft'&&!o.courier&&!o.cdekExported&&!o.cdekDeleting;
-export const canHeadEditDraft=(e:Employee,o:Order,staff:Employee[])=>isDepartmentOrder(e,o,staff)&&headDraftStage(o);
 export const departmentWorkStage=(o:Pick<Order,'status'|'courier'|'cdekExported'|'cdekDeleting'>)=>
  !o.cdekExported&&!o.cdekDeleting&&['confirm','extra','rework'].includes(o.status)&&(!o.courier||o.status==='rework'&&o.courier.phase==='operator');
 export function usesOrderLease(e:Pick<Employee,'id'|'role'>,o:Order){
  if(['logistic','chief_logistic'].includes(e.role))return true;
  if(o.courier?.doorRefusal&&!o.courier.doorRefusal.resolvedAt)return false; // Urgent doorstep takeover keeps its existing claim protocol.
- return e.role==='department_head'?(departmentWorkStage(o)||headDraftStage(o)):e.role==='operator'&&o.manager===e.id&&(['draft','rework'].includes(o.status)||canOperatorAmendMissed(e,o));
+ return e.role==='department_head'?(departmentWorkStage(o)||headDraftStage(o)||o.status==='packing'&&!o.courier&&!!o.courierRecall?.completedAt&&!o.packingWaybillAt):e.role==='operator'&&o.manager===e.id&&(['draft','rework'].includes(o.status)||canOperatorAmendMissed(e,o));
 }
 export type OrderActionAuthor={id:string;name:string;role:Employee['role'];at:string};
 export function headOrderMarks(o:Order){
