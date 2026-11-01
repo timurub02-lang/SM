@@ -26,6 +26,19 @@ let oldFinish;const oldReader=new SnapshotReader(url,()=>new Promise(resolve=>ol
 const old=oldReader.read();oldReader.invalidate();oldFinish(Response.json({version:0}));assert.equal(await old,null);
 const failed=new SnapshotReader(url,async()=>Response.json({error:'Требуется вход'},{status:401}));
 await assert.rejects(failed.read(),{status:401});
+// A slow body must have the full loading budget; an expired read can be retried.
+const nativeTimeout=AbortSignal.timeout;let timer;
+try{
+ AbortSignal.timeout=ms=>{assert.equal(ms,120000);timer=new AbortController();return timer.signal;};
+ let attempts=0;
+ const slow=new SnapshotReader(url,async(_url,{signal})=>{
+  if(++attempts>1)return Response.json({recovered:true});
+  return {status:200,ok:true,json:()=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('The user aborted a request.','AbortError')),{once:true}))};
+ });
+ const waiting=slow.read();await Promise.resolve();timer.abort();
+ await assert.rejects(waiting,/CRM не успела загрузить данные/);
+ assert.deepEqual(await slow.read(),{recovered:true});
+}finally{AbortSignal.timeout=nativeTimeout;}
 const response=conditionalJson(new Request(url),{private:'one'}),etag=response.headers.get('etag');
 assert.equal(response.status,200);assert.match(response.headers.get('cache-control'),/no-store/);
 assert.equal(conditionalJson(new Request(url,{headers:{'If-None-Match':etag}}),{private:'one'}).status,304);
