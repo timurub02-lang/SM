@@ -900,5 +900,25 @@ try{
  assert.equal((await editDraft()).status,409,'Operator active editor protects draft');
  await call('/api/order-access',{cookie:draftOp.cookie,body:{action:'release',orderId:headDraft.id,token:draftLease}});
  console.log('Head draft edit, handoff cutoff, department scope and editor lease passed');
+ for(const [id,name] of [['basket-goods','Basket goods'],['basket-total','ИТОГО']]){
+  db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run(id,name.toLowerCase(),JSON.stringify({name,sku:id,weight:1,cost:1}));
+  db.prepare('INSERT INTO stock_movements(id,product_id,quantity,reason,actor_id,at) VALUES(?,?,?,?,?,?)').run(id,id,100,'Synthetic fixture','admin',new Date().toISOString());
+ }
+ const saveTotal=quantity=>call('/api/crm',{cookie:draftHead.cookie,body:{action:'updateOrder',id:headDraft.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(headDraft.id).version,items:[{name:'Basket goods',quantity,price:0},{name:'ИТОГО',quantity:1,price:5000.01}],addressConfirmed:true}});
+ for(const quantity of [3,5]){
+  const saved=await saveTotal(quantity);assert.equal(saved.status,200,JSON.stringify(saved.data));
+  const items=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(headDraft.id).data).items;
+  assert.equal(items[0].quantity,quantity);assert.equal(items.at(-1).name,'ИТОГО');
+  assert.equal(items.reduce((sum,item)=>sum+Math.round(item.price*100)*item.quantity,0),500001);
+  assert.equal(db.prepare("SELECT reserved FROM product_stock WHERE id='basket-goods'").get().reserved,quantity);
+ }
+ const basketClient={...draftClient,id:'basket-new-client',phone:'+79990000992'};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(basketClient.id,basketClient.phone,JSON.stringify(basketClient));
+ const newBasket=await call('/api/crm',{cookie:draftOp.cookie,body:{action:'createOrder',clientId:basketClient.id,addressConfirmed:true,items:[{name:'Basket goods',quantity:2,price:0},{name:'ИТОГО',quantity:1,price:1234.56}]}});
+ assert.equal(newBasket.status,200,JSON.stringify(newBasket.data));
+ const createdBasket=JSON.parse(db.prepare('SELECT data FROM orders WHERE client_id=?').get(basketClient.id).data);
+ assert.equal(createdBasket.items.at(-1).price,1234.56);
+ console.log('Basket total HTTP: zero-priced goods, exact total, quantity edits and warehouse reservation passed');
+
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

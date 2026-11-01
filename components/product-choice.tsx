@@ -1,4 +1,5 @@
 'use client';
+import {isBasketTotal} from '@/lib/basket-total';
 import {useEffect,useId,useRef,useState} from 'react';
 import {ArrowRight,Check,ChevronDown,X} from 'lucide-react';
 import {Dialog,DialogContent,DialogTitle,DialogTrigger} from '@/components/ui/dialog';
@@ -8,7 +9,7 @@ export function ProductChoice({value,onChange,label}:{value:string;onChange:(nam
  const [products,setProducts]=useState<Product[]>([]),[tag,setTag]=useState('*'),[query,setQuery]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState('');
  const [open,setOpen]=useState(false),[invalid,setInvalid]=useState(false);
  const search=useRef<HTMLInputElement>(null),errorId=useId();
- useEffect(()=>{let cancelled=false;setLoading(true);setError('');fetch('/api/warehouse?catalog=1',{cache:'no-store'}).then(async r=>{const data=await r.json() as {products:Product[];error?:string};if(!r.ok)throw Error(data.error||'Не удалось загрузить товары');if(!cancelled)setProducts(data.products);}).catch(e=>{if(!cancelled)setError(e.message);}).finally(()=>{if(!cancelled)setLoading(false);});return()=>{cancelled=true;};},[open]);
+ useEffect(()=>{let cancelled=false;setLoading(true);setError('');fetch('/api/warehouse?catalog=1',{cache:'no-store'}).then(async r=>{const data=await r.json() as {products:Product[];error?:string};if(!r.ok)throw Error(data.error||'Не удалось загрузить товары');if(!cancelled)setProducts(data.products.filter(p=>!isBasketTotal(p)));}).catch(e=>{if(!cancelled)setError(e.message);}).finally(()=>{if(!cancelled)setLoading(false);});return()=>{cancelled=true;};},[open]);
  const tags=[...new Set(products.map(p=>p.tag))].sort((a,b)=>a.localeCompare(b,'ru'));
  const list=products.filter(p=>(tag==='*'||p.tag===tag)&&p.name.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')));
  const selected=products.find(p=>p.name===value);
