@@ -12,16 +12,18 @@ export class SnapshotReader<T> {
  read():Promise<T|null>{
   if(this.pending)return this.pending;
   const generation=this.generation,controller=new AbortController();this.controller=controller;
+  // The initial snapshot can outlast 30 seconds on a slow connection.
+  const timeout=AbortSignal.timeout(120000);
   const pending=(async()=>{
    try{
-    const response=await this.request(this.url,{cache:'no-store',headers:this.etag?{'If-None-Match':this.etag}:{},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)])});
+    const response=await this.request(this.url,{cache:'no-store',headers:this.etag?{'If-None-Match':this.etag}:{},signal:AbortSignal.any([controller.signal,timeout])});
     if(generation!==this.generation)return null;
     if(response.status===304&&this.value!==undefined)return this.value;
     const data=await response.json() as T&{error?:string};
     if(generation!==this.generation)return null;
     if(!response.ok)throw Object.assign(Error(data.error||'Не удалось загрузить данные'),{status:response.status});
     this.etag=response.headers.get('etag')||'';this.value=data;return data as T;
-   }catch(error){if(controller.signal.aborted)return null;throw error;}
+   }catch(error){if(controller.signal.aborted)return null;if(timeout.aborted)throw Error("CRM не успела загрузить данные. Проверьте соединение и повторите загрузку.");throw error;}
    finally{if(generation===this.generation){this.pending=undefined;this.controller=undefined;}}
   })();
   this.pending=pending;return pending;
