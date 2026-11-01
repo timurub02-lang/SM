@@ -640,7 +640,10 @@ try{
   const rejected=await policyAction(policyOperator.cookie,{...handoff,confirmationAt},400);assert.equal(rejected.status,'draft');assert.equal(rejected.confirmationRequest,undefined);
  }
  const requestedAt=new Date(moscowDate()+'T23:59:59.999+03:00').toISOString();
- await policyAction(cookies.head,{...handoff,confirmationAt:requestedAt},400);
+ const headScheduled={...scheduledDraft,id:'head-scheduled-confirmation'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(headScheduled.id,headScheduled.clientId,JSON.stringify(headScheduled));
+ const byHead=await policyAction(cookies.head,{...handoff,id:headScheduled.id,confirmationAt:requestedAt});
+ assert.deepEqual(byHead.confirmationRequest,{at:requestedAt,by:'head'});assert.equal(byHead.manager,scheduledDraft.manager);
  let scheduled=await policyAction(policyOperator.cookie,{...handoff,confirmationAt:requestedAt});
  assert.deepEqual(scheduled.confirmationRequest,{at:requestedAt,by:policyOperator.e.id});
  assert.equal(scheduled.contact,'none');assert.equal(scheduled.due,'');assert.equal(scheduled.confirmationHours,48);
@@ -879,7 +882,7 @@ try{
  assert.equal((await login('admin')).status,401);
  assert.equal((await login('admin',changed)).status,200);
  console.log('Admin password save without department passed; all previous admin sessions revoked. Synthetic credentials only.');
- // A head may edit only an unsubmitted draft belonging to an operator of their department.
+ // A head can continue drafts and rework for their own department, with normal stage/lease guards.
  const draftHead=await fixture('draft-head','draft-dept','department_head'),draftOp=await fixture('draft-op','draft-dept');
  const draftClient={id:'head-draft-client',phone:'+79990000991',name:'Draft client',source:'Test',city:'',address:'',owner:draftOp.e.id,createdAt:new Date().toISOString(),version:1};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(draftClient.id,draftClient.phone,JSON.stringify(draftClient));
@@ -888,7 +891,7 @@ try{
  const editDraft=()=>call('/api/crm',{cookie:draftHead.cookie,body:{action:'updateOrder',id:headDraft.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(headDraft.id).version,delivery:'moscow_courier',items:[],address:'Москва, тестовый адрес',addressConfirmed:true,newOrderComment:'Head checked draft'}});
  const draftSaved=await editDraft();assert.equal(draftSaved.status,200,JSON.stringify(draftSaved.data));
  assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(headDraft.id).data).manager,draftOp.e.id);
- for(const status of ['confirm','rework','packing','shipping','redeemed']){
+ for(const status of ['confirm','packing','shipping','redeemed']){
   db.prepare("UPDATE orders SET data=json_set(data,'$.status',?) WHERE id=?").run(status,headDraft.id);
   assert.equal((await editDraft()).status,400,status);
  }
@@ -899,7 +902,15 @@ try{
  assert.equal((await call('/api/order-access',{cookie:draftOp.cookie,body:{action:'acquire',orderId:headDraft.id,token:draftLease}})).data.editable,true);
  assert.equal((await editDraft()).status,409,'Operator active editor protects draft');
  await call('/api/order-access',{cookie:draftOp.cookie,body:{action:'release',orderId:headDraft.id,token:draftLease}});
- console.log('Head draft edit, handoff cutoff, department scope and editor lease passed');
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','rework','$.reworkHours',NULL) WHERE id=?").run(headDraft.id);
+ const reworkSaved=await editDraft();assert.equal(reworkSaved.status,200,JSON.stringify(reworkSaved.data));
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','confirm','$.contact','missed','$.confirmationHours',NULL) WHERE id=?").run(headDraft.id);
+ const followup=await call('/api/crm',{cookie:draftHead.cookie,body:{action:'updateOrder',id:headDraft.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(headDraft.id).version,operatorFollowup:true,items:[],addressConfirmed:true,logisticMessage:'Head reached client'}});
+ assert.equal(followup.status,200,JSON.stringify(followup.data));
+ const continued=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(headDraft.id).data);
+ assert.equal(continued.clientWaiting.by,draftHead.e.id);assert.equal(continued.manager,draftOp.e.id);
+ db.prepare("UPDATE orders SET data=json_remove(json_set(data,'$.status','draft','$.contact','none'),'$.clientWaiting') WHERE id=?").run(headDraft.id);
+ console.log('Head draft/rework/followup, scope, author and editor lease passed');
  for(const [id,name] of [['basket-goods','Basket goods'],['basket-total','ИТОГО']]){
   db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run(id,name.toLowerCase(),JSON.stringify({name,sku:id,weight:1,cost:1}));
   db.prepare('INSERT INTO stock_movements(id,product_id,quantity,reason,actor_id,at) VALUES(?,?,?,?,?,?)').run(id,id,100,'Synthetic fixture','admin',new Date().toISOString());
@@ -920,5 +931,54 @@ try{
  assert.equal(createdBasket.items.at(-1).price,1234.56);
  console.log('Basket total HTTP: zero-priced goods, exact total, quantity edits and warehouse reservation passed');
 
+ // Cancellation requests from incoming calls preserve stage until logistics resolves them.
+ const cancelLog=await fixture('cancel-log','','logistic'),cancelOtherLog=await fixture('cancel-other-log','','logistic');
+ let cancelIndex=0;
+ function cancellationFixture(patch={}){
+  const id='cancel-order-'+(++cancelIndex),incomingId='cancel-incoming-'+cancelIndex;
+  const o={...headDraft,id,clientId:draftClient.id,status:'packing',delivery:'russian_post',manager:draftOp.e.id,items:[{name:'Basket goods',quantity:1,price:100}],round:1,...patch};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,o.clientId,JSON.stringify(o));
+  db.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number) VALUES(?,?,?,?,?,?,?)').run(incomingId,o.clientId,draftOp.e.id,draftHead.e.department,new Date().toISOString(),draftClient.phone,'+79990000000');
+  return {id,incomingId};
+ }
+ const cancelOrder=id=>({...JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data),version:db.prepare('SELECT version FROM orders WHERE id=?').get(id).version});
+ const requestCancel=(f,cookie=draftOp.cookie,extra={})=>call('/api/crm',{cookie,body:{action:'requestOrderCancellation',id:f.id,version:cancelOrder(f.id).version,incomingId:f.incomingId,reason:'Client called and requested cancellation',...extra}});
+ const resolveCancel=(f,cookie=cancelLog.cookie,extra={})=>call('/api/crm',{cookie,body:{action:'resolveOrderCancellation',id:f.id,version:cancelOrder(f.id).version,requestId:cancelOrder(f.id).cancellationRequest?.id,decision:'cancel',...extra}});
+ const cancelF=cancellationFixture();
+ assert.equal((await requestCancel(cancelF,cookies.two)).status,403);
+ assert.equal((await requestCancel(cancelF,draftOp.cookie,{reason:''})).status,400);
+ const stockBeforeCancel=db.prepare("SELECT reserved FROM product_stock WHERE id='basket-goods'").get().reserved;
+ const requestedCancel=await requestCancel(cancelF);assert.equal(requestedCancel.status,200,JSON.stringify(requestedCancel.data));
+ assert.equal(cancelOrder(cancelF.id).status,'packing');
+ assert.equal(cancelOrder(cancelF.id).cancellationRequest.by,draftOp.e.id);
+ assert(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(cancelF.incomingId).closed_at);
+ assert.equal((await requestCancel(cancelF)).status,400);
+ const cancelLogState=await call('/api/crm',{cookie:cancelLog.cookie});
+ assert(cancelLogState.data.tasks.some(r=>r.orderId===cancelF.id&&r.kind==='order-cancellation'));
+ assert(cancelLogState.data.reminders.some(r=>r.orderId===cancelF.id&&r.kind==='order-cancellation'&&!r.resolved));
+ assert.equal((await resolveCancel(cancelF,draftOp.cookie)).status,400);
+ assert.equal((await resolveCancel(cancelF,cancelLog.cookie,{version:0})).status,400);
+ assert.equal((await resolveCancel(cancelF)).status,200);
+ assert.equal(cancelOrder(cancelF.id).status,'refused');assert.equal(cancelOrder(cancelF.id).manager,draftOp.e.id);
+ assert.equal(cancelOrder(cancelF.id).cancellationAuthor.id,cancelLog.e.id);
+ assert.equal(db.prepare("SELECT reserved FROM product_stock WHERE id='basket-goods'").get().reserved,stockBeforeCancel-1);
+ assert.equal((await resolveCancel(cancelF)).status,400);
+ for(const patch of [{testOnly:true,cdekExported:true,delivery:'cdek_pickup'},{cdekTransferredAt:new Date().toISOString(),delivery:'cdek_pickup'},{status:'shipping',delivery:'russian_post'},{courier:{id:'synthetic-courier',phase:'pending'},delivery:'moscow_courier'}]){
+  const f=cancellationFixture(patch);assert.equal((await requestCancel(f)).status,200);
+  const before=cancelOrder(f.id);assert.equal((await resolveCancel(f)).status,400);
+  assert.equal(cancelOrder(f.id).status,before.status);assert.equal(cancelOrder(f.id).cancellationRequest.status,'pending');
+  assert.equal((await resolveCancel(f,cancelLog.cookie,{decision:'reject',reason:'Already handed to delivery'})).status,200);
+  assert.equal(cancelOrder(f.id).cancellationRequest.status,'rejected');
+ }
+ const raceF=cancellationFixture({delivery:'cdek_pickup'});assert.equal((await requestCancel(raceF)).status,200);
+ db.prepare('INSERT INTO settings(id,data) VALUES(?,?)').run('cdek-shipment-'+raceF.id,JSON.stringify({state:'sending'}));
+ assert.equal((await resolveCancel(raceF)).status,400);assert.equal(cancelOrder(raceF.id).status,'packing');
+ const duplicateF=cancellationFixture();assert.equal((await requestCancel(duplicateF)).status,200);
+ const concurrentCancel=await Promise.all([resolveCancel(duplicateF),resolveCancel(duplicateF,cancelOtherLog.cookie)]);
+ assert.equal(concurrentCancel.filter(r=>r.status===200).length,1);
+ assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Заказ отменён по просьбе клиента%'").get(duplicateF.id).n,1);
+ const closedF=cancellationFixture();db.prepare("UPDATE incoming_calls SET closed_at=? WHERE id=?").run(new Date().toISOString(),closedF.incomingId);
+ assert.equal((await requestCancel(closedF)).status,400);assert.equal(cancelOrder(closedF.id).cancellationRequest,undefined);
+ console.log('Incoming cancellation: scope, reason, request/decision notifications, carrier guards, stock release, stale and concurrent writes passed');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

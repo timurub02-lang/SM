@@ -1,3 +1,4 @@
+import {requestOrderCancellation,resolveOrderCancellation} from '@/lib/order-cancellation';
 import {readLimitedText} from '@/lib/request-body';
 import {canCreateRedemptionStaff} from '@/lib/crm';
 import {applyPremiumStages,nextPremiumPreview,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
@@ -271,20 +272,29 @@ async function handlePOST(request:Request){
   if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите создание заказа вручную.');
   const created=ev(c.id,o.id,"Создан заказ · Оформление"+(addressWarnings.length?" · адрес проверен вручную, создание подтверждено несмотря на предупреждение: "+addressWarnings.map(w=>w.message).join(" "):"")+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":""));
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(o.id,c.id,json(o),c.id,c.version),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(created.id,c.id,o.id,now,json(created),o.id)]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message="Заказ создан";
- }else if(["updateLogisticComment","clientWaiting","markPV","courierAccept","courierOutcome","courierWorkflow","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
-  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!(p.action==='updateLogisticComment'&&['admin','logistic','chief_logistic'].includes(employee.role))&&!(p.action==='clientWaiting'&&canOperatorReachClient(employee,o))&&!(p.action==='updateOrder'&&p.operatorFollowup===true&&canOperatorAmendMissed(employee,o))&&!(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee))&&!(p.action==='courierWorkflow'&&['claimDoor','resolveDoor'].includes(p.operation)&&canHandleCourierDoor(o,employee,s.employees))&&!(employee.role==="courier"&&["courierAccept","courierOutcome","courierWorkflow","contact"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");if(o.cdekDeleting)throw Error("СДЭК обрабатывает удаление. Дождитесь подтверждения");let next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cashReceipt:ReturnType<typeof d.prepare>[]=[];
-  if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,p.operatorFollowup===true&&canOperatorAmendMissed(employee,o)?'draft':canEditRecalledCourierOrder(o,employee)?'rework':o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
+ }else if(["requestOrderCancellation","resolveOrderCancellation","updateLogisticComment","clientWaiting","markPV","courierAccept","courierOutcome","courierWorkflow","receivePayment","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
+  const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!["requestOrderCancellation","resolveOrderCancellation"].includes(p.action)&&!(p.action==='updateLogisticComment'&&['admin','logistic','chief_logistic'].includes(employee.role))&&!(p.action==='clientWaiting'&&canOperatorReachClient(employee,o,s.employees))&&!(p.action==='updateOrder'&&p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees))&&!(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee,s.employees))&&!(p.action==='courierWorkflow'&&['claimDoor','resolveDoor'].includes(p.operation)&&canHandleCourierDoor(o,employee,s.employees))&&!(employee.role==="courier"&&["courierAccept","courierOutcome","courierWorkflow","contact"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");if(o.cdekDeleting)throw Error("СДЭК обрабатывает удаление. Дождитесь подтверждения");let next={...o,updatedAt:now,_mutation:id("M-")};let text="";let cancellationIncoming:Awaited<ReturnType<typeof incomingForAction>>|undefined;let cashReceipt:ReturnType<typeof d.prepare>[]=[];
+  if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees)?'draft':canEditRecalledCourierOrder(o,employee,s.employees)?'rework':o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
   if(courierDoorRefusal(o)){
    if(!(p.action==='courierWorkflow'&&['claimDoor','resolveDoor'].includes(p.operation)||['comment','updateOrder','updateLogisticComment'].includes(p.action)))throw Error('Отказ у двери: курьер ждёт окончательного ответа. Недозвон, перезвон и другие переходы недоступны');
    if(p.action==='updateOrder'&&o.courier!.doorRefusal!.claimedBy!==employee.id)throw Error('Сначала возьмите срочное обращение в работу');
   }
   if(o.status==="rework"&&!next.returnReason)next.returnReason=o.reason;
-  if((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
+  if((p.action==='resolveOrderCancellation'&&p.decision==='cancel'||["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
    const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-shipment-${o.id}`).first<{data:string}>();
    if(shipment&&JSON.parse(shipment.data).state!=="invalid")throw Error("Заказ уже выгружен или отправляется в СДЭК. Изменение доставки и корзины заблокировано");
   }
-  if(p.action==="clientWaiting"){
-   next={...next,...markClientWaiting(employee,o,now),updatedAt:now};text="Клиент ждёт звонка · оператор дозвонился и сообщил логисту";
+  if(p.action==='requestOrderCancellation'){
+   const incomingId=z.string().min(1).max(100).parse(p.incomingId),reason=z.string().trim().min(1,'Укажите причину отмены').max(1900).parse(p.reason);
+   cancellationIncoming=await incomingForAction(d,incomingId,employee,s.employees,c.id);
+   next={...next,...requestOrderCancellation(o,employee,reason,incomingId,id('CANCEL-'),now),updatedAt:now};
+   text='СРОЧНО: клиент просит отменить заказ · запрос передан логисту · '+reason;
+  }else if(p.action==='resolveOrderCancellation'){
+   const decision=z.enum(['cancel','reject']).parse(p.decision),reason=z.string().trim().max(1900).parse(p.reason||'');
+   next={...next,...resolveOrderCancellation(o,employee,z.string().min(1).parse(p.requestId),decision,reason,now),updatedAt:now};
+   text=decision==='cancel'?'Заказ отменён по просьбе клиента · '+o.cancellationRequest!.reason:'Запрос на отмену отклонён логистом · '+reason;
+  }else if(p.action==="clientWaiting"){
+   next={...next,...markClientWaiting(employee,o,now,s.employees),updatedAt:now};text="Клиент ждёт звонка · оператор дозвонился и сообщил логисту";
   }else if(p.action==="markPV"){
    if(employee.role!=='admin'||o.status!=='check')throw Error('Метка ПВ ставится администратором на этапе проверки');next.pv=z.boolean().parse(p.value);next.pvMarkedAt=next.pv?now:undefined;text=next.pv?'Заказ отмечен ПВ':'Метка ПВ снята';
   }else if(p.action==="courierAccept"||p.action==="courierWorkflow"){
@@ -344,7 +354,7 @@ async function handlePOST(request:Request){
    if(!employee||!canManageDelivery(employee.role,o.status))throw new Error("Способ доставки выбирает логист до отправки заказа");
    next.delivery=deliverySchema.parse(p.delivery);text="Изменён способ доставки";
   }else if(p.action==="updateOrder"){
-   if(!isLogistic(employee.role)&&!["draft","rework"].includes(o.status)&&!canEditRecalledCourierOrder(o,employee)&&!(p.operatorFollowup===true&&canOperatorAmendMissed(employee,o))&&!(employee.role==="admin"&&canAdminEditReturnedCdekOrder(o)))throw new Error("Корзину можно менять на этапе оформления или возврата оператору");
+   if(!isLogistic(employee.role)&&!["draft","rework"].includes(o.status)&&!canEditRecalledCourierOrder(o,employee,s.employees)&&!(p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees))&&!(employee.role==="admin"&&canAdminEditReturnedCdekOrder(o)))throw new Error("Корзину можно менять на этапе оформления или возврата оператору");
    next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts??(p.address===undefined||p.address===o.address?o.addressParts:undefined));next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)?o.items:itemsSchema.parse(p.items);next.comment=o.comment;if(!isLogistic(employee.role)){const added=z.string().trim().max(3000).parse(p.newOrderComment||"");if(added)Object.assign(next,appendOrderComment(o,added,employee,now));else if(p.comment!==undefined&&p.comment!==o.comment&&String(p.comment).trim())Object.assign(next,appendOrderComment(o,z.string().max(3000).parse(p.comment),employee,now));}text=isLogistic(employee.role)?"Логист уточнил доставку и адрес заказа":"Обновлены доставка, адрес, корзина и комментарий менеджера";
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
@@ -379,7 +389,7 @@ async function handlePOST(request:Request){
    if(to==='refused')cancelCourierWork(next,now);
    if(next.confirmationRequest&&!next.confirmationRequest.handledAt)next.confirmationRequest={...next.confirmationRequest,handledAt:now};
    if(p.confirmationAt){
-    if(o.status!=="draft"||to!=="confirm"||!["operator","admin"].includes(employee.role))throw Error("Время первого подтверждения задаётся при первой передаче оператором логисту");
+    if(o.status!=="draft"||to!=="confirm"||!["operator","department_head","admin"].includes(employee.role))throw Error("Время первого подтверждения задаётся при первой передаче оператором логисту");
     const at=z.string().datetime().parse(p.confirmationAt);
     if(moscowDate(new Date(at))!==moscowDate(new Date(now)))throw Error("Подтверждение ко времени можно назначить только на сегодня по Москве");
     if(Date.parse(at)<=Date.parse(now))throw Error("Выберите будущее время подтверждения");
@@ -429,8 +439,8 @@ async function handlePOST(request:Request){
    if(isLogistic(employee.role))next.logistic=employee.id;
    text+=" · Доставка изменена на СДЭК. Заказ передан администратору на проверку";
   }
-  if(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee)&&next.delivery!==o.delivery)throw Error('При пересборке заказа курьера способ доставки не меняется');
-  if(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee)&&o.courierRepackRequest&&!o.courierRepackRequest.completedAt){
+  if(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee,s.employees)&&next.delivery!==o.delivery)throw Error('При пересборке заказа курьера способ доставки не меняется');
+  if(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee,s.employees)&&o.courierRepackRequest&&!o.courierRepackRequest.completedAt){
    next.courierRepackRequest={...o.courierRepackRequest,completedAt:now};text+=' · правки для пересборки сохранены';
   }
   if(p.action==="updateOrder"){
@@ -438,14 +448,14 @@ async function handlePOST(request:Request){
    if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите сохранение заказа вручную.');
    if(addressWarnings.length)text+=' · адрес проверен вручную, сохранение подтверждено несмотря на предупреждение: '+addressWarnings.map(w=>w.message).join(' ');
   }
-  if(o.courier&&p.action==='updateOrder'&&canEditCourierOrder(o,employee)){
+  if(o.courier&&p.action==='updateOrder'&&canEditCourierOrder(o,employee,s.employees)){
    if(next.delivery!==o.delivery)throw Error('После передачи курьеру нельзя менять способ доставки. Сначала отзовите посылку.');
    const contents=(items:Order['items'])=>JSON.stringify(items.map(({name,quantity})=>({name,quantity})));
    if(contents(next.items)!==contents(o.items))throw Error('Для изменения товара или количества сначала отзовите посылку на пересборку.');
    next.courier={...o.courier,amount:total(next)};
    text+=' · сумма под отчётом курьера обновлена: '+next.courier.amount+' ₽';
   }
-  if(o.courier&&!(p.action==='updateOrder'&&canEditCourierOrder(o,employee))&&['updateOrder','updateDelivery','saveManualDeliveryCost','selectCdekTariff','markPackingWaybill','updateWaybillComment'].includes(p.action))throw Error('Заказ уже передан курьеру. Данные отправления зафиксированы');
+  if(o.courier&&!(p.action==='updateOrder'&&canEditCourierOrder(o,employee,s.employees))&&['updateOrder','updateDelivery','saveManualDeliveryCost','selectCdekTariff','markPackingWaybill','updateWaybillComment'].includes(p.action))throw Error('Заказ уже передан курьеру. Данные отправления зафиксированы');
   if(p.action!=="selectCdekTariff"&&next.cdekTariff&&(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)))delete next.cdekTariff;
   if(next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts)||JSON.stringify(next.items)!==JSON.stringify(o.items)){delete next.manualDeliveryCost;delete next.packingWaybillAt;}
   const deliveryChanged=next.delivery!==o.delivery||next.address!==o.address||JSON.stringify(next.addressParts)!==JSON.stringify(o.addressParts);
@@ -460,17 +470,17 @@ async function handlePOST(request:Request){
   if(next.deliveryReset&&!next.deliveryReset.calculation&&!next.deliveryReset.waybill)delete next.deliveryReset;
   if(p.action==='updateOrder'&&p.operatorFollowup===true){
    const message=z.string().trim().max(3000).parse(p.logisticMessage||'');
-   next={...next,...operatorFollowup(employee,o,next,message,now)};
+   next={...next,...operatorFollowup(employee,o,next,message,now,s.employees)};
    text+=' · Клиент ждёт звонка'+(next.clientWaiting!.changes?.length?' · Есть изменения: '+next.clientWaiting!.changes.join(' | '):'')+(message?' · Сообщение логисту: '+message:'');
   }
   const proposedAddress=p.action==="updateOrder"||p.action==="transition"&&["confirm","extra"].includes(next.status)?clientAddressFromOrder(next):null;
   const addressPatch=proposedAddress&&(c.address!==proposedAddress.address||JSON.stringify(c.addressParts??null)!==JSON.stringify(proposedAddress.addressParts)||c.city!==proposedAddress.city||c.addressReview)?proposedAddress:null;
   if(addressPatch)text+=" · адрес клиента обновлён из заказа";
-  const closesIncoming=!!p.incomingId&&(['contact','transition'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','resolveDoor'].includes(p.operation));
+  const closesIncoming=!!p.incomingId&&(['requestOrderCancellation','contact','transition'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','resolveDoor'].includes(p.operation));
   if(closesIncoming){if(!employee)throw Error('Требуется сотрудник');await incomingForAction(d,z.string().max(100).parse(p.incomingId),employee,s.employees,c.id);text+=' · входящее обращение обработано';}
   const e=ev(c.id,o.id,text);
   const courierNotices=await courierReminderStatements(d,o,next,e,next._mutation,s.employees);
-  const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')='deleting')"+((["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")).bind(json(next),o.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[]),...cashReceipt,...courierNotices,...(closesIncoming?[incomingCloseStatement(d,p.incomingId,employee!.id,now,text,o.id,next._mutation)]:[])]);
+  const result=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')='deleting')"+((p.action==='resolveOrderCancellation'&&p.decision==='cancel'||["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='cdek-shipment-' || orders.id AND json_extract(data,'$.state')<>'invalid')":"")+(cancellationIncoming?" AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_at IS NULL AND client_id=? AND assignee_id IS ? AND department_id=? AND shared_queue=?)":"")).bind(json(next),o.id,p.version,...(cancellationIncoming?[cancellationIncoming.id,c.id,cancellationIncoming.assignee_id,cancellationIncoming.department_id,cancellationIncoming.shared_queue||0]:[])),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,next._mutation),...(addressPatch?[d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(addressPatch),c.id,o.id,next._mutation)]:[]),...cashReceipt,...courierNotices,...(closesIncoming?[incomingCloseStatement(d,p.incomingId,employee!.id,now,text,o.id,next._mutation)]:[])]);
   if(!result[0].meta.changes)throw new Error("Заказ уже изменён. Обновите страницу и повторите");
  }else if(p.action==="deleteEmployee"){
   if(s.orders.some(o=>o.courier?.id===p.id&&courierOutstanding(o)))throw Error('Сначала примите у курьера все деньги и возвраты');

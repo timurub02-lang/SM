@@ -1,7 +1,7 @@
 import type {Order,Employee} from './crm.ts';
 import type {Reminder} from './reminders.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
-import {isDepartmentOrder} from './department-orders.ts';
+import {isDepartmentOrder,isOrderOperator} from './department-orders.ts';
 
 export type CourierRecall={requestedAt:string;by:string;name:string;reason:string;returnedAt?:string;completedAt?:string;operatorBudgetMs?:number|null;operatorStartedAt?:string};
 export const courierRecalledAtWarehouse=(o:Pick<Order,'delivery'|'courier'|'courierRecall'>)=>o.delivery==='moscow_courier'&&!o.courier&&!!o.courierRecall?.returnedAt&&!!o.courierRecall.completedAt;
@@ -157,8 +157,8 @@ export function cancelCourierWork(o:Order,at:string){
  if(o.delivery!=='moscow_courier')return;
  if(o.courier)o.courier={...o.courier};pauseCourierOperatorBudget(o,at);stopCourierClock(o);clearCall(o);
 }
-export const canEditRecalledCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'>)=>o.delivery==='moscow_courier'&&!o.courier&&['packing','rework'].includes(o.status)&&!!o.courierRecall?.completedAt&&!o.packingWaybillAt&&(e.role==='admin'||e.role==='operator'&&o.manager===e.id);
-export const canEditCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'>)=>o.delivery==='moscow_courier'&&o.courier?.phase==='operator'&&o.status==='rework'&&(e.role==='admin'||e.role==='operator'&&o.manager===e.id);
+export const canEditRecalledCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'|'department'>,staff:Employee[]=[])=>o.delivery==='moscow_courier'&&!o.courier&&['packing','rework'].includes(o.status)&&!!o.courierRecall?.completedAt&&!o.packingWaybillAt&&(e.role==='admin'||isOrderOperator(e,o,staff));
+export const canEditCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'|'department'>,staff:Employee[]=[])=>o.delivery==='moscow_courier'&&o.courier?.phase==='operator'&&o.status==='rework'&&(e.role==='admin'||isOrderOperator(e,o,staff));
 export type CourierCommand={action:'courierAccept'|'courierWorkflow';operation?:'confirm'|'toOperator'|'resume'|'recall'|'returnRecall'|'receiveRecall'|'requestRepack'|'doorRefusal'|'claimDoor'|'resolveDoor';reason?:string;confirmed?:boolean;result?:'deliver'|'return'};
 // Shared by the API and tests; ordinary shipping cannot bypass this workflow.
 export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee,'id'|'role'|'name'|'department'>,policy:OrderPolicy,at:string,staff:Employee[]=[]){
@@ -196,7 +196,7 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
    else{pauseCourierOperatorBudget(o,at);stopCourierClock(o);clearCall(o);o.status='refused';o.cancelledAt=at;o.reason=p.reason?.trim()||c.workReason||'Клиент отказался у двери';o.returnReason=o.reason;text='Отказ у двери подтверждён · верните посылку на склад · '+o.reason;}
   }
  }else if(p.operation==='requestRepack'){
-  require(canEditCourierOrder(o,e)&&(!o.courierRepackRequest||!!o.courierRepackRequest.completedAt));
+  require(canEditCourierOrder(o,e,staff)&&(!o.courierRepackRequest||!!o.courierRepackRequest.completedAt));
   o.courierRepackRequest={at,by:e.id,name:e.name,reason:reason()};
   text='Оператор запросил пересборку посылки · '+o.courierRepackRequest.reason;
  }else if(p.operation==='recall'){

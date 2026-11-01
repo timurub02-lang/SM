@@ -4,7 +4,7 @@ import {draftDeadline,scheduledCalls,callAuthor,type State,type Employee,type Cl
 import {db} from './db';
 import {initReminderStore} from './reminder-store.ts';
 import {seesOrder,ownsClient} from './permissions';
-export type Reminder={incomingId?:string;kind?:"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
+export type Reminder={incomingId?:string;kind?:"order-cancellation"|"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
 export async function initReminders(){await initReminderStore(db());}
 export function orderDecisionReminder(c:Client,staff:Employee[]):Reminder|null{
  const request=c.orderRequest;if(!request||request.status==='pending')return null;
@@ -13,6 +13,7 @@ export function orderDecisionReminder(c:Client,staff:Employee[]):Reminder|null{
 }
 function activeReminder(r:Reminder,s:State,e:Employee){
  const o=s.orders.find(o=>o.id===r.orderId);
+ if(r.kind==='order-cancellation')return !!o&&o.cancellationRequest?.status==='pending'&&r.id===`cancel:${o.cancellationRequest.id}:pending`;
  if(r.kind==='courier-door')return !!o&&r.id===courierDoorNoticeId(o);
  if(e.role==='courier')return courierReminderNeedsAction(r,o);
  if(r.kind==='call')return scheduledCalls(o?[o]:[],e,s.employees).some(o=>o.due===r.due);
@@ -57,7 +58,8 @@ export async function saveReminders(s:State,employeeId?:string){
   }
   const requests:Reminder[]=s.clients.filter(c=>c.orderRequest?.status==='pending'&&(e.role==='admin'||e.role==='department_head'&&!!e.department&&c.orderRequest.department===e.department)).map(c=>({id:'request:'+c.orderRequest!.id,requestId:c.orderRequest!.id,clientId:c.id,title:'Запрос на повторный заказ',text:c.name+' · '+(s.employees.find(x=>x.id===c.orderRequest!.manager)?.login||''),at:c.orderRequest!.at}));
   const decisions=s.clients.filter(c=>c.orderRequest?.actorId===e.id).map(c=>orderDecisionReminder(c,s.employees)).filter((r):r is Reminder=>!!r);
-  const generated=[...calls,...drafts,...requests,...decisions,...courierNotices];
+  const cancellationNotices:Reminder[]=s.orders.filter(o=>o.cancellationRequest&&seesOrder(e,o,s.employees)&&(['admin','logistic','chief_logistic'].includes(e.role)||e.id===o.cancellationRequest.by||e.id===o.manager)).map(o=>{const r=o.cancellationRequest!;return {kind:'order-cancellation',id:`cancel:${r.id}:${r.status}`,orderId:o.id,clientId:o.clientId,title:r.status==='pending'?'СРОЧНО: клиент просит отменить заказ':r.status==='cancelled'?'Заказ отменён по просьбе клиента':'Запрос на отмену отклонён',text:r.name+' · '+r.reason+(r.decisionReason?' · '+r.decisionReason:''),at:r.decidedAt||r.at};});
+  const generated=[...cancellationNotices,...calls,...drafts,...requests,...decisions,...courierNotices];
   const prior=new Map(existing.map(r=>[r.id,r]));
   for(const r of generated){const old=prior.get(r.id);if(old){const {readAt,...data}=old;if(r.kind!=='call'||JSON.stringify(data)===JSON.stringify(r))continue;}writes.push(d.prepare(r.kind==='call'?'INSERT INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?) ON CONFLICT(employee_id,id) DO UPDATE SET data=excluded.data,at=excluded.at WHERE excluded.at>=reminders.at AND excluded.data<>reminders.data':'INSERT OR IGNORE INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?)').bind(e.id,r.id,JSON.stringify(r),r.at));}
   // Keep every current task, plus 20 history records. Only prune the inspected snapshot.
@@ -77,6 +79,7 @@ export async function employeeReminders(s:State,e:Employee){
   if(r.orderId){const o=s.orders.find(o=>o.id===r.orderId);return !!o&&seesOrder(e,o,s.employees);}
   const c=s.clients.find(c=>c.id===r.clientId);return !!c&&ownsClient(e,c,s.employees);
  }).map(r=>{
+  if(r.kind==='order-cancellation'){const o=s.orders.find(o=>o.id===r.orderId);return {...r,resolved:o?.cancellationRequest?.status!=='pending'||r.id!==`cancel:${o.cancellationRequest.id}:pending`};}
   if(r.id.startsWith('call:'))return {...r,resolved:!activeCalls.has(r.id)};
   if(r.kind==='courier-door'){const o=s.orders.find(o=>o.id===r.orderId);return {...r,resolved:!o||r.id!==courierDoorNoticeId(o)};}
   if(r.kind==='courier-warning')return {...r,resolved:courierDeadline(s.orders.find(o=>o.id===r.orderId)!)!==r.due};

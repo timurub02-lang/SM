@@ -13,6 +13,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
  }
  for(const o of s.orders){
   if(!seesOrder(e,o,s.employees)||o.cdekDeleting)continue;
+  if(o.cancellationRequest?.status==='pending'&&(logistic||admin)){add(o,'cancel-request','СРОЧНО: обработайте запрос на отмену',o.cancellationRequest.at,o.cancellationRequest.at,'order-cancellation',o.cancellationRequest.name+' · '+o.cancellationRequest.reason);continue;}
   const door=courierDoorRefusal(o),phase=courierPhase(o),stage=courierStage(o);
   if(door){
    if(canHandleCourierDoor(o,e,s.employees)){

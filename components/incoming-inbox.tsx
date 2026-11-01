@@ -7,12 +7,12 @@ import {CallButton} from './browser-phone';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
 import {IncomingClientLink} from './incoming-client-link';
 
-export function IncomingResult({item,busy,onSave}:{item:IncomingRequest;busy:boolean;onSave:(reason:string)=>Promise<boolean>}){
+export function IncomingResult({item,busy,onSave,onRequestCancellation}:{item:IncomingRequest;busy:boolean;onRequestCancellation?:(reason:string)=>Promise<boolean>;onSave:(reason:string)=>Promise<boolean>}){
  const [reason,setReason]=useState('');
  return <form className="notice stack incoming-result" onSubmit={async e=>{e.preventDefault();if(reason.trim()&&await onSave(reason.trim()))setReason('');}}>
   <strong>Итог входящего обращения · {stamp(item.at,'Europe/Moscow')} МСК</strong>
   <label className="field"><span>Результат / причина закрытия *</span><textarea required maxLength={1900} rows={2} placeholder="Напишите, чем закончилось обращение клиента" value={reason} disabled={busy} onChange={e=>setReason(e.target.value)}/></label>
-  <button type="submit" className="primary" disabled={busy||!reason.trim()}>Сохранить итог и закрыть обращение</button>
+  <button type="submit" className="primary" disabled={busy||!reason.trim()}>Сохранить итог и закрыть обращение</button>{onRequestCancellation&&<button type="button" className="secondary" disabled={busy||!reason.trim()} onClick={()=>void onRequestCancellation(reason.trim())}>Клиент просит отменить заказ</button>}
  </form>;
 }
 export function IncomingInbox({items,clients,employees,employee,busy,onReload,onCreate,onLink,onAssign,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];onReload:()=>Promise<unknown>;clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onAssign:(incomingId:string,operatorId:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string,incomingId?:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string,orderId?:string)=>Promise<boolean>}){
