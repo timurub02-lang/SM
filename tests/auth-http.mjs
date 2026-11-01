@@ -879,5 +879,26 @@ try{
  assert.equal((await login('admin')).status,401);
  assert.equal((await login('admin',changed)).status,200);
  console.log('Admin password save without department passed; all previous admin sessions revoked. Synthetic credentials only.');
+ // A head may edit only an unsubmitted draft belonging to an operator of their department.
+ const draftHead=await fixture('draft-head','draft-dept','department_head'),draftOp=await fixture('draft-op','draft-dept');
+ const draftClient={id:'head-draft-client',phone:'+79990000991',name:'Draft client',source:'Test',city:'',address:'',owner:draftOp.e.id,createdAt:new Date().toISOString(),version:1};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(draftClient.id,draftClient.phone,JSON.stringify(draftClient));
+ const headDraft={id:'head-draft-order',clientId:draftClient.id,manager:draftOp.e.id,status:'draft',delivery:'',items:[],address:'',comment:'',contact:'none',due:'',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),version:1};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(headDraft.id,draftClient.id,JSON.stringify(headDraft));
+ const editDraft=()=>call('/api/crm',{cookie:draftHead.cookie,body:{action:'updateOrder',id:headDraft.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(headDraft.id).version,delivery:'moscow_courier',items:[],address:'Москва, тестовый адрес',addressConfirmed:true,newOrderComment:'Head checked draft'}});
+ const draftSaved=await editDraft();assert.equal(draftSaved.status,200,JSON.stringify(draftSaved.data));
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(headDraft.id).data).manager,draftOp.e.id);
+ for(const status of ['confirm','rework','packing','shipping','redeemed']){
+  db.prepare("UPDATE orders SET data=json_set(data,'$.status',?) WHERE id=?").run(status,headDraft.id);
+  assert.equal((await editDraft()).status,400,status);
+ }
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','draft','$.manager','two') WHERE id=?").run(headDraft.id);
+ assert.equal((await editDraft()).status,403,'Foreign department draft denied');
+ db.prepare("UPDATE orders SET data=json_set(data,'$.manager',?) WHERE id=?").run(draftOp.e.id,headDraft.id);
+ const draftLease=crypto.randomUUID();
+ assert.equal((await call('/api/order-access',{cookie:draftOp.cookie,body:{action:'acquire',orderId:headDraft.id,token:draftLease}})).data.editable,true);
+ assert.equal((await editDraft()).status,409,'Operator active editor protects draft');
+ await call('/api/order-access',{cookie:draftOp.cookie,body:{action:'release',orderId:headDraft.id,token:draftLease}});
+ console.log('Head draft edit, handoff cutoff, department scope and editor lease passed');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

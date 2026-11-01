@@ -5,7 +5,7 @@ import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 import type {Reminder} from './reminders';
 import {addressPartsSchema,type AddressParts} from "./address.ts";
 import { z } from "zod";
-import {departmentWorkStage,isDepartmentOrder,type OrderActionAuthor} from './department-orders.ts';
+import {headDraftStage,departmentWorkStage,isDepartmentOrder,type OrderActionAuthor} from './department-orders.ts';
 export const statuses = {draft:"Оформление",confirm:"Подтверждение",rework:"Возврат оператору",check:"Проверка",extra:"Доп. подтверждение",packing:"Упаковка",phone:"Подготовка телефона",shipping:"В доставке",pickup:"Ожидает выкупа",redeemed:"Выкуплен",refused:"Отказ",returned:"Возврат"} as const;
 export type Status=keyof typeof statuses;
 export const orderGroups = [
@@ -169,7 +169,7 @@ export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){
  return {address:o.address.trim(),addressParts:o.addressParts||null,city:o.addressParts?.city||'',addressReview:false,addressProcessingError:false};
 }
 
-export const orderEditingLocked=(employee:Pick<Employee,"role"|"id">,order:Pick<Order,"status"|"manager"|"courier"|"cdekExported"|"cdekDeleting">)=>employee.role==="department_head"?!departmentWorkStage(order):order.status==="check"&&employee.role!=="admin"?true:employee.role==="operator"?(order.manager!==employee.id||!["draft","rework"].includes(order.status)):!["logistic","chief_logistic","admin","redemption"].includes(employee.role);
+export const orderEditingLocked=(employee:Pick<Employee,"role"|"id">,order:Pick<Order,"status"|"manager"|"courier"|"cdekExported"|"cdekDeleting">)=>employee.role==="department_head"?!(departmentWorkStage(order)||headDraftStage(order)):order.status==="check"&&employee.role!=="admin"?true:employee.role==="operator"?(order.manager!==employee.id||!["draft","rework"].includes(order.status)):!["logistic","chief_logistic","admin","redemption"].includes(employee.role);
 export const scheduledCalls=(orders:Order[],employee:Pick<Employee,"id"|"role"|"department">,staff:Employee[]=[])=>orders.filter(o=>["callback","missed"].includes(o.contact)&&!!o.due&&Number.isFinite(Date.parse(o.due))&&(employee.role==="department_head"?isDepartmentOrder(employee,o,staff)&&departmentWorkStage(o):employee.role==="operator"?o.manager===employee.id&&["draft","rework"].includes(o.status):isLogistic(employee.role)?(!o.courier&&["confirm","extra","pickup"].includes(o.status)):employee.role==="courier"?o.courier?.id===employee.id&&courierPhase(o)==="confirmation":false)).sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
 export const callAuthor=(o:Order,employees:Employee[])=>o.contactAuthor?.name?(o.contactAuthor.role==="department_head"?"Руководитель · ":"")+o.contactAuthor.name:employees.find(e=>e.id===(["draft","rework"].includes(o.status)?o.manager:o.logistic))?.name||"";
 export const logisticCallsDue=(orders:Order[],actorId:string,now:number)=>scheduledCalls(orders,{id:actorId,role:"logistic"}).filter(o=>Date.parse(o.due)<=now);
