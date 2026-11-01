@@ -1,6 +1,7 @@
 import type {CdekRemittance} from './cdek-remittance.ts';
 import {courierDoorRefusal,courierPhase,courierParcelLocation,courierWarehouseReturn,courierRecalledAtWarehouse} from './courier.ts';
 import type {CourierAssignment,CourierRecall} from './courier.ts';
+import {isBasketTotal} from './basket-total.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 import type {Reminder} from './reminders';
 import {addressPartsSchema,type AddressParts} from "./address.ts";
@@ -52,7 +53,11 @@ export const stamp=(s:string,timeZone?:string)=>{
 export const normalizePhone=(v:string)=>{let p=v.replace(/\D/g,"");if(p.length===10)p="7"+p;if(p.length===11&&p.startsWith("8"))p="7"+p.slice(1);return p.length===11&&p.startsWith("7")?"+"+p:"";};
 export const daysLeft=(c:Client)=>c.assignedUntil?Math.ceil((Date.parse(c.assignedUntil)-Date.now())/86400000):0;
 export const clientSchema=z.object({biography:z.string().trim().max(5000).optional(),name:z.string().trim().min(2,"Укажите имя клиента").max(150),phone:z.string().transform(normalizePhone).refine(Boolean,"Укажите российский телефон из 11 цифр"),city:z.string().trim().max(250).prefault(""),address:z.string().trim().max(500).prefault(""),addressParts:addressPartsSchema.optional(),source:z.string().trim().max(200).prefault("Вручную"),owner:z.string().max(100).prefault("")});
-export const itemsSchema=z.array(z.object({name:z.string().trim().min(1,"Укажите товар").max(200),quantity:z.number().int().min(1).max(9999),price:z.number().min(0.01).max(10000000)})).max(100);
+export const itemsSchema=z.array(z.object({name:z.string().trim().min(1,"Укажите товар").max(200),quantity:z.number().int().min(1).max(9999),price:z.number().min(0).max(10000000)})).max(100).superRefine((items,ctx)=>{
+ const totals=items.filter(isBasketTotal),goods=items.filter(item=>!isBasketTotal(item));
+ if(totals.length&&(totals.length!==1||totals[0].quantity!==1||totals[0].price<=0||!goods.length))ctx.addIssue({code:"custom",message:"Добавьте товары и укажите положительную сумму в «Итого»"});
+ if(!totals.length)items.forEach((item,index)=>{if(item.price<0.01)ctx.addIssue({code:"custom",path:[index,"price"],message:"Укажите положительную цену или общую сумму в «Итого»"});});
+});
 export const needsDepartment=(role:string)=>!["admin","logistic","chief_logistic","courier","redemption","purchasing"].includes(role);
 export const employeeSchema=z.object({sz:z.boolean().optional(),baseAccess:z.enum(["M","J","both"]).prefault("both"),name:z.string().trim().min(2).max(150),alias:z.string().trim().max(100),login:z.string().trim().min(1).max(100),skLogin:z.string().trim().max(100),role:z.enum(["operator","logistic","chief_logistic","courier","admin","redemption","department_head","purchasing"]),department:z.enum(departmentIds,{error:"Выберите отдел"}).optional(),salary:z.number().min(0).max(10000000),bonus:z.number().min(0).max(100)}).superRefine((employee,ctx)=>{if(needsDepartment(employee.role)&&!employee.department)ctx.addIssue({code:z.ZodIssueCode.custom,path:["department"],message:"Выберите отдел"});}).transform(employee=>({...employee,department:needsDepartment(employee.role)?employee.department:undefined}));
 export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:Pick<Client,"address">){
