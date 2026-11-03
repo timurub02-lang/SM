@@ -75,6 +75,9 @@ export function authorizeCrm(e:Employee,p:any,s:State){
   if(e.role==='redemption')allow(['pickup','redeemed','returned'].includes(p.to));
  }
 }
+export function warehouseReadOnly(role:Employee['role']){
+ return ['operator','department_head','purchasing'].includes(role);
+}
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;
  if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&method==='GET'&&!url.searchParams.has('points');
@@ -101,7 +104,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/callback-phones'||path==='/api/postal-form')return method==='GET'&&isLogistic(e.role);
  if(path==='/api/dadata')return method==='GET'||p?.action==='suggest';
  if(path==='/api/mainsms')return method==='GET'||!['save','check'].includes(p?.action);
- if(path==='/api/warehouse')return isLogistic(e.role)||method==='GET'&&url.searchParams.has('catalog');
+ if(path==='/api/warehouse')return isLogistic(e.role)||method==='GET'&&(url.searchParams.has('catalog')||warehouseReadOnly(e.role)&&!url.searchParams.has('points'));
  if(path==='/api/warehouse/waybill'||path.startsWith('/api/cdek/'))return isLogistic(e.role);
  return false;
 }

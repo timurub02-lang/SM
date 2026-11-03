@@ -1,3 +1,4 @@
+import {warehouseReadOnly} from '@/lib/permissions';
 import {readLimitedText} from '@/lib/request-body';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
@@ -14,7 +15,7 @@ async function offices(query:URLSearchParams){
  return list.filter(x=>x.status==='ACTIVE'&&x.is_reception).map(x=>({code:x.code,address:x.location?.address_full||x.location?.address||x.code}));
 }
 async function init(){await initInventory();await db().prepare('CREATE TABLE IF NOT EXISTS products(id TEXT PRIMARY KEY,name_key TEXT UNIQUE NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)').run();await db().prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('warehouse-address',?)").bind(JSON.stringify({address:'127422',postalCode:'127422'})).run();}
-async function permitted(actorId:string,readOnly=false){const r=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();return r&&['admin','logistic','chief_logistic',...(readOnly?['purchasing']:[])].includes(JSON.parse(r.data).role);}
+async function permitted(actorId:string,readOnly=false){const r=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();if(!r)return false;const {role}=JSON.parse(r.data);return ['admin','logistic','chief_logistic'].includes(role)||readOnly&&warehouseReadOnly(role);}
 async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(new URL(req.url).searchParams.has('catalog')){await init();const rows=await db().prepare('SELECT p.id,p.data,s.available,s.blocked FROM products p JOIN product_stock s ON s.id=p.id WHERE NOT EXISTS(SELECT 1 FROM lv_stock l WHERE l.product_id=p.id AND l.active=0) ORDER BY p.name_key').all<{id:string;data:string;available:number;blocked:number}>();return Response.json({products:rows.results.map(r=>{const p=JSON.parse(r.data);return {id:r.id,name:p.name,tag:p.tag||'',available:r.available,blocked:!!r.blocked};})},{headers:{'Cache-Control':'no-store'}});}

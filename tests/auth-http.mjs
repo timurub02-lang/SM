@@ -48,7 +48,12 @@ try{
  assert.equal((await call('/api/crm',{cookie:cookies.one,body:{action:'updateClient',id:'c-two'}})).status,400);
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'settings',retentionDays:2},headers:{Origin:'https://evil.test'}})).status,403);
  assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'settings',retentionDays:2},headers:{Origin:''}})).status,403);
- assert.equal((await call('/api/warehouse',{cookie:cookies.one})).status,403);
+ for(const cookie of [cookies.one,cookies.head]){
+  const warehouse=await call('/api/warehouse',{cookie});
+  assert.equal(warehouse.status,200);assert.ok(Array.isArray(warehouse.data.products));
+  assert.equal((await call('/api/warehouse?movements=test',{cookie})).status,200);
+  for(const action of ['stock','saveAddress','saveProduct'])assert.equal((await call('/api/warehouse',{cookie,body:{action}})).status,403);
+ }
  for(const role of ['one','head']){
   assert.equal((await call('/api/lv-warehouse',{cookie:cookies[role]})).status,403);
   assert.equal((await call('/api/lv-warehouse',{cookie:cookies[role],body:{action:'sync'}})).status,403);
