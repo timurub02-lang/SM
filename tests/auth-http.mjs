@@ -28,7 +28,7 @@ try{
   const o={id:'o-'+id,clientId:c.id,manager:id,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,version:1};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
  }
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_ADDITIONAL_ORIGINS:' https://crm-alias.test, ',CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(ready,'Server failed to start');
@@ -37,6 +37,12 @@ try{
  const unauth=await call('/api/crm',{headers:{'oai-authenticated-user-id':'admin','oai-authenticated-user-email':'admin@test.local'}});assert.equal(unauth.status,401);
  assert.equal((await call('/')).status,307);
  assert.equal((await login('admin','wrong-password')).status,401);
+ const aliasLogin=await call('/api/auth/login',{body:{login:'admin',password},headers:{Origin:'https://crm-alias.test','Sec-Fetch-Site':'same-origin'}});
+ assert.equal(aliasLogin.status,200,aliasLogin.text);
+ assert.equal((await call('/api/auth/me',{cookie:aliasLogin.headers.get('set-cookie').split(';')[0]})).data.employee.id,'admin');
+ for(const badOrigin of ['', 'null', 'https://evil.test', 'https://crm-alias.test.evil.test', 'https://crm-alias.test/', origin+', https://crm-alias.test'])
+  assert.equal((await call('/api/auth/login',{body:{login:'admin',password},headers:{Origin:badOrigin}})).status,403,badOrigin);
+ assert.equal((await call('/api/auth/login',{body:{login:'admin',password},headers:{Origin:'https://crm-alias.test','Sec-Fetch-Site':'cross-site'}})).status,403);
  const cookies={};for(const id of ['admin','one','two','head']){const r=await login(id);assert.equal(r.status,200,r.text);const c=r.headers.get('set-cookie');for(const flag of ['HttpOnly','Secure','SameSite=strict'])assert.ok(c.toLowerCase().includes(flag.toLowerCase()),flag);cookies[id]=c.split(';')[0];}
  for(let i=0;i<3;i++){const r=await call('/api/auth/me',{cookie:cookies.admin});assert.equal(r.data.employee.role,'admin');}
  for(const id of ['one','head']){const r=await call('/api/crm',{cookie:cookies[id]});assert.equal(r.status,200,r.text);assert.equal(r.data.currentEmployeeId,id);assert.deepEqual(r.data.orders.map(o=>o.id),['o-one']);assert.deepEqual(r.data.clients.map(c=>c.id),['c-one']);assert.equal(r.data.clients[0].phone,'');assert.ok(!r.text.includes('password_hash'));assert.ok(!JSON.stringify(r.data.clients).includes('+7999'));}
