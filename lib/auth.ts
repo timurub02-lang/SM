@@ -17,7 +17,10 @@ export async function sessionEmployee(h:Headers,allowTestAccount=false):Promise<
  if(!row||(row.test_id&&!allowTestAccount))return null;
  return {...JSON.parse(row.data),version:row.version,testOnly:!!row.test_id};
 }
-export function trustedOrigin(h:Headers){return h.get('origin')===process.env.CRM_ORIGIN&&h.get('sec-fetch-site')!=='cross-site';}
+export function trustedOrigin(h:Headers){
+ const origin=h.get('origin'),allowed=[process.env.CRM_ORIGIN,...(process.env.CRM_ADDITIONAL_ORIGINS||'').split(',').map(x=>x.trim())];
+ return !!origin&&origin!=='null'&&allowed.includes(origin)&&h.get('sec-fetch-site')!=='cross-site';
+}
 export async function login(login:string,password:string,ip:string){
  await ensureAuth();const now=Date.now(),cutoff=now-15*60*1000;
  await db().prepare('DELETE FROM auth_attempts WHERE started_at<?').bind(cutoff).run();

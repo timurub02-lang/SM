@@ -61,6 +61,7 @@ function publishBrowserMedia(message){
  return headers.replace(/^Content-Length:\s*\d+\s*$/im,'Content-Length: '+Buffer.byteLength(sdp,'utf8'))+'\r\n\r\n'+sdp;
 }
 module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21.103.2:5060/',incoming=async()=>null,canAuthorize=()=>true}){
+ const allowedOrigins=['https://crm.smanalytics.ru',...(process.env.CRM_ADDITIONAL_ORIGINS||'').split(',').map(x=>x.trim()).filter(x=>x&&x!=='null')];
  const leases=new Map(),mutating=new Set();let generation=0;
  const state=actor=>{const lease=leases.get(actor);return ({connected:connected(),prepared:!!lease,registered:!!lease?.registered,calling:!!lease?.calling,call:lease?.call||null});};
  async function close(actor,expected){const old=leases.get(actor);if(!old||(expected&&old!==expected)||mutating.has(actor))return;mutating.add(actor);try{old.client?.close();old.upstream?.close();await operators.release(actor,old.owner);if(leases.get(actor)===old)leases.delete(actor);}finally{mutating.delete(actor);}}
@@ -69,7 +70,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
  server.on('upgrade',(req,socket,head)=>{
   const token=new URL(req.url,'http://localhost').searchParams.get('token');
   const lease=token&&[...leases.values()].find(l=>l.token===token);
-  if(req.headers.origin!=='https://crm.smanalytics.ru'||!lease||lease.client||Date.now()>lease.tokenExpires||token!==lease.token||!req.headers['sec-websocket-protocol']?.split(',').map(x=>x.trim()).includes('sip')){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
+  if(!allowedOrigins.includes(req.headers.origin)||!lease||lease.client||Date.now()>lease.tokenExpires||token!==lease.token||!req.headers['sec-websocket-protocol']?.split(',').map(x=>x.trim()).includes('sip')){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
   lease.token=null;const current=lease;
   wss.handleUpgrade(req,socket,head,client=>{
    current.client=client;
