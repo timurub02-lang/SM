@@ -31,7 +31,9 @@ try {
  Sql (Get-Content -Raw "$PSScriptRoot/t1-delivery-identity.sql")
  Sql 'CREATE TABLE dbo.[A_TaskManager_LocalList_4a10515d-518d-463e-bfe8-f0ca3ce11d7d_0](Id int,phone varchar(32));'
  Sql (Get-Content -Raw "$PSScriptRoot/../scripts/oktell-bridge/sql/t1-delivery-source.sql")
- Sql "IF (SELECT COUNT(*) FROM dbo.crm_t1_delivery)<>1 OR (SELECT COUNT(*) FROM dbo.CRM_T1TimeCandidates('fd519550-95d8-45c3-9fb9-be83f3084034'))<>1 THROW 51300,'Archived contacts leaked into the native source',1;"
+ Sql "IF EXISTS(SELECT 1 FROM dbo.crm_t1_delivery) OR EXISTS(SELECT 1 FROM dbo.CRM_T1TimeCandidates('fd519550-95d8-45c3-9fb9-be83f3084034')) THROW 51300,'Unselected contacts leaked into the native source',1;"
+ Sql ((Get-Content -Raw "$PSScriptRoot/../scripts/oktell-bridge/sql/t1-pilot-scope.sql").Replace('oktell_settings.dbo.','dbo.'))
+ Sql (Get-Content -Raw "$PSScriptRoot/t1-pilot-scope.sql")
 
  } elseif($env:CI) { throw 'Delivery fixtures require SQL Server 2016 or newer' }
  else { Write-Host 'SKIP local delivery JSON fixture: SQL Server 2014; mandatory on GitHub modern LocalDB' }

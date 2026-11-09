@@ -83,4 +83,9 @@ assert.deepEqual(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id=
 const {readOktellFollowup}=await import('../lib/oktell-followup.ts');
 assert.equal((await readOktellFollowup(d)).total,1);
 assert.equal((await readOktellFollowup(d,1)).rows.length,0);
+// A delayed confirmed callback must not create a reminder after a newer final result.
+const lateCommand=uuid(),beforeReminders=(await d.prepare('SELECT COUNT(*) n FROM client_reminders').first()).n;
+await syncPilot(d,[{...c,command_id:lateCommand,command_state:'confirmed',updated_at:'2026-10-30T13:00:00Z',result:JSON.stringify({outcome:'Перезвон',comment:'delayed',callbackAt:'2026-10-31T12:00:00Z'})}]);
+assert.equal((await d.prepare('SELECT COUNT(*) n FROM client_reminders').first()).n,beforeReminders);
+assert.equal(await d.prepare('SELECT id FROM events WHERE id=?').bind(lateCommand).first(),null);
 d.close();console.log('PASS: T1 CRM assignment, history, durations, idempotent results, private three-contact scope');

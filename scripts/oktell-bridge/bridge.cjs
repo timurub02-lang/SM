@@ -64,7 +64,10 @@ const control=http.createServer(async(req,res)=>{
    res.end(JSON.stringify(await (action==='import'?delivery.importBatch(body):action==='complete'?delivery.complete(body):delivery.cancel(body))));
   }catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}return;
  }
- if(req.method==='GET'&&req.url==='/deployment-state'){res.end(JSON.stringify({busy:browserPhone.deploymentState().busy||pilot.busy()}));return;}
+ if(req.method==='GET'&&req.url==='/deployment-state'){
+  try{const native=await delivery.state();res.end(JSON.stringify({busy:browserPhone.deploymentState().busy||pilot.busy()||native.active||native.sessions>0}));}
+  catch{res.writeHead(503).end(JSON.stringify({error:'Cannot verify native task and sessions'}));}return;
+ }
  if(req.method==='GET'&&req.url==='/pilot-history'){res.end(JSON.stringify(pilot.history()));return;}
  if(req.method==='GET'&&req.url?.startsWith('/pilot-changes?')){
   try{const url=new URL(req.url,'http://localhost'),after=url.searchParams.get('after');if(!/^\d+$/.test(after||''))throw Object.assign(Error('Invalid cursor'),{status:400});res.end(JSON.stringify(pilot.changes(Number(after))));}

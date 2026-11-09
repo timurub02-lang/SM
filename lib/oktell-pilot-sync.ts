@@ -25,8 +25,10 @@ export async function syncPilot(d:ActivityDb,rows?:unknown){
   if(!client||!employee)throw Error('Карточка Т1 или оператор не найдены');
   const cl=JSON.parse(client.data),e=JSON.parse(employee.data);
   if(normalizeOutgoingNumber(cl.phone)!==c.phone||e.role!=='operator'||e.oktell?.status!=='linked')throw Error('Привязка Т1 не совпадает');
-  const id=c.chain.replaceAll('-',''),existing=await d.prepare('SELECT id,client_id,actor_id,answered_at FROM phone_calls WHERE id=?').bind(id).first();
+  const id=c.chain.replaceAll('-',''),existing=await d.prepare('SELECT id,client_id,actor_id,answered_at,provider_at FROM phone_calls WHERE id=?').bind(id).first();
   if(existing&&(existing.client_id!==c.client_id||existing.actor_id!==c.actor))throw Error('Привязка истории звонка изменилась');
+  // Stale history must not recreate reminders or change reservations outside the call row.
+  if(existing?.provider_at&&Date.parse(existing.provider_at)>Date.parse(c.updated_at))continue;
   const result=c.result?z.object({outcome:z.string().max(80),comment:z.string().max(3000),callbackAt:z.string().datetime().nullable()}).parse(JSON.parse(c.result)):null;
   const text='Т1 · '+(result?result.outcome+(result.comment?' · '+result.comment:'')+(result.callbackAt?' · Перезвон '+new Date(result.callbackAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК':''):'автообзвон Oktell');
   const statements=[];
