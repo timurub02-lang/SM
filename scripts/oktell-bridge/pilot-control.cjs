@@ -11,7 +11,7 @@ const fail=(message,status=409)=>Object.assign(Error(message),{status});
 module.exports=function({send,request,connected,identity,file,load=()=>{
  try{return JSON.parse(fs.readFileSync(process.env.BRIDGE_PILOT||'/etc/sm-oktell-bridge/pilot.json','utf8'));}
  catch(e){if(e.code==='ENOENT')return null;throw e;}
-},now=()=>Date.now(),callbackRouting=false}){
+},now=()=>Date.now(),callbackRouting=false,online=()=>true,saveRecording=require('./recording-file.cjs').saveOktellRecording}){
  const db=new DatabaseSync(file);
  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
  CREATE TABLE IF NOT EXISTS pilot_calls(chain TEXT PRIMARY KEY,actor TEXT NOT NULL,phone TEXT NOT NULL,client_id TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,commutation TEXT,sip_id TEXT,form_id TEXT,form_results TEXT,result TEXT,command_id TEXT,command_state TEXT,updated_at TEXT NOT NULL);
@@ -24,6 +24,8 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  INSERT INTO pilot_updates(chain) SELECT chain FROM pilot_calls WHERE NOT EXISTS(SELECT 1 FROM pilot_updates);`);
  db.exec("UPDATE pilot_commands SET state='unknown' WHERE state='sent'; UPDATE pilot_calls SET command_state='unknown' WHERE command_state='sent'");
  db.exec("CREATE TABLE IF NOT EXISTS pilot_callback_sync(command_id TEXT PRIMARY KEY, attempted_at TEXT NOT NULL, synced_at TEXT)");
+ db.exec('CREATE TABLE IF NOT EXISTS pilot_recordings(chain TEXT PRIMARY KEY,extension TEXT,attempted_at INTEGER NOT NULL)');
+ const recordingPending=new Map(),recordingDir=process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings';
  let syncing=false;
  const columns=new Set(db.prepare('PRAGMA table_info(pilot_calls)').all().map(c=>c.name));
  for(const column of ['task_id','delivery_id'])if(!columns.has(column))db.exec('ALTER TABLE pilot_calls ADD COLUMN '+column+' TEXT');
@@ -162,16 +164,36 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
    if(error)throw error;
   }finally{syncing=false;}
  }
- async function recording(chain){
+ async function captureRecording(chain){
   if(!uuid(chain))throw fail('Invalid call identifier',400);
   const c=db.prepare('SELECT * FROM pilot_calls WHERE chain=?').get(lower(chain));
   if(!c?.ended_at||!c.answered_at||!uuid(c.commutation))throw fail('Recording is not available',404);
+  const saved=db.prepare('SELECT extension FROM pilot_recordings WHERE chain=?').get(c.chain);
+  const id=c.chain.replaceAll('-','');
+  if(saved?.extension){const info={cached:true,extension:saved.extension};try{await saveRecording(id,info,recordingDir);return info;}catch{db.prepare('UPDATE pilot_recordings SET extension=NULL WHERE chain=?').run(c.chain);}}
+  if(!online(c.actor))throw fail('Recording awaits the operator session',409);
+  db.prepare('INSERT INTO pilot_recordings(chain,attempted_at) VALUES(?,?) ON CONFLICT(chain) DO UPDATE SET attempted_at=excluded.attempted_at').run(c.chain,now());
   const ident=identity(c.actor),date=Date.parse(c.started_at);
   const reply=await request('getpbxcalljournal',{...ident,filter:{idchain:c.chain,idconn:c.commutation,datestart:new Date(date-86400000).toISOString().slice(0,10),datestop:new Date(Date.parse(c.ended_at)+86400000).toISOString().slice(0,10),timestart:'00:00:00',timestop:'23:59:59',connectiontype:'all',minduration:0,showcallcenter:true}});
   if(!Array.isArray(reply.data))throw fail('Native recording journal unavailable',502);
   const rows=reply.data.filter(r=>lower(r.chainid)===c.chain&&lower(r.commutationid)===lower(c.commutation)&&r.isrecorded===true);
   if(rows.length!==1||!['mp3','wav'].includes(rows[0].fileext)||typeof rows[0].recordlink!=='string')throw fail('Recording is not available',404);
-  return {url:rows[0].recordlink,extension:rows[0].fileext};
+  const auth=await request('gettemphttppass',{...ident,responsetowebsock:true});
+  if(typeof auth.password!=='string'||!auth.password)throw fail('Native recording authorization unavailable',502);
+  await saveRecording(id,{url:rows[0].recordlink,extension:rows[0].fileext,temppass:auth.password},recordingDir);
+  db.prepare('UPDATE pilot_recordings SET extension=? WHERE chain=?').run(rows[0].fileext,c.chain);
+  return {cached:true,extension:rows[0].fileext};
+ }
+ function recording(chain){
+  if(!uuid(chain))return Promise.reject(fail('Invalid call identifier',400));
+  chain=lower(chain);if(recordingPending.has(chain))return recordingPending.get(chain);
+  const work=captureRecording(chain).finally(()=>recordingPending.delete(chain));recordingPending.set(chain,work);return work;
+ }
+ async function captureRecordings(actor){
+  const rows=db.prepare(`SELECT c.chain,c.actor FROM pilot_calls c LEFT JOIN pilot_recordings r ON r.chain=c.chain
+   WHERE c.answered_at IS NOT NULL AND c.ended_at IS NOT NULL AND c.commutation IS NOT NULL AND r.extension IS NULL
+   AND (? IS NULL OR c.actor=?) AND (? IS NOT NULL OR r.attempted_at IS NULL OR r.attempted_at<?) ORDER BY c.started_at LIMIT 5`).all(actor||null,actor||null,actor||null,now()-15000);
+  for(const c of rows){try{if(online(c.actor))await recording(c.chain);}catch{console.log(JSON.stringify({event:'recording_capture_pending',chain:c.chain}));}}
  }
  function changes(after){
   if(!Number.isSafeInteger(after)||after<0)throw fail('Invalid history cursor',400);
@@ -179,5 +201,5 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   const calls=db.prepare('SELECT c.*,u.seq FROM pilot_calls c JOIN (SELECT chain,MAX(seq) seq FROM pilot_updates WHERE seq>? GROUP BY chain ORDER BY seq LIMIT 100) u ON u.chain=c.chain ORDER BY u.seq').all(after);
   return {after,through:calls.at(-1)?.seq??after,calls};
  }
- return {rememberDelivery,checkDeliveryCompletion,syncCallbacks,recording,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ return {rememberDelivery,checkDeliveryCompletion,syncCallbacks,recording,captureRecordings,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };

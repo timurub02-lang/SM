@@ -43,9 +43,10 @@ wss.on('connection',ws=>{
 server.listen(Number(process.env.BRIDGE_PORT||3305),'127.0.0.1');
 const tasks=require('./task-control.cjs')({request,connected:()=>publicState().connected,enabled:()=>cfg.testControl===true,file:process.env.BRIDGE_JOURNAL||'/var/lib/sm-oktell-bridge/commands.sqlite'});
 const operators=require('./linked-operators.cjs')({request,connected:()=>publicState().connected});
-const pilot=require('./pilot-control.cjs')({send,request,callbackRouting:cfg.callbackRouting===true,connected:()=>publicState().connected,identity:operators.identity,file:process.env.BRIDGE_PILOT_JOURNAL||(process.env.BRIDGE_JOURNAL?process.env.BRIDGE_JOURNAL+'.pilot':'/var/lib/sm-oktell-bridge/pilot.sqlite')});
+const pilot=require('./pilot-control.cjs')({send,request,callbackRouting:cfg.callbackRouting===true,connected:()=>publicState().connected,identity:operators.identity,online:actor=>operators.activeUsers().some(u=>u.userid===operators.identity(actor).userid),file:process.env.BRIDGE_PILOT_JOURNAL||(process.env.BRIDGE_JOURNAL?process.env.BRIDGE_JOURNAL+'.pilot':'/var/lib/sm-oktell-bridge/pilot.sqlite')});
 setInterval(()=>pilot.syncCallbacks().catch(()=>console.log('{"event":"callback_route_sync_failed"}')),2000).unref();
-const browserOperators={...operators,prepare:async(actor,owner)=>{
+setInterval(()=>pilot.captureRecordings().catch(()=>console.log('{"event":"recording_capture_failed"}')),5000).unref();
+const browserOperators={...operators,release:async(actor,owner)=>{try{await pilot.captureRecordings(actor);}finally{await operators.release(actor,owner);}},prepare:async(actor,owner)=>{
  const credentials=await operators.prepare(actor,owner);
  try{if(pilot.configured(actor))await request('dlgcard_setsupported',{...operators.identity(actor),supported:true});return credentials;}
  catch(e){await operators.release(actor,owner);throw e;}
@@ -93,7 +94,8 @@ const control=http.createServer(async(req,res)=>{
    if(req.method==='GET'){res.end(JSON.stringify(await operators.read(url.searchParams.get('actor'))));return;}
    if(req.method!=='POST')throw Object.assign(Error('Method not allowed'),{status:405});
    let raw='';for await(const chunk of req){raw+=chunk;if(Buffer.byteLength(raw)>2048)throw Object.assign(Error('Payload too large'),{status:413});}
-   res.end(JSON.stringify(await operators.command(JSON.parse(raw))));
+   const body=JSON.parse(raw);if(body.action==='finish')await pilot.captureRecordings(body.actor);
+   res.end(JSON.stringify(await operators.command(body)));
   }catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}return;
  }
  if(req.url==='/test-task'){
