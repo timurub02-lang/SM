@@ -1,34 +1,9 @@
-import {mkdir,open,rename,unlink} from 'node:fs/promises';
-import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import recordingFile from '../scripts/oktell-bridge/recording-file.mjs';
 import type {ActivityDb} from './activity-store.ts';
 import {pilotControl} from './oktell-pilot-control.ts';
 import {initPhone} from './phone-store.ts';
 
-export async function saveOktellRecording(id:string,info:any,dir:string,download:typeof fetch=fetch){
- if(!/^[a-f0-9]{32}$/.test(id)||!info||!['wav','mp3'].includes(info.extension)||typeof info.url!=='string')throw Error('Invalid recording metadata');
- const url=new URL(info.url,'http://10.21.103.2:4055');
- if(url.origin!=='http://10.21.103.2:4055'||url.username||url.password||url.search||url.hash||!/^\/download\/rec\/[A-Za-z0-9_+=-]{1,2048}$/.test(url.pathname))throw Error('Invalid recording origin');
- const limit=32*1024*1024;
- const response=await download(url,{redirect:'error',signal:AbortSignal.timeout(20000)});
- if(response.status!==200||!response.body||Number(response.headers.get('content-length'))>limit)throw Error('Recording download unavailable');
- await mkdir(dir,{recursive:true,mode:0o750});
- const target=join(dir,id+'.'+info.extension),temp=target+'.'+randomUUID()+'.tmp';
- const file=await open(temp,'wx',0o640),reader=response.body.getReader();let size=0,signature=Buffer.alloc(0);
- try{
-  while(true){
-   const {value:chunk,done}=await reader.read();if(done)break;
-   size+=chunk.length;if(size>limit)throw Error('Recording too large');
-   if(signature.length<12)signature=Buffer.concat([signature,Buffer.from(chunk).subarray(0,12-signature.length)]);
-   let written=0;while(written<chunk.length){const r=await file.write(chunk,written,chunk.length-written);if(!r.bytesWritten)throw Error('Recording write failed');written+=r.bytesWritten;}
-  }
-  const wav=signature.toString('ascii',0,4)==='RIFF'&&signature.toString('ascii',8,12)==='WAVE';
-  const mp3=signature.toString('ascii',0,3)==='ID3'||signature[0]===255&&(signature[1]&0xe0)===0xe0;
-  const length=response.headers.get('content-length');
-  if(size<12||length!==null&&Number(length)!==size||info.extension==='wav'&&!wav||info.extension==='mp3'&&!mp3)throw Error('Invalid recording audio');
-  await file.sync();await file.close();await rename(temp,target);
- }catch(e){await reader.cancel().catch(()=>{});await file.close().catch(()=>{});await unlink(temp).catch(()=>{});throw e;}finally{reader.releaseLock();}
-}
+export const saveOktellRecording=recordingFile.saveOktellRecording;
 
 export async function syncOktellRecordings(d:ActivityDb,request:typeof pilotControl=pilotControl,save=saveOktellRecording){
  await initPhone(d);

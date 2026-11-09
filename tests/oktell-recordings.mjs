@@ -12,6 +12,9 @@ const dir=await mkdtemp(join(tmpdir(),'oktell-recording-')),id='a'.repeat(32),in
 try{
  await saveOktellRecording(id,info,dir,async(url,options)=>{assert.equal(url.origin,'http://10.21.103.2:4055');assert.equal(options.redirect,'error');return new Response(audio);});
  assert.deepEqual(await readFile(join(dir,id+'.mp3')),audio);
+ await saveOktellRecording(id,{...info,url:'/download/rec/test@token=',authorization:'Basic Zml4dHVyZTo='},dir,async(url,options)=>{assert.equal(url.search,'');assert.equal(options.headers.Authorization,'Basic Zml4dHVyZTo=');return new Response(audio);});
+ await saveOktellRecording(id,{cached:true,extension:'mp3'},dir,()=>{throw Error('Cached audio must survive logout');});
+ await assert.rejects(saveOktellRecording('b'.repeat(32),{cached:true,extension:'mp3'},dir));
  for(const url of ['http://evil.invalid/download/rec/x','//evil.invalid/x','/api/login','/download/rec/%2e%2e%2fsecret'])await assert.rejects(saveOktellRecording(id,{...info,url},dir,()=>{throw Error('must not download');}),/Invalid recording origin/);
  for(const response of [new Response('<html>not audio</html>'),new Response(audio,{headers:{'content-length':'999'}}),new Response(audio,{headers:{'content-length':String(33*1024*1024)}})])await assert.rejects(saveOktellRecording(id,info,dir,async()=>response));
  await assert.rejects(saveOktellRecording(id,info,dir,async()=>new Response(new ReadableStream({start(c){c.enqueue(audio);c.error(Error('truncated'));}}))));
@@ -25,10 +28,13 @@ try{
  await d.prepare("UPDATE oktell_recording_sync SET attempted_at='2000-01-01'").run();
  result=await syncOktellRecordings(d,async path=>{assert.equal(path,'/pilot-recording?chain=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');return info;},async()=>{});assert.equal(result.saved,1);assert.equal(result.pending,0);assert.equal((await d.prepare('SELECT recording FROM phone_calls').first()).recording,1);d.close();
  const make=createRequire(import.meta.url)('../scripts/oktell-bridge/pilot-control.cjs'),file=join(dir,'pilot.sqlite'),chain=crypto.randomUUID(),commutation=crypto.randomUUID();let reply={data:[{chainid:chain,commutationid:commutation,isrecorded:true,fileext:'mp3',recordlink:info.url}]},requests=0;
- const p=make({file,load:()=>null,identity:actor=>{assert.equal(actor,'E-one');return {userid:'fixture',userlogin:'fixture'};},request:async(method,args)=>{requests++;assert.equal(method,'getpbxcalljournal');assert.equal(args.filter.idconn,commutation);assert.equal(args.filter.idchain,chain);assert.equal(args.filter.showcallcenter,true);return reply;}});
+ let online=true,saves=0;
+ const p=make({file,load:()=>null,online:()=>online,recordingAuthorization:'Basic Zml4dHVyZTo=',saveRecording:async(id,info)=>{if(!info.cached){assert.equal(info.authorization,'Basic Zml4dHVyZTo=');saves++;}},identity:actor=>{assert.equal(actor,'E-one');return {userid:'fixture',userlogin:'fixture'};},request:async(method,args)=>{requests++;assert.equal(method,'getpbxcalljournal');assert.equal(args.filter.idconn,commutation);assert.equal(args.filter.idchain,chain);assert.equal(args.filter.showcallcenter,true);return reply;}});
  const db=new DatabaseSync(file);db.prepare("INSERT INTO pilot_calls(chain,actor,phone,client_id,started_at,answered_at,ended_at,status,commutation,updated_at) VALUES(?,'E-one','79990000001','C-one','2026-10-29T10:00:00Z','2026-10-29T10:00:01Z','2026-10-29T10:00:30Z','completed',?,'2026-10-29T10:00:30Z')").run(chain,commutation);
  await assert.rejects(p.recording(crypto.randomUUID()),/not available/);assert.equal(requests,0);
- assert.deepEqual(await p.recording(chain),info);
+ assert.deepEqual(await Promise.all([p.recording(chain),p.recording(chain)]),[{cached:true,extension:'mp3'},{cached:true,extension:'mp3'}]);assert.equal(saves,1);assert.equal(requests,1);
+ online=false;assert.deepEqual(await p.recording(chain),{cached:true,extension:'mp3'});assert.equal(requests,1);
+ db.prepare('UPDATE pilot_recordings SET extension=NULL').run();await assert.rejects(p.recording(chain),/operator session/);assert.equal(requests,1);online=true;
  reply.data[0].commutationid=crypto.randomUUID();await assert.rejects(p.recording(chain),/not available/);
  reply={error:'access denied'};await assert.rejects(p.recording(chain),/unavailable/);db.close();p.close();
  console.log('Recording binding, SSRF guard, partial downloads, file integrity, retry and durable publication passed; no calls.');
