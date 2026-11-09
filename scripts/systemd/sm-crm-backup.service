@@ -1,0 +1,12 @@
+[Unit]
+Description=Verified daily CRM and Oktell bridge SQLite backups
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/backup-sm-crm
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/crm/backups /var/lib/sm-crm /var/lib/sm-oktell-bridge
+TimeoutStartSec=300

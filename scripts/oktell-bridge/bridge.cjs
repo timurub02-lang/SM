@@ -74,6 +74,10 @@ const control=http.createServer(async(req,res)=>{
   catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}return;
  }
  if(req.url?.startsWith('/browser-phone')){await browserPhone.handle(req,res);return;}
+ if(req.method==='GET'&&req.url?.startsWith('/pilot-recording?')){
+  try{res.end(JSON.stringify(await pilot.recording(new URL(req.url,'http://localhost').searchParams.get('chain'))));}
+  catch(e){res.writeHead(e.status||502).end(JSON.stringify({error:e.message}));}return;
+ }
  if(req.url?.startsWith('/pilot')){
   try{const url=new URL(req.url,'http://localhost');if(url.pathname!=='/pilot')throw Object.assign(Error('Not found'),{status:404});
    const actor=url.searchParams.get('actor');if(req.method==='GET'){res.end(JSON.stringify(pilot.read(actor)));return;}

@@ -15,11 +15,13 @@ export const GET=authenticated(async req=>{
  await initPhone(db());const c=await db().prepare(masked?'SELECT * FROM replacement_calls WHERE id=?':'SELECT * FROM phone_calls WHERE id=?').bind(id).first<PhoneCall>();
  if(!c||!c.recording||!masked&&!(await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
  try{
-  const file=await open(join(process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings',id+'.wav'),'r');
+  const dir=process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings';
+  let extension='wav';
+  const file=await open(join(dir,id+'.wav'),'r').catch(error=>{if(error.code!=='ENOENT'||masked)throw error;extension='mp3';return open(join(dir,id+'.mp3'),'r');});
   let streaming=false;
   try{
   const {size}=await file.stat();
-  const headers:Record<string,string>={'Content-Type':'audio/wav','Cache-Control':'private, no-store','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff','Content-Disposition':`inline; filename="call-${id}.wav"`};
+  const headers:Record<string,string>={'Content-Type':extension==='mp3'?'audio/mpeg':'audio/wav','Cache-Control':'private, no-store','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff','Content-Disposition':`inline; filename="call-${id}.${extension}"`};
   const range=req.headers.get('range'),selected=byteRange(range,size);
   if(!selected)return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`}});
   const {start,end}=selected;

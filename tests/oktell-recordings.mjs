@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createRequire} from 'node:module';
+import {DatabaseSync} from 'node:sqlite';
+import {openDatabase} from '../server/sqlite.ts';
+import {initPhone} from '../lib/phone-store.ts';
+import {saveOktellRecording,syncOktellRecordings} from '../lib/oktell-recordings.ts';
+const dir=await mkdtemp(join(tmpdir(),'oktell-recording-')),id='a'.repeat(32),info={url:'/download/rec/fixture',extension:'mp3'},audio=Buffer.from('ID3-synthetic-audio');
+try{
+ await saveOktellRecording(id,info,dir,async(url,options)=>{assert.equal(url.origin,'http://10.21.103.2:4055');assert.equal(options.redirect,'error');return new Response(audio);});
+ assert.deepEqual(await readFile(join(dir,id+'.mp3')),audio);
+ for(const url of ['http://evil.invalid/download/rec/x','//evil.invalid/x','/api/login','/download/rec/%2e%2e%2fsecret'])await assert.rejects(saveOktellRecording(id,{...info,url},dir,()=>{throw Error('must not download');}),/Invalid recording origin/);
+ for(const response of [new Response('<html>not audio</html>'),new Response(audio,{headers:{'content-length':'999'}}),new Response(audio,{headers:{'content-length':String(33*1024*1024)}})])await assert.rejects(saveOktellRecording(id,info,dir,async()=>response));
+ await assert.rejects(saveOktellRecording(id,info,dir,async()=>new Response(new ReadableStream({start(c){c.enqueue(audio);c.error(Error('truncated'));}}))));
+ assert.deepEqual(await readFile(join(dir,id+'.mp3')),audio);assert.equal((await readdir(dir)).some(f=>f.endsWith('.tmp')),false);
+ const d=openDatabase(':memory:');
+ for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint').filter(s=>s.trim()))await d.prepare(sql).run();
+ await initPhone(d);
+ await d.prepare("INSERT INTO phone_calls(id,actor_id,actor_name,caller_number,started_at,answered_at,ended_at,status,detail) VALUES(?,'E-one','Fixture','','2026-10-29T10:00:00Z','2026-10-29T10:00:01Z','2026-10-29T10:00:30Z','completed','Т1 · автообзвон Oktell')").bind(id).run();
+ let result=await syncOktellRecordings(d,async()=>info,async()=>{throw Error('disk full');});assert.equal(result.pending,1);assert.equal((await d.prepare('SELECT recording FROM phone_calls').first()).recording,0);
+ result=await syncOktellRecordings(d,()=>{throw Error('must back off');});assert.equal(result.ok,false);
+ await d.prepare("UPDATE oktell_recording_sync SET attempted_at='2000-01-01'").run();
+ result=await syncOktellRecordings(d,async path=>{assert.equal(path,'/pilot-recording?chain=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');return info;},async()=>{});assert.equal(result.saved,1);assert.equal(result.pending,0);assert.equal((await d.prepare('SELECT recording FROM phone_calls').first()).recording,1);d.close();
+ const make=createRequire(import.meta.url)('../scripts/oktell-bridge/pilot-control.cjs'),file=join(dir,'pilot.sqlite'),chain=crypto.randomUUID(),commutation=crypto.randomUUID();let reply={data:[{chainid:chain,commutationid:commutation,isrecorded:true,fileext:'mp3',recordlink:info.url}]},requests=0;
+ const p=make({file,load:()=>null,identity:actor=>{assert.equal(actor,'E-one');return {userid:'fixture',userlogin:'fixture'};},request:async(method,args)=>{requests++;assert.equal(method,'getpbxcalljournal');assert.equal(args.filter.idconn,commutation);assert.equal(args.filter.idchain,chain);assert.equal(args.filter.showcallcenter,true);return reply;}});
+ const db=new DatabaseSync(file);db.prepare("INSERT INTO pilot_calls(chain,actor,phone,client_id,started_at,answered_at,ended_at,status,commutation,updated_at) VALUES(?,'E-one','79990000001','C-one','2026-10-29T10:00:00Z','2026-10-29T10:00:01Z','2026-10-29T10:00:30Z','completed',?,'2026-10-29T10:00:30Z')").run(chain,commutation);
+ await assert.rejects(p.recording(crypto.randomUUID()),/not available/);assert.equal(requests,0);
+ assert.deepEqual(await p.recording(chain),info);
+ reply.data[0].commutationid=crypto.randomUUID();await assert.rejects(p.recording(chain),/not available/);
+ reply={error:'access denied'};await assert.rejects(p.recording(chain),/unavailable/);db.close();p.close();
+ console.log('Recording binding, SSRF guard, partial downloads, file integrity, retry and durable publication passed; no calls.');
+}finally{await rm(dir,{recursive:true,force:true});}

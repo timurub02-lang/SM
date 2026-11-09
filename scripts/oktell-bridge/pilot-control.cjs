@@ -162,11 +162,22 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
    if(error)throw error;
   }finally{syncing=false;}
  }
+ async function recording(chain){
+  if(!uuid(chain))throw fail('Invalid call identifier',400);
+  const c=db.prepare('SELECT * FROM pilot_calls WHERE chain=?').get(lower(chain));
+  if(!c?.ended_at||!c.answered_at||!uuid(c.commutation))throw fail('Recording is not available',404);
+  const ident=identity(c.actor),date=Date.parse(c.started_at);
+  const reply=await request('getpbxcalljournal',{...ident,filter:{idchain:c.chain,idconn:c.commutation,datestart:new Date(date-86400000).toISOString().slice(0,10),datestop:new Date(Date.parse(c.ended_at)+86400000).toISOString().slice(0,10),timestart:'00:00:00',timestop:'23:59:59',connectiontype:'all',minduration:0,showcallcenter:true}});
+  if(!Array.isArray(reply.data))throw fail('Native recording journal unavailable',502);
+  const rows=reply.data.filter(r=>lower(r.chainid)===c.chain&&lower(r.commutationid)===lower(c.commutation)&&r.isrecorded===true);
+  if(rows.length!==1||!['mp3','wav'].includes(rows[0].fileext)||typeof rows[0].recordlink!=='string')throw fail('Recording is not available',404);
+  return {url:rows[0].recordlink,extension:rows[0].fileext};
+ }
  function changes(after){
   if(!Number.isSafeInteger(after)||after<0)throw fail('Invalid history cursor',400);
   if(after>db.prepare('SELECT COALESCE(MAX(seq),0) seq FROM pilot_updates').get().seq)throw fail('History was restored or replaced; reconcile the CRM cursor',409);
   const calls=db.prepare('SELECT c.*,u.seq FROM pilot_calls c JOIN (SELECT chain,MAX(seq) seq FROM pilot_updates WHERE seq>? GROUP BY chain ORDER BY seq LIMIT 100) u ON u.chain=c.chain ORDER BY u.seq').all(after);
   return {after,through:calls.at(-1)?.seq??after,calls};
  }
- return {rememberDelivery,checkDeliveryCompletion,syncCallbacks,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
+ return {rememberDelivery,checkDeliveryCompletion,syncCallbacks,recording,changes,event,incoming,read,result,operator,canAuthorize:actor=>{const c=current(actor);return !c||!!c.ended_at&&!c.form_id&&!c.answered_at;},busy:()=>!!db.prepare("SELECT 1 FROM pilot_calls WHERE ended_at IS NULL OR ((form_id IS NOT NULL OR answered_at IS NOT NULL) AND (command_state IS NULL OR command_state!='confirmed')) LIMIT 1").get(),configured:actor=>{try{return !!operator(actor);}catch{return false;}},disconnected,history:()=>db.prepare('SELECT * FROM pilot_calls ORDER BY started_at DESC LIMIT 100').all(),close:()=>db.close()};
 };
