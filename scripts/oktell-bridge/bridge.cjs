@@ -43,7 +43,8 @@ wss.on('connection',ws=>{
 server.listen(Number(process.env.BRIDGE_PORT||3305),'127.0.0.1');
 const tasks=require('./task-control.cjs')({request,connected:()=>publicState().connected,enabled:()=>cfg.testControl===true,file:process.env.BRIDGE_JOURNAL||'/var/lib/sm-oktell-bridge/commands.sqlite'});
 const operators=require('./linked-operators.cjs')({request,connected:()=>publicState().connected});
-const pilot=require('./pilot-control.cjs')({send,request,callbackRouting:cfg.callbackRouting===true,connected:()=>publicState().connected,identity:operators.identity,online:actor=>operators.activeUsers().some(u=>u.userid===operators.identity(actor).userid),file:process.env.BRIDGE_PILOT_JOURNAL||(process.env.BRIDGE_JOURNAL?process.env.BRIDGE_JOURNAL+'.pilot':'/var/lib/sm-oktell-bridge/pilot.sqlite')});
+const recordingAuthorization=typeof cfg.recordingHttp?.login==='string'&&typeof cfg.recordingHttp?.password==='string'?'Basic '+Buffer.from(cfg.recordingHttp.login+':'+cfg.recordingHttp.password).toString('base64'):null;
+const pilot=require('./pilot-control.cjs')({send,request,recordingAuthorization,callbackRouting:cfg.callbackRouting===true,connected:()=>publicState().connected,identity:operators.identity,online:actor=>operators.activeUsers().some(u=>u.userid===operators.identity(actor).userid),file:process.env.BRIDGE_PILOT_JOURNAL||(process.env.BRIDGE_JOURNAL?process.env.BRIDGE_JOURNAL+'.pilot':'/var/lib/sm-oktell-bridge/pilot.sqlite')});
 setInterval(()=>pilot.syncCallbacks().catch(()=>console.log('{"event":"callback_route_sync_failed"}')),2000).unref();
 setInterval(()=>pilot.captureRecordings().catch(()=>console.log('{"event":"recording_capture_failed"}')),5000).unref();
 const browserOperators={...operators,release:async(actor,owner)=>{try{await pilot.captureRecordings(actor);}finally{await operators.release(actor,owner);}},prepare:async(actor,owner)=>{

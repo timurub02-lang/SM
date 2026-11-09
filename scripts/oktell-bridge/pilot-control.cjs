@@ -11,7 +11,7 @@ const fail=(message,status=409)=>Object.assign(Error(message),{status});
 module.exports=function({send,request,connected,identity,file,load=()=>{
  try{return JSON.parse(fs.readFileSync(process.env.BRIDGE_PILOT||'/etc/sm-oktell-bridge/pilot.json','utf8'));}
  catch(e){if(e.code==='ENOENT')return null;throw e;}
-},now=()=>Date.now(),callbackRouting=false,online=()=>true,saveRecording=require('./recording-file.mjs').saveOktellRecording}){
+},now=()=>Date.now(),callbackRouting=false,online=()=>true,recordingAuthorization=null,saveRecording=require('./recording-file.mjs').saveOktellRecording}){
  const db=new DatabaseSync(file);
  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
  CREATE TABLE IF NOT EXISTS pilot_calls(chain TEXT PRIMARY KEY,actor TEXT NOT NULL,phone TEXT NOT NULL,client_id TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,commutation TEXT,sip_id TEXT,form_id TEXT,form_results TEXT,result TEXT,command_id TEXT,command_state TEXT,updated_at TEXT NOT NULL);
@@ -172,15 +172,14 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
   const id=c.chain.replaceAll('-','');
   if(saved?.extension){const info={cached:true,extension:saved.extension};try{await saveRecording(id,info,recordingDir);return info;}catch{db.prepare('UPDATE pilot_recordings SET extension=NULL WHERE chain=?').run(c.chain);}}
   if(!online(c.actor))throw fail('Recording awaits the operator session',409);
+  if(!recordingAuthorization)throw fail('Native recording HTTP credentials are not configured',503);
   db.prepare('INSERT INTO pilot_recordings(chain,attempted_at) VALUES(?,?) ON CONFLICT(chain) DO UPDATE SET attempted_at=excluded.attempted_at').run(c.chain,now());
   const ident=identity(c.actor),date=Date.parse(c.started_at);
   const reply=await request('getpbxcalljournal',{...ident,filter:{idchain:c.chain,idconn:c.commutation,datestart:new Date(date-86400000).toISOString().slice(0,10),datestop:new Date(Date.parse(c.ended_at)+86400000).toISOString().slice(0,10),timestart:'00:00:00',timestop:'23:59:59',connectiontype:'all',minduration:0,showcallcenter:true}});
   if(!Array.isArray(reply.data))throw fail('Native recording journal unavailable',502);
   const rows=reply.data.filter(r=>lower(r.chainid)===c.chain&&lower(r.commutationid)===lower(c.commutation)&&r.isrecorded===true);
   if(rows.length!==1||!['mp3','wav'].includes(rows[0].fileext)||typeof rows[0].recordlink!=='string')throw fail('Recording is not available',404);
-  const auth=await request('gettemphttppass',{...ident,responsetowebsock:true});
-  if(typeof auth.password!=='string'||!auth.password)throw fail('Native recording authorization unavailable',502);
-  await saveRecording(id,{url:rows[0].recordlink,extension:rows[0].fileext,temppass:auth.password},recordingDir);
+  await saveRecording(id,{url:rows[0].recordlink,extension:rows[0].fileext,authorization:recordingAuthorization},recordingDir);
   db.prepare('UPDATE pilot_recordings SET extension=? WHERE chain=?').run(rows[0].fileext,c.chain);
   return {cached:true,extension:rows[0].fileext};
  }

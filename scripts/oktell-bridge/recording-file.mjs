@@ -12,9 +12,9 @@ async function saveOktellRecording(id,info,dir,download=fetch){
  if(typeof info.url!=='string')throw Error('Invalid recording metadata');
  const url=new URL(info.url,'http://10.21.103.2:4055');
  if(url.origin!=='http://10.21.103.2:4055'||url.username||url.password||url.search||url.hash||!/^\/download\/rec\/[A-Za-z0-9_+=@-]{1,2048}$/.test(url.pathname))throw Error('Invalid recording origin');
- if(info.temppass!==undefined){if(typeof info.temppass!=='string'||!/^[-A-Za-z0-9]{1,128}$/.test(info.temppass))throw Error('Invalid recording authorization');url.searchParams.set('temppass',info.temppass);}
+ if(info.authorization!==undefined&&(typeof info.authorization!=='string'||!/^Basic [A-Za-z0-9+/]+=*$/.test(info.authorization)))throw Error('Invalid recording authorization');
  const limit=32*1024*1024;
- const response=await download(url,{redirect:'error',signal:AbortSignal.timeout(20000)});
+ const response=await download(url,{redirect:'error',signal:AbortSignal.timeout(20000),headers:info.authorization?{Authorization:info.authorization}:undefined});
  if(response.status!==200||!response.body||Number(response.headers.get('content-length'))>limit)throw Error('Recording download unavailable');
  await mkdir(dir,{recursive:true,mode:0o750});
  const target=join(dir,id+'.'+info.extension),temp=target+'.'+randomUUID()+'.tmp';
