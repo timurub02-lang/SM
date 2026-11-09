@@ -67,14 +67,19 @@ export async function syncCdekRemittances(d:Db,request:typeof fetch=fetch,now=Da
   const slot=Number(a.id.slice(-1)),key='cdek-registry-sync-'+slot;
   const previous=await d.prepare('SELECT data FROM settings WHERE id=?').bind(key).first();
   const state=previous?JSON.parse(previous.data):{};
+  if(Date.parse(state.retryAt||'')>now)return;
   const oldest=await d.prepare(`SELECT MIN(substr(json_extract(data,'$.redeemedAt'),1,10)) day FROM orders WHERE json_extract(data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(data,'$.status')='redeemed' AND COALESCE(json_extract(data,'$.testOnly'),0)<>1`).first();
   const start=day.safeParse(oldest?.day).success&&oldest.day<=today?oldest.day:today;
   const cursor=day.safeParse(state.nextDay).success&&state.nextDay>=start&&state.nextDay<=today?state.nextDay:start;
-  const dates=[...new Set([...(now-Date.parse(state.todayCheckedAt||'')<3600000?[]:[today]),cursor])];
+  const todayFresh=now-Date.parse(state.todayCheckedAt||'')<3600000;
+  const dates=[...new Set([...(todayFresh?[]:[today]),...(!todayFresh||cursor!==today?[cursor]:[])])];
+  if(!dates.length)return;
+  let retryAt=now+5*60000;
   try{
    const keys=JSON.parse(a.data);const token=await cdekToken(keys.clientId,keys.clientSecret,request);
    for(const date of dates){
     const response=await request('https://api.cdek.ru/v2/registries?date='+date,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)});
+    if(response.status===429){const header=response.headers.get('Retry-After'),advised=header===null?NaN:/^\d+$/.test(header)?now+Number(header)*1000:Date.parse(header);if(Number.isFinite(advised))retryAt=Math.max(retryAt,advised);}
     if(!response.ok)throw Error(`СДЭК: реестры недоступны (${response.status})`);
     const result=await applyCdekRegistries(d,slot,await response.json(),at);
     totals.checked++;totals.added+=result.added;totals.conflicts+=result.conflicts;
@@ -82,8 +87,8 @@ export async function syncCdekRemittances(d:Db,request:typeof fetch=fetch,now=Da
     if(date===today)state.todayCheckedAt=at;
     if(date===cursor)state.nextDay=date>=today?start:datePlus(date,1);
    }
-   state.error=undefined;
-  }catch(e){totals.failed++;state.error=e instanceof Error?e.message:'Ошибка чтения реестров СДЭК';}
+   state.error=undefined;state.retryAt=undefined;
+  }catch(e){totals.failed++;state.retryAt=new Date(retryAt).toISOString();state.error=e instanceof Error?e.message:'Ошибка чтения реестров СДЭК';}
   state.checkedAt=at;
   await d.prepare('INSERT INTO settings(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').bind(key,JSON.stringify(state)).run();
  }));

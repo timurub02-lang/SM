@@ -10,7 +10,8 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
  const put=async(id:string,data:unknown)=>d.prepare('INSERT INTO settings(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').bind(id,JSON.stringify(data)).run();
  const at=new Date(now).toISOString(),day=new Date(now+10800000).toISOString().slice(0,10),dayStart=Date.parse(day+'T00:00:00+03:00');
  const health=await read('activity-health');
- if(Date.parse(health?.retryAt||'')>now)return {employees:0,callsImported:0,deferred:true};
+ const orders=await read('sk-order-health');
+ if([health?.retryAt,orders?.retryAt].some(value=>Date.parse(value||'')>now))return {employees:0,callsImported:0,deferred:true};
  const started=Date.now(),clock=()=>now+Date.now()-started;let retryAt='';
  try{
   const config=await read('skorozvon') as SkCredentials|null;if(!config)throw Error('Скорозвон не подключён');

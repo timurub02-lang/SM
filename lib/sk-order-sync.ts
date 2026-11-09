@@ -7,10 +7,20 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
  const put=async(v:unknown)=>d.prepare("INSERT INTO settings(id,data) VALUES('sk-order-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify(v)).run();
  const config=await read('sk-order-import');if(!config?.enabled)return {enabled:false};
  const old=await read('sk-order-health'),at=new Date(now).toISOString();
+ const activity=await read('activity-health');
+ if([old?.retryAt,activity?.retryAt].some(value=>Date.parse(value||'')>now))return {deferred:true};
+ const started=Date.now();let retryAt='';
  try{
   const credentials=await read('skorozvon');if(!credentials)throw Error('Скорозвон не подключён');
   const token=await skorozvonToken(credentials,request);
-  async function api(path:string,body?:unknown){await wait(250);const r=await request('https://api.skorozvon.ru'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),redirect:'error',signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Скорозвон: ошибка '+r.status);return await r.json() as any;}
+  async function api(path:string,body?:unknown){
+   await wait(250);const r=await request('https://api.skorozvon.ru'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),redirect:'error',signal:AbortSignal.timeout(20000)});
+   if(r.status===429){
+    const limitedAt=now+Date.now()-started,header=r.headers.get('Retry-After'),delay=header===null?60000:/^\d+$/.test(header)?Number(header)*1000:Date.parse(header)-limitedAt;
+    retryAt=new Date(limitedAt+Math.max(60000,Number.isFinite(delay)?delay:60000)).toISOString();await r.body?.cancel();
+   }
+   if(!r.ok)throw Error('Скорозвон: ошибка '+r.status);return await r.json() as any;
+  }
   const users:any[]=[];for(let page=1;page<=100;page++){const r=await api('/api/v2/users?length=100&page='+page);const list=Array.isArray(r)?r:r.data;if(!Array.isArray(list))throw Error('Не удалось прочитать сотрудников СК');users.push(...list);if(list.length<100||r.total_pages&&page>=r.total_pages)break;if(page===100)throw Error('Список сотрудников СК неполный');}
   const start=Math.max(Date.parse(config.enabledAt), (Date.parse(old?.lastSuccessAt||'')||Date.parse(config.enabledAt))-86400000);
   if(!Number.isFinite(start)||!Array.isArray(config.resultIds)||!config.resultIds.length)throw Error('Настройка приёма СК некорректна');
@@ -30,5 +40,5 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
    }
   }
   await put({ok:true,at,lastSuccessAt:at,message:'Приём заказов из Скорозвона работает',imported,pending});return {imported,pending};
- }catch(e){await put({ok:false,at,lastSuccessAt:old?.lastSuccessAt||'',message:e instanceof Error?e.message:'Ошибка приёма заказов СК'});throw e;}
+ }catch(e){await put({ok:false,at,lastSuccessAt:old?.lastSuccessAt||'',...(retryAt?{retryAt}:{}),message:e instanceof Error?e.message:'Ошибка приёма заказов СК'});throw e;}
 }
