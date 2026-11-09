@@ -1,4 +1,4 @@
-import recordingFile from '../scripts/oktell-bridge/recording-file.cjs';
+import recordingFile from '../scripts/oktell-bridge/recording-file.mjs';
 import type {ActivityDb} from './activity-store.ts';
 import {pilotControl} from './oktell-pilot-control.ts';
 import {initPhone} from './phone-store.ts';

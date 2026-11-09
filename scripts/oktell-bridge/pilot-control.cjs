@@ -11,7 +11,7 @@ const fail=(message,status=409)=>Object.assign(Error(message),{status});
 module.exports=function({send,request,connected,identity,file,load=()=>{
  try{return JSON.parse(fs.readFileSync(process.env.BRIDGE_PILOT||'/etc/sm-oktell-bridge/pilot.json','utf8'));}
  catch(e){if(e.code==='ENOENT')return null;throw e;}
-},now=()=>Date.now(),callbackRouting=false,online=()=>true,saveRecording=require('./recording-file.cjs').saveOktellRecording}){
+},now=()=>Date.now(),callbackRouting=false,online=()=>true,saveRecording=require('./recording-file.mjs').saveOktellRecording}){
  const db=new DatabaseSync(file);
  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
  CREATE TABLE IF NOT EXISTS pilot_calls(chain TEXT PRIMARY KEY,actor TEXT NOT NULL,phone TEXT NOT NULL,client_id TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,commutation TEXT,sip_id TEXT,form_id TEXT,form_results TEXT,result TEXT,command_id TEXT,command_state TEXT,updated_at TEXT NOT NULL);

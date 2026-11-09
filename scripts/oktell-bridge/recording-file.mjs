@@ -1,7 +1,6 @@
-'use strict';
-const {mkdir,open,rename,unlink}=require('node:fs/promises');
-const {join}=require('node:path');
-const {randomUUID}=require('node:crypto');
+import {mkdir,open,rename,unlink} from 'node:fs/promises';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
 function audioSignature(b,extension){return extension==='wav'?b.toString('ascii',0,4)==='RIFF'&&b.toString('ascii',8,12)==='WAVE':b.toString('ascii',0,3)==='ID3'||b[0]===255&&(b[1]&0xe0)===0xe0;}
 async function saveOktellRecording(id,info,dir,download=fetch){
  if(!/^[a-f0-9]{32}$/.test(id)||!info||!['wav','mp3'].includes(info.extension))throw Error('Invalid recording metadata');
@@ -34,4 +33,5 @@ async function saveOktellRecording(id,info,dir,download=fetch){
  }catch(e){await reader.cancel().catch(()=>{});await file.close().catch(()=>{});await unlink(temp).catch(()=>{});throw e;}finally{reader.releaseLock();}
 }
 
-module.exports={saveOktellRecording};
+export default {saveOktellRecording};
+export {saveOktellRecording};
