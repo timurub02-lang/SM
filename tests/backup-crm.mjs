@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as tmp:
  m.ROOT.mkdir();old=m.ROOT/'2000-01-01-crm.sqlite';old.write_text('obsolete');unrelated=m.ROOT/'manual.sqlite';unrelated.write_text('keep');m.backup();assert not old.exists() and unrelated.read_text()=='keep'
  today=datetime.datetime.now(datetime.timezone.utc).date().isoformat()
  for name in m.SOURCES:
-  with sqlite3.connect(m.ROOT/(today+'-'+name+'.sqlite')) as d:assert d.execute('SELECT value FROM fixture').fetchone()[0]=='safe'
+  d=sqlite3.connect(m.ROOT/(today+'-'+name+'.sqlite'));assert d.execute('SELECT value FROM fixture').fetchone()[0]=='safe';d.close()
  old.write_text('keep on failure');m.SOURCES['pilot']=root/'missing'
  try:m.backup();assert False
  except sqlite3.OperationalError:pass

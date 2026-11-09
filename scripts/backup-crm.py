@@ -25,7 +25,7 @@ def backup():
                     raise RuntimeError('Backup integrity failed: '+name)
             finally:
                 saved.close();source.close()
-            with temp.open('rb') as f:os.fsync(f.fileno())
+            with temp.open('r+b') as f:os.fsync(f.fileno())
             os.replace(temp,target)
         finally:
             temp.unlink(missing_ok=True)
