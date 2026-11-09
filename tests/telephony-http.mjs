@@ -1,7 +1,7 @@
 // Run after the Miran standalone build. Uses only a temporary, synthetic database.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,readFileSync,rmSync,renameSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawn} from 'node:child_process';
@@ -161,6 +161,13 @@ try{
  assert.equal((await call(recording)).status,401);assert.equal((await api(recording,undefined,cookies.two)).status,403);assert.equal((await api(recording,undefined,cookies.one)).status,200);
  const range=await call(recording,{cookie:cookies.admin,headers:{Range:'bytes=0-43'}});assert.equal(range.status,206);assert.equal(range.headers.get('content-length'),'44');
  assert.equal((await call(recording,{cookie:cookies.admin,headers:{Range:'bytes=999999-'}})).status,416);
+ const wavPath=join(dir,'recordings',callId+'.wav'),mp3Path=join(dir,'recordings',callId+'.mp3');
+ renameSync(wavPath,wavPath+'.saved');writeFileSync(mp3Path,'ID3-synthetic-audio');
+ try{
+  assert.equal((await api(recording,undefined,cookies.two)).status,403);
+  const mp3=await call(recording,{cookie:cookies.one,headers:{Range:'bytes=0-2'}});
+  assert.equal(mp3.status,206);assert.equal(mp3.headers.get('content-type'),'audio/mpeg');assert.equal(mp3.text,'ID3');
+ }finally{rmSync(mp3Path);renameSync(wavPath+'.saved',wavPath);}
  const failedId=(await dial({mode:'client',clientId:'c-one'})).data.callId;
  await api('/api/telephony',{id:failedId,status:'failed',detail:'Микрофон недоступен'},cookies.admin,'PATCH');
  assert.equal((await api('/api/call-history?clientId=c-one')).data.calls[0].status,'failed');
