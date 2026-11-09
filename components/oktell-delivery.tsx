@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
 type ImportBatch={session:string;base:string;filename:string;created_at:string;total:number};
-type Source={taskId:string;sourcePresent:boolean;sourceAttached:boolean;paused:boolean;contacts:number;sessions:number};
+type Source={taskId:string;sourcePresent:boolean;sourceAttached:boolean;paused:boolean;contacts:number;sessions:number;pilotContacts?:number|null;pilotUntil?:string|null};
 type Job={id:string;state:string;created_at:string;error:string;total:number;selection:{base:'M'|'J';sheet:string;count:number}};
 type Followup={total:number;page:number;rows:{task_id:string;client_id:string;name:string|null;phone:string|null;reason:string;updated_at:string}[]};
 type Preview={total:number;eligible:number;selected:number;fingerprint:string;skipped:Record<string,number>;timezones?:{resolved:number;multiple:number;unknown:number;invalid:number;stale:number}};
@@ -27,6 +27,7 @@ export function OktellDelivery({base,sheet,onDone}:{base:'M'|'J';sheet:string;on
   <div className="stack">
    {busy==='load'&&<p role="status">Проверяем подключение к проекту…</p>}
    {source&&<p>В источнике Oktell: <strong>{source.contacts.toLocaleString('ru-RU')} клиентов</strong>. {source.paused?'Проект приостановлен.':'Проект не готов к загрузке.'}</p>}
+   {source?.pilotContacts!=null&&<p role="status" className="notice">{source.pilotContacts===0?'Состав пилота не выбран или срок истёк. Реальная база закрыта для отбора.':`Для пилота разрешён отбор только ${source.pilotContacts} клиентов${source.pilotUntil?' до '+new Date(source.pilotUntil).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК':''}.`} Загрузка новых партий не расширяет состав пилота.</p>}
    {source?.sourcePresent&&!source.sourceAttached&&<p className="notice">Источник принимает клиентов. Подключение рабочей базы к обзвону ещё не завершено.</p>}
    {(sourceError||!source?.sourcePresent)&&!busy&&<p role="alert">{sourceError||'Источник клиентов в Oktell пока недоступен.'}</p>}
    {source&&source.sessions>0&&<p role="status">Дождитесь завершения текущих звонков, затем обновите состояние.</p>}

@@ -10,9 +10,13 @@ END;
 GO
 -- Apply after delivery-schema.sql, with T1 stopped. Keep archived IDs and receipts
 -- so replay cannot revive completed contacts or overwrite native history.
+IF OBJECT_ID('dbo.CRM_T1PilotScope') IS NULL
+ CREATE TABLE dbo.CRM_T1PilotScope(ContactId int PRIMARY KEY,ValidUntil datetime2 NOT NULL);
+GO
 CREATE OR ALTER VIEW dbo.crm_t1_delivery AS
  SELECT c.Id,c.Phone,c.Name,c.ClientId FROM dbo.CRM_DeliveryContacts c
  JOIN dbo.CRM_DeliveryReceipts r ON r.TaskId=c.TaskId AND r.BatchId=c.BatchId
+ JOIN dbo.CRM_T1PilotScope p ON p.ContactId=c.Id AND p.ValidUntil>SYSUTCDATETIME()
  WHERE c.TaskId='185e121d-d888-4598-85d2-00aa47c825c5'
  AND c.Archived=0 AND r.Cancelled=0 AND r.Completed=0;
 GO
