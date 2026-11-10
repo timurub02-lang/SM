@@ -70,3 +70,13 @@ console.log('Release base routing and active/unpaid/ambiguous/blacklist protecti
 
 assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M'},[],releaseNow).sheet,'Т1');
 assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M',legacyOrderHistory:[{status:'paid'}]},[],releaseNow).sheet,'П');
+
+// A one-off client extension survives fixed operator policies without moving purchase dates.
+const expiry=Date.parse(settled.redeemedAt)+14*86400000;
+const extended={...woman,retentionExtensionUntil:new Date(expiry+86400000).toISOString()};
+assert.equal(applyRetention(extended,[settled],expiry+1,14,true).owner,extended.owner);
+assert.equal(applyRetention(extended,[settled],expiry+1,14,true).assignedUntil,extended.retentionExtensionUntil);
+assert.equal(applyRetention(extended,[settled],expiry+86400000,14,true).owner,'');
+assert.equal(applyRetention(extended,[settled],expiry+86400000,14,true).retentionExtensionUntil,undefined);
+assert.equal(clientAssignment(extended,'different',new Date(expiry).toISOString()).retentionExtensionUntil,undefined);
+assert.equal(clientAssignment(extended,'',new Date(expiry).toISOString()).retentionExtensionUntil,undefined);
