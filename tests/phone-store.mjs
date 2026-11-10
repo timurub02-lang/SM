@@ -9,6 +9,12 @@ try{
  const client={id:'client',owner:'one'};await d.prepare('INSERT INTO clients VALUES(?,?)').bind(client.id,JSON.stringify(client)).run();
  await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('order',client.id,JSON.stringify({id:'order',clientId:client.id,manager:'one'})).run();
  await initPhone(d);
+ let schemaWrites=0;
+ const counted={prepare:sql=>d.prepare(sql),batch:async statements=>{schemaWrites++;if(schemaWrites===1)throw Error('fixture locked');return d.batch(statements);}};
+ await assert.rejects(()=>initPhone(counted),/fixture locked/);
+ await Promise.all([initPhone(counted),initPhone(counted)]);
+ await initPhone(counted);
+ assert.equal(schemaWrites,2,'retry failed initialization once, then share it across polls');
  const all=Array.from({length:1000},(_,i)=>String(79000000000+i));
  await d.batch(all.map(n=>d.prepare("INSERT INTO phone_numbers(number,state,added_at) VALUES(?,'available','2026-01-01')").bind(n)));
  await replacePhonePool(d,100,0);

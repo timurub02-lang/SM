@@ -25,12 +25,15 @@ export async function syncPilot(d:ActivityDb,rows?:unknown){
   if(!client||!employee)throw Error('Карточка Т1 или оператор не найдены');
   const cl=JSON.parse(client.data),e=JSON.parse(employee.data);
   if(normalizeOutgoingNumber(cl.phone)!==c.phone||e.role!=='operator'||e.oktell?.status!=='linked')throw Error('Привязка Т1 не совпадает');
-  const id=c.chain.replaceAll('-',''),existing=await d.prepare('SELECT id,client_id,actor_id,answered_at,provider_at FROM phone_calls WHERE id=?').bind(id).first();
+  const id=c.chain.replaceAll('-',''),existing=await d.prepare('SELECT id,client_id,actor_id,answered_at,ended_at,status,detail,provider_at FROM phone_calls WHERE id=?').bind(id).first();
   if(existing&&(existing.client_id!==c.client_id||existing.actor_id!==c.actor))throw Error('Привязка истории звонка изменилась');
   // Stale history must not recreate reminders or change reservations outside the call row.
   if(existing?.provider_at&&Date.parse(existing.provider_at)>Date.parse(c.updated_at))continue;
   const result=c.result?z.object({outcome:z.string().max(80),comment:z.string().max(3000),callbackAt:z.string().datetime().nullable()}).parse(JSON.parse(c.result)):null;
   const text='Т1 · '+(result?result.outcome+(result.comment?' · '+result.comment:'')+(result.callbackAt?' · Перезвон '+new Date(result.callbackAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК':''):'автообзвон Oktell');
+  const status=c.status==='ringing'?'dialing':c.status,detail=text+(result?' · '+(c.command_state==='confirmed'?'Oktell подтвердил':'подтверждение Oktell ожидается'):'');
+  // Every connected browser polls history; unchanged calls must not acquire a write lock again.
+  if(existing?.provider_at===c.updated_at&&existing.answered_at===c.answered_at&&existing.ended_at===c.ended_at&&existing.status===status&&existing.detail===detail&&(!c.command_id||await d.prepare('SELECT id FROM events WHERE id=?').bind(c.command_id).first()))continue;
   const statements=[];
   if(delivery){
    const binding=await d.prepare('SELECT * FROM oktell_delivery_calls WHERE chain=?').bind(c.chain).first();
@@ -50,7 +53,7 @@ export async function syncPilot(d:ActivityDb,rows?:unknown){
   if(!existing){
    statements.push(d.prepare("INSERT OR IGNORE INTO phone_calls(id,client_id,actor_id,actor_name,caller_number,started_at,status,detail) SELECT ?,?,?,?,?,?,'dialing','Т1 · автообзвон Oktell' WHERE NOT EXISTS(SELECT 1 FROM phone_calls WHERE id=?)").bind(id,c.client_id,c.actor,e.name,'',c.started_at,id));
   }
-  statements.push(d.prepare("UPDATE phone_calls SET answered_at=?,ended_at=?,status=?,bill_seconds=?,duration=?,detail=?,provider_at=? WHERE id=? AND actor_id=? AND detail LIKE 'Т1 · %' AND (provider_at IS NULL OR provider_at<=?)").bind(c.answered_at,c.ended_at,c.status==='ringing'?'dialing':c.status,c.answered_at&&c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.answered_at))/1000)):0,c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.started_at))/1000)):0,text+(result?' · '+(c.command_state==='confirmed'?'Oktell подтвердил':'подтверждение Oktell ожидается'):''),c.updated_at,id,c.actor,c.updated_at));
+  statements.push(d.prepare("UPDATE phone_calls SET answered_at=?,ended_at=?,status=?,bill_seconds=?,duration=?,detail=?,provider_at=? WHERE id=? AND actor_id=? AND detail LIKE 'Т1 · %' AND (provider_at IS NULL OR provider_at<=?)").bind(c.answered_at,c.ended_at,status,c.answered_at&&c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.answered_at))/1000)):0,c.ended_at?Math.max(0,Math.round((Date.parse(c.ended_at)-Date.parse(c.started_at))/1000)):0,detail,c.updated_at,id,c.actor,c.updated_at));
   if(result&&c.command_id){
    const reason=followupReason(result.outcome);
    if(c.command_state==='confirmed'&&reason){

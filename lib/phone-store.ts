@@ -5,8 +5,10 @@ import type {Employee,Client,Order} from './crm.ts';
 export const callResults={preparing:'Подготовка звонка',dialing:'Идёт вызов',connected:'Соединение установлено',completed:'Соединение состоялось',busy:'Занято',no_answer:'Нет ответа',cancelled:'Отменён до соединения',failed:'Не удалось позвонить',unknown:'Результат не получен от АТС'} as const;
 export type CallResult=keyof typeof callResults;
 export type PhoneCall={id:string;client_id:string|null;order_id:string|null;actor_id:string;actor_name:string;caller_number:string;started_at:string;answered_at:string|null;ended_at:string|null;status:CallResult;detail:string;duration:number;bill_seconds:number;provider_at:string|null;recording:number;claimed_at:string|null};
+const phoneSchemas=new WeakMap<ActivityDb,Promise<unknown>>();
 export async function initPhone(d:ActivityDb,caller=''){
- await d.batch([
+ let schema=phoneSchemas.get(d);
+ if(!schema){schema=d.batch([
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_calls(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,client_id TEXT REFERENCES clients(id) ON DELETE CASCADE,order_id TEXT REFERENCES orders(id) ON DELETE CASCADE,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,caller_number TEXT NOT NULL,started_at TEXT NOT NULL,answered_at TEXT,ended_at TEXT,status TEXT NOT NULL,detail TEXT NOT NULL DEFAULT '',duration INTEGER NOT NULL DEFAULT 0,bill_seconds INTEGER NOT NULL DEFAULT 0,provider_at TEXT,recording INTEGER NOT NULL DEFAULT 0,claimed_at TEXT)`),
   // Atomic across routes/tabs; unused attempts expire with the existing 120-second PBX claim window.
   d.prepare(`CREATE TRIGGER IF NOT EXISTS phone_calls_irina_one_active BEFORE INSERT ON phone_calls
@@ -21,7 +23,8 @@ export async function initPhone(d:ActivityDb,caller=''){
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_analysis(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,auto_kind TEXT,auto_reason TEXT,analyzed_at TEXT,manual_kind TEXT,manual_actor TEXT,manual_name TEXT,manual_at TEXT)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_numbers(number TEXT PRIMARY KEY,state TEXT NOT NULL CHECK(state IN ('available','active','completed')),added_at TEXT NOT NULL,activated_at TEXT,completed_at TEXT,exported_at TEXT)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_pool(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL DEFAULT 0,mutation TEXT NOT NULL DEFAULT '')`),d.prepare('INSERT OR IGNORE INTO phone_pool(id) VALUES(1)'),
- ]);
+ ]).catch(error=>{phoneSchemas.delete(d);throw error;});phoneSchemas.set(d,schema);}
+ await schema;
  if(/^7\d{10}$/.test(caller))await d.prepare("INSERT OR IGNORE INTO phone_numbers(number,state,added_at,activated_at) SELECT ?,'active',?,? WHERE NOT EXISTS(SELECT 1 FROM phone_numbers)").bind(caller,new Date().toISOString(),new Date().toISOString()).run();
 }
 export function normalizeOutgoingNumber(value:string){let n=value.replace(/[\s()+-]/g,'');if(/^8\d{10}$/.test(n))n='7'+n.slice(1);return /^7\d{10}$/.test(n)?n:null;}
