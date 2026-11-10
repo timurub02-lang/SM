@@ -177,7 +177,7 @@ export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,ex
  const base=nameBase(c.name||'');
  if(!base)return {...next,releaseBaseReview:true};
  const hasPurchase=orders.some(o=>o.clientId===c.id&&o.status==='redeemed')||c.legacyOrderHistory?.some(o=>o.status==='paid');
- return {...next,baseType:base,sheet:hasPurchase?(base==='M'?'П':'пассив'):'Т1',releaseBaseReview:false};
+ return {...next,baseType:base,sheet:hasPurchase?'П':'Т1',releaseBaseReview:false};
 }
 
 export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){
@@ -217,7 +217,7 @@ export function employeeForManager(actor:Employee|undefined,data:unknown,existin
  return employeeSchema.parse({...((data&&typeof data==="object")?data:{}),role:"operator",department:actor.department});
 }
 
-export const packingStage=(order:Order)=>!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?"completed":order.status==='rework'&&courierRecalledAtWarehouse(order)?'operator':order.courier?.phase==='recall_returned'?"new":["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?((order.paymentReceivedAt||order.importedPayment)?"payment_received":"paid"):courierWarehouseReturn(order)?(order.warehouseReturnedAt?"warehouse_returned":"returned"):order.cdekExported&&order.cdekWaybillReceived?"dispatched":(order.cdekExported||order.delivery==="moscow_courier"&&!!order.courier||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff&&!order.cdekTariff.needsConfirmation)?"calculated":"new";
+export const packingStage=(order:Order)=>!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?"completed":order.status==='rework'&&courierRecalledAtWarehouse(order)?'operator':order.courier?.phase==='recall_returned'?"new":["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"?((order.paymentReceivedAt||order.importedPayment)?"payment_received":"paid"):courierWarehouseReturn(order)?(order.warehouseReturnedAt?"warehouse_returned":"returned"):(order.legacyLv?.trial===false&&["cdek_pickup","cdek_courier"].includes(order.delivery||"")&&["shipping","pickup"].includes(order.status))||order.cdekExported&&order.cdekWaybillReceived?"dispatched":(order.cdekExported||order.delivery==="moscow_courier"&&!!order.courier||["moscow_courier","russian_post"].includes(order.delivery||"")&&["shipping","pickup","redeemed"].includes(order.status))?"exported":order.packingWaybillAt?"waybill":(!["moscow_courier","russian_post"].includes(order.delivery||"")&&order.cdekTariff&&!order.cdekTariff.needsConfirmation)?"calculated":"new";
 
 export const waitingForLogistic=(o:Order)=>["confirm","extra"].includes(o.status)&&!o.courier;
 export const canOperatorReachClient=(e:Pick<Employee,"id"|"role"|"department">,o:Order,staff:Employee[]=[])=>isOrderOperator(e,o,staff)&&waitingForLogistic(o)&&o.contact==="missed"&&!o.cdekDeleting&&!o.clientWaiting;

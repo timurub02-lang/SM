@@ -69,3 +69,17 @@ for(const delivery of ['cdek_pickup','cdek_courier']){
  assert.equal(packingStage({...printed,status:'returned',warehouseReturnedAt:'now'}),'warehouse_returned');
 }
 console.log('CDEK queues: awaiting PDF, printed, pickup, payment and returns passed');
+
+// Already shipped in LV: no new PDF download or synthetic tracking is required.
+for(const delivery of ['cdek_pickup','cdek_courier']){
+ const imported={delivery,legacyLv:{trial:false}};
+ for(const status of ['shipping','pickup']){
+  assert.equal(packingStage({...imported,status}),'dispatched');
+  assert.equal(packingStage({...imported,status,cdekExported:true}),'dispatched');
+ }
+ assert.equal(packingStage({...imported,status:'packing'}),'new');
+ assert.equal(packingStage({...imported,status:'returned'}),'returned');
+ assert.equal(packingStage({...imported,status:'redeemed'}),'completed');
+ assert.equal(packingStage({...imported,status:'shipping',legacyLv:{trial:true}}),'new');
+}
+console.log('Imported LV CDEK shipments use dispatched with or without a track');
