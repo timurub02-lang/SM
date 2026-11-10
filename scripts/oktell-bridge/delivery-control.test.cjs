@@ -15,6 +15,9 @@ const control=make({rememberDelivery:r=>remembered.push(r),checkDeliveryCompleti
 }});
 (async()=>{
  const state=await control.state();assert.equal(state.sourceAttached,false);assert.equal(state.paused,true);
+ const scoped=count=>make({load:()=>({taskId}),connected:()=>true,request:async()=>dataset({TaskId:taskId,TaskName:'Synthetic T1',ListId:listId,TaskListId:listId,Active:0,Done:0,SourcePresent:1,Contacts:30940,Sessions:0,PilotContacts:count})});
+ for(const count of [0,50,51,1000])assert.equal((await scoped(count).state()).pilotContacts,count);
+ for(const count of [-1,1001,1.5,'1000'])await assert.rejects(()=>scoped(count).state(),/Invalid pilot scope/);
  const batch={taskId,id:randomUUID(),fingerprint:'a'.repeat(64),items:[{clientId:'C-synthetic',phone:'79990000001',name:'Synthetic'}]};
  assert.equal((await control.importBatch(batch)).accepted,1);await control.importBatch(batch);assert.equal(receipts.size,1);
  const before=calls.length;
