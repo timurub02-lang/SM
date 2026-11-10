@@ -4,7 +4,7 @@ import {visibleState} from '../lib/permissions.ts';
 const admin={id:'admin',role:'admin'},a={id:'a',role:'operator',department:'one'},b={id:'b',role:'operator',department:'two'},head={id:'head',role:'department_head',department:'one'},staff=[admin,a,b,head];
 const receipt={slot:1,registry:'42',paymentDate:'2026-10-28',amountCents:950001,collectedCents:1000000};
 const order={id:'1',clientId:'c',status:'redeemed',manager:'a',delivery:'cdek_pickup',cdekRemittances:[receipt]};
-const orders=[order,{...order,id:'2',manager:'b'},{...order,id:'pending',cdekRemittances:[]},{...order,id:'conflict',cdekRemittances:[receipt,{...receipt,registry:'43'}]},{...order,id:'zero',cdekRemittances:[{...receipt,amountCents:0}]},{...order,id:'test',testOnly:true},{...order,id:'returned',status:'returned'},{...order,id:'post',delivery:'russian_post',cdekRemittances:[],paymentReceivedAt:'2026-10-28T22:00:00Z',paymentReceipt:{amount:11000}},{...order,id:'courier',delivery:'moscow_courier',cdekRemittances:[],paymentReceivedAt:'2026-10-28T10:00:00Z',paymentReceipt:{amount:10000}},{...order,id:'no-receipt',delivery:'moscow_courier',cdekRemittances:[],paymentReceivedAt:'2026-10-28T10:00:00Z'}];
+const orders=[order,{...order,id:'2',manager:'b'},{...order,id:'pending',cdekRemittances:[]},{...order,id:'conflict',cdekRemittances:[receipt,{...receipt,registry:'43',amountCents:900000}]},{...order,id:'zero',cdekRemittances:[{...receipt,amountCents:0}]},{...order,id:'test',testOnly:true},{...order,id:'returned',status:'returned'},{...order,id:'post',delivery:'russian_post',cdekRemittances:[],paymentReceivedAt:'2026-10-28T22:00:00Z',paymentReceipt:{amount:11000}},{...order,id:'courier',delivery:'moscow_courier',cdekRemittances:[],paymentReceivedAt:'2026-10-28T10:00:00Z',paymentReceipt:{amount:10000}},{...order,id:'no-receipt',delivery:'moscow_courier',cdekRemittances:[],paymentReceivedAt:'2026-10-28T10:00:00Z'}];
 assert.deepEqual(premiumOrders(orders,admin,staff).map(r=>r.order.id),['post','1','2','courier']);
 assert.deepEqual(premiumOrders(orders,a,staff).map(r=>r.order.id),['post','1','courier']);
 assert.deepEqual(premiumOrders(orders,head,staff).map(r=>r.order.id),['post','1','courier']);
@@ -23,3 +23,8 @@ const headTerms={...head,leaderPremium:{model:'udl_guarantee',fixedPerPeriod:0,m
 const scoped={orders:[order],employees:[a,headTerms],clients:[],events:[],incoming:[],settings:{}};
 assert.equal(visibleState(scoped,a).employees.find(e=>e.id==='head')?.leaderPremium,undefined);
 assert.equal(visibleState(scoped,headTerms).employees.find(e=>e.id==='head').leaderPremium.monthlyGuarantee,100000);
+
+const duplicate={...order,cdekRemittances:[receipt,{...receipt,registry:'duplicate',paymentDate:'2026-11-10'}]};
+assert.equal(premiumOrders([duplicate],admin,staff).length,1);
+assert.equal(premiumOrders([duplicate],admin,staff)[0].date,receipt.paymentDate);
+assert.equal(premiumOrders([duplicate],admin,staff)[0].amount,9500.01);

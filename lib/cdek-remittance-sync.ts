@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {cdekToken} from './cdek.ts';
-import {sameRemittance,type CdekRemittance} from './cdek-remittance.ts';
+import {sameRemittance,hasRemittanceConflict,type CdekRemittance} from './cdek-remittance.ts';
 import type {Order} from './crm.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 const day=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s);
@@ -42,7 +42,8 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
   const previous:CdekRemittance[]=row.order.cdekRemittances||[];
   const next=[...previous];for(const receipt of receipts)if(!next.some(x=>sameRemittance(x,receipt)))next.push(receipt);
   if(next.length===previous.length){result.unchanged++;continue;}
-  const mutation=crypto.randomUUID(),text=next.length>1?'СДЭК: несколько положительных перечислений по заказу — требуется проверка администратора':`СДЭК: деньги получены, реестр №${next[0].registry}, дата перечисления ${next[0].paymentDate}`;
+  const conflict=hasRemittanceConflict({cdekRemittances:next});
+  const mutation=crypto.randomUUID(),text=conflict?'СДЭК: несколько положительных перечислений по заказу — требуется проверка администратора':`СДЭК: деньги получены, реестр №${next[0].registry}, дата перечисления ${next[0].paymentDate}${next.length>1?' · дубль сохранён без повторного начисления':''}`;
   if(!dryRun){
    const event={id:mutation,orderId:row.id,clientId:row.order.clientId,at,actor:'СДЭК',text};
    const updated={...row.order,cdekRemittances:next,updatedAt:at,_mutation:mutation};
@@ -52,7 +53,7 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
    ]);
    if(!batch[0].meta.changes){result.races++;continue;}
   }
-  result.orderIds.push(row.id);if(next.length>1)result.conflicts++;else result.added++;
+  result.orderIds.push(row.id);if(conflict)result.conflicts++;else result.added++;
  }
  return result;
 }
