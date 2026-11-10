@@ -299,3 +299,11 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-grid .redemption-track-link{cursor:pointer;text-decoration:underline;text-decoration-color:#b6c9e6;text-underline-offset:3px;border-radius:3px;transition:color .15s,background-color .15s}.redemption-grid .redemption-track-link:hover,.redemption-grid .redemption-track-link:focus-visible{color:#075dc8;background:#e4efff;text-decoration-color:currentColor}.redemption-grid .redemption-track-link:focus-visible{outline:2px solid #075dc8;outline-offset:2px}
 
 .basket-row.basket-quantity-row{grid-template-columns:minmax(0,1fr) 100px 30px}.basket-total>.field{width:100%;margin:0}.basket-total input{max-width:260px}@media(max-width:767px){.basket-row.basket-quantity-row{grid-template-columns:minmax(0,1fr) 64px 26px}}
+
+/* Keep navigation anchored while sections and their toolbar contents change. */
+.premium-panel{min-height:100dvh;overflow-anchor:none}
+.premium-heading{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center}
+.premium-heading .order-status-tabs{justify-self:start;min-width:0;max-width:100%}
+.premium-heading .tabs-line{justify-content:flex-start}
+.premium-heading .tabs-line button{flex:0 0 auto;transition:background-color .15s,color .15s,box-shadow .15s}
+.premium-heading .premium-actions-slot{grid-column:1/-1;min-height:38px;width:100%;margin:0}
