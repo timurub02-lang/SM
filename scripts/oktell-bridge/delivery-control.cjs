@@ -19,7 +19,7 @@ module.exports=function({request,connected,rememberDelivery=()=>{},checkDelivery
  async function state(){
   const taskId=task(),r=await execute('w_crm_delivery_state',{task:taskId});
   if(String(r.TaskId).toLowerCase()!==taskId||!uuid(r.ListId)||!uuid(r.TaskListId)||![0,1].includes(r.Active)||![0,1].includes(r.Done)||![0,1].includes(r.SourcePresent)||![r.Contacts,r.Sessions].every(n=>Number.isSafeInteger(n)&&n>=0))throw fail('Некорректное состояние источника Oktell',502);
-  if(r.PilotContacts!==undefined&&(!Number.isSafeInteger(r.PilotContacts)||r.PilotContacts<0||r.PilotContacts>50))throw fail('Invalid pilot scope',502);
+  if(r.PilotContacts!==undefined&&(!Number.isSafeInteger(r.PilotContacts)||r.PilotContacts<0||r.PilotContacts>1000))throw fail('Invalid pilot scope',502);
   return {taskId,taskName:String(r.TaskName),sourceListId:r.ListId.toLowerCase(),taskListId:r.TaskListId.toLowerCase(),sourcePresent:!!r.SourcePresent,sourceAttached:r.ListId.toLowerCase()===r.TaskListId.toLowerCase(),active:r.Active===1,paused:r.Active===0&&r.Done===0,contacts:r.Contacts,sessions:r.Sessions,pilotContacts:r.PilotContacts??null,pilotUntil:r.PilotUntil?String(r.PilotUntil)+'Z':null};
  }
  async function importBatch(b){
