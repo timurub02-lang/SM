@@ -28,7 +28,8 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  const recordingPending=new Map(),recordingDir=process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings';
  let syncing=false;
  const columns=new Set(db.prepare('PRAGMA table_info(pilot_calls)').all().map(c=>c.name));
- for(const column of ['task_id','delivery_id'])if(!columns.has(column))db.exec('ALTER TABLE pilot_calls ADD COLUMN '+column+' TEXT');
+ for(const column of ['task_id','delivery_id','ring_at'])if(!columns.has(column))db.exec('ALTER TABLE pilot_calls ADD COLUMN '+column+' TEXT');
+ db.exec('CREATE TABLE IF NOT EXISTS pilot_retired_sip(actor TEXT NOT NULL,sip_id TEXT NOT NULL,PRIMARY KEY(actor,sip_id))');
  db.exec(`CREATE TABLE IF NOT EXISTS pilot_deliveries(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,fingerprint TEXT NOT NULL,items TEXT,state TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS pilot_delivery_contacts(delivery_id TEXT NOT NULL,task_id TEXT NOT NULL,client_id TEXT NOT NULL,phone TEXT NOT NULL,active INTEGER NOT NULL,PRIMARY KEY(delivery_id,client_id));
  CREATE UNIQUE INDEX IF NOT EXISTS pilot_delivery_number ON pilot_delivery_contacts(task_id,phone) WHERE active=1;
@@ -85,6 +86,11 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
    if(!contact||phone(contact.phone)!==phone(a.callerid))return;
    if(previous&&(previous.actor!==o.actor||previous.phone!==phone(contact.phone)))return;
    db.prepare('INSERT OR IGNORE INTO pilot_calls(chain,actor,phone,client_id,started_at,status,updated_at,task_id,delivery_id) VALUES(?,?,?,?,?,?,?,?,?)').run(chain,o.actor,phone(contact.phone),contact.clientId,time,'ringing',time,lower(p.taskId),contact.deliveryId||null);
+   // Oktell retries an unanswered operator leg with the same customer chain.
+   if(method==='phoneevent_ringstarted'&&previous?.ended_at&&!previous.answered_at&&!previous.form_id&&!previous.command_id&&!previous.result){
+    if(previous.sip_id)db.prepare('INSERT OR IGNORE INTO pilot_retired_sip VALUES(?,?)').run(o.actor,previous.sip_id);
+    db.prepare("UPDATE pilot_calls SET ended_at=NULL,sip_id=NULL,status='ringing',ring_at=?,updated_at=? WHERE chain=?").run(time,time,chain);
+   }
    if(method==='phoneevent_commstarted')db.prepare("UPDATE pilot_calls SET answered_at=COALESCE(answered_at,?),commutation=?,status=CASE WHEN ended_at IS NULL THEN 'connected' ELSE status END,updated_at=? WHERE chain=?").run(time,uuid(a.commutationid)?lower(a.commutationid):null,time,chain);
   }else if(['phoneevent_ringstopped','phoneevent_commstopped'].includes(method)){
    const c=db.prepare('SELECT * FROM pilot_calls WHERE chain=? AND actor=?').get(chain,o.actor);if(!c)return;
@@ -105,10 +111,11 @@ module.exports=function({send,request,connected,identity,file,load=()=>{
  }
  async function incoming(actor,number,sipId){
   operator(actor);if(!phone(number)||!sipId||sipId.length>200)return null;
+  if(db.prepare('SELECT 1 FROM pilot_retired_sip WHERE actor=? AND sip_id=?').get(actor,sipId))return null;
   // The PBX notification and SIP INVITE travel on different sockets.
   for(let n=0;n<30;n++){
    const c=current(actor);
-   if(c&&c.phone===phone(number)&&!c.ended_at&&now()-Date.parse(c.started_at)<20000&&(!c.sip_id||c.sip_id===sipId)){
+   if(c&&c.phone===phone(number)&&!c.ended_at&&now()-Date.parse(c.ring_at||c.started_at)<20000&&(!c.sip_id||c.sip_id===sipId)){
     db.prepare('UPDATE pilot_calls SET sip_id=? WHERE chain=?').run(sipId,c.chain);
     return {id:c.chain.replaceAll('-',''),chain:c.chain,direction:'incoming',clientId:c.client_id,phone:c.phone,status:c.status,startedAt:c.started_at};
    }
