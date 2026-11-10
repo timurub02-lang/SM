@@ -62,6 +62,10 @@ try{
  let summary=await syncCdekRemittances(db,request,Date.parse(at));assert.equal(summary.checked,2);assert.ok(calls.some(s=>s.includes('date=2026-10-29')));assert.ok(calls.some(s=>s.includes('date=2026-10-01')));
  calls=[];await syncCdekRemittances(db,request,Date.parse(at)+60000);assert.ok(!calls.some(s=>s.includes('date=2026-10-29')));assert.ok(calls.some(s=>s.includes('date=2026-10-02')));
  mode='error';summary=await syncCdekRemittances(db,request,Date.parse(at)+120000);assert.equal(summary.failed,1);
- mode='normal';calls=[];await syncCdekRemittances(db,request,Date.parse(at)+180000);assert.ok(calls.some(s=>s.includes('date=2026-10-03')),'Failed day retried');
+ mode='normal';calls=[];await syncCdekRemittances(db,request,Date.parse(at)+180000);assert.equal(calls.length,0,'No token or registry requests during backoff');
+ await syncCdekRemittances(db,request,Date.parse(at)+421000);assert.ok(calls.some(s=>s.includes('date=2026-10-03')),'Failed day retried after backoff');
+ await db.prepare("UPDATE settings SET data=? WHERE id='cdek-registry-sync-1'").bind(JSON.stringify({nextDay:'2026-10-29',todayCheckedAt:at})).run();
+ calls=[];await syncCdekRemittances(db,request,Date.parse(at)+480000);assert.equal(calls.length,0,'Today is not polled again through the historical cursor');
+ await syncCdekRemittances(db,request,Date.parse(at)+3600001);assert.equal(calls.filter(s=>s.includes('date=2026-10-29')).length,1);
  console.log('CDEK remittances: positive-only, replay, duplicate conflicts, identity, dry run, CAS, atomic audit and polling passed.');
 }finally{db.close();rmSync(folder,{recursive:true,force:true});}
