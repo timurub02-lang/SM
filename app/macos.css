@@ -741,3 +741,23 @@ body:has(.courier-design-aurora){background:#191a1e}
 .premium-search input{width:100%;min-width:0;height:100%;padding:0;border:0;outline:none;background:transparent;font:inherit;font-size:13px;box-shadow:none}
 .premium-search input:focus{outline:none;box-shadow:none}
 .premium-search input::placeholder{color:#8391a5}
+
+/* Employee cash history fits the viewport; long history is paginated. */
+.client-detail-dialog.employee-cash-dialog{width:calc(100vw - 32px);max-width:1440px!important;max-height:calc(100dvh - 24px)}
+.employee-cash-dialog [data-slot=dialog-header]{padding:16px 48px 12px 20px}
+.employee-cash-dialog [data-slot=dialog-title]{font-size:20px}
+.employee-cash-dialog [data-slot=dialog-description]{font-size:12px;line-height:1.4}
+.employee-cash-dialog>.sheet-body{padding:12px 20px 16px;gap:12px;min-width:0}
+.employee-cash-dialog .employee-cash-details{flex-shrink:0}
+.employee-cash-dialog .employee-cash-details>p{font-size:12px;margin:0}
+.employee-cash-dialog .employee-cash-details dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 24px;margin:6px 0 0}
+.employee-cash-dialog .employee-cash-details dd{font-size:20px}
+.employee-cash-dialog [data-slot=table-container]{min-width:0;flex-shrink:0;overflow-x:visible}
+.employee-cash-dialog table{width:100%;table-layout:fixed;min-width:0}
+.employee-cash-dialog th,.employee-cash-dialog td{padding:7px 8px;white-space:normal;overflow-wrap:anywhere;font-size:13px;line-height:1.35;vertical-align:top}
+.employee-cash-dialog th{height:auto;font-weight:600}
+.employee-cash-dialog td small{font-size:11px;line-height:1.35;margin-top:3px}
+.employee-cash-dialog td:nth-child(4){font-weight:600;font-variant-numeric:tabular-nums}
+.employee-cash-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;font-size:12px;flex-shrink:0}
+.employee-cash-pagination .secondary{padding:6px 10px;font-size:12px}
+@media(max-width:600px){.employee-cash-dialog>.sheet-body{padding:10px}.employee-cash-dialog [data-slot=dialog-header]{padding-left:10px}.employee-cash-dialog .employee-cash-details dl{gap:6px 12px}.employee-cash-dialog th,.employee-cash-dialog td{font-size:11px;padding:5px 3px}.employee-cash-dialog td small{font-size:10px}.employee-cash-dialog .employee-cash-details dd{font-size:16px}.employee-cash-pagination{gap:6px}}
