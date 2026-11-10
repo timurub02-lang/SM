@@ -6,9 +6,9 @@ CREATE OR ALTER PROCEDURE dbo.CRM_T1_SetPilotScope @ids nvarchar(max),@until dat
 AS
 BEGIN
  SET NOCOUNT ON; SET XACT_ABORT ON;
- IF COALESCE(ISJSON(@ids),0)<>1 OR LEFT(LTRIM(@ids),1)<>'[' OR LEN(@ids)>2000
-  THROW 51400,'Expected an explicit list of at most 50 native contact IDs',1;
- IF (SELECT COUNT(*) FROM OPENJSON(@ids))>50 OR EXISTS(SELECT 1 FROM OPENJSON(@ids) WHERE type<>2 OR TRY_CONVERT(int,value) IS NULL OR value LIKE '%.%')
+ IF COALESCE(ISJSON(@ids),0)<>1 OR LEFT(LTRIM(@ids),1)<>'[' OR LEN(@ids)>20000
+  THROW 51400,'Expected an explicit list of at most 1000 native contact IDs',1;
+ IF (SELECT COUNT(*) FROM OPENJSON(@ids))>1000 OR EXISTS(SELECT 1 FROM OPENJSON(@ids) WHERE type<>2 OR TRY_CONVERT(int,value) IS NULL OR value LIKE '%.%')
   THROW 51400,'Invalid pilot contact IDs',1;
  IF EXISTS(SELECT value FROM OPENJSON(@ids) GROUP BY value HAVING COUNT(*)>1)
   THROW 51400,'Duplicate pilot contact IDs',1;

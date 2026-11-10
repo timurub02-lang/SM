@@ -6,7 +6,7 @@ The default scope is empty: existing batches, reservations and history remain,
 but the external source exposes no customers for selection.
 
 An administrator must review the current CRM eligibility and explicitly choose
-at most 50 native contact IDs from the delivered batches. Configure that exact
+at most 1000 native contact IDs from the delivered batches. Configure that exact
 list with the narrow `CRM_T1_SetPilotScope` procedure and an expiry within four
 hours (UTC); the procedure is deliberately not exposed through generic WSS SQL.
 For example, on an isolated fixture only:
