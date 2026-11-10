@@ -203,7 +203,7 @@ export default function Page(){
  const clientCandidates=(view==="mine"?mine:[]).filter(textMatches).filter(c=>{if(view==="base")return filter==="all"||filter===`source:${clientSheet(c)}`;const o=latest(c.id);return filter==="without_orders"&&!clientsWithActiveOrders.has(c.id)||filter==="in_transit"&&clientsInTransit.has(c.id)||filter==="attention"&&attention.some(x=>x.clientId===c.id)||filter==="today"&&todayCalls.some(x=>x.clientId===c.id)||filter==="all"||filter==="new"&&Date.now()-Date.parse(c.createdAt)<86400000||filter==="callback"&&o?.contact==="callback"||filter==="rework"&&o?.status==="rework"||filter==="free"&&!c.owner||filter==="expires"&&c.owner&&c.assignedUntil&&daysLeft(c)<=3;});
  const workGroup=(c:Client)=>clientWorkStatus(c,workMap.get(c.id),state.clientReminders||[],reminderNow,clientsWithActiveOrders.has(c.id)).group;
  const showClientWork=view==="mine"&&employee.role==="operator"&&filter!=="in_transit";
- const workCandidates=clientCandidates.filter(c=>!clientsInTransit.has(c.id));
+ const workCandidates=clientCandidates;
  const clients=(showClientWork?workCandidates:clientCandidates).filter(c=>!showClientWork||clientWorkFilter==="all"||workGroup(c)===clientWorkFilter).sort((a,b)=>showClientWork?clientWorkQueueOrder(a,workMap.get(a.id),state.clientReminders||[],reminderNow)-clientWorkQueueOrder(b,workMap.get(b.id),state.clientReminders||[],reminderNow):0);
  const scopedOrders=employee.role==="operator"?state.orders.filter(o=>o.manager===actor):employee.role==="department_head"?departmentOrders(state.orders,state.employees,employee):state.orders;
  const visibleOrders=view==="orders"?scopedOrders.filter(o=>showOrderInList(o,clientsById.get(o.clientId),employee.role)):scopedOrders;
