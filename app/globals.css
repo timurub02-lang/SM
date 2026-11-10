@@ -307,3 +307,7 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .premium-heading .tabs-line{justify-content:flex-start}
 .premium-heading .tabs-line button{flex:0 0 auto;transition:background-color .15s,color .15s,box-shadow .15s}
 .premium-heading .premium-actions-slot{grid-column:1/-1;min-height:38px;width:100%;margin:0}
+
+.premium-department-summary td:not(:first-child),.premium-department-summary th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+.premium-department-summary tbody tr:nth-child(even){background:rgba(240,243,250,.55)}
+.premium-department-summary tbody tr.premium-department-total{background:#e8f4ed;font-weight:700;color:#327452}
