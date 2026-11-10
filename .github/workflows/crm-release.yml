@@ -57,6 +57,7 @@ jobs:
           node --experimental-strip-types tests/purchasing-http.mjs
           node --experimental-strip-types tests/oktell-reset-http.mjs
           node --experimental-strip-types tests/order-premium-lifecycle-http.mjs
+          node --experimental-strip-types tests/base-import-name.mjs
           node --experimental-strip-types tests/auth-http.mjs
           node --experimental-strip-types tests/telephony-http.mjs
           node --experimental-strip-types tests/oktell-browser-http.mjs
