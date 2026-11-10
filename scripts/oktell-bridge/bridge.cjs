@@ -40,7 +40,7 @@ wss.on('connection',ws=>{
  ws.on('close',()=>{if(peer===ws){peer=null;hello=null;operators.disconnected();browserPhone.disconnected();pilot.disconnected();for(const p of pending.values()){clearTimeout(p.timeout);p.reject(Error('Connection lost; result unknown'))}pending.clear();console.log('{"event":"disconnected"}')}});
  setTimeout(()=>{if(peer===ws)request('whoareyou',{type:'crm-server',name:'SM CRM isolated pilot',version:1}).catch(()=>ws.close());},500);
 });
-server.listen(Number(process.env.BRIDGE_PORT||3305),'127.0.0.1');
+server.listen(Number(process.env.BRIDGE_PORT||3305),process.env.BRIDGE_HOST||'127.0.0.1');
 const tasks=require('./task-control.cjs')({request,connected:()=>publicState().connected,enabled:()=>cfg.testControl===true,file:process.env.BRIDGE_JOURNAL||'/var/lib/sm-oktell-bridge/commands.sqlite'});
 const operators=require('./linked-operators.cjs')({request,connected:()=>publicState().connected});
 const recordingAuthorization=typeof cfg.recordingHttp?.login==='string'&&typeof cfg.recordingHttp?.password==='string'?'Basic '+Buffer.from(cfg.recordingHttp.login+':'+cfg.recordingHttp.password).toString('base64'):null;
