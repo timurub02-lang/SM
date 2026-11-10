@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {editLeaderRates} from '../lib/leader-premium-edit.ts';
+const admin={id:'admin',role:'admin'},op={id:'op',login:'operator',role:'operator',department:'1'},other={id:'other',login:'other',role:'operator',department:'2'},leader={id:'head',role:'department_head',department:'1',leaderPremium:{model:'salary_bonus',fixedPerPeriod:100,monthlyGuarantee:0,firstPeriod:0,links:[{operatorId:'op',login:'operator',rate:5},{login:'historical',rate:7}]}};
+const staff=[admin,leader,op,other],input={salary:100,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:false,firstHalfBonus:null};
+const ledger={revision:'old',activePeriod:'2026-11-1',periods:{'2026-10-2':{status:'paid',signatures:{},rows:[{employeeId:'head',payout:12345}]},'2026-11-1':{status:'open',signatures:{},rows:[{employeeId:'op',volume:10000},{employeeId:'head',role:'department_head',rate:0,commission:500,salary:100,input,result:600,payout:600,terms:leader.leaderPremium}]}}};
+const edits=[{operatorId:'op',rate:10}];
+const r=editLeaderRates(admin,leader,staff,edits,ledger);assert.equal(r.terms.links.find(x=>x.operatorId==='op').rate,10);assert.equal(r.terms.links.find(x=>!x.operatorId).rate,7);assert.equal(r.ledger.periods['2026-11-1'].rows[1].payout,1100);assert.deepEqual(r.ledger.periods['2026-10-2'],ledger.periods['2026-10-2']);assert.equal(leader.leaderPremium.links[0].rate,5);
+for(const actor of [op,leader,undefined])assert.throws(()=>editLeaderRates(actor,leader,staff,edits,ledger),/администратор/);
+for(const rate of [-1,101,Infinity,NaN])assert.throws(()=>editLeaderRates(admin,leader,staff,[{operatorId:'op',rate}],ledger));
+assert.throws(()=>editLeaderRates(admin,leader,staff,[...edits,...edits],ledger));assert.throws(()=>editLeaderRates(admin,leader,staff,[{operatorId:'other',rate:5}],ledger));
+assert.equal(editLeaderRates(admin,leader,staff,[{operatorId:'op',rate:null}],ledger).terms.links.some(x=>x.operatorId==='op'),false);
+assert.equal(editLeaderRates(admin,leader,staff,[{operatorId:'op',rate:0}],ledger).terms.links.find(x=>x.operatorId==='op').rate,0);
+const signed=structuredClone(ledger);signed.periods['2026-11-1'].signatures.head={at:'now',by:'head'};assert.throws(()=>editLeaderRates(admin,leader,staff,edits,signed),/подпись/);assert.equal(editLeaderRates(admin,leader,staff,[{operatorId:'op',rate:5}],signed).changed,false);
+const frozen=structuredClone(ledger);frozen.periods['2026-11-1'].status='frozen';assert.throws(()=>editLeaderRates(admin,leader,staff,edits,frozen));
+const dynamic=structuredClone(ledger);delete dynamic.periods['2026-11-1'].rows;assert.equal(editLeaderRates(admin,leader,staff,edits,dynamic).ledger.periods['2026-11-1'].rows,undefined);
+console.log('Leader rates: admin only, validation, participation, signed periods, recalculation and archive preservation passed');

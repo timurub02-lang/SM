@@ -1,3 +1,4 @@
+import {editLeaderRates} from '@/lib/leader-premium-edit';
 import {requestOrderCancellation,resolveOrderCancellation} from '@/lib/order-cancellation';
 import {readLimitedText} from '@/lib/request-body';
 import {canCreateRedemptionStaff} from '@/lib/crm';
@@ -529,10 +530,15 @@ async function handlePOST(request:Request){
    if(enabled&&!account&&!passwordHash)throw Error("Задайте пароль для включения входа сотрудника");
   }
   const oktell=prepareOktellLink(employee,data,existing,p.employee.oktellRequested);
-  const saved=json({...data,...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
-  const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?").bind(saved,eid,p.version):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
+  const rateLedger=p.employee.leaderRates!==undefined?await d.prepare("SELECT data FROM settings WHERE id='premium-ledger'").first<{data:string}>():null;
+  const rateEdit=p.employee.leaderRates!==undefined?editLeaderRates(employee,existing,s.employees,p.employee.leaderRates,rateLedger?JSON.parse(rateLedger.data):null):null;
+  if(rateEdit&&data.role!=='department_head')throw Error('Проценты доступны только руководителю');
+  const saved=json({...data,...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:rateEdit?.terms??existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
+  const rateGuard=rateEdit?.changed?(rateLedger?" AND EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger' AND data=?)":" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger')"):'';
+  const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?"+rateGuard).bind(saved,eid,p.version,...(rateEdit?.changed&&rateLedger?[rateLedger.data]:[])):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
   const guard="EXISTS(SELECT 1 FROM employees WHERE id=? AND data=? AND version=?)";
   const args=[eid,saved,p.id?p.version+1:1];
+  if(rateEdit?.changed&&rateLedger)statements.push(d.prepare(`UPDATE settings SET data=? WHERE id='premium-ledger' AND data=? AND ${guard}`).bind(json(rateEdit.ledger),rateLedger.data,...args));
   if(personalAuth()){
    if(passwordHash)statements.push(d.prepare(`INSERT INTO auth_accounts(employee_id,password_hash,enabled) SELECT ?,?,? WHERE ${guard} ON CONFLICT(employee_id) DO UPDATE SET password_hash=excluded.password_hash,enabled=excluded.enabled`).bind(eid,passwordHash,enabled?1:0,...args));
    else statements.push(d.prepare(`UPDATE auth_accounts SET enabled=? WHERE employee_id=? AND ${guard}`).bind(enabled?1:0,eid,...args));
