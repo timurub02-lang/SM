@@ -44,6 +44,12 @@ try{
  await db.prepare("UPDATE settings SET data=? WHERE id='cdek-shipment-other-account'").bind(JSON.stringify({number:'456',slot:2})).run();
  assert.equal((await applyCdekRegistries(db,1,answer(registry('R3',90,'2026-10-28','456')),at)).unmatched,1);
  for(const [id,extra] of [['test',{testOnly:true}],['shipping',{status:'shipping'}],['post',{delivery:'russian_post'}]]){await fixture(id,{legacyLv:{track:id},...extra});await applyCdekRegistries(db,1,answer(registry('R3',90,'2026-10-28',id)),at);assert.equal((await row(id)).cdekRemittances,undefined);}
+ await fixture('equal',{legacyLv:{track:'equal'}});
+ await applyCdekRegistries(db,1,answer(registry('equal-1',90,'2026-11-09','equal')),at);
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('equal-2',90,'2026-11-10','equal')),at)).conflicts,0);
+ assert.equal((await row('equal')).cdekRemittances.length,2,'Duplicate evidence retained');
+ assert.match(cdekMoneyLabel(await row('equal')),/09.11.2026 · дубль не начисляется/);
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('equal-2',90,'2026-11-10','equal')),at)).unchanged,1);
  await fixture('race',{legacyLv:{track:'race'}});
  const racing={prepare:sql=>db.prepare(sql),batch:async stmts=>{await db.prepare("UPDATE orders SET data=json_set(data,'$.comment','new'),version=version+1 WHERE id='race'").run();return db.batch(stmts);}};
  assert.equal((await applyCdekRegistries(racing,1,answer(registry('R4',90,'2026-10-28','race')),at)).races,1);assert.equal((await row('race')).cdekRemittances,undefined);

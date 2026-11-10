@@ -71,3 +71,10 @@ const unchanged=JSON.stringify(previewFrozen);
 assert.deepEqual([...nextPremiumPreview(previewFrozen,[initial,next,late,afterNext],staff).orderIds].sort(),['late','next']);
 assert.equal(JSON.stringify(previewFrozen),unchanged);
 assert.equal(nextPremiumPreview(null,[next],staff),null);
+// A later equal receipt must not earn another premium or move the first receipt to another period.
+const repeated={...initial,cdekRemittances:[...initial.cdekRemittances,{...initial.cdekRemittances[0],registry:'duplicate',paymentDate:'2026-11-10'}]};
+assert.equal(groups(ledger,[repeated]).initial,'premium_paid');
+const duplicateLedger={revision:'dup',activePeriod:'2026-10-2',initialPeriod:'2026-10-2',historyReconciled:true,periods:{'2026-10-2':{status:'open',signatures:{}}}};
+const frozenDuplicate=freezePeriod(duplicateLedger,'2026-10-2',[repeated],staff,{},'admin','now');
+assert.equal(frozenDuplicate.periods['2026-10-2'].orders.length,1);
+assert.equal(frozenDuplicate.periods['2026-10-2'].orders[0].amount,1000);

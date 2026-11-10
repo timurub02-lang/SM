@@ -1,3 +1,4 @@
+import {premiumRemittance,hasRemittanceConflict} from './cdek-remittance.ts';
 import type {Employee,Order} from './crm.ts';
 import {premiumCalculation,type PremiumAdjustment,type PremiumSaved} from './premium-calculation.ts';
 import {premiumOrders} from './premium-orders.ts';
@@ -30,7 +31,7 @@ export function periodOrders(ledger:PremiumLedger,periodId:string,orders:Order[]
  const known=new Set(prior?.knownReceipts||[]);
  return premiumOrders(orders,admin,employees).filter(r=>!used.has(orderKey(r.order))&&r.date<=period.cutoff&&(r.date>=period.from||!!prior&&!known.has(orderKey(r.order)))).map(r=>{
   const e=employees.find(e=>e.id===r.order.manager);
-  return {id:r.order.id,externalId:orderKey(r.order),employeeId:r.order.manager,login:e?.login||'',department:e?.department||'',amount:r.order.cdekRemittances?.length===1?r.order.cdekRemittances[0].collectedCents/100:r.amount};
+  return {id:r.order.id,externalId:orderKey(r.order),employeeId:r.order.manager,login:e?.login||'',department:e?.department||'',amount:premiumRemittance(r.order)?premiumRemittance(r.order)!.collectedCents/100:r.amount};
  });
 }
 export function ledgerRows(ledger:PremiumLedger,period:string,orders:Order[],employees:Employee[],adjustments:Record<string,PremiumSaved>):PayrollRow[]{
@@ -63,7 +64,7 @@ export function freezePeriod(ledger:PremiumLedger,period:string,orders:Order[],e
  const p=ledger.periods[period];if(period!==ledger.activePeriod||p?.status!=='open')throw Error('Можно зафиксировать только открытый текущий период');
  const membership=periodOrders(ledger,period,orders,employees),rows=ledgerRows(ledger,period,orders,employees,adjustments);
  if(!p.source&&!ledger.historyReconciled&&membership.some(r=>orders.some(o=>o.id===r.id&&o.legacyLv)))throw Error('Сначала сверьте ранее выплаченные заказы ЛВ');
- if(membership.some(r=>orders.some(o=>o.id===r.id&&(o.cdekRemittances?.length||0)>1)))throw Error('Есть заказы с несколькими перечислениями СДЭК. Требуется сверка.');
+ if(membership.some(r=>orders.some(o=>o.id===r.id&&hasRemittanceConflict(o))))throw Error('Есть заказы с несколькими перечислениями СДЭК. Требуется сверка.');
  if(rows.some(r=>r.result===null))throw Error('Не все суммы рассчитаны');
  if(new Set(membership.map(o=>o.externalId)).size!==membership.length)throw Error('Повтор заказа в ведомости');
  const paid=new Set(Object.values(ledger.periods).filter(v=>v.status==='paid').flatMap(v=>(v.orders||[]).map(o=>o.externalId)));
