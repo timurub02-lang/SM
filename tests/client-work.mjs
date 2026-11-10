@@ -54,3 +54,14 @@ assert.equal(clientWorkQueueOrder({...c,assignmentStartedAt:'2026-10-27T11:30:00
 const rows=[{id:'recent',work:missed},{id:'untouched'},{id:'earlier',work:{...missed,at:'2026-10-27T10:00:00Z'}}];
 assert.deepEqual(rows.sort((a,b)=>clientWorkQueueOrder(c,a.work,[],now)-clientWorkQueueOrder(c,b.work,[],now)).map(r=>r.id),['untouched','earlier','recent']);
 console.log('Missed-call queue order: newest last, due reminders and next day preserved');
+
+// An active order suppresses daily prospecting, but explicit callbacks still surface.
+const yesterday={clientId:c.id,outcome:'reached',source:'order',at:'2026-10-26T10:00:00Z',version:1};
+assert.equal(clientWorkStatus(c,yesterday,[],now,true).group,'active');
+assert.equal(clientWorkStatus(c,undefined,[],now,true).group,'active');
+assert.equal(clientWorkStatus(c,yesterday,[],now,false).group,'needed');
+assert.equal(clientWorkStatus(c,{...yesterday,at:new Date(now).toISOString()},[],now,true).group,'done');
+const callback={clientId:c.id,createdAt:at,due:'2026-10-27T13:00:00Z'};
+assert.equal(clientWorkStatus(c,yesterday,[callback],now,true).group,'planned');
+assert.equal(clientWorkStatus(c,yesterday,[{...callback,due:at}],now,true).group,'needed');
+console.log('Active orders suppress daily work; today results and scheduled/due callbacks preserved');

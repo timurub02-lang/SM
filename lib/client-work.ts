@@ -2,13 +2,13 @@ import type {Client} from './crm.ts';
 import type {ClientReminder} from './client-reminders.ts';
 export const clientWorkLabels={reached:'Дозвонился',missed:'Недозвон',callback:'Перезвон'};
 export type ClientWork={clientId:string;outcome:keyof typeof clientWorkLabels;at:string;version:number;comment?:string;author?:string;source?:'call'|'manual'|'incoming'|'order'};
-export function clientWorkStatus(c:Client,work:ClientWork|undefined,reminders:ClientReminder[],now=Date.now()){
+export function clientWorkStatus(c:Client,work:ClientWork|undefined,reminders:ClientReminder[],now=Date.now(),hasActiveOrder=false){
  const valid=(at:string)=>Number.isFinite(Date.parse(at))&&(!c.assignmentStartedAt||Date.parse(at)>=Date.parse(c.assignmentStartedAt));
  const last=work&&valid(work.at)?work:undefined;
  const pending=reminders.filter(r=>r.clientId===c.id&&valid(r.createdAt)&&Number.isFinite(Date.parse(r.due))).sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
  const due=pending[0]?.due;
  const day=(at:number)=>new Date(at+10800000).toISOString().slice(0,10);
- const group=due?(Date.parse(due)<=now?'needed':'planned'):last&&day(Date.parse(last.at))===day(now)?'done':'needed';
+ const group=due?(Date.parse(due)<=now?'needed':'planned'):last&&day(Date.parse(last.at))===day(now)?'done':hasActiveOrder?'active':'needed';
  return {group,last,due,overdue:!!due&&Date.parse(due)<=now,expiresBeforeCall:!!due&&!!c.assignedUntil&&Date.parse(c.assignedUntil)<=Date.parse(due)};
 }
 
