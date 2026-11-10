@@ -56,6 +56,32 @@ try{
  await db.prepare("CREATE TRIGGER test_failure BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'audit failed'); END").run();
  await assert.rejects(applyCdekRegistries(db,1,answer(registry('R4',90,'2026-10-28','race')),at));assert.equal((await row('race')).cdekRemittances,undefined);
  await db.prepare('DROP TRIGGER test_failure').run();
+
+ async function historyFixture(key,tracking=key){
+  const client={id:'history-'+key,owner:'other-operator',assignedUntil:'2027-01-01',legacyOrderHistory:[{externalId:key,status:'paid'}]};
+  await db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(client.id,'+7999'+key,JSON.stringify(client)).run();
+  const o={id:'LV-'+key,clientId:client.id,status:'redeemed',manager:'original-operator',delivery:'cdek_pickup',items:[],createdAt:at,redeemedAt:at,cdekTrackingNumber:tracking,legacyLv:{orderId:key,track:tracking,originalOperatorLogin:'original.login'}};
+  await db.prepare('INSERT INTO cdek_history_recovery(external_id,client_id,tracking,data) VALUES(?,?,?,?)').bind(key,client.id,tracking,JSON.stringify(o)).run();return client;
+ }
+ const hc=await historyFixture('90001');
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('H1',90,'2026-10-28','90001')),at,true)).recovered,1);
+ assert.equal(await db.prepare("SELECT id FROM orders WHERE id='LV-90001'").first(),null);
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('H1',90,'2026-10-28','90001')),at)).recovered,1);
+ const recovered=await row('LV-90001');assert.equal(recovered.manager,'original-operator');assert.equal(recovered.cdekHistoryRecovery.registry,'H1');assert.match(cdekMoneyLabel(recovered),/создан из истории/);
+ const after=JSON.parse((await db.prepare('SELECT data FROM clients WHERE id=?').bind(hc.id).first()).data);assert.equal(after.owner,hc.owner);assert.equal(after.assignedUntil,hc.assignedUntil);assert.deepEqual(after.legacyOrderHistory,[]);
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('H1',90,'2026-10-28','90001')),at)).unchanged,1);
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('H2',90,'2026-10-29','90001')),at)).recovered,0);assert.equal((await row('LV-90001')).cdekRemittances.length,2);
+ await historyFixture('90009');
+await db.prepare("UPDATE cdek_history_recovery SET data=json_remove(data,'$.delivery') WHERE external_id='90009'").run();
+const unknownDelivery=await applyCdekRegistries(db,1,answer(registry('H9',90,'2026-10-28','90009')),at);assert.equal(unknownDelivery.recovered,1);
+assert.equal((await applyCdekRegistries(db,1,answer(registry('H9',90,'2026-10-28','90009')),at)).unchanged,1);
+await historyFixture('90002');await db.prepare("INSERT INTO settings(id,data) VALUES('premium-ledger',?)").bind(JSON.stringify({periods:{old:{status:'paid',orders:[{externalId:'90002'}]}}})).run();
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('H3',90,'2026-10-28','90002')),at)).archived,1);assert.equal(await db.prepare("SELECT id FROM orders WHERE id='LV-90002'").first(),null);
+ await historyFixture('90003','shared');await historyFixture('90004','shared');assert.equal((await applyCdekRegistries(db,1,answer(registry('H4',90,'2026-10-28','shared')),at)).ambiguous,1);
+ await historyFixture('90005');
+ const recoveryRace={prepare:sql=>db.prepare(sql),batch:async statements=>{await db.prepare("UPDATE clients SET version=version+1 WHERE id='history-90005'").run();return db.batch(statements);}};
+ assert.equal((await applyCdekRegistries(recoveryRace,1,answer(registry('H5',90,'2026-10-28','90005')),at)).races,1);assert.equal(await db.prepare("SELECT id FROM orders WHERE id='LV-90005'").first(),null);
+ await db.prepare("CREATE TRIGGER recovery_failure BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'audit failed'); END").run();await assert.rejects(applyCdekRegistries(db,1,answer(registry('H5',90,'2026-10-28','90005')),at));assert.equal(await db.prepare("SELECT id FROM orders WHERE id='LV-90005'").first(),null);await db.prepare('DROP TRIGGER recovery_failure').run();
  await db.prepare("INSERT INTO settings(id,data) VALUES('cdek-1',?)").bind(JSON.stringify({clientId:'test',clientSecret:'test'})).run();
  let calls=[],mode='normal';
  const request=async(url,opts)=>{const u=new URL(url);calls.push(u.pathname+u.search);if(u.pathname.endsWith('/token'))return Response.json({access_token:'synthetic'});assert.equal(opts.method,undefined);if(mode==='error')return Response.json({}, {status:429});return Response.json(answer());};

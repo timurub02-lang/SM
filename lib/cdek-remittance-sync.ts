@@ -1,3 +1,4 @@
+import {initCdekHistoryRecovery,recoverCdekHistory} from './cdek-history-recovery.ts';
 import {z} from 'zod';
 import {cdekToken} from './cdek.ts';
 import {sameRemittance,hasRemittanceConflict,type CdekRemittance} from './cdek-remittance.ts';
@@ -22,7 +23,8 @@ export function registryPayments(data:unknown,slot:number):CdekRemittance[]{
 }
 export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new Date().toISOString(),dryRun=false,allowedIds?:Set<string>){
  const payments=registryPayments(data,slot);
- const rows=(await d.prepare(`SELECT o.id,o.data,o.version,s.data shipment FROM orders o LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id WHERE json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier')`).all()).results;
+ await initCdekHistoryRecovery(d);
+ const rows=(await d.prepare(`SELECT o.id,o.data,o.version,s.data shipment FROM orders o LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id WHERE (json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') OR (json_extract(o.data,'$.delivery') IS NULL AND json_extract(o.data,'$.cdekHistoryRecovery') IS NOT NULL))`).all()).results;
  const byTracking=new Map<string,{id:string;data:string;version:number;shipment:string|null;order:Order;slot?:number}[]>();
  for(const row of rows){
   const order=JSON.parse(row.data) as Order,shipment=row.shipment?JSON.parse(row.shipment):null;
@@ -30,13 +32,20 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
   if(!tracking)continue;
   const list=byTracking.get(tracking)||[];list.push({...row,order,slot:shipment?.slot||order.cdekTariff?.slot});byTracking.set(tracking,list);
  }
- const result={added:0,conflicts:0,unchanged:0,unmatched:0,ambiguous:0,races:0,orderIds:[] as string[]};
+ const result={recovered:0,archived:0,added:0,conflicts:0,unchanged:0,unmatched:0,ambiguous:0,races:0,orderIds:[] as string[]};
  // Group all positive evidence before writing: two positives in the same answer are never silently collapsed.
  const grouped=new Map<string,CdekRemittance[]>();
  for(const receipt of payments){const list=grouped.get(receipt.tracking)||[];list.push(receipt);grouped.set(receipt.tracking,list);}
  for(const [tracking,receipts] of grouped){
   const candidates=byTracking.get(tracking)||[];
   if(candidates.length>1){result.ambiguous++;continue;}
+  if(!candidates.length&&!allowedIds){
+   const recovery=await recoverCdekHistory(d,tracking,receipts,at,dryRun);
+   if(recovery.status==='created'){result.recovered++;result.orderIds.push(recovery.id);if(recovery.conflict)result.conflicts++;else result.added++;continue;}
+   if(recovery.status==='archived'){result.archived++;continue;}
+   if(recovery.status==='ambiguous'){result.ambiguous++;continue;}
+   if(recovery.status==='race'){result.races++;continue;}
+  }
   const row=candidates[0];
   if(!row||row.slot&&row.slot!==slot||row.order.status!=='redeemed'||row.order.testOnly||allowedIds&&!allowedIds.has(row.id)){result.unmatched++;continue;}
   const previous:CdekRemittance[]=row.order.cdekRemittances||[];
@@ -48,7 +57,7 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
    const event={id:mutation,orderId:row.id,clientId:row.order.clientId,at,actor:'СДЭК',text};
    const updated={...row.order,cdekRemittances:next,updatedAt:at,_mutation:mutation};
    const batch=await d.batch([
-    d.prepare(`UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND data=? AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?`).bind(JSON.stringify(updated),row.id,row.version,row.data,'cdek-shipment-'+row.id,row.shipment||''),
+    d.prepare(`UPDATE orders SET data=json_set(data,'$.cdekRemittances',json(?),'$.updatedAt',?,'$._mutation',?),version=version+1 WHERE id=? AND version=? AND data=? AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?`).bind(JSON.stringify(updated.cdekRemittances),at,mutation,row.id,row.version,row.data,'cdek-shipment-'+row.id,row.shipment||''),
     d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(mutation,row.order.clientId,row.id,at,JSON.stringify(event),row.id,mutation)
    ]);
    if(!batch[0].meta.changes){result.races++;continue;}
