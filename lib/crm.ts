@@ -177,7 +177,7 @@ export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,ex
  const base=nameBase(c.name||'');
  if(!base)return {...next,releaseBaseReview:true};
  const hasPurchase=orders.some(o=>o.clientId===c.id&&o.status==='redeemed')||c.legacyOrderHistory?.some(o=>o.status==='paid');
- return {...next,baseType:base,sheet:hasPurchase?(base==='M'?'П':'пассив'):'Т1',releaseBaseReview:false};
+ return {...next,baseType:base,sheet:hasPurchase?'П':'Т1',releaseBaseReview:false};
 }
 
 export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){

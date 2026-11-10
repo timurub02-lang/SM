@@ -57,7 +57,7 @@ assert.equal(applyRetention(cross,[settled],releaseNow,14,true).baseType,'M');
 assert.equal(applyRetention(cross,[settled],releaseNow,14,true).sheet,'П');
 const woman={...cross,name:'Иванова Анна Ивановна',baseType:'M'};
 assert.equal(applyRetention(woman,[settled],releaseNow,14,true).baseType,'J');
-assert.equal(applyRetention(woman,[settled],releaseNow,14,true).sheet,'пассив');
+assert.equal(applyRetention(woman,[settled],releaseNow,14,true).sheet,'П');
 for(const held of [applyRetention(cross,[settled],releaseNow,14,true,true),applyRetention(cross,[{...settled,status:'shipping'}],releaseNow,14,true),applyRetention(cross,[{...settled,redeemedAt:'2026-11-09T00:00:00Z'}],releaseNow,14,true)]){
  assert.equal(held.owner,'op');assert.equal(held.baseType,'J');
 }
@@ -69,4 +69,4 @@ assert.equal(blocked.sheet,'ЧС');assert.equal(blocked.baseType,'J');
 console.log('Release base routing and active/unpaid/ambiguous/blacklist protections passed');
 
 assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M'},[],releaseNow).sheet,'Т1');
-assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M',legacyOrderHistory:[{status:'paid'}]},[],releaseNow).sheet,'пассив');
+assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M',legacyOrderHistory:[{status:'paid'}]},[],releaseNow).sheet,'П');
