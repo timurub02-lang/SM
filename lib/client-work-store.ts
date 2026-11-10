@@ -12,7 +12,7 @@ export async function readClientWork(d:Db,e:Employee):Promise<ClientWork[]>{
  if(e.role!=='operator')return [];
  await initClientWork(d);await initPhone(d);
  const manual=(await d.prepare("SELECT w.data,w.version FROM client_work w JOIN clients c ON c.id=w.client_id WHERE w.employee_id=? AND json_extract(c.data,'$.owner')=?").bind(e.id,e.id).all()).results;
- const map=new Map<string,ClientWork>(manual.map((r:any)=>{const v={...JSON.parse(r.data),version:r.version,source:JSON.parse(r.data).source==='incoming'?'incoming':'manual'};return [v.clientId,v];}));
+ const map=new Map<string,ClientWork>(manual.map((r:any)=>{const v={...JSON.parse(r.data),version:r.version,source:['incoming','order'].includes(JSON.parse(r.data).source)?JSON.parse(r.data).source:'manual'};return [v.clientId,v];}));
  const calls=(await d.prepare(`SELECT client_id,ended_at,answered_at,status FROM (SELECT p.*,ROW_NUMBER() OVER(PARTITION BY p.client_id ORDER BY p.ended_at DESC,p.seq DESC) rank FROM phone_calls p JOIN clients c ON c.id=p.client_id WHERE p.actor_id=? AND json_extract(c.data,'$.owner')=? AND p.ended_at IS NOT NULL AND p.status IN ('completed','busy','no_answer') AND julianday(p.ended_at)>=julianday(COALESCE(json_extract(c.data,'$.assignmentStartedAt'),'1970-01-01'))) WHERE rank=1`).bind(e.id,e.id).all()).results;
  for(const r of calls){const previous=map.get(r.client_id);if(!previous||Date.parse(r.ended_at)>Date.parse(previous.at))map.set(r.client_id,{clientId:r.client_id,at:r.ended_at,outcome:r.answered_at?'reached':'missed',source:'call',version:previous?.version||0});}
  return [...map.values()];
@@ -47,5 +47,17 @@ export async function incomingClientWorkStatements(d:Db,clientId:string,ownerId:
  return [
   d.prepare(`INSERT INTO client_work(employee_id,client_id,data,version) SELECT ?,?,?,1 WHERE ${gate} ON CONFLICT(employee_id,client_id) DO UPDATE SET data=excluded.data,version=client_work.version+1 WHERE julianday(json_extract(client_work.data,'$.at'))<=julianday(?)`).bind(ownerId,clientId,JSON.stringify(data),...args,at),
   d.prepare(`UPDATE client_reminders SET completed_at=?,resolution='done' WHERE employee_id=? AND client_id=? AND completed_at IS NULL AND julianday(due)<=julianday(?) AND ${gate}`).bind(at,ownerId,clientId,at,...args)
+ ];
+}
+
+// Commit the result and reminder completion atomically with the new order.
+export async function orderClientWorkStatements(d:Db,clientId:string,ownerId:string,orderId:string,at:string){
+ await initClientWork(d);
+ const gate="EXISTS(SELECT 1 FROM orders o JOIN clients c ON c.id=o.client_id WHERE o.id=? AND o.client_id=? AND json_extract(o.data,'$.manager')=? AND json_extract(c.data,'$.owner')=?)";
+ const args=[orderId,clientId,ownerId,ownerId];
+ const data={clientId,outcome:'reached',source:'order',orderId,at};
+ return [
+  d.prepare(`UPDATE client_reminders SET completed_at=?,resolution='done' WHERE employee_id=? AND client_id=? AND completed_at IS NULL AND (julianday(due)<=julianday(?) OR id=(SELECT json_extract(data,'$.reminderId') FROM client_work WHERE employee_id=? AND client_id=?)) AND ${gate}`).bind(at,ownerId,clientId,at,ownerId,clientId,...args),
+  d.prepare(`INSERT INTO client_work(employee_id,client_id,data,version) SELECT ?,?,?,1 WHERE ${gate} ON CONFLICT(employee_id,client_id) DO UPDATE SET data=excluded.data,version=client_work.version+1 WHERE julianday(json_extract(client_work.data,'$.at'))<=julianday(?)`).bind(ownerId,clientId,JSON.stringify(data),...args,at)
  ];
 }
