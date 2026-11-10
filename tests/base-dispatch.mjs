@@ -15,11 +15,12 @@ await assert.rejects(()=>queueBaseDispatch(d,{base:'M',sheet:'К',project:'1',co
 const queued=await queueBaseDispatch(d,{base:'M',sheet:'П',project:'1',count:3},new Date('2026-10-02T18:00:00Z'));
 assert.equal(queued.queued,1);assert.equal(queued.date,'2026-10-02');
 await assert.rejects(()=>d.prepare("UPDATE clients SET data=json_set(data,'$.owner','op') WHERE id='a'").run());
-const calls=[];const request=async(url,options)=>{calls.push([url,options]);if(url.includes('oauth'))return Response.json({access_token:'test'});if(url.includes('filter_phones'))return Response.json([]);return Response.json({id:123});};
+function mockImport(){const calls=[];let rows=[];return {calls,request:async(url,options)=>{calls.push([url,options]);if(url.includes('oauth'))return Response.json({access_token:'test'});if(options.method==='POST'){assert.ok(url.endsWith('/leads/import'));const body=JSON.parse(options.body);assert.equal(body.duplicates,'ignore');rows=body.data.map((r,i)=>({...r,id:i+1,phones:r.phones.join(',')}));return Response.json({id:123});}if(url.includes('/leads/import/'))return Response.json({state:'loaded',inserted_count:rows.length});return Response.json({data:new URL(url).searchParams.get('page')==='1'?rows:[]});}};}
+const mock=mockImport(),calls=mock.calls,request=mock.request;
 assert.deepEqual(await runBaseDispatch(d,request,new Date('2026-10-02T18:01:00Z')),{sent:1});
 assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='a'").first()).data).distributedAt,'2026-10-02');
-assert.equal(calls.filter(([url,o])=>url.endsWith('/leads')&&o.method==='POST').length,1);
-await runBaseDispatch(d,request,new Date('2026-10-02T18:02:00Z'));assert.equal(calls.length,3);
+assert.equal(calls.filter(([url,o])=>url.endsWith('/leads/import')&&o.method==='POST').length,1);
+const callCount=calls.length;await runBaseDispatch(d,request,new Date('2026-10-02T18:02:00Z'));assert.equal(calls.length,callCount);
 const existing=[{id:'a',phone:'79990000001',baseType:'M',sheet:'К',version:1},{id:'b',phone:'79990000002',baseType:'J',sheet:'Ж2',version:1},{id:'c',phone:'79990000003',baseType:'M',sheet:'Т2',version:1}];
 const rows=['79990000001','79990000002','79990000003','79990000004','8 (999) 000-00-04','bad'].map((phone,i)=>({phone,row:i+2,name:'test'}));
 let p=planImport(rows,existing,'M','Т1');assert.equal(p.skipped,1);assert.equal(p.conflicts.length,1);assert.equal(p.added.length,1);assert.equal(p.moved.length,1);assert.equal(p.duplicates,1);assert.equal(p.invalid.length,1);
@@ -34,13 +35,24 @@ const autoDb=openDatabase(':memory:');await autoDb.prepare('CREATE TABLE clients
 const autoConfig=initialBaseSettings();Object.assign(autoConfig.M.sheets.find(s=>s.name==='П'),{automatic:true,projectId:'123',cycleDays:2});
 await autoDb.prepare('INSERT INTO settings VALUES(?,?)').bind('base-settings',JSON.stringify({config:autoConfig})).run();await autoDb.prepare('INSERT INTO settings VALUES(?,?)').bind('skorozvon','{}').run();
 for(let i=0;i<5;i++)await autoDb.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind('auto'+i,'7999333300'+i,JSON.stringify({phone:'7999333300'+i,baseType:'M',sheet:'П',owner:''})).run();
-let writes=0;const autoRequest=async(url,options)=>{if(url.includes('oauth'))return Response.json({access_token:'test'});if(options.method==='GET')return Response.json([{id:123,phones:[new URL(url).searchParams.get('filter_phones')]}]);writes++;return new Response(null,{status:200});};
+const autoMock=mockImport(),autoRequest=autoMock.request;
 await runBaseDispatch(autoDb,autoRequest,new Date('2026-10-02T18:00:00Z'));
 assert.equal((await autoDb.prepare('SELECT distribution_date FROM base_dispatch_jobs').first()).distribution_date,'2026-10-05');
-assert.equal((await autoDb.prepare("SELECT COUNT(*) AS n FROM base_dispatch_items WHERE state='sent'").first()).n,2);assert.equal(writes,4);
-await runBaseDispatch(autoDb,autoRequest,new Date('2026-10-02T18:01:00Z'));assert.equal(writes,4);
+assert.equal((await autoDb.prepare("SELECT COUNT(*) AS n FROM base_dispatch_items WHERE state='sent'").first()).n,2);assert.equal(autoMock.calls.filter(([u,o])=>u.endsWith('/leads/import')&&o.method==='POST').length,1);
+await runBaseDispatch(autoDb,autoRequest,new Date('2026-10-02T18:01:00Z'));assert.equal(autoMock.calls.filter(([u,o])=>u.endsWith('/leads/import')&&o.method==='POST').length,1);
 await queueBaseDispatch(autoDb,{base:'M',sheet:'П',project:'123',count:1},new Date('2026-10-03T09:00:00Z'));
 const timeoutRequest=async(url,options)=>{if(url.includes('oauth'))return Response.json({access_token:'test'});if(options.method==='GET')return Response.json([]);throw Error('network timeout');};
 await runBaseDispatch(autoDb,timeoutRequest,new Date('2026-10-03T09:01:00Z'));
 assert.equal((await autoDb.prepare("SELECT COUNT(*) AS n FROM base_dispatch_items WHERE state='unknown'").first()).n,1);
+// A delayed import survives subsequent worker runs without another POST.
+await queueBaseDispatch(autoDb,{base:'M',sheet:'П',project:'123',count:1},new Date('2026-10-03T10:00:00Z'));
+const delayed=mockImport();let loaded=false,bad=false;
+const delayedRequest=async(u,o)=>{if(u.includes('/leads/import/')&&!loaded)return Response.json({state:'processing'});const response=await delayed.request(u,o);if(bad&&u.includes('stored_file_id')&&new URL(u).searchParams.get('page')==='1'){const data=await response.json();data.data[0].name='Wrong';return Response.json(data);}return response;};
+await runBaseDispatch(autoDb,delayedRequest,new Date('2026-10-03T10:01:00Z'));
+assert.equal((await autoDb.prepare("SELECT count(*) AS n FROM base_dispatch_imports WHERE state='submitted'").first()).n,1);
+await runBaseDispatch(autoDb,delayedRequest,new Date('2026-10-03T10:20:00Z'));
+loaded=true;bad=true;await assert.rejects(()=>runBaseDispatch(autoDb,delayedRequest),/проверку/);
+assert.equal((await autoDb.prepare("SELECT count(*) AS n FROM base_dispatch_imports WHERE state='submitted'").first()).n,1);
+bad=false;await runBaseDispatch(autoDb,delayedRequest);
+assert.equal(delayed.calls.filter(([u,o])=>u.endsWith('/leads/import')&&o.method==='POST').length,1);
 autoDb.close();console.log('Friday scheduling, floor quantity, one automatic run per day and uncertain-write protection passed');

@@ -31,12 +31,12 @@ try{
  let switched=false,clientWrites=0;
  const request=async(url,options)=>{
   if(url.includes('oauth'))return Response.json({access_token:'fixture'});
-  if(options.method==='GET')return Response.json([]);
+  if(options.method==='GET'){if(url.includes('/leads/import/'))return Response.json({state:'loaded',inserted_count:1});return Response.json({data:new URL(url).searchParams.get('page')==='1'?[{id:1,phones:'79990000000',name:'79990000000',city:''}]:[]});}
   clientWrites++;
   if(!switched){switched=true;assert(await saveBaseDestination(d,'oktell',restored.revision));}
   return Response.json({id:123});
  };
- const result=await runBaseDispatch(d,request,now);assert.equal(result.sent,1);assert.equal(result.paused,true);assert.equal(clientWrites,1);
+ const result=await runBaseDispatch(d,request,now);assert.equal(result.sent,1);assert.equal((await runBaseDispatch(d,noNetwork,now)).paused,true);assert.equal(clientWrites,1);
  assert.equal((await d.prepare("SELECT count(*) AS n FROM base_dispatch_items WHERE state='pending'").first()).n,1);
  console.log('Base destination: default, persistence, unchanged sheet settings, stale writes, manual/automatic pause, pending preservation and switch during delivery passed');
 }finally{d.close();}
