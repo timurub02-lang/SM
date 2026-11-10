@@ -48,3 +48,22 @@ const expiredPV=applyRetention(owned,[paid,concurrentPV],Date.parse('2026-03-01T
 assert.equal(expiredPV.owner,'');assert.equal(expiredPV.sheet,'П');
 assert.equal(applyRetention(owned,[paid],Date.parse('2026-01-10T00:00:01Z'),0).owner,'');
 assert.equal(applyRetention(owned,[paid,{...pv,status:'rework'}],Date.parse('2026-01-10T00:00:01Z'),0).owner,'op');
+
+// Release destination follows a clear name, only after all retention protections expire.
+const releaseNow=Date.parse('2026-11-10T12:00:00Z');
+const cross={...client,name:'Иванов Иван Иванович',baseType:'J',owner:'op',sheet:'К',assignmentStartedAt:'2026-01-01T00:00:00Z'};
+const settled={clientId:'c',manager:'op',createdAt:'2026-01-01T00:00:00Z',status:'redeemed',redeemedAt:'2026-01-02T00:00:00Z'};
+assert.equal(applyRetention(cross,[settled],releaseNow,14,true).baseType,'M');
+assert.equal(applyRetention(cross,[settled],releaseNow,14,true).sheet,'П');
+const woman={...cross,name:'Иванова Анна Ивановна',baseType:'M'};
+assert.equal(applyRetention(woman,[settled],releaseNow,14,true).baseType,'J');
+assert.equal(applyRetention(woman,[settled],releaseNow,14,true).sheet,'пассив');
+for(const held of [applyRetention(cross,[settled],releaseNow,14,true,true),applyRetention(cross,[{...settled,status:'shipping'}],releaseNow,14,true),applyRetention(cross,[{...settled,redeemedAt:'2026-11-09T00:00:00Z'}],releaseNow,14,true)]){
+ assert.equal(held.owner,'op');assert.equal(held.baseType,'J');
+}
+const ambiguous=applyRetention({...cross,name:'Иванов И. И.'},[settled],releaseNow,14,true);
+assert.equal(ambiguous.baseType,'J');assert.equal(ambiguous.releaseBaseReview,true);
+const free={...cross,owner:''};assert.deepEqual(applyRetention(free,[settled],releaseNow,14,true),free);
+const blocked=applyRetention(cross,[{...settled,pv:true,status:'returned',returnedAt:'2026-11-01T00:00:00Z'}],releaseNow,14,true);
+assert.equal(blocked.sheet,'ЧС');assert.equal(blocked.baseType,'J');
+console.log('Release base routing and active/unpaid/ambiguous/blacklist protections passed');

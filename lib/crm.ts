@@ -1,3 +1,4 @@
+import {nameBase} from './name-base.ts';
 import type {CdekRemittance} from './cdek-remittance.ts';
 import {courierDoorRefusal,courierPhase,courierParcelLocation,courierWarehouseReturn,courierRecalledAtWarehouse} from './courier.ts';
 import type {CourierAssignment,CourierRecall} from './courier.ts';
@@ -27,7 +28,7 @@ export const departments={"1":"SKP_","2":"POD_","3":"M31_","4":"UDL_","5":"A_"} 
 export const departmentIds=["1","2","3","4","5"] as const;
 export const roles={operator:"Оператор",logistic:"Логист",chief_logistic:"Главный логист",courier:"Курьер",admin:"Администратор",department_head:"Руководитель отдела",redemption:"Отдел выкупа",purchasing:"Отдел закупок"};
 export const isLogistic=(role?:string)=>role==="logistic"||role==="chief_logistic";
-export type Client={legacyOrderHistory?:import("./client-order-history").ClientOrderHistoryEntry[];biography?:string;linkedPhones?:string[];importFields?:Record<string,string>;baseType?:"M"|"J";distributedAt?:string;releasedAt?:string;importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string;decidedAt?:string;decidedBy?:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
+export type Client={releaseBaseReview?:boolean;legacyOrderHistory?:import("./client-order-history").ClientOrderHistoryEntry[];biography?:string;linkedPhones?:string[];importFields?:Record<string,string>;baseType?:"M"|"J";distributedAt?:string;releasedAt?:string;importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string;decidedAt?:string;decidedBy?:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
 export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
@@ -158,7 +159,7 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
  return {...base,owner:"",releasedAt:new Date(now).toISOString(),sheet:paid.length?"П":original,returnSheet:undefined,assignmentStartedAt:undefined};
 }
 
-export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,explicitPolicy=false,unpaidPremium=false):Client{
+function retentionWithPV(c:Client,orders:Order[],now:number,days:number,explicitPolicy:boolean,unpaidPremium:boolean):Client{
  const next=retentionResult(c,orders,now,days,explicitPolicy,unpaidPremium),related=orders.filter(o=>o.clientId===c.id);
  if(!related.some(o=>o.pv))return next;
  const events=related.flatMap(o=>o.status==='redeemed'&&o.redeemedAt?[{at:o.redeemedAt,sheet:next.owner?'К':'П',startedAt:''}]:o.pv?[{at:o.status==='returned'?o.returnedAt||o.updatedAt:o.status==='refused'?o.cancelledAt||o.updatedAt:o.pvMarkedAt||o.createdAt,sheet:['returned','refused'].includes(o.status)?'ЧС':'ПВ',startedAt:o.createdAt}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
@@ -167,6 +168,15 @@ export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,ex
  // Older purchases, completed before a new PV order existed, do not exempt that new order.
  const paidDuringPV=latest.startedAt&&related.some(o=>o.status==='redeemed'&&o.redeemedAt&&Date.parse(o.redeemedAt)>=Date.parse(latest.startedAt));
  return {...next,sheet:paidDuringPV?(next.owner?'К':'П'):latest.sheet};
+}
+
+export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,explicitPolicy=false,unpaidPremium=false):Client{
+ const next=retentionWithPV(c,orders,now,days,explicitPolicy,unpaidPremium);
+ // Route only a new release; never redistribute already free clients or lift blacklist/PV restrictions.
+ if(!c.owner||next.owner||['ЧС','ПВ'].includes(clientSheet(next)))return next;
+ const base=nameBase(c.name||'');
+ if(!base)return {...next,releaseBaseReview:true};
+ return {...next,baseType:base,sheet:base==='M'?'П':'пассив',releaseBaseReview:false};
 }
 
 export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){
