@@ -761,3 +761,17 @@ body:has(.courier-design-aurora){background:#191a1e}
 .employee-cash-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;font-size:12px;flex-shrink:0}
 .employee-cash-pagination .secondary{padding:6px 10px;font-size:12px}
 @media(max-width:600px){.employee-cash-dialog>.sheet-body{padding:10px}.employee-cash-dialog [data-slot=dialog-header]{padding-left:10px}.employee-cash-dialog .employee-cash-details dl{gap:6px 12px}.employee-cash-dialog th,.employee-cash-dialog td{font-size:11px;padding:5px 3px}.employee-cash-dialog td small{font-size:10px}.employee-cash-dialog .employee-cash-details dd{font-size:16px}.employee-cash-pagination{gap:6px}}
+
+/* Compact base settings, scoped to this dialog. */
+.base-settings-dialog .base-settings-group{display:grid;gap:14px;padding:18px;border:1px solid #dce5f0;border-radius:16px;background:#ffffff80}
+.base-settings-dialog h3{margin:0;font-size:16px;font-weight:600}
+.base-settings-dialog .field{gap:6px}.base-settings-dialog .field>span{font-size:13px;font-weight:500}
+.base-settings-dialog input:not([type=checkbox]),.base-settings-dialog select{min-height:40px;padding:9px 12px;border:1px solid #d5deea;border-radius:10px;background:#fff;min-width:0;width:100%}
+.base-settings-dialog .action-buttons{display:flex;flex-wrap:nowrap;gap:8px;margin-top:8px}.base-settings-dialog .action-buttons>input,.base-settings-dialog .action-buttons>select{flex:1;min-width:0}.base-settings-dialog .action-buttons>button{flex-shrink:0;white-space:nowrap}
+.base-settings-sheets{display:grid;gap:8px}.base-settings-dialog .base-sheet-settings{padding:0;overflow:hidden;background:#ffffff80;border-radius:12px}
+.base-settings-dialog summary{cursor:pointer;font-size:14px;padding:15px 18px}.base-settings-dialog .base-settings-group>summary{padding:0;font-weight:600}.base-settings-dialog summary strong{margin-right:12px}.base-settings-dialog summary span{font-size:12px;color:#718198}
+.base-settings-dialog details[open]>summary{margin-bottom:12px}.base-settings-dialog .base-sheet-settings>summary{margin:0}.base-settings-dialog .base-sheet-settings[open]>summary{border-bottom:1px solid #e3e9f2;background:#edf3fc}
+.base-settings-dialog .base-sheet-settings>.form-grid,.base-settings-dialog .base-sheet-settings>p{padding:16px;margin:0}.base-settings-dialog .form-grid{gap:14px}
+.base-settings-dialog .base-auto-toggle{display:flex;align-items:center;gap:10px;grid-column:1/-1;font-size:14px}.base-settings-dialog .base-auto-toggle input{width:18px;height:18px;accent-color:#4388ed}
+.base-settings-dialog .field small{font-size:12px;line-height:1.5;color:#718198}.base-settings-footer{position:sticky;bottom:-24px;display:flex;align-items:center;gap:14px;padding:14px 0;background:#f5f7fc;border-top:1px solid #dce5f0;z-index:1}.base-settings-footer span{font-size:12px;color:#718198}
+@media(max-width:600px){.base-settings-dialog .action-buttons{flex-wrap:wrap}.base-settings-dialog summary span{display:block;margin:5px 0 0 16px}.base-settings-footer{flex-wrap:wrap}}

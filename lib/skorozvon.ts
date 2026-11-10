@@ -23,3 +23,22 @@ export async function checkSkorozvon(c:SkCredentials,request:typeof fetch=fetch)
   throw Error(e instanceof Error&&e.name==='TimeoutError'?'Скорозвон не ответил вовремя':'Не удалось связаться со Скорозвоном. Повторите проверку позже');
  }
 }
+
+export type SkProject={id:string;title:string};
+export async function readSkorozvonProjects(c:SkCredentials,request:typeof fetch=fetch):Promise<SkProject[]>{
+ const token=await skorozvonToken(c,request),projects=new Map<string,SkProject>();
+ for(let page=1;page<=100;page++){
+  let response:Response;
+  try{response=await request(`https://api.skorozvon.ru/api/v2/call_projects?length=100&page=${page}`,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000),redirect:'error'});}catch{throw Error('Скорозвон не ответил. Повторите обновление списка');}
+  if(!response.ok)throw Error('Скорозвон не вернул проекты: '+response.status);
+  const data=await response.json() as {data?:unknown;pagination?:{total_pages?:number}}|unknown[];
+  const rows=Array.isArray(data)?data:data?.data;
+  if(!Array.isArray(rows))throw Error('Скорозвон вернул неожиданный список проектов');
+  let added=0;
+  for(const row of rows){if(!row||!/^\d+$/.test(String(row.id))||typeof row.title!=='string')throw Error('Скорозвон вернул проект без ID или названия');const id=String(row.id);if(!projects.has(id))added++;projects.set(id,{id,title:row.title.trim()||`Проект ${id}`});}
+  const totalPages=Array.isArray(data)?undefined:data.pagination?.total_pages;
+  if(typeof totalPages==='number'?page>=totalPages:rows.length<100)return [...projects.values()].sort((a,b)=>a.title.localeCompare(b.title,'ru'));
+  if(!added)throw Error('Скорозвон повторил страницу проектов. Список не обновлён');
+ }
+ throw Error('Не удалось получить полный список проектов Скорозвона');
+}
