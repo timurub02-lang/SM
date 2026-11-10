@@ -4,6 +4,7 @@ import {hasOktellLink} from '@/lib/oktell-link';
 import {pilotControl} from '@/lib/oktell-pilot-control';
 import {syncPilot} from '@/lib/oktell-pilot-sync';
 import {db} from '@/lib/db';
+import {z} from 'zod';
 export const dynamic='force-dynamic';
 export async function POST(req:Request){
  const a=await sessionEmployee(req.headers);
@@ -14,5 +15,5 @@ export async function POST(req:Request){
   if(b.action==='sync'&&Object.keys(b).length===1){await syncPilot(db());return Response.json(await pilotControl(path));}
   if(b.action!=='result')return Response.json({error:'Неверная команда'},{status:400});
   const {action,...body}=b;const result=await pilotControl(path,body);await syncPilot(db());return Response.json(result);
- }catch(e){return Response.json({error:e instanceof Error?e.message:'Нет связи с Oktell'},{status:(e as any)?.status||502});}
+ }catch(e){return Response.json({error:e instanceof z.ZodError||e instanceof SyntaxError?'Не удалось проверить данные Т1. Сообщите администратору; синхронизация будет повторена.':e instanceof Error?e.message:'Нет связи с Oktell'},{status:(e as any)?.status||502});}
 }

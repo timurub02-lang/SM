@@ -9,6 +9,8 @@ console.log('PASS: draft-only pilot, exactly three distinct contacts and one to 
 
 const native={projectId:'10000000-0000-4000-8000-000000000001',taskId:'10000000-0000-4000-8000-000000000002',listId:'10000000-0000-4000-8000-000000000003',verifiedAt:'2026-10-28T19:00:00Z',active:false,operatorUserIds:['10000000-0000-4000-8000-000000000004','10000000-0000-4000-8000-000000000005'],line:'Existing test line'};
 assert.equal(pilotSchema.safeParse({...p,state:'paused',native}).success,true);
+for(const verifiedAt of ['2026-10-28T19:00:00.123456Z','2026-10-28T19:00:00+00:00','2026-10-28T22:00:00+03:00','2026-10-28T14:00:00-05:00'])assert.equal(pilotSchema.safeParse({...p,state:'paused',native:{...native,verifiedAt}}).success,true,verifiedAt);
+for(const verifiedAt of ['2026-10-28T19:00:00','2026-10-28','2026-02-30T19:00:00Z','2026-10-28T19:00:00+25:00','not a date'])assert.equal(pilotSchema.safeParse({...p,state:'paused',native:{...native,verifiedAt}}).success,false,verifiedAt);
 assert.equal(pilotSchema.safeParse({...p,state:'paused'}).success,false);
 assert.equal(pilotSchema.safeParse({...p,state:'paused',native:{...native,active:true}}).success,false);
 assert.equal(pilotSchema.safeParse({...p,native:{...native,operatorUserIds:Array(2).fill(native.operatorUserIds[0])}}).success,false);

@@ -13,7 +13,7 @@ import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'oktell-reset-')),file=join(dir,'test.sqlite');
 const db=new DatabaseSync(file),origin='https://crm.test',base='http://127.0.0.1:3326';
 const sock=controlSocket(join(dir,'bridge.sock'));let server,logs='',bridgeRequests=0,lastBody,lastUrl; const actor='E-43a21d76-351';
-const bridge=http.createServer((req,res)=>{bridgeRequests++;lastUrl=req.url;let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{lastBody=raw?JSON.parse(raw):null;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({state:'break',checkedAt:new Date().toISOString()}));});});
+const bridge=http.createServer((req,res)=>{bridgeRequests++;lastUrl=req.url;let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{lastBody=raw?JSON.parse(raw):null;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/pilot-history'?[]:{state:'break',checkedAt:new Date().toISOString()}));});});
 await new Promise(r=>bridge.listen(sock,r));
 async function boot(){
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{PATH:process.env.PATH,CRM_RUNTIME:'miran',OKTELL_CONTROL_SOCKET:sock,CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:'3326'},stdio:['ignore','pipe','pipe']});
@@ -70,8 +70,16 @@ try{
  assert.equal((await call('/api/operator-state',cookies[actor],{action:'fake'})).status,400);
  assert.equal(bridgeRequests,count);
  const csrf=await fetch(base+'/api/operator-state',{method:'POST',headers:{cookie:cookies[actor],'Content-Type':'application/json',Origin:'https://other.invalid'},body:JSON.stringify({action:'ready'})});assert.equal(csrf.status,403);
+ db.prepare("UPDATE settings SET data=json_set(data,'$.native.verifiedAt',?) WHERE id='oktell-pilot-t1'").run('2026-10-28T22:00:00+03:00');
+ assert.equal((await call('/api/oktell-pilot',cookies[actor],{action:'sync'})).status,200,'An explicit timezone offset must not break operator synchronization');
+ const afterSync=bridgeRequests;
+ db.prepare("UPDATE settings SET data=json_set(data,'$.native.verifiedAt',?) WHERE id='oktell-pilot-t1'").run('invalid');
+ const invalidPilot=await call('/api/oktell-pilot',cookies[actor],{action:'sync'});
+ assert.equal(invalidPilot.status,502);assert.equal(JSON.parse(invalidPilot.text).error,'Не удалось проверить данные Т1. Сообщите администратору; синхронизация будет повторена.');
+ assert.equal(bridgeRequests,afterSync,'Invalid settings must stop before requesting native history');
+ db.prepare('UPDATE settings SET data=? WHERE id=?').run(JSON.stringify(pilot),'oktell-pilot-t1');
  db.prepare('UPDATE auth_accounts SET enabled=0 WHERE employee_id=?').run(actor);
  assert.equal((await call('/api/operator-state',cookies[actor],{action:'ready'})).status,401);
- assert.equal(bridgeRequests,count);
+ assert.equal(bridgeRequests,afterSync);
  console.log('PASS: operator-state authentication, exact employee binding, CSRF, revocation, no delegation or test-account access');
 }catch(e){console.error(logs);throw e;}finally{await stop();await new Promise(r=>bridge.close(r));db.close();rmSync(dir,{recursive:true,force:true});}
