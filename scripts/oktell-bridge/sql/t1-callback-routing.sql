@@ -82,6 +82,14 @@ BEGIN
   SELECT u.Id FROM dbo.A_Users u JOIN dbo.A_UserParams p ON p.IdUser=u.Id WHERE p.IsOperator=1; RETURN;
  END;
  DECLARE @now datetime2=SYSUTCDATETIME(),@phone varchar(32),@owner uniqueidentifier,@only bit,@eligible bit,@command uniqueidentifier,@release bit;
+ -- Oktell asks for the task's available pool before it has a subscriber ID.
+ IF @idabonent=0 AND @idline='00000000-0000-0000-0000-000000000000' BEGIN
+  SELECT u.Id FROM dbo.A_Users u JOIN dbo.A_UserParams p ON p.IdUser=u.Id
+  WHERE p.IsOperator=1 AND u.Enabled=1 AND u.IsDeleted=0
+   AND EXISTS(SELECT 1 FROM oktell_settings.dbo.A_TaskManager_Tasks WHERE Id=@idtask AND ListId=@idlist)
+   AND EXISTS(SELECT 1 FROM dbo.A_TaskManager_Operators o WHERE o.TaskId=@idtask AND o.OperatorId=u.Id AND o.IsGroup=0);
+  RETURN;
+ END;
  IF NOT EXISTS(SELECT 1 FROM oktell_settings.dbo.A_TaskManager_Tasks WHERE Id=@idtask AND ListId=@idlist)
   OR (SELECT COUNT(*) FROM dbo.CRM_T1TimeCandidates(@idlist) WHERE Id=@idabonent)<>1 BEGIN
   SELECT Id FROM dbo.A_Users WHERE 1=0; RETURN;
