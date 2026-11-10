@@ -67,3 +67,6 @@ const free={...cross,owner:''};assert.deepEqual(applyRetention(free,[settled],re
 const blocked=applyRetention(cross,[{...settled,pv:true,status:'returned',returnedAt:'2026-11-01T00:00:00Z'}],releaseNow,14,true);
 assert.equal(blocked.sheet,'ЧС');assert.equal(blocked.baseType,'J');
 console.log('Release base routing and active/unpaid/ambiguous/blacklist protections passed');
+
+assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M'},[],releaseNow).sheet,'Т1');
+assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M',legacyOrderHistory:[{status:'paid'}]},[],releaseNow).sheet,'пассив');
