@@ -1,4 +1,4 @@
-import {draftDeadline,confirmationDeadline,scheduledCalls,canReceivePayment,isLogistic,type State,type Employee,type Order} from './crm.ts';
+import {packingStage,draftDeadline,confirmationDeadline,scheduledCalls,canReceivePayment,isLogistic,type State,type Employee,type Order} from './crm.ts';
 import {courierDoorRefusal,canHandleCourierDoor,courierDoorNoticeId,courierDoorPhase,courierStage,courierPhase,courierDeadline,courierWarehouseReturn,courierPendingAction} from './courier.ts';
 import {seesOrder,ownsClient} from './permissions.ts';
 import type {Reminder} from './reminders.ts';
@@ -52,7 +52,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
    if(courierWarehouseReturn(o)&&!o.warehouseReturnedAt){add(o,'receive-return','Примите возвращённую посылку на склад',undefined,o.returnedAt||o.cancelledAt,'task',o.reason);continue;}
    if(o.courier)continue;
    if(['confirm','extra'].includes(o.status)){add(o,o.status,o.status==='extra'?'Повторно подтвердите заказ':'Подтвердите заказ',confirmationDeadline(o),o.confirmationStartedAt);continue;}
-   if(o.cdekExported&&!o.cdekWaybillReceived&&['packing','phone','shipping','pickup'].includes(o.status)){add(o,'cdek-waybill','Получите накладную СДЭК');continue;}
+   if(o.cdekExported&&!o.cdekWaybillReceived&&packingStage(o)!=='dispatched'&&['packing','phone','shipping','pickup'].includes(o.status)){add(o,'cdek-waybill','Получите накладную СДЭК');continue;}
    if(!o.cdekExported&&['packing','phone'].includes(o.status))add(o,o.packingWaybillAt?'dispatch':'assembly',o.packingWaybillAt?'Передайте собранный заказ в доставку':'Подготовьте заказ к сборке');
   }else if(e.role==='redemption'&&o.status==='pickup'&&!o.courier)add(o,'redemption','Свяжитесь с клиентом для выкупа');
  }

@@ -65,3 +65,9 @@ requests.clients[0].orderRequest.status='rejected';assert.equal(employeeTasks(re
 const many={...state(base),orders:Array.from({length:50},(_,i)=>({...base,id:'order-'+i}))};
 assert.equal(employeeTasks(many,operator,now).length,50,'Current tasks are not limited to 20 events');
 console.log('Tasks: one per order, role/department boundaries, shared logistics, reading independence, callbacks, courier custody, exceptions, requests and 50-order queue passed.');
+
+for(const e of [logistic,chief]){
+ const sent={...base,status:'shipping',cdekExported:true,cdekWaybillReceived:false};
+ assert(tasks(e,sent).some(t=>t.id.endsWith(':cdek-waybill')));
+ assert(!tasks(e,{...sent,legacyLv:{trial:false}}).some(t=>t.id.endsWith(':cdek-waybill')));
+}
