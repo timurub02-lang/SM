@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
 import {clientWorkStatus,clientWorkQueueOrder} from '../lib/client-work.ts';
-import {saveClientWork,readClientWork} from '../lib/client-work-store.ts';
+import {orderClientWorkStatements,saveClientWork,readClientWork} from '../lib/client-work-store.ts';
 import {personalClientReminders} from '../lib/client-reminders.ts';
 import {authorizeCrm} from '../lib/permissions.ts';
 const d=openDatabase(':memory:');
-for(const sql of ['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY)','CREATE TABLE events(id TEXT PRIMARY KEY,client_id TEXT,order_id TEXT,at TEXT,data TEXT)'])await d.prepare(sql).run();
+for(const sql of ['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE events(id TEXT PRIMARY KEY,client_id TEXT,order_id TEXT,at TEXT,data TEXT)'])await d.prepare(sql).run();
 const e={id:'op',role:'operator',name:'Оператор'},c={id:'c',owner:'op',assignmentStartedAt:'2026-10-20T00:00:00Z',assignedUntil:'2026-10-28T00:00:00Z'},s={clients:[c],employees:[e],orders:[],events:[],settings:{}};
 await d.prepare('INSERT INTO clients VALUES(?,?)').bind(c.id,JSON.stringify(c)).run();
 const at='2026-10-27T10:00:00.000Z',due='2026-10-27T20:00:00.000Z',p={action:'saveClientWork',clientId:'c',outcome:'callback',due,version:0};
@@ -25,7 +25,13 @@ assert.equal(clientWorkStatus(c,work,reminders,Date.parse(due)).group,'needed');
 await assert.rejects(saveClientWork(d,s,e,p,at),/изменились/);
 assert.equal((await personalClientReminders(d,s,e)).length,1);
 assert.equal((await d.prepare('SELECT COUNT(*) n FROM events').first()).n,1);
-await saveClientWork(d,s,e,{...p,outcome:'reached',version:1},due);
+await d.batch(await orderClientWorkStatements(d,c.id,e.id,'new',due));
+assert.equal((await readClientWork(d,e))[0].outcome,'callback');
+assert.equal((await personalClientReminders(d,s,e)).length,1);
+await assert.rejects(d.batch([d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('new',c.id,JSON.stringify({manager:e.id})),...await orderClientWorkStatements(d,c.id,e.id,'new',due),d.prepare('INSERT INTO nonexistent_table VALUES(1)')]));
+assert.equal((await readClientWork(d,e))[0].outcome,'callback');
+await d.batch([d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('new',c.id,JSON.stringify({manager:e.id})),...await orderClientWorkStatements(d,c.id,e.id,'new',due)]);
+assert.equal((await readClientWork(d,e))[0].source,'order');
 work=(await readClientWork(d,e))[0];reminders=await personalClientReminders(d,s,e);
 assert.equal(reminders.length,0);assert.equal(clientWorkStatus(c,work,reminders,Date.parse(due)).group,'done');
 assert.equal(clientWorkStatus(c,work,reminders,Date.parse('2026-10-29T21:00:00Z')).group,'needed');
@@ -34,7 +40,7 @@ work=(await readClientWork(d,e))[0];assert.equal(work.outcome,'missed');assert.e
 await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify({...c,owner:'other'}),c.id).run();
 await assert.rejects(saveClientWork(d,s,e,{...p,outcome:'reached',version:2},due),/изменились/);
 assert.equal((await readClientWork(d,e)).length,0);
-assert.equal((await d.prepare('SELECT COUNT(*) n FROM events').first()).n,2);
+assert.equal((await d.prepare('SELECT COUNT(*) n FROM events').first()).n,1);
 d.close();console.log('Client work: scheduling, Moscow day boundary, ownership, concurrency, call results passed');
 
 const now=Date.parse('2026-10-27T12:00:00Z');

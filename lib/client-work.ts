@@ -1,7 +1,7 @@
 import type {Client} from './crm.ts';
 import type {ClientReminder} from './client-reminders.ts';
 export const clientWorkLabels={reached:'Дозвонился',missed:'Недозвон',callback:'Перезвон'};
-export type ClientWork={clientId:string;outcome:keyof typeof clientWorkLabels;at:string;version:number;comment?:string;author?:string;source?:'call'|'manual'|'incoming'};
+export type ClientWork={clientId:string;outcome:keyof typeof clientWorkLabels;at:string;version:number;comment?:string;author?:string;source?:'call'|'manual'|'incoming'|'order'};
 export function clientWorkStatus(c:Client,work:ClientWork|undefined,reminders:ClientReminder[],now=Date.now()){
  const valid=(at:string)=>Number.isFinite(Date.parse(at))&&(!c.assignmentStartedAt||Date.parse(at)>=Date.parse(c.assignmentStartedAt));
  const last=work&&valid(work.at)?work:undefined;
