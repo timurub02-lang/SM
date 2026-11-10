@@ -35,7 +35,7 @@ export const inventorySQL = [
  THEN RAISE(ABORT,'Недостаточно свободного остатка для списания') END;
  END`,
  `CREATE TRIGGER IF NOT EXISTS stock_order_insert AFTER INSERT ON orders BEGIN
- SELECT CASE WHEN EXISTS(SELECT 1 FROM json_each(NEW.data,'$.items') i WHERE NOT EXISTS(SELECT 1 FROM products p WHERE json_extract(p.data,'$.name')=json_extract(i.value,'$.name')))
+ SELECT CASE WHEN json_extract(NEW.data,'$.legacyLv') IS NULL AND EXISTS(SELECT 1 FROM json_each(NEW.data,'$.items') i WHERE NOT EXISTS(SELECT 1 FROM products p WHERE json_extract(p.data,'$.name')=json_extract(i.value,'$.name')))
  THEN RAISE(ABORT,'Выберите товар из складского каталога') END;
  SELECT CASE WHEN EXISTS(SELECT 1 FROM order_stock s JOIN product_stock p ON p.id=s.product_id WHERE s.order_id=NEW.id AND p.available<0)
  THEN RAISE(ABORT,'Недостаточно товара на складе. Пополните остатки или уменьшите количество') END;
@@ -75,4 +75,11 @@ export async function migrateLegacyLvStock(d:Db){
  const view=inventorySQL.find(sql=>sql.startsWith('CREATE VIEW IF NOT EXISTS order_stock'))!;
  const trigger=inventorySQL.find(sql=>sql.startsWith('CREATE TRIGGER IF NOT EXISTS lv_inactive_order_insert'))!;
  await d.batch([d.prepare('DROP VIEW IF EXISTS order_stock'),d.prepare(view),d.prepare('DROP TRIGGER IF EXISTS lv_inactive_order_insert'),d.prepare(trigger),d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('legacy-lv-stock-v1','{}')")]);
+}
+
+// Historical LV goods remain snapshots, never new catalog entries or stock movements.
+export async function migrateLegacyLvCatalog(d:Db){
+ if(await d.prepare("SELECT id FROM settings WHERE id='legacy-lv-catalog-v1'").first())return;
+ const trigger=inventorySQL.find(sql=>sql.startsWith('CREATE TRIGGER IF NOT EXISTS stock_order_insert'))!;
+ await d.batch([d.prepare('DROP TRIGGER IF EXISTS stock_order_insert'),d.prepare(trigger),d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('legacy-lv-catalog-v1','{}')")]);
 }

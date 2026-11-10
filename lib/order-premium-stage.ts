@@ -10,6 +10,8 @@ export function orderDisplayGroup(order:Order){
   if(order.premiumStage.status==='accrued')return accrued;
   if(order.premiumStage.status==='paid')return paid;
  }
+ // Imported LV labels are provisional: they do not enter the paid payroll ledger.
+ if(order.status==='redeemed'&&order.legacyLv?.paymentPendingReview)return paid;
  return orderGroup(order);
 }
 
