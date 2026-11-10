@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {clientHistoryEntries} from '../lib/client-order-history.ts';
+import {hasActiveOrder,total} from '../lib/crm.ts';
+const history=[{externalId:'66560',source:'LV',status:'returned',amount:9000,items:[{name:'Фест',quantity:3}],createdAt:'2024-09-06T09:19:03+03:00'},{externalId:'83893',source:'LV',status:'paid',createdAt:'2025-02-18T11:59:29+03:00'}];
+const orders=[{id:'LV-83893',clientId:'c',status:'redeemed',items:[{price:9500,quantity:1}]}];
+assert.deepEqual(clientHistoryEntries(history,orders),[history[0]]);
+assert.deepEqual(clientHistoryEntries(history,[{id:'other',legacyLv:{orderId:'83893'}}]),[history[0]]);
+assert.equal(history.length,2);assert.equal(orders.length,1);
+assert.equal(total(orders[0]),9500);assert.equal(hasActiveOrder(orders,'c'),false);
+assert.deepEqual(clientHistoryEntries(history,[]).map(r=>r.externalId),['83893','66560']);
+console.log('Client history: separate entries, deduplication against current orders and chronological order passed');

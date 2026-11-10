@@ -11,6 +11,8 @@ await d.prepare("INSERT INTO client_phone_index VALUES('79140622131','one'),('79
 for(const q of ['хУдЯкОв','LV-66560','66560','+7 (914) 062-21-31','89140622131']){
  const r=await searchBaseClients(d,q);assert.equal(r.matches.length,1,q);assert.equal(r.matches[0].client.id,'one');assert.equal(r.matches[0].client.version,7);assert.equal(r.matches[0].ownerName,'Оператор');
 }
+await d.prepare("UPDATE clients SET data=json_set(data,'$.legacyOrderHistory',json(?)) WHERE id='two'").bind(JSON.stringify([{externalId:'123456'}])).run();
+for(const q of ['123456','LV-123456'])assert.equal((await searchBaseClients(d,q)).matches[0].client.id,'two');
 assert.equal((await searchBaseClients(d,'семенов')).matches[0].client.id,'two');
 assert.equal((await searchBaseClients(d,'Андрей')).matches.length,2);
 assert.equal((await searchBaseClients(d,"' OR 1=1 --")).matches.length,0);

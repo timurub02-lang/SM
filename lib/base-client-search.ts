@@ -13,6 +13,7 @@ export async function searchBaseClients(d:Db,input:string){
   if(phone.length>=3){conditions.push('c.id IN (SELECT client_id FROM client_phone_index WHERE instr(phone,?)>0)');params.push(phone);}
  }
  conditions.push("c.id IN (SELECT client_id FROM orders WHERE instr(lower(id),?)>0 OR instr(COALESCE(json_extract(data,'$.legacyLv.orderId'),''),?)>0)");params.push(text,text);
+ conditions.push("EXISTS(SELECT 1 FROM json_each(COALESCE(json_extract(c.data,'$.legacyOrderHistory'),'[]')) h WHERE instr(lower('LV-'||json_extract(h.value,'$.externalId')),?)>0)");params.push(text);
  const rows=await d.prepare(`SELECT c.data,c.version,json_extract(e.data,'$.name') AS ownerName FROM clients c LEFT JOIN employees e ON e.id=json_extract(c.data,'$.owner') WHERE ${conditions.map(v=>'('+v+')').join(' OR ')} ORDER BY json_extract(c.data,'$.name'),c.id LIMIT 31`).bind(...params).all();
  return {matches:rows.results.slice(0,30).map((r:{data:string;version:number;ownerName:string|null})=>({client:{...JSON.parse(r.data),version:r.version} as Client,ownerName:r.ownerName||'Не закреплён'})),more:rows.results.length>30};
 }
