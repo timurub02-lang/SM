@@ -54,6 +54,7 @@ jobs:
           node --experimental-strip-types tests/postal-form-http.mjs
           node --experimental-strip-types tests/cdek-delete-http.mjs
           node --experimental-strip-types tests/cdek-remittances.mjs
+          node --experimental-strip-types tests/leader-premium-edit.mjs
           node --experimental-strip-types tests/courier-workflow-http.mjs
           node --experimental-strip-types tests/purchasing-http.mjs
           node --experimental-strip-types tests/oktell-reset-http.mjs
