@@ -1,13 +1,13 @@
 'use strict';
 const assert=require('node:assert/strict'),http=require('node:http'),{once}=require('node:events');
 const {WebSocket,WebSocketServer}=require('ws'),make=require('./browser-phone.cjs');
-const upstream=new WebSocketServer({port:0,host:'127.0.0.1'});let phone,control,client,native,release;
+const upstream=new WebSocketServer({port:0,host:'127.0.0.1'});let phone,control,client,native,release,pilot;
 const owner='a'.repeat(64),credentials={username:'test',domain:'example.invalid'};
 const invite=(id,number='79990000001')=>`INVITE sip:test@example.invalid SIP/2.0\r\nVia: SIP/2.0/WS example.invalid;branch=z9hG4bK${id}\r\nFrom: <sip:${number}@example.invalid>;tag=x\r\nTo: <sip:test@example.invalid>\r\nCall-ID: ${id}\r\nCSeq: 1 INVITE\r\nContent-Length: 0\r\n\r\n`;
 (async()=>{try{
  await once(upstream,'listening');
  process.env.CRM_ADDITIONAL_ORIGINS=' https://smcrm.ru, ';
- phone=make({listen:false,operators:{validate(){},prepare:async()=>credentials,release:async()=>{}},connected:()=>true,upstreamUrl:'ws://127.0.0.1:'+upstream.address().port,incoming:async(actor,number,id)=>{assert.equal(actor,'E-test');if(number!=='79990000001')return null;await new Promise(r=>release=r);return {id:'b'.repeat(32),direction:'incoming',status:'ringing'};}});
+ phone=make({listen:false,operators:{validate(){},prepare:async()=>credentials,release:async()=>{}},connected:()=>true,upstreamUrl:'ws://127.0.0.1:'+upstream.address().port,incoming:async(actor,number,id)=>{if(pilot)return pilot.incoming(actor,number,id);assert.equal(actor,'E-test');if(number!=='79990000001')return null;await new Promise(r=>release=r);return {id:'b'.repeat(32),direction:'incoming',status:'ringing'};}});
  phone.server.listen(0,'127.0.0.1');await once(phone.server,'listening');control=http.createServer(phone.handle);control.listen(0,'127.0.0.1');await once(control,'listening');
  const base='http://127.0.0.1:'+control.address().port;
  const cmd=async(action,extra={})=>fetch(base,{method:'POST',body:JSON.stringify({actor:'E-test',owner,action,...extra})});
@@ -33,6 +33,22 @@ const invite=(id,number='79990000001')=>`INVITE sip:test@example.invalid SIP/2.0
  native.send(invite('cancel-before-event').replace(/^INVITE /,'CANCEL ').replace('CSeq: 1 INVITE','CSeq: 1 CANCEL'));
  for(let n=0;n<50&&cancelled.length<2;n++)await new Promise(r=>setTimeout(r,10));
  assert.match(cancelled[0],/^SIP\/2.0 200/);assert.match(cancelled[1],/^SIP\/2.0 487/);assert.equal(phone.deploymentState().busy,false);native.off('message',collect);release();
- console.log('PASS: isolated native SIP incoming gate, rejection, pending mutex, answer, hangup; no external calls');
- }finally{client?.terminate();native?.terminate();await phone?.stop();control?.close();upstream.close();}
+ const {randomUUID}=require('node:crypto');let clock=Date.now();
+ const userid=randomUUID(),taskId=randomUUID(),chainid=randomUUID();
+ const pilotConfig={taskId,operators:[{actor:'E-test',userid}],contacts:[1,2,3].map(n=>({phone:'7999000000'+n,clientId:'C-test'+n})),results:['Отказ']};
+ pilot=require('./pilot-control.cjs')({file:':memory:',load:()=>pilotConfig,identity:()=>({userid}),connected:()=>true,send:()=>{},now:()=>clock});
+ const event=method=>pilot.event(method,{qid:randomUUID(),userid,istask:true,taskid:taskId,chainid,callerid:pilotConfig.contacts[0].phone});
+ event('phoneevent_ringstarted');
+ let forwarded=once(client,'message');native.send(invite('missed-native-leg'));assert.match((await forwarded)[0].toString(),/^INVITE/);
+ forwarded=once(client,'message');native.send(invite('missed-native-leg').replace(/^INVITE /,'CANCEL ').replace('CSeq: 1 INVITE','CSeq: 1 CANCEL'));await forwarded;
+ event('phoneevent_ringstopped');assert.equal(phone.deploymentState().busy,false);
+ clock+=60000;event('phoneevent_ringstarted');
+ reply=once(native,'message');native.send(invite('missed-native-leg'));assert.match((await reply)[0].toString(),/^SIP\/2.0 486/);
+ forwarded=once(client,'message');native.send(invite('fresh-native-leg'));assert.match((await forwarded)[0].toString(),/^INVITE/);
+ reply=once(native,'message');client.send('SIP/2.0 200 OK\r\nCall-ID: fresh-native-leg\r\nCSeq: 1 INVITE\r\nContent-Length: 0\r\n\r\n');await reply;
+ event('phoneevent_commstarted');assert.equal((await (await cmd('heartbeat')).json()).call.status,'connected');
+ forwarded=once(client,'message');native.send('BYE sip:test@example.invalid SIP/2.0\r\nCall-ID: fresh-native-leg\r\nContent-Length: 0\r\n\r\n');await forwarded;event('phoneevent_commstopped');
+ assert.equal(phone.deploymentState().busy,false);assert.equal(pilot.history().length,1);assert.ok(pilot.history()[0].answered_at);
+ console.log('PASS: isolated native SIP incoming gate, rejection, pending mutex, answer, hangup, missed-chain retry; no external calls');
+ }finally{client?.terminate();native?.terminate();await phone?.stop();pilot?.close();control?.close();upstream.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
