@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {readSkorozvonProjects} from '../lib/skorozvon.ts';
+const c={login:'synthetic',apiKey:'test',clientId:'test',clientSecret:'test'};
+const seen=[];
+const request=async(url,options)=>{seen.push([url,options.method||'GET']);if(url.endsWith('/oauth/token'))return Response.json({access_token:'fixture'});assert.equal(options.method,undefined);const page=new URL(url).searchParams.get('page');return Response.json({data:page==='1'?Array.from({length:100},(_,i)=>({id:i+1,title:'Проект '+i})):[{id:101,title:'Последний'}],pagination:{total_pages:2}});};
+const projects=await readSkorozvonProjects(c,request);assert.equal(projects.length,101);assert.ok(projects.some(p=>p.id==='101'));assert.equal(seen.length,3);assert.equal(seen.filter(([,m])=>m==='POST').length,1);
+assert.deepEqual(await readSkorozvonProjects(c,async u=>Response.json(u.endsWith('/oauth/token')?{access_token:'fixture'}:[])),[]);
+await assert.rejects(readSkorozvonProjects(c,async u=>u.endsWith('/oauth/token')?Response.json({access_token:'fixture'}):new Response('',{status:403})),/403/);
+await assert.rejects(readSkorozvonProjects(c,async u=>Response.json(u.endsWith('/oauth/token')?{access_token:'fixture'}:{unexpected:true})),/список/);
+console.log('Skorozvon projects: pagination, empty response, access errors and read-only project requests passed');
