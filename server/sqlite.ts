@@ -7,6 +7,8 @@ export function openDatabase(path: string) {
   // SQLite's synchronous busy timeout freezes HTTP and phone WebSocket authorization.
   // Retry outside transactions so other requests can run while another process writes.
   async function retryBusy<T>(operation: () => T): Promise<T> {
+    // Resolved Promise chains otherwise monopolize the loop across many queries.
+    await new Promise<void>(resolve => setImmediate(resolve));
     const deadline = performance.now() + 5000;
     for (;;) {
       try { return operation(); }
