@@ -319,3 +319,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-edit-dialog>.browser-call-dock .browser-call-controls button{max-width:100%;white-space:normal}
 
 .sk-request-client-link{font-weight:700;text-align:left;text-decoration:underline;text-underline-offset:3px}.sk-request-client-link:hover{color:#075dc8}.sk-request-client-link:focus-visible{outline:2px solid #075dc8;outline-offset:3px}
+
+.order-cancel-request-marker{display:flex;width:fit-content;gap:6px;margin-bottom:8px;font-weight:700;white-space:normal}.order-cancel-request-marker svg{flex-shrink:0}
