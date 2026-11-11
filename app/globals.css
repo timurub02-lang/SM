@@ -188,6 +188,7 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 
 .order-tracking-link{color:#246dcc;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere;cursor:pointer}
 .order-tracking-link:hover{color:#164c96}
+td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-space:nowrap;overflow-wrap:normal}
 
 /* Active orders are distinguishable without opening the incoming card. */
 .incoming-card.incoming-card-has-order{border-color:#91c4a8;background:linear-gradient(135deg,#f3fbf6,#dceee3)}
