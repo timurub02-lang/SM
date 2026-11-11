@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {orderSavePatch,mergeOrderSavePatch,orderPatchActions} from '../lib/order-save-patch.ts';
+const before={orders:[{id:'a',clientId:'c',version:1},{id:'b',clientId:'d',version:1}],clients:[{id:'c',version:1},{id:'d',version:1}],events:[{id:'old',orderId:'b',at:'2026-01-01'}],employees:[],settings:{retentionDays:30}};
+const after={...before,orders:[{...before.orders[0],version:2,status:'packing'},{...before.orders[1],premiumStage:{status:'paid'}}],clients:[{...before.clients[0],version:2},before.clients[1]],events:[{id:'new',orderId:'a',at:'2026-01-02'},...before.events],tasks:[{id:'new-task'}]};
+const patch=orderSavePatch(before,after,'a');
+assert.equal(patch.clients.length,1);assert.equal(patch.events.length,1);assert.equal(patch.orders.length,2,'Derived changes without version bump are included');
+assert.deepEqual(mergeOrderSavePatch(before,patch),after);
+assert.deepEqual(mergeOrderSavePatch(after,patch),after,'Repeated response does not duplicate history');
+assert.equal(mergeOrderSavePatch(before,patch).clients[1],before.clients[1],'Unchanged objects retain identity');
+assert(!orderPatchActions.has('deleteEmployee'));assert(!orderPatchActions.has('import'));
+console.log('Order save patches preserve other records, derived fields, history and unrelated screen state');
