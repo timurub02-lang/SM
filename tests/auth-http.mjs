@@ -217,7 +217,8 @@ try{
   db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run(id,id,JSON.stringify({name:id}));
   db.prepare('INSERT INTO lv_stock(product_id,lv_id,lv_name,active,available,synced_at) VALUES(?,?,?,?,?,?)').run(id,id,id,active,10,new Date().toISOString());
  }
- for(const cookie of [cookies.admin,cookies.one,cookies.head,editor.cookie]){
+ for(const role of ['admin','operator','department_head','logistic']){
+  const {cookie}=await fixture('warehouse-reader-'+role,'1',role);
   const warehouse=await call('/api/warehouse',{cookie});
   assert.equal(warehouse.status,200);
   assert(warehouse.data.products.some(p=>p.id==='warehouse-active'));
