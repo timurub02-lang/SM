@@ -10,6 +10,8 @@ globalThis.fetch=async(input,options={})=>{
  let state=read();const path=new URL(url).pathname,method=options.method||'GET';
  state.calls.push({path,method,body:options.body&&typeof options.body==='string'?JSON.parse(options.body):undefined});save(state);
  const response=(data,status=200)=>Response.json(data,{status});
+ if(path==='/v2/deliverypoints')return response(state.points||[]);
+ if(path==='/v2/calculator/tarifflist')return response({tariff_codes:[{tariff_code:136,tariff_name:'Synthetic pickup',delivery_mode:4,delivery_sum:350,period_min:2,period_max:4}]});
  if(path==='/v2/registries')return response({registries:[]});
  if(path.endsWith('/oauth/token'))return response({access_token:'synthetic-token'});
  if(method==='POST'&&path==='/v2/orders'){

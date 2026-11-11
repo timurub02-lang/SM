@@ -54,3 +54,10 @@ console.log('CDEK asynchronous deletion request identity and confirmation checks
 
 const named=shipmentPayload(order,client,products,form,'Псевдоним');
 assert.equal(named.sender.company,'Псевдоним');assert.equal(named.sender.name,'Псевдоним');assert.equal(named.seller.name,'Псевдоним');
+
+const {importedCdekShipment}=await import('../lib/cdek-shipment.ts');
+const imported={legacyLv:{orderId:'synthetic-import',track:''}};
+assert.equal(importedCdekShipment(imported),false);
+for(const patch of [{legacyLv:{...imported.legacyLv,track:'123'}},{legacyLv:{...imported.legacyLv,cdekOrderNumber:'old'}},{cdekTrackingNumber:'123'},{cdekExported:true},{cdekWaybillReceived:true},{cdekTransferredAt:'2026-11-10'},{cdekStatus:{code:'CREATED'}}])assert.equal(importedCdekShipment({...imported,...patch}),true);
+assert.equal(importedCdekShipment({}),false);
+console.log('Imported unshipped orders permit first export; existing imported shipments stay protected.');
