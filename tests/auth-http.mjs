@@ -1005,5 +1005,30 @@ try{
  const closedF=cancellationFixture();db.prepare("UPDATE incoming_calls SET closed_at=? WHERE id=?").run(new Date().toISOString(),closedF.incomingId);
  assert.equal((await requestCancel(closedF)).status,400);assert.equal(cancelOrder(closedF.id).cancellationRequest,undefined);
  console.log('Incoming cancellation: scope, reason, request/decision notifications, carrier guards, stock release, stale and concurrent writes passed');
+
+ // Historical LV snapshots use 1.0; saving contact serializes them as 1.
+ const legacyLog=await fixture('legacy-contact-log','1','logistic');
+ const legacyOrder={id:'lv-contact-normalization',clientId:'c-one',manager:'one',logistic:'',status:'extra',legacyLv:{orderId:'fixture'},items:[{name:'Historical missing catalog good',quantity:1,price:13000}],comment:'',reason:'',contact:'none',due:'',round:0,extra:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),version:1};
+ const rawLegacy=JSON.stringify(legacyOrder).replace('"quantity":1,','"quantity":1.0,').replace('"price":13000','"price":13000.0');
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(legacyOrder.id,legacyOrder.clientId,rawLegacy);
+ const oldGuard=db.prepare("SELECT sql FROM sqlite_master WHERE name='stock_order_update'").get().sql.replace("json_extract(old_i.value,'$.name') IS json_extract(i.value,'$.name') AND json_extract(old_i.value,'$.quantity') IS json_extract(i.value,'$.quantity') AND json_extract(old_i.value,'$.price') IS json_extract(i.value,'$.price')",'old_i.value=i.value');
+ db.exec('DROP TRIGGER stock_order_update');db.exec(oldGuard);db.exec("DELETE FROM settings WHERE id='order-catalog-comparison-v2'");
+ assert.throws(()=>db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(legacyOrder),legacyOrder.id),/Выберите товар/);
+ const legacySnapshot=await call('/api/crm',{cookie:legacyLog.cookie});
+ const legacyVersion=legacySnapshot.data.orders.find(o=>o.id===legacyOrder.id).version;
+ const legacyContact=await call('/api/crm',{cookie:legacyLog.cookie,body:{action:'contact',id:legacyOrder.id,version:legacyVersion,contact:'missed',reason:'Автоответчик',due:''}});
+ assert.equal(legacyContact.status,200,legacyContact.text);
+ const legacySaved=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(legacyOrder.id).data);
+ assert.equal(legacySaved.contact,'missed');assert.equal(legacySaved.reason,'Автоответчик');assert.deepEqual(legacySaved.items,legacyOrder.items);
+ assert.ok(db.prepare("SELECT id FROM settings WHERE id='order-catalog-comparison-v2'").get());
+ assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Недозвон%'").get(legacyOrder.id).n,1);
+ const cheatOrder={...legacyOrder,id:'moscow-cheatsheet',delivery:'moscow_courier',status:'packing',logisticComment:'Bring after 12',courier:{id:'missing-courier',name:'Assigned courier'}};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(cheatOrder.id,cheatOrder.clientId,JSON.stringify(cheatOrder));
+ const cheat=await call('/api/warehouse/waybill?format=cheatsheet&orderId='+cheatOrder.id,{cookie:legacyLog.cookie});
+ assert.equal(cheat.status,200,cheat.text);assert.equal(cheat.data.amount,13000);assert.equal(cheat.data.author,'Test one');assert.equal(cheat.data.courier,'Assigned courier');assert.equal(cheat.data.comment,'Bring after 12');
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(cheatOrder.id).data).packingWaybillAt,undefined);
+ assert.equal((await call('/api/warehouse/waybill?format=cheatsheet&orderId='+legacyOrder.id,{cookie:legacyLog.cookie})).status,400);
+ const cheatOperator=await fixture('cheat-operator');assert.equal((await call('/api/warehouse/waybill?format=cheatsheet&orderId='+cheatOrder.id,{cookie:cheatOperator.cookie})).status,403);
+ console.log('Legacy contact migration, unchanged basket, event and Moscow cheatsheet permissions passed');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

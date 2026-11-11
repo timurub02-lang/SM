@@ -84,3 +84,13 @@ assert stock('bag')==before
 update('lv-shipment',status='redeemed')
 assert stock('bag')==before
 print('Imported discontinued goods preserved; new sales remain blocked; no duplicate stock deduction')
+
+# Imported snapshots survive JS number normalization, field order and Unicode escapes.
+raw='{"legacyLv":{"orderId":"test"},"status":"extra","items":[{"name":"Исторический товар","quantity":1.0,"price":13000.0}]}'
+db.execute('INSERT INTO orders VALUES(?,?)',('lv-numeric',raw))
+update('lv-numeric',contact='missed',reason='Автоответчик',items=[{'price':13000,'quantity':1,'name':'Исторический товар'}])
+assert json.loads(db.execute("SELECT data FROM orders WHERE id='lv-numeric'").fetchone()[0])['contact']=='missed'
+fails(lambda:update('lv-numeric',items=[{'name':'Исторический товар','quantity':2,'price':13000}]), 'Выберите товар')
+fails(lambda:update('lv-numeric',items=[{'name':'Исторический товар','quantity':1,'price':14000}]), 'Выберите товар')
+fails(lambda:update('lv-numeric',items=[{'name':'Другой неизвестный товар','quantity':1,'price':13000}]), 'Выберите товар')
+print('Unchanged historical goods accept serialization changes; unknown basket edits remain blocked')

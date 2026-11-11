@@ -568,7 +568,7 @@ body:has(.courier-design-aurora){background:#191a1e}
 .order-detail-dialog [data-slot=dialog-header]:has(.order-header-actions)>[data-slot=dialog-title]{grid-column:1;grid-row:1;overflow-wrap:anywhere}
 .order-detail-dialog [data-slot=dialog-header]:has(.order-header-actions)>[data-slot=dialog-description]{grid-column:1;grid-row:2}
 .order-header-actions{grid-column:2;grid-row:1/3;display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
-.order-detail-dialog .order-header-actions .browser-call-button.card-header-call{position:static;align-self:center;min-height:46px;margin:0}
+.order-detail-dialog .order-header-actions .card-header-call{position:static;align-self:center;min-height:46px;margin:0;flex-shrink:0}
 .order-followup-segment{display:flex;align-items:stretch;padding:5px;gap:4px;background:#e8edf5;border:1px solid #dce3ef;border-radius:17px;box-shadow:inset 0 1px 3px #33415508}
 .order-followup-segment button{border:1px solid transparent;border-radius:12px;padding:11px 15px;min-height:44px;font-size:14px;font-weight:550;line-height:1.25;color:#43516a;cursor:pointer}
 .order-followup-segment .followup-waiting{background:#fff;color:#293b56;border-color:#f0f3f8;box-shadow:0 2px 5px #3341550c}
@@ -786,3 +786,6 @@ body:has(.courier-design-aurora){background:#191a1e}
   .client-order-mini>strong { grid-column:2; grid-row:1; }
   .client-order-mini>svg { grid-column:3; grid-row:1; }
 }
+
+.order-detail-tabs:has(.courier-cheatsheet){flex-direction:row;align-items:center;flex-wrap:wrap;gap:12px}
+.courier-cheatsheet{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;flex-shrink:0}

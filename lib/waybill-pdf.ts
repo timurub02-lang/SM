@@ -1,17 +1,13 @@
 import {jsPDF} from 'jspdf';
 import {autoTable} from 'jspdf-autotable';
-import type {WaybillData} from './internal-waybill.ts';
+import type {WaybillData,CourierCheatsheetData} from './internal-waybill.ts';
 
 const money=(value:number)=>value.toLocaleString('ru-RU',{maximumFractionDigits:2}).replace(/\u00a0/g,' ');
 
 export function waybillPdf(input:WaybillData|WaybillData[],fonts:{regular:string;bold:string}){
  const list=Array.isArray(input)?input:[input];
  if(!list.length)throw Error('Нет накладных для скачивания');
- const doc=new jsPDF({format:'a4',unit:'mm'});
- for(const [style,font] of [['normal',fonts.regular],['bold',fonts.bold]]){
-  doc.addFileToVFS(`${style}.ttf`,font);
-  doc.addFont(`${style}.ttf`,'LiberationSans',style);
- }
+ const doc=waybillDocument(fonts);
  doc.setProperties({title:'Накладные на сборку'});
  for(const [index,data] of list.entries()){
  if(index)doc.addPage();
@@ -46,7 +42,7 @@ export function waybillPdf(input:WaybillData|WaybillData[],fonts:{regular:string
  return doc;
 }
 
-export async function downloadWaybillPdf(data:WaybillData|WaybillData[]){
+async function waybillFonts(){
  const load=async(name:string)=>{
   const response=await fetch(`/fonts/LiberationSans-${name}.ttf`);
   if(!response.ok)throw Error('Не удалось загрузить шрифт для PDF. Повторите скачивание.');
@@ -56,5 +52,33 @@ export async function downloadWaybillPdf(data:WaybillData|WaybillData[]){
   return btoa(binary);
  };
  const [regular,bold]=await Promise.all([load('Regular'),load('Bold')]);
- waybillPdf(data,{regular,bold}).save(Array.isArray(data)?'Накладные на сборку.pdf':`Бланк-${data.id.replace(/[^\p{L}\p{N}_-]/gu,'_')}.pdf`);
+ return {regular,bold};
+}
+
+export async function downloadWaybillPdf(data:WaybillData|WaybillData[]){
+ waybillPdf(data,await waybillFonts()).save(Array.isArray(data)?'Накладные на сборку.pdf':`Бланк-${data.id.replace(/[^\p{L}\p{N}_-]/gu,'_')}.pdf`);
+}
+
+function waybillDocument(fonts:{regular:string;bold:string}){
+ const doc=new jsPDF({format:'a4',unit:'mm'});
+ for(const [style,font] of [['normal',fonts.regular],['bold',fonts.bold]]){
+  doc.addFileToVFS(`${style}.ttf`,font);
+  doc.addFont(`${style}.ttf`,'LiberationSans',style);
+ }
+ return doc;
+}
+
+export function courierCheatsheetPdf(data:CourierCheatsheetData,fonts:{regular:string;bold:string}){
+ const doc=waybillDocument(fonts);
+ doc.setProperties({title:`Шпаргалка · ${data.id}`});
+ autoTable(doc,{startY:10,margin:10,theme:'plain',styles:{font:'LiberationSans',fontSize:12,cellPadding:0.6,textColor:0,overflow:'linebreak'},body:[
+  [{content:`Заказ: ${data.id}`,styles:{fontStyle:'bold'}}],
+  [`ФИО: ${data.client}`],[`Телефон: ${data.phone}`],[`Адрес: ${data.address||'—'}`],
+  [`Комментарий: ${data.comment}`],[`Курьер: ${data.courier}`],[`Сумма заказа: ${money(data.amount)} руб.`],[`Автор заказа: ${data.author}`],
+ ]});
+ return doc;
+}
+
+export async function downloadCourierCheatsheet(data:CourierCheatsheetData){
+ courierCheatsheetPdf(data,await waybillFonts()).save(`Шпаргалка-${data.id.replace(/[^\p{L}\p{N}_-]/gu,'_')}.pdf`);
 }

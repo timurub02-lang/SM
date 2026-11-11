@@ -1,7 +1,7 @@
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
-import {internalWaybill} from '@/lib/internal-waybill';
+import {internalWaybill,courierCheatsheet} from '@/lib/internal-waybill';
 async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  const q=new URL(req.url).searchParams;
@@ -10,10 +10,15 @@ async function handleGET(req:Request){
  const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(q.get('orderId')||'').first<{data:string}>();
  if(!row)return Response.json({error:'Заказ не найден'},{status:404});
  const order=JSON.parse(row.data);
- if(order.cdekTariff?.needsConfirmation)return Response.json({error:"Сначала подтвердите ранее рассчитанную доставку"},{status:409});
+ if(q.get('format')==='cheatsheet'&&order.delivery!=='moscow_courier')return Response.json({error:'Шпаргалка доступна для доставки Курьер Москва'},{status:400});
+ if(q.get('format')!=='cheatsheet'&&order.cdekTariff?.needsConfirmation)return Response.json({error:"Сначала подтвердите ранее рассчитанную доставку"},{status:409});
  const client=await db().prepare('SELECT data FROM clients WHERE id=?').bind(order.clientId).first<{data:string}>();
  if(!client)return Response.json({error:'Клиент не найден'},{status:404});
  const manager=await db().prepare('SELECT data FROM employees WHERE id=?').bind(order.manager).first<{data:string}>();
+ if(q.get('format')==='cheatsheet'){
+  const courier=order.courier?.id?await db().prepare("SELECT data FROM employees WHERE id=?").bind(order.courier.id).first<{data:string}>():null;
+  return Response.json(courierCheatsheet(order,JSON.parse(client.data),manager?JSON.parse(manager.data):undefined,courier?JSON.parse(courier.data):undefined),{headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+ }
  const callbacks=await db().prepare("SELECT data FROM settings WHERE id='callback-phones'").first<{data:string}>();
  return Response.json(internalWaybill(order,JSON.parse(client.data),manager?JSON.parse(manager.data):undefined,callbacks?JSON.parse(callbacks.data):undefined),{headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 }

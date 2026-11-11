@@ -52,3 +52,12 @@ assert.deepEqual(selectedPackingOrders([calculated,{...calculated,id:"d"}],["d"]
 const moscow={...calculated,id:"m",delivery:"moscow_courier",cdekTariff:undefined};
 assert.deepEqual(selectedPackingOrders([moscow,{...moscow,id:"printed",packingWaybillAt:"2026-10-30"}],[]),[]);
 assert.deepEqual(selectedPackingOrders([moscow,{...moscow,id:"printed",packingWaybillAt:"2026-10-30"}],["m","m","printed"]).map(o=>o.id),["m"]);
+
+const {courierCheatsheet}=await import('../lib/internal-waybill.ts');
+const {courierCheatsheetPdf}=await import('../lib/waybill-pdf.ts');
+const cheat=courierCheatsheet({id:'LV-160240',address:'Московская область, г. Балашиха, микрорайон Купавна, ул. Адмирала Нахимова, д. 4, кв. 4',logisticComment:'12/11 Купавна',manager:'author-id',items:[{name:'ИТОГО',quantity:1,price:11250},{name:'Омега 3',quantity:3,price:0}]},{name:'Тестовый Клиент',phone:'+79990000000'},{name:'Тестовый Автор'});
+assert.equal(cheat.author,'Тестовый Автор');assert.equal(cheat.courier,'—');assert.equal(cheat.amount,11250);
+const cheatDoc=courierCheatsheetPdf(cheat,fonts);assert.equal(cheatDoc.getNumberOfPages(),1);
+writeFileSync('work/waybill/cheatsheet.pdf',Buffer.from(cheatDoc.output('arraybuffer')));
+assert(courierCheatsheetPdf({...cheat,comment:'Очень длинный комментарий. '.repeat(800)},fonts).getNumberOfPages()>1);
+console.log('Courier cheatsheet fields, author, amount and overflow passed');
