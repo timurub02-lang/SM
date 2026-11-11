@@ -25,13 +25,14 @@ await d.prepare('UPDATE clients SET data=json_set(data,\'$.owner\',\'other\'),ve
 const conflict={...input,callId:'2',address:'Different address'};assert.equal((await acceptSkOrder(d,conflict)).state,'pending');assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,1);
 assert.match((await d.prepare("SELECT reason FROM sk_order_transfers WHERE id='2'").first()).reason,/other/);
 await assert.rejects(acceptSkOrder(d,conflict,sender),/Решение/);assert.equal(skMayDecide({...head,department:'1'},sender,other),false);
-assert.equal((await acceptSkOrder(d,conflict,head)).state,'imported');const approved=JSON.parse((await d.prepare("SELECT data FROM orders WHERE id='SM-SK-2'").first()).data);assert.equal(approved.address,'New address');assert.match(approved.comment,/Адрес из Скорозвона для сверки: Different address/);
+await assert.rejects(acceptSkOrder(d,conflict,head),/Решение/);assert.equal((await acceptSkOrder(d,conflict,admin)).state,'imported');const approved=JSON.parse((await d.prepare("SELECT data FROM orders WHERE id='SM-SK-2'").first()).data);assert.equal(approved.address,'New address');assert.match(approved.comment,/Адрес из Скорозвона для сверки: Different address/);
 const unknown={...input,callId:'3',phone:'79990000003',email:'missing@test.invalid',userName:'Missing'};assert.equal((await acceptSkOrder(d,unknown)).state,'pending');assert.equal((await acceptSkOrder(d,unknown,admin)).state,'pending');
 await d.prepare("UPDATE sk_order_transfers SET state='rejected' WHERE id='3'").run();assert.equal((await acceptSkOrder(d,unknown)).state,'rejected');
 await assert.rejects(acceptSkOrder(d,{...input,callId:'4',phone:'123'}),/Некорректный/);
-for(const role of ['courier','purchasing','logistic'])assert.equal(mayCallEndpoint({...sender,role},new URL('https://crm/api/sk-orders'),'GET',{}),false);
+for(const role of ['courier','purchasing','logistic','chief_logistic','redemption','operator','department_head'])for(const method of ['GET','POST']){assert.equal(mayCallEndpoint({...sender,role},new URL('https://crm/api/sk-orders'),method,{}),false);assert.equal(skMayDecide({...sender,role},sender,other),false);}
+for(const method of ['GET','POST'])assert.equal(mayCallEndpoint(admin,new URL('https://crm/api/sk-orders'),method,{}),true);
 assert.equal(mayCallEndpoint(sender,new URL('https://crm/api/sk-orders'),'POST',{}),false);
-assert.equal(mayCallEndpoint(head,new URL('https://crm/api/sk-orders'),'POST',{}),true);
+assert.equal(mayCallEndpoint(head,new URL('https://crm/api/sk-orders'),'POST',{}),false);
 const now=Date.parse('2026-10-21T10:00:00Z');
 for(const [id,data] of Object.entries({'skorozvon':{login:'x',apiKey:'x',clientId:'x',clientSecret:'x'},'sk-order-import':{enabled:true,enabledAt:'2026-10-21T09:00:00Z',resultIds:[123]}}))await d.prepare('INSERT INTO settings VALUES(?,?)').bind(id,JSON.stringify(data)).run();
 const request=async(url,opts)=>{const p=new URL(url).pathname;let value;
