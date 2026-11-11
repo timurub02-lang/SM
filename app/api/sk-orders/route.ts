@@ -8,7 +8,7 @@ export const GET=authenticated(async()=>{
  try{const {actor,d,staff}=await context();const rows=await d.prepare("SELECT * FROM sk_order_transfers WHERE state='pending' ORDER BY created_at DESC LIMIT 500").all();const visible=[];
  for(const row of rows.results as any[]){const input:SkOrderInput=JSON.parse(row.data),sender=skSender(staff,input.email,input.userName,input.userNameUnique),client=await skClient(d,input.phone),owner=staff.find(e=>e.id===client?.owner),canDecide=skMayDecide(actor,sender,owner);
  if(actor.id!==sender?.id&&!canDecide)continue;
- visible.push({id:row.id,name:client?.name||input.name,at:row.created_at,reason:client?.owner&&client.owner!==sender?.id?'Клиент принадлежит оператору '+(owner?.login||client.owner):row.reason,canDecide,sender:sender?.login||input.userName||input.email});}
+ visible.push({id:row.id,clientId:client?.id||'',name:client?.name||input.name,at:row.created_at,reason:client?.owner&&client.owner!==sender?.id?'Клиент принадлежит оператору '+(owner?.login||client.owner):row.reason,canDecide,sender:sender?.login||input.userName||input.email});}
  const health=actor.role==='admin'?await d.prepare("SELECT data FROM settings WHERE id='sk-order-health'").first<{data:string}>():null;
  return Response.json({rows:visible,health:health?JSON.parse(health.data):null});
  }catch{return Response.json({error:'Не удалось загрузить заявки СК'},{status:403});}
