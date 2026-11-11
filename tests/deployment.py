@@ -49,4 +49,65 @@ class Deployment(unittest.TestCase):
                 self.assertEqual(switch.call_args_list,[call(target),call(previous)])
                 self.assertEqual(state,{'history':['saved']})
 
+    def test_github_auth_is_scoped_and_asset_api_used(self):
+        with patch.object(deploy,'github_token',return_value='synthetic-token') as token,patch.object(deploy.urllib.request,'build_opener') as opener:
+            opener.return_value.open.return_value.__enter__.return_value.read.return_value=b'fixture'
+            deploy.get(deploy.API+'/releases/latest')
+            req=opener.return_value.open.call_args.args[0]
+            self.assertEqual(req.get_header('Authorization'),'Bearer synthetic-token')
+            deploy.get('http://127.0.0.1:3000/login')
+            self.assertIsNone(opener.return_value.open.call_args.args[0].get_header('Authorization'))
+            deploy.get('https://api.github.com.evil.test/repos/'+deploy.REPO)
+            self.assertIsNone(opener.return_value.open.call_args.args[0].get_header('Authorization'))
+            self.assertEqual(token.call_count,1)
+            deploy.release_asset({'id':123,'browser_download_url':'https://evil.test'},100)
+            req=opener.return_value.open.call_args.args[0]
+            self.assertEqual(req.full_url,deploy.API+'/releases/assets/123')
+            self.assertEqual(req.get_header('Accept'),'application/octet-stream')
+        for value in [True,0,-1,'123',None]:
+            with self.assertRaises(ValueError):deploy.release_asset({'id':value},100)
+
+    def test_redirect_drops_token_and_rejects_downgrade(self):
+        req=deploy.urllib.request.Request(deploy.API+'/releases/assets/123',headers={'Authorization':'Bearer synthetic-token','Accept':'application/octet-stream'})
+        handler=deploy.SafeRedirect()
+        for url in ['https://release-assets.githubusercontent.com/fixture?signed=value',deploy.API+'/other']:
+            redirected=handler.redirect_request(req,None,302,'Found',{},url)
+            self.assertIsNone(redirected.get_header('Authorization'))
+            self.assertEqual(redirected.get_header('Accept'),'application/octet-stream')
+        for url in ['http://example.test/file','file:///etc/passwd','https://user:password@example.test/file']:
+            with self.assertRaises(ValueError):handler.redirect_request(req,None,302,'Found',{},url)
+
+    def test_credentials_opt_in_permissions_and_redaction(self):
+        with patch.dict(deploy.os.environ,{},clear=True):
+            self.assertIsNone(deploy.github_token())
+        with tempfile.TemporaryDirectory() as directory:
+            path=pathlib.Path(directory)/'token';path.write_text('synthetic_token_1234567890\n');path.chmod(0o600)
+            with patch.dict(deploy.os.environ,{'SM_CRM_GITHUB_TOKEN_FILE':str(path)}):
+                info=path.stat()
+                with patch.object(deploy.os,'fstat',return_value=type('Info',(),{'st_mode':info.st_mode,'st_uid':0})()):
+                    self.assertEqual(deploy.github_token(),'synthetic_token_1234567890')
+                for mode,uid in [(0o100644,0),(0o100700,0),(0o104600,0),(0o100600,1000),(0o010600,0)]:
+                    with patch.object(deploy.os,'fstat',return_value=type('Info',(),{'st_mode':mode,'st_uid':uid})()):
+                        with self.assertRaisesRegex(RuntimeError,'Cannot load GitHub credential'):deploy.github_token()
+                path.unlink()
+                with self.assertRaisesRegex(RuntimeError,'Cannot load GitHub credential'):deploy.github_token()
+                path.write_text('synthetic_token_1234567890');path.chmod(0o600)
+                link=pathlib.Path(directory)/'link';link.symlink_to(path)
+                with patch.dict(deploy.os.environ,{'SM_CRM_GITHUB_TOKEN_FILE':str(link)}):
+                    with self.assertRaisesRegex(RuntimeError,'Cannot load GitHub credential'):deploy.github_token()
+                for value in ['', 'short', 'synthetic_token_1234567890\nsecond_line', 'a'*4097]:
+                    path.write_text(value)
+                    with self.assertRaisesRegex(RuntimeError,'Cannot load GitHub credential'):deploy.github_token()
+
+    def test_download_errors_hide_signed_urls_and_respect_size(self):
+        with patch.object(deploy,'github_token',return_value=None),patch.object(deploy.urllib.request,'build_opener') as opener:
+            for failure in [deploy.urllib.error.HTTPError('https://cdn.test/?secret=value',403,'secret-value',{},None),RuntimeError('secret-value')]:
+                opener.return_value.open.side_effect=failure
+                with self.assertRaises(RuntimeError) as caught:deploy.get(deploy.API+'/releases/latest')
+                self.assertNotIn('secret',str(caught.exception))
+                self.assertTrue(caught.exception.__suppress_context__)
+            opener.return_value.open.side_effect=None
+            opener.return_value.open.return_value.__enter__.return_value.read.return_value=b'1234'
+            with self.assertRaisesRegex(ValueError,'Download too large'):deploy.get(deploy.API+'/releases/latest',3)
+
 if __name__=='__main__':unittest.main()
