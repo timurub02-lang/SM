@@ -63,6 +63,7 @@ jobs:
           node --experimental-strip-types tests/base-import-name.mjs
           node --experimental-strip-types tests/packing-stage.mjs
           node --experimental-strip-types tests/reminder-tasks.mjs
+          node --experimental-strip-types tests/mainsms-http.mjs
           node --experimental-strip-types tests/auth-http.mjs
           node --experimental-strip-types tests/telephony-http.mjs
           node --experimental-strip-types tests/oktell-browser-http.mjs
