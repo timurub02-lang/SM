@@ -400,7 +400,7 @@ button.waybill-received {background:#e4e7ec;color:#687385;border:1px solid #d2d7
 .stats-table th,.stats-table td{padding:14px 10px;border-bottom:1px solid #e8edf4;text-align:center;vertical-align:middle}
 .stats-table thead th{position:sticky;top:0;z-index:1;background:#edf2f8;font-size:12px;font-weight:600;color:#64748b;line-height:1.5}
 .stats-table th:first-child,.stats-table td:first-child{text-align:left;padding-left:18px;overflow-wrap:anywhere;font-weight:500}
-.stats-table th:nth-last-child(-n+2),.stats-table td:nth-last-child(-n+2){text-align:right;padding-right:16px}
+.stats-table th:nth-child(3),.stats-table td:nth-child(3),.stats-table th:nth-child(4),.stats-table td:nth-child(4){text-align:right;padding-right:16px}
 .stats-table tbody tr:hover{background:#f2f7ff}.stats-table td:not(:first-child){white-space:nowrap}
 .stats-table tfoot th,.stats-table tfoot td{position:sticky;bottom:0;background:#eaf2ff;border-top:1px solid #ccdff8;border-bottom:0;font-weight:700}
 .stats-zero{color:#9aa7b9}.stats-metric{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:30px;min-height:30px;padding:4px 7px;border-radius:8px;color:#146bd5;background:#e7f1ff;font-weight:600;cursor:pointer}
