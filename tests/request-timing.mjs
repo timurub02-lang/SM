@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {RequestTiming} from '../lib/request-timing.ts';
+let now=100;
+const timing=new RequestTiming(()=>now);
+const result=await timing.measure('read',async()=>{now+=12.5;return 42;});
+assert.equal(result,42);now+=20;
+await timing.measure('snapshot',async()=>{now+=8;});
+const response=timing.finish(Response.json({ok:true},{headers:{ETag:'"private"','Cache-Control':'private, no-store'}}));
+assert.equal(response.headers.get('Server-Timing'),'crm_read;dur=12.5, crm_snapshot;dur=8.0, crm_total;dur=40.5');
+assert.equal(response.headers.get('ETag'),'"private"');
+assert.equal(response.headers.get('Cache-Control'),'private, no-store');
+assert.deepEqual(await response.json(),{ok:true});
+const failed=new RequestTiming(()=>now);
+await assert.rejects(failed.measure('snapshot',async()=>{now+=5;throw Error('fixture');}),/fixture/);
+assert.equal(failed.finish(new Response(null,{status:304})).status,304);
+assert.match(failed.finish(Response.json({error:'fixture'},{status:400})).headers.get('Server-Timing'),/crm_snapshot;dur=5.0/);
+console.log('PASS: timing success/error/304 responses without changing payload, ETag, status or privacy');
