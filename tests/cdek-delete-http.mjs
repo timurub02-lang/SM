@@ -149,10 +149,15 @@ try{
  assert.equal(selected.status,200,selected.text);
  const savedPoint=readOrder(pickupOrder.id).cdekTariff.deliveryPoint;
  assert.deepEqual(savedPoint,{code:'PVZ-ONE',address:'Москва, ул. Тестовая, д. 2',workTime:'09:00–21:00'});
+ assert.equal(readOrder(pickupOrder.id).cdekTariff.needsConfirmation,false);
  const packing={...readOrder(pickupOrder.id),status:'packing'};
+ // Orders saved before this change may still carry the obsolete confirmation flag.
+ packing.cdekTariff={...packing.cdekTariff,needsConfirmation:true};
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(packing),packing.id);
- const confirmedPickup=await call('/api/crm','logistic',{action:'selectCdekTariff',id:packing.id,version:packing.version,confirmSaved:true});
- assert.equal(confirmedPickup.status,200,confirmedPickup.text);
+ const assembly=await call('/api/warehouse/waybill?orderId='+packing.id,'logistic');
+ assert.equal(assembly.status,200,assembly.text);
+ const marked=await call('/api/crm','logistic',{action:'markPackingWaybill',id:packing.id,version:readOrder(packing.id).version});
+ assert.equal(marked.status,200,marked.text);
  assert.deepEqual(readOrder(packing.id).cdekTariff.deliveryPoint,savedPoint);
  db.prepare("INSERT INTO settings(id,data) VALUES('warehouse-address',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify({address:'Synthetic warehouse',shipmentPoint:{code:'PVZ-ONE'}}));
  const exported=await call(path,'logistic',{action:'create',orderId:packing.id,version:readOrder(packing.id).version,form:{shipmentPoint:'',deliveryPoint:'TAMPERED',senderAddress:'Synthetic warehouse',payment:'prepaid',deliveryCost:0}});
