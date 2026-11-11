@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {openDatabase} from '../server/sqlite.ts';
 const d=openDatabase(':memory:');
 try {
@@ -11,3 +15,29 @@ try {
  assert.equal(await d.prepare('SELECT * FROM items WHERE id=3').first(),null);
  console.log('SQLite: reads, writes and transaction rollback passed');
 } finally { d.close(); }
+
+// A background writer must not freeze timers, reads or phone authorization.
+const folder=mkdtempSync(join(tmpdir(),'crm-sqlite-busy-')),file=join(folder,'test.sqlite');
+const shared=openDatabase(file),writer=new DatabaseSync(file);
+try {
+ await shared.prepare('CREATE TABLE items(id INTEGER PRIMARY KEY,value TEXT)').run();
+ writer.exec('BEGIN IMMEDIATE');
+ let timerRan=false;
+ const release=setTimeout(()=>{timerRan=true;writer.exec('COMMIT');},150);
+ try {
+  await Promise.all([
+   shared.batch([shared.prepare("INSERT INTO items VALUES(1,'first')"),shared.prepare("INSERT INTO items VALUES(2,'second')")]),
+   shared.prepare("INSERT INTO items VALUES(3,'third')").run(),
+  ]);
+ } finally {clearTimeout(release);if(!timerRan)writer.exec('ROLLBACK');}
+ assert.equal(timerRan,true,'database lock must yield to HTTP/event-loop work');
+ assert.equal((await shared.prepare('SELECT * FROM items').all()).results.length,3);
+ writer.exec('BEGIN IMMEDIATE');
+ let ticks=0;const pulse=setInterval(()=>ticks++,25);const start=performance.now();
+ try {await assert.rejects(shared.prepare("INSERT INTO items VALUES(4,'timeout')").run(),e=>(e.errcode&255)===5);}
+ finally {clearInterval(pulse);writer.exec('ROLLBACK');}
+ assert.ok(ticks>20,'bounded lock wait must keep event loop responsive');
+ assert.ok(performance.now()-start<8000,'lock retry must remain bounded');
+ assert.equal(await shared.prepare('SELECT * FROM items WHERE id=4').first(),null);
+ console.log('SQLite lock contention: async retry, concurrent atomic writes and bounded wait passed');
+} finally {writer.close();shared.close();rmSync(folder,{recursive:true,force:true});}
