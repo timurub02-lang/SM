@@ -1,3 +1,4 @@
+import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Order} from './crm.ts';
 import {hasRemittanceConflict,type CdekRemittance} from './cdek-remittance.ts';
@@ -13,6 +14,7 @@ export async function recoverCdekHistory(d:Db,tracking:string,receipts:CdekRemit
  if(candidates.length!==1)return {status:'ambiguous' as const};
  const row=candidates[0],order=JSON.parse(row.data) as Order,client=JSON.parse(row.client);
  if(order.id!=='LV-'+row.external_id||order.clientId!==row.client_id||order.legacyLv?.orderId!==row.external_id||order.status!=='redeemed'||!!order.delivery&&!['cdek_pickup','cdek_courier'].includes(order.delivery)||String(order.cdekTrackingNumber||order.legacyLv?.track)!==tracking||order.testOnly||order.cdekTariff?.slot&&order.cdekTariff.slot!==receipts[0].slot)return {status:'unmatched' as const};
+ if(legacyPremiumPaid(order))return {status:'archived' as const};
  const existing=await d.prepare("SELECT id FROM orders WHERE id=? OR json_extract(data,'$.legacyLv.orderId')=?").bind(order.id,row.external_id).first();
  if(existing)return {status:'unmatched' as const};
  if(!order.manager||!order.legacyLv?.originalOperatorLogin)return {status:'unmatched' as const};

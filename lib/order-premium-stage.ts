@@ -1,3 +1,4 @@
+import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
 export type OrderPremiumStage={status:'accrued'|'paid';periodId:string};
@@ -11,7 +12,7 @@ export function orderDisplayGroup(order:Order){
   if(order.premiumStage.status==='paid')return paid;
  }
  // Imported LV labels are provisional: they do not enter the paid payroll ledger.
- if(order.status==='redeemed'&&order.legacyLv?.paymentPendingReview)return paid;
+ if(order.status==='redeemed'&&(order.legacyLv?.paymentPendingReview||legacyPremiumPaid(order)))return paid;
  return orderGroup(order);
 }
 
