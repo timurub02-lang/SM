@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {clientRetentionLabel as label} from '../lib/client-retention-label.ts';
+const now=Date.parse('2026-11-11T12:00:00Z'),c={id:'c',owner:'op',assignedUntil:'2026-11-13T13:00:00Z'},o={id:'o',clientId:'c',manager:'op',status:'redeemed',premiumStage:{status:'paid',periodId:'past'}};
+assert.equal(label(c,[o],now),'До открепления: 3 дн.');
+assert.equal(label(c,[{...o,premiumStage:undefined}],now),'Ожидается выплата премии');
+assert.equal(label(c,[{...o,premiumStage:{status:'accrued',periodId:'current'}}],now),'Ожидается выплата премии');
+assert.equal(label(c,[{...o,premiumStage:undefined,legacyLv:{status:'Выплачено'}}],now),'Ожидается выплата премии');
+assert.equal(label(c,[{...o,manager:'old',premiumStage:undefined}],now),'До открепления: 3 дн.');
+assert.equal(label(c,[{...o,status:'shipping'}, {...o,premiumStage:undefined}],now),'Есть активный заказ');
+assert.equal(label(c,[{...o,clientId:'other',status:'shipping'}],now),'До открепления: 3 дн.');
+assert.match(label(c,[{...o,status:'draft',createdAt:'2026-11-11T10:00:00Z',draftHours:24}],now),/^Есть активный заказ · До передачи логисту:/);
+assert.equal(label({...c,owner:''},[o],now),'Доступен всем');
+assert.equal(label({...c,assignedUntil:''},[o],now),'Срок закрепления не определён');
+assert.equal(label({...c,assignedUntil:'2026-11-10T12:00:00Z'},[o],now),'Срок закрепления истёк');
+console.log('Client retention labels: active orders, unpaid/paid premium, owner scope and days passed');
