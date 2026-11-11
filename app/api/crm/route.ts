@@ -1,3 +1,4 @@
+import {clientRetentionPreview} from '@/lib/client-retention-preview';
 import {orderPatchActions,orderSavePatch} from '@/lib/order-save-patch';
 import {editLeaderRates} from '@/lib/leader-premium-edit';
 import {requestOrderCancellation,resolveOrderCancellation} from '@/lib/order-cancellation';
@@ -75,6 +76,7 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
 async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false){
  const state=await readState();await saveReminders(state,fanout?undefined:user.employee?.id);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
+ if(['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config);}
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
  if(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee)){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
