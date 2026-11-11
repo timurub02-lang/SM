@@ -2,9 +2,14 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
 import {acceptSkOrder,initSkOrders,skMayDecide,skSender} from '../lib/sk-order-import.ts';
-import {syncSkOrders} from '../lib/sk-order-sync.ts';
+import {skClientPhone,syncSkOrders} from '../lib/sk-order-sync.ts';
 import {syncActivity} from '../lib/activity-sync.ts';
 import {mayCallEndpoint} from '../lib/permissions.ts';
+assert.equal(skClientPhone({direction:'in',phone:'79990000999',source:'79990000001'},{lead_phones:['+7 (999) 000-00-01','+79990000002']}),'+79990000001');
+assert.equal(skClientPhone({direction:'in',phone:'79990000999'},{lead_phones:['+79990000001']}),'+79990000001');
+assert.equal(skClientPhone({direction:'out',phone:'79990000002'},{lead_phones:['+79990000001','+79990000002']}),'+79990000002');
+assert.equal(skClientPhone({direction:'in',phone:'79990000999'},{phones:'+79990000001; +79990000002'}),'');
+assert.equal(skClientPhone({direction:'in',phone:'79990000999'},{}),'');
 const d=openDatabase(':memory:');for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await d.prepare(sql).run();
 const sender={id:'op',name:'Operator',login:'op',skLogin:'СКП_Оператор',role:'operator',department:'1',version:1},other={...sender,id:'other',login:'other',skLogin:'other@test.invalid',department:'2'},head={...sender,id:'head',skLogin:'',role:'department_head',department:'2'},admin={...sender,id:'admin',skLogin:'',role:'admin'};
 for(const e of [sender,other,head,admin])await d.prepare('INSERT INTO employees(id,data) VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
@@ -33,11 +38,29 @@ const request=async(url,opts)=>{const p=new URL(url).pathname;let value;
 if(p==='/oauth/token')value={access_token:'test'};
 else if(p==='/api/v2/users')value={data:[{id:7,email:'op@test.invalid',name:'СКП_Оператор'}]};
 else if(p==='/api/reports/calls_total.json'){const b=JSON.parse(opts.body);assert.deepEqual(b.filter.results_ids,[123]);assert.equal(b.start_time,Date.parse('2026-10-21T09:00:00Z')/1000);value={data:[{id:5,scenario_result:{id:123},comment:'call'}],total_pages:1};}
-else if(p==='/api/v2/calls/5')value={id:5,result_id:123,ended_at:'2026-10-21 09:10:00',user_id:7,lead_id:11,phone:'79990000005'};
-else if(p==='/api/v2/leads/11')value={id:11,name:'New',address:'Address',city:'City'};
+else if(p==='/api/v2/calls/5')value={id:5,result_id:123,ended_at:'2026-10-21 09:10:00',user_id:7,lead_id:11,direction:'in',phone:'79990000999',source:'79990000005'};
+else if(p==='/api/v2/leads/11')value={id:11,name:'New',address:'Address',city:'City',lead_phones:['+79990000005']};
 else throw Error(p);return Response.json(value);};
 assert.equal((await syncSkOrders(d,request,now,async()=>{})).imported,1);
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='C-SK-5'").first()).data).phone,'+79990000005');
+assert.equal(await d.prepare("SELECT id FROM clients WHERE phone='+79990000999'").first(),null);
 assert.equal((await syncSkOrders(d,request,now,async()=>{})).imported,0);
+const phoneReviewRequest=async(url,opts)=>{
+ const p=new URL(url).pathname;
+ if(p==='/api/reports/calls_total.json')return Response.json({data:[8,9].map(id=>({id,scenario_result:{id:123}})),total_pages:1});
+ if(['/api/v2/calls/8','/api/v2/calls/9'].includes(p)){const id=Number(p.split('/').at(-1));return Response.json({id,result_id:123,ended_at:'2026-10-21 09:10:00',user_id:7,lead_id:id,direction:'in',phone:'79990000999',source:'79990000009'});}
+ if(p==='/api/v2/leads/8')return Response.json({id:8,name:'Ambiguous',lead_phones:['+79990000081','+79990000082']});
+ if(p==='/api/v2/leads/9')return Response.json({id:9,name:'Verified',phones:'+79990000009'});
+ return request(url,opts);
+};
+assert.deepEqual(await syncSkOrders(d,phoneReviewRequest,now,async()=>{}),{imported:1,pending:1});
+assert.equal(await d.prepare("SELECT id FROM orders WHERE id='SM-SK-8'").first(),null);
+assert.ok(await d.prepare("SELECT id FROM orders WHERE id='SM-SK-9'").first());
+const phoneReview=JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='sk-order-health'").first()).data);
+assert.equal(phoneReview.ok,false);assert.equal(phoneReview.review[0].callId,'8');
+await syncSkOrders(d,request,now,async()=>{});
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='sk-order-health'").first()).data).review[0].callId,'8','unresolved phone review must not disappear from later polls');
+
 const count=(await d.prepare('SELECT count(*) n FROM orders').first()).n;
 await assert.rejects(syncSkOrders(d,async()=>new Response('',{status:503}),now,async()=>{}));assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,count);
 await assert.rejects(syncSkOrders(d,async(url,opts)=>new URL(url).pathname==='/oauth/token'?request(url,opts):new Response('limited',{status:429,headers:{'Retry-After':'120'}}),now,async()=>{}));
