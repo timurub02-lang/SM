@@ -15,7 +15,35 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
   if(orders.length===1)return <button className="stats-metric" aria-label={`${label}: открыть заказ ${orders[0].id}`} onClick={()=>openOrder(orders[0].id)}>{value}</button>;
   return <select className="stats-metric stats-order-select" aria-label={`${label}: выбрать заказ`} value="" onChange={e=>{if(e.target.value)openOrder(e.target.value);}}><option value="" disabled>{value} ▾</option>{orders.map(o=><option key={o.id} value={o.id}>{o.id} · {state.clients.find(c=>c.id===o.clientId)?.name||'Клиент'} · {statuses[o.status]} · {money(o.items.reduce((n,i)=>n+i.price*i.quantity,0))}</option>)}</select>;
  }
- const allOrders=(key:'created'|'newOrders'|'reviewed'|'cancelled'|'redeemed'|'sent')=>rows.flatMap(r=>r.orderLists[key]);
- const count=rows.reduce((n,r)=>n+r.reviewed,0),amount=rows.reduce((n,r)=>n+Math.round(r.amount*100),0)/100;
- return <><button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today);setTo(today);setOpen(true);}} title="Статистика операторов"><BarChart3 size={18}/>Статистика</button><Dialog open={visible} onOpenChange={setOpen}>{visible&&<DialogContent className="form-dialog operator-stats-dialog"><DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>Период по дате создания заказа, время Москвы. Показатели отражают текущее состояние заказов.</DialogDescription></DialogHeader><div className="stack"><div className="stats-period"><label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>По дату<input aria-label="Конец периода" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today.slice(0,7)+"-01");setTo(today);}}>За месяц</button></div>{invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<div className="stats-table-wrap"><table className="stats-table"><colgroup><col style={{width:"28%"}}/>{Array.from({length:6},(_,i)=><col key={i}/>)}<col style={{width:"12%"}}/><col style={{width:"12%"}}/></colgroup><thead><tr><th>Логин оператора</th><th>Создано заказов</th><th>В статусе «Новый»</th><th>После проверки администратора</th><th>Отправлен</th><th>Выкуплен</th><th>Отменён</th><th>Сумма заказов</th><th>Средний чек</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.login}</td><td>{metric(r.created,r.orderLists.created,r.login||"Оператор")}</td><td>{metric(r.newOrders,r.orderLists.newOrders,r.login||"Оператор")}</td><td>{metric(r.reviewed,r.orderLists.reviewed,r.login||"Оператор")}</td><td>{metric(r.sent,r.orderLists.sent,"Отправлен")}</td><td>{metric(r.redeemed,r.orderLists.redeemed,"Выкуплен")}</td><td>{metric(r.cancelled,r.orderLists.cancelled,r.login||"Оператор")}</td><td>{metric(money(r.amount),r.orderLists.reviewed,"Сумма заказов")}</td><td>{metric(money(r.average),r.orderLists.reviewed,"Средний чек")}</td></tr>)}</tbody><tfoot><tr><th>Итого</th><td>{metric(rows.reduce((n,r)=>n+r.created,0),allOrders("created"),"Итого")}</td><td>{metric(rows.reduce((n,r)=>n+r.newOrders,0),allOrders("newOrders"),"Итого")}</td><td>{metric(count,allOrders("reviewed"),"После проверки")}</td><td>{metric(rows.reduce((n,r)=>n+r.sent,0),allOrders("sent"),"Отправлен — итого")}</td><td>{metric(rows.reduce((n,r)=>n+r.redeemed,0),allOrders("redeemed"),"Выкуплен — итого")}</td><td>{metric(rows.reduce((n,r)=>n+r.cancelled,0),allOrders("cancelled"),"Итого")}</td><td>{metric(money(amount),allOrders("reviewed"),"Сумма заказов")}</td><td>{metric(money(count?amount/count:0),allOrders("reviewed"),"Средний чек")}</td></tr></tfoot></table>{!rows.length&&<p>Нет операторов для отображения.</p>}</div>}<p className="muted">«Отправлен» — заказы на этапах «В доставке» и «Ожидает выкупа», включая находящиеся в пункте выдачи, у курьера и на почте. «Выкуплен» — заказы в текущем статусе «Оплачен», созданные в выбранном периоде, независимо от способа доставки и приёма денег логистом. «Новый»: оформление, подтверждение и возврат оператору. После проверки учитываются заказы, направленные администратором на упаковку или дополнительное подтверждение. Исключаются только отменённые заказы. Недозвон, перезвон и возврат оператору сохраняют заказ в этом показателе.</p></div></DialogContent>}</Dialog></>;
+ const allOrders=(key:'created'|'cancelled'|'confirmed'|'sent')=>rows.flatMap(r=>r.orderLists[key]);
+ const count=rows.reduce((n,r)=>n+r.created,0),amount=rows.reduce((n,r)=>n+Math.round(r.amount*100),0)/100;
+ return <>
+  <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today);setTo(today);setOpen(true);}} title="Статистика операторов"><BarChart3 size={18}/>Статистика</button>
+  <Dialog open={visible} onOpenChange={setOpen}>{visible&&<DialogContent className="form-dialog operator-stats-dialog">
+   <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.</DialogDescription></DialogHeader>
+   <div className="stack">
+    <div className="stats-period">
+     <label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
+     <label>По дату<input aria-label="Конец периода" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
+     <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today.slice(0,7)+"-01");setTo(today);}}>За месяц</button>
+    </div>
+    {invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<div className="stats-table-wrap"><table className="stats-table">
+     <colgroup><col style={{width:"28%"}}/>{Array.from({length:6},(_,i)=><col key={i}/>)}</colgroup>
+     <thead><tr><th>Оператор</th><th>Создано заказов</th><th>Средний чек</th><th>Сумма заказов</th><th>Отменено</th><th>Подтверждено логистом</th><th>Отправлено</th></tr></thead>
+     <tbody>{rows.map(r=><tr key={r.id}>
+      <td>{r.login}</td><td>{metric(r.created,r.orderLists.created,"Создано заказов")}</td>
+      <td>{metric(money(r.average),r.orderLists.created,"Средний чек")}</td><td>{metric(money(r.amount),r.orderLists.created,"Сумма заказов")}</td>
+      <td>{metric(r.cancelled,r.orderLists.cancelled,"Отменено")}</td><td>{metric(r.confirmed,r.orderLists.confirmed,"Подтверждено логистом")}</td><td>{metric(r.sent,r.orderLists.sent,"Отправлено")}</td>
+     </tr>)}</tbody>
+     <tfoot><tr><th>Итого</th><td>{metric(count,allOrders("created"),"Создано — итого")}</td>
+      <td>{metric(money(count?amount/count:0),allOrders("created"),"Средний чек — итого")}</td><td>{metric(money(amount),allOrders("created"),"Сумма — итого")}</td>
+      <td>{metric(rows.reduce((n,r)=>n+r.cancelled,0),allOrders("cancelled"),"Отменено — итого")}</td>
+      <td>{metric(rows.reduce((n,r)=>n+r.confirmed,0),allOrders("confirmed"),"Подтверждено — итого")}</td>
+      <td>{metric(rows.reduce((n,r)=>n+r.sent,0),allOrders("sent"),"Отправлено — итого")}</td>
+     </tr></tfoot>
+    </table>{!rows.length&&<p>Нет операторов для отображения.</p>}</div>}
+    <p className="muted">Средний чек и сумма включают все созданные заказы, в том числе отменённые. Подтверждение и отправка учитываются независимо: отправленный заказ остаётся в подтверждённых. Доставка — СДЭК, Почта России и курьер. Нажмите на показатель, чтобы открыть входящие в него заказы.</p>
+   </div>
+  </DialogContent>}</Dialog>
+ </>;
 }
