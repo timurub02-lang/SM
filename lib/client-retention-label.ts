@@ -18,3 +18,10 @@ export function clientRetentionLabel(client:Client,orders:Order[],now=Date.now()
  if(Number.isFinite(remaining))return remaining>0?`До открепления: ${Math.ceil(remaining/86400000)} дн.`:'Срок закрепления истёк';
  return 'Срок закрепления не определён';
 }
+
+export function clientRetentionExpiring(client:Client,activeOrder:boolean,now=Date.now(),preview?:RetentionPreview){
+ if(!client.owner||activeOrder)return false;
+ if(preview?.expiresAfterPremium)return true;
+ const until=Date.parse(preview?.until||client.assignedUntil||'');
+ return Number.isFinite(until)&&until-now<=3*86400000;
+}
