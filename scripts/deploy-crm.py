@@ -1,18 +1,61 @@
 #!/usr/bin/env python3
-"""Pull verified GitHub runtimes. No GitHub or SSH secret is needed on this host."""
-import argparse,fcntl,hashlib,http.client,json,os,pathlib,re,shutil,socket,sqlite3,subprocess,tarfile,tempfile,time,urllib.request
+"""Pull verified GitHub runtimes. Optional read-only GitHub credential stays outside the runtime."""
+import argparse,fcntl,hashlib,http.client,json,os,pathlib,re,shutil,socket,sqlite3,stat,subprocess,tarfile,tempfile,time,urllib.request,urllib.error,urllib.parse
 
 BASE=pathlib.Path('/srv/crm')
 REPO='timurub02-lang/SM'
 API='https://api.github.com/repos/'+REPO
 NAME=re.compile(r'(?:gh|saved)-[0-9a-f]{40}')
 
-def get(url,limit=4*1024*1024):
-    request=urllib.request.Request(url,headers={'User-Agent':'sm-crm-deploy','Accept':'application/vnd.github+json'})
-    with urllib.request.urlopen(request,timeout=45) as response:
-        data=response.read(limit+1)
+def github_token():
+    """Opt in through a root-owned file path, never an environment token value."""
+    path=os.environ.get('SM_CRM_GITHUB_TOKEN_FILE')
+    if path is None:return None
+    try:
+        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,'r',encoding='ascii') as source:
+            info=os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o077:
+                raise ValueError('Unsafe credential file')
+            token=source.read(4097).strip()
+            if not re.fullmatch(r'[A-Za-z0-9_]{20,4096}',token):raise ValueError('Invalid credential')
+            return token
+    except Exception:
+        raise RuntimeError('Cannot load GitHub credential; check root ownership, mode 0600 and token validity') from None
+
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        # urllib otherwise forwards regular headers, including Authorization.
+        target=urllib.parse.urlsplit(newurl)
+        if target.scheme!='https' or target.username or target.password:
+            raise ValueError('Unsafe download redirect')
+        redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+        if redirected is not None:redirected.remove_header('Authorization')
+        return redirected
+
+def get(url,limit=4*1024*1024,accept='application/vnd.github+json'):
+    headers={'User-Agent':'sm-crm-deploy','Accept':accept}
+    # Never read or attach a credential to local CRM health checks or asset CDNs.
+    if url.startswith(API+'/'):
+        token=github_token()
+        if token:headers['Authorization']='Bearer '+token
+    request=urllib.request.Request(url,headers=headers)
+    try:
+        with urllib.request.build_opener(SafeRedirect()).open(request,timeout=45) as response:
+            data=response.read(limit+1)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError('Download failed (HTTP '+str(error.code)+'); check GitHub access/rate limits or CRM health') from None
+    except Exception:
+        # Redirect URLs can be signed; neither URL nor exception payload is logged.
+        raise RuntimeError('Download failed; check network and TLS connectivity') from None
     if len(data)>limit:raise ValueError('Download too large')
     return data
+
+def release_asset(asset,limit):
+    asset_id=asset.get('id')
+    if type(asset_id) is not int or asset_id<=0:raise ValueError('Invalid release asset ID')
+    # Construct the API endpoint, do not trust URLs from release metadata.
+    return get(API+'/releases/assets/'+str(asset_id),limit,'application/octet-stream')
 
 def extract(archive,directory):
     with tarfile.open(archive) as tar:
@@ -103,9 +146,7 @@ def run(rollback=None):
     if shutil.disk_usage(BASE).free<1024**3:raise RuntimeError('Need at least 1 GiB free')
     assets={a['name']:a for a in release['assets']}
     def asset(name,limit):
-        url=assets[name]['browser_download_url']
-        if not url.startswith('https://github.com/'+REPO+'/releases/download/'+tag+'/'):raise ValueError('Unexpected asset origin')
-        return get(url,limit)
+        return release_asset(assets[name],limit)
     sums=asset('SHA256SUMS',512).decode().strip()
     if not re.fullmatch(r'[0-9a-f]{64}  crm-runtime\.tgz',sums):raise ValueError('Invalid checksum manifest')
     data=asset('crm-runtime.tgz',200*1024*1024)
