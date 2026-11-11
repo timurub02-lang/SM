@@ -41,7 +41,7 @@ export const inventorySQL = [
  THEN RAISE(ABORT,'Недостаточно товара на складе. Пополните остатки или уменьшите количество') END;
  END`,
  `CREATE TRIGGER IF NOT EXISTS stock_order_update AFTER UPDATE OF data ON orders BEGIN
- SELECT CASE WHEN EXISTS(SELECT 1 FROM json_each(NEW.data,'$.items') i WHERE NOT EXISTS(SELECT 1 FROM products p WHERE json_extract(p.data,'$.name')=json_extract(i.value,'$.name')) AND NOT EXISTS(SELECT 1 FROM json_each(OLD.data,'$.items') old_i WHERE old_i.value=i.value))
+ SELECT CASE WHEN EXISTS(SELECT 1 FROM json_each(NEW.data,'$.items') i WHERE NOT EXISTS(SELECT 1 FROM products p WHERE json_extract(p.data,'$.name')=json_extract(i.value,'$.name')) AND NOT EXISTS(SELECT 1 FROM json_each(OLD.data,'$.items') old_i WHERE json_extract(old_i.value,'$.name') IS json_extract(i.value,'$.name') AND json_extract(old_i.value,'$.quantity') IS json_extract(i.value,'$.quantity') AND json_extract(old_i.value,'$.price') IS json_extract(i.value,'$.price')))
  THEN RAISE(ABORT,'Выберите товар из складского каталога') END;
  SELECT CASE WHEN EXISTS(SELECT 1 FROM order_stock s JOIN product_stock p ON p.id=s.product_id JOIN products product ON product.id=p.id
  WHERE s.order_id=NEW.id AND p.available<0 AND s.quantity>
@@ -82,4 +82,11 @@ export async function migrateLegacyLvCatalog(d:Db){
  if(await d.prepare("SELECT id FROM settings WHERE id='legacy-lv-catalog-v1'").first())return;
  const trigger=inventorySQL.find(sql=>sql.startsWith('CREATE TRIGGER IF NOT EXISTS stock_order_insert'))!;
  await d.batch([d.prepare('DROP TRIGGER IF EXISTS stock_order_insert'),d.prepare(trigger),d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('legacy-lv-catalog-v1','{}')")]);
+}
+
+// JSON serialization can change 1.0 to 1 without changing historical order goods.
+export async function migrateOrderCatalogComparison(d:Db){
+ if(await d.prepare("SELECT id FROM settings WHERE id='order-catalog-comparison-v2'").first())return;
+ const trigger=inventorySQL.find(sql=>sql.startsWith('CREATE TRIGGER IF NOT EXISTS stock_order_update'))!;
+ await d.batch([d.prepare('DROP TRIGGER IF EXISTS stock_order_update'),d.prepare(trigger),d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('order-catalog-comparison-v2','{}')")]);
 }

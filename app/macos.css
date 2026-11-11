@@ -786,3 +786,6 @@ body:has(.courier-design-aurora){background:#191a1e}
   .client-order-mini>strong { grid-column:2; grid-row:1; }
   .client-order-mini>svg { grid-column:3; grid-row:1; }
 }
+
+.order-detail-tabs:has(.courier-cheatsheet){flex-direction:row;align-items:center;flex-wrap:wrap;gap:12px}
+.courier-cheatsheet{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;flex-shrink:0}
