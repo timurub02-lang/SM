@@ -1,3 +1,4 @@
+import {orderPatchActions,orderSavePatch} from '@/lib/order-save-patch';
 import {editLeaderRates} from '@/lib/leader-premium-edit';
 import {requestOrderCancellation,resolveOrderCancellation} from '@/lib/order-cancellation';
 import {readLimitedText} from '@/lib/request-body';
@@ -569,7 +570,9 @@ async function handlePOST(request:Request){
   // ponytail: bounded imports; background chunked jobs when files exceed 1000 clients.
   let actual=0;for(let i=0;i<statements.length;i+=50){const results=await d.batch(statements.slice(i,i+50));actual+=results.filter((_,j)=>j%2===0).reduce((n,r)=>n+r.meta.changes,0);}message=`Добавлено: ${actual}. Дубли: ${duplicates+added-actual}. Адресов требуют проверки: ${review}. Ошибки ДаДата: ${errors}`;
  }else throw new Error("Неизвестное действие");
- return Response.json({state:await responseState(user,true),message});
+ const state=await responseState(user,true);
+ if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return Response.json({statePatch:orderSavePatch(s,state,p.id),message});
+ return Response.json({state,message});
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400});}
 }
 

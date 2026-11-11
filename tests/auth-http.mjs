@@ -1030,5 +1030,18 @@ try{
  assert.equal((await call('/api/warehouse/waybill?format=cheatsheet&orderId='+legacyOrder.id,{cookie:legacyLog.cookie})).status,400);
  const cheatOperator=await fixture('cheat-operator');assert.equal((await call('/api/warehouse/waybill?format=cheatsheet&orderId='+cheatOrder.id,{cookie:cheatOperator.cookie})).status,403);
  console.log('Legacy contact migration, unchanged basket, event and Moscow cheatsheet permissions passed');
+ const fastAdmin=await fixture('fast-save-admin','1','admin');
+ const fastOrder={...legacyOrder,id:'fast-save-order',status:'check',address:'Test address'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(fastOrder.id,fastOrder.clientId,JSON.stringify(fastOrder));
+ const fastBefore=await call('/api/crm',{cookie:fastAdmin.cookie});
+ const fastVersion=fastBefore.data.orders.find(o=>o.id===fastOrder.id).version;
+ const fastSaved=await call('/api/crm',{cookie:fastAdmin.cookie,body:{action:'transition',id:fastOrder.id,version:fastVersion,to:'packing',responseMode:'order-patch'}});
+ assert.equal(fastSaved.status,200,fastSaved.text);assert.equal(fastSaved.data.state,undefined);
+ assert.equal(fastSaved.data.statePatch.orders.find(o=>o.id===fastOrder.id).status,'packing');
+ assert(fastSaved.data.statePatch.clients.some(c=>c.id===fastOrder.clientId));assert(fastSaved.data.statePatch.events.some(e=>e.orderId===fastOrder.id));
+ assert(fastSaved.text.length<fastBefore.text.length/2,'Saving one order must not resend the full database');
+ assert.equal((await call('/api/crm',{cookie:fastAdmin.cookie,body:{action:'transition',id:fastOrder.id,version:fastVersion,to:'packing',responseMode:'order-patch'}})).status,400,'Stale writes still fail');
+ const fastRead=await call('/api/crm',{cookie:fastAdmin.cookie});assert.equal(fastRead.data.orders.find(o=>o.id===fastOrder.id).status,'packing');
+ console.log('Compact admin order save, history, payload size and version guard passed');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
