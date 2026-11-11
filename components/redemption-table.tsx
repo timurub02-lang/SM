@@ -68,7 +68,7 @@ export function RedemptionTable({employee,settings,setSettings,operatorQueue=fal
    {cardTab==='order'?<>
    <section className="redemption-order-summary" aria-label="Сведения о заказе">
     <div className="redemption-order-client"><span>Клиент</span><strong>{edit?.clientName}</strong></div>
-    <dl className="redemption-order-meta"><div><dt>Дата оформления</dt><dd>{edit?.orderCreatedAt?new Date(edit.orderCreatedAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',dateStyle:'short',timeStyle:'short'})+' МСК':'—'}</dd></div><div><dt>Кто оформил</dt><dd>{edit?.orderCreatedBy||'Не указан'}</dd></div></dl>
+    <dl className="redemption-order-meta"><div><dt>Дата оформления</dt><dd>{edit?.orderCreatedAt?new Date(edit.orderCreatedAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',dateStyle:'short',timeStyle:'short'})+' МСК':'—'}</dd></div><div><dt>Кто оформил</dt><dd>{edit?.orderCreatedBy||'Не указан'}</dd></div><div><dt>Трек СДЭК</dt><dd>{edit?.track?.trim()?<a className="link redemption-track-link" href={cdekTrackingUrl(edit.track)} target="_blank" rel="noopener noreferrer" title="Отследить на сайте СДЭК" aria-label={`Отследить посылку СДЭК ${edit.track}, новая вкладка`}>{edit.track} ↗</a>:'Не указан'}</dd></div></dl>
     <div className="redemption-order-items"><h3>Товары</h3>{edit?.items?.length?edit.items.map((item:any,i:number)=><div className="redemption-order-item" key={i}><span>{item.name}<small>{item.quantity} шт. × {item.price.toLocaleString('ru-RU')} ₽</small></span><b>{(item.quantity*item.price).toLocaleString('ru-RU')} ₽</b></div>):<p className="muted">Товары не указаны</p>}</div>
     <div className="redemption-order-total"><span>Итого</span><strong>{(edit?.total||0).toLocaleString('ru-RU')} ₽</strong></div>
    </section>
