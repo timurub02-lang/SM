@@ -21,7 +21,7 @@ export function skSender(staff:Employee[],email:string,userName='',userNameUniqu
  const found=staff.filter(e=>{const key=clean(e.skLogin||'');return key&&userNameUnique&&!!userName&&key===clean(userName);});
  return found.length===1&&found[0].role==='operator'&&found[0].accessEnabled!==false?found[0]:undefined;
 }
-export function skMayDecide(actor:Employee,sender:Employee|undefined,owner:Employee|undefined){return actor.role==='admin'||actor.role==='department_head'&&!!actor.department&&!!sender&&(owner?owner.department===actor.department:sender.department===actor.department);}
+export function skMayDecide(actor:Employee,_sender?:Employee,_owner?:Employee){return actor.role==='admin';}
 export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,now=new Date().toISOString()){
  if(!/^\d+$/.test(input.callId)||!normalizePhone(input.phone))throw Error('Некорректный звонок или телефон СК');
  await initSkOrders(d);
@@ -31,7 +31,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
  // A retry always processes the original snapshot, never replaces it with later contact edits.
  input=JSON.parse(transfer.data);
  const staff=await skStaff(d),sender=skSender(staff,input.email,input.userName,input.userNameUnique),existing=await skClient(d,input.phone),owner=staff.find(e=>e.id===existing?.owner);
- if(decision&&!skMayDecide(decision,sender,owner))throw Error('Решение доступно руководителю владельца клиента');
+ if(decision&&!skMayDecide(decision,sender,owner))throw Error('Решение доступно только администратору');
  const orders:Order[]=existing?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(existing.id).all()).results.map((r:any)=>JSON.parse(r.data)):[];
  let reason=!sender?'Не найден единственный активный оператор с этим ФИО Скорозвона':existing?.owner&&existing.owner!==sender.id?'Клиент принадлежит оператору '+(owner?.login||existing.owner):existing&&hasActiveOrder(orders,existing.id)?'У клиента есть действующий заказ':existing&&['ЧС','ПВ'].includes(clientSheet(existing))?'Клиент находится на листе '+clientSheet(existing):'';
  if(reason&&(!decision||!sender||existing&&['ЧС','ПВ'].includes(clientSheet(existing))&&decision.role!=='admin')){
