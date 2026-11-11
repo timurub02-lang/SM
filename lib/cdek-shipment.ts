@@ -6,6 +6,9 @@ export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(25
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
 export type ShipmentDeletion={at:string;reason:string;actor:string;requestId?:string;previousRequests:string[]};
 export type Shipment={replacementAssignmentId?:string;replacementFallback?:boolean;checkedAt?:string;syncError?:string;deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string};
+export function importedCdekShipment(order:Order){
+ return !!order.legacyLv&&!!(order.legacyLv.track?.trim()||order.legacyLv.cdekOrderNumber?.trim()||order.cdekTrackingNumber?.trim()||order.cdekExported||order.cdekWaybillReceived||order.cdekTransferredAt||order.cdekStatus);
+}
 export function shipmentPayload(order:Order,client:Client,products:Product[],form:ShipmentForm,senderAlias?:string){
  const recipientPhone=normalizePhone(client.phone||'');if(!recipientPhone)throw Error('Укажите корректный телефон в карточке клиента перед выгрузкой в СДЭК');
  const tariff=order.cdekTariff;if(!tariff||tariff.params.delivery!==order.delivery)throw Error('Сначала сохраните тариф доставки');
