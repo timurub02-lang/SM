@@ -5,7 +5,7 @@ import {seesOrder} from './permissions.ts';
 import {initBaseStorage} from './base-storage.ts';
 import {initPhone} from './phone-store.ts';
 
-type Row={spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
+type Row={handoff?:string;spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
 export async function initIncoming(d:Db){
  await d.prepare(`CREATE TABLE IF NOT EXISTS incoming_calls(id TEXT PRIMARY KEY,client_id TEXT REFERENCES clients(id) ON DELETE CASCADE,assignee_id TEXT,department_id TEXT NOT NULL DEFAULT '',at TEXT NOT NULL,phone TEXT NOT NULL,called_number TEXT NOT NULL,closed_at TEXT,closed_by TEXT,reason TEXT NOT NULL DEFAULT '',order_id TEXT REFERENCES orders(id) ON DELETE SET NULL)`).run();
  const columns=await d.prepare('PRAGMA table_info(incoming_calls)').all();
@@ -16,7 +16,7 @@ export async function initIncoming(d:Db){
   }
   await d.prepare("UPDATE incoming_calls SET shared_queue=1,assignee_id=NULL,department_id='' WHERE closed_at IS NULL AND client_id IN (SELECT id FROM clients WHERE COALESCE(json_extract(data,'$.owner'),'')='') AND NOT EXISTS(SELECT 1 FROM orders WHERE orders.client_id=incoming_calls.client_id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))").run();
  }
- for(const [name,definition] of [['spam','INTEGER NOT NULL DEFAULT 0'],['spam_reason',"TEXT NOT NULL DEFAULT ''"],['call_count','INTEGER NOT NULL DEFAULT 1'],['last_at',"TEXT NOT NULL DEFAULT ''"]]){
+ for(const [name,definition] of [['handoff',"TEXT NOT NULL DEFAULT ''"],['spam','INTEGER NOT NULL DEFAULT 0'],['spam_reason',"TEXT NOT NULL DEFAULT ''"],['call_count','INTEGER NOT NULL DEFAULT 1'],['last_at',"TEXT NOT NULL DEFAULT ''"]]){
   if(!columns.results.some((c:{name:string})=>c.name===name))try{await d.prepare('ALTER TABLE incoming_calls ADD COLUMN '+name+' '+definition).run();}catch(error){if(!(await d.prepare('PRAGMA table_info(incoming_calls)').all()).results.some((c:{name:string})=>c.name===name))throw error;}
  }
  await d.prepare('CREATE INDEX IF NOT EXISTS incoming_open_phone ON incoming_calls(phone,closed_at)').run();
@@ -62,7 +62,7 @@ export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order
  const spam=e.role==='admin'?(await d.prepare(select+' AND i.spam=1 ORDER BY i.last_at DESC,i.at DESC LIMIT 100').bind(...args).all()).results:[];
  return [...open,...closed,...spam].map((r:Row&{client_name:string|null})=>{
   const active=orders.filter(o=>o.clientId===r.client_id&&activeIncomingOrder(o));
-  return {spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staff.find(x=>x.id===r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:e.role==='operator'||e.role==='department_head'&&!!r.client_id?'':r.phone,calledNumber:r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staff.find(x=>x.id===r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
+  return {handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staff.find(x=>x.id===r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:e.role==='operator'||e.role==='department_head'&&!!r.client_id?'':r.phone,calledNumber:r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staff.find(x=>x.id===r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
  });
 }
 export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee[],clientId?:string){
@@ -73,8 +73,8 @@ export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee
  if(clientId!==undefined&&row.client_id!==clientId)throw Error('Обращение относится к другому клиенту');
  return row;
 }
-export function incomingCloseStatement(d:Db,id:string,employeeId:string,at:string,reason:string,orderId:string|null,mutation?:string){
- return d.prepare("UPDATE incoming_calls SET closed_at=?,closed_by=?,reason=?,order_id=? WHERE id=? AND closed_at IS NULL"+(!orderId?" AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=incoming_calls.client_id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))":"")+(mutation?" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)":"")).bind(at,employeeId,reason,orderId,id,...(mutation?[orderId,mutation]:[]));
+export function incomingCloseStatement(d:Db,id:string,employeeId:string,at:string,reason:string,orderId:string|null,mutation?:string,handoff?:string){
+ return d.prepare("UPDATE incoming_calls SET closed_at=?,closed_by=?,reason=?,order_id=? WHERE id=? AND closed_at IS NULL"+(!orderId&&!handoff?" AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=incoming_calls.client_id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))":"")+(handoff?" AND assignee_id=? AND handoff=?":"")+(mutation?" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)":"")).bind(at,employeeId,reason,orderId,id,...(handoff?[employeeId,handoff]:[]),...(mutation?[orderId,mutation]:[]));
 }
 
 export async function sharedIncomingClientAccess(d:Db,e:Employee,clientId:string){
@@ -88,7 +88,8 @@ export async function incomingRouting(d:Db,clientId:string,c:{owner?:string}|nul
  const accounts=(await d.prepare('SELECT employee_id,enabled FROM auth_accounts').all()).results;
  const eligible=(id:string)=>staff.find(e=>e.id===id&&e.role!=='courier'&&accounts.some((a:{employee_id:string;enabled:number})=>a.employee_id===id&&a.enabled));
  // Only an attempt actually accepted by PBX counts; denied microphone access is not a call.
- const last=clientId?await d.prepare('SELECT actor_id FROM phone_calls WHERE client_id=? AND claimed_at<=? ORDER BY claimed_at DESC,seq DESC LIMIT 1').bind(clientId,at).first():null;
+ // A one-off delegated callback does not transfer routing for future incoming calls.
+ const last=clientId?await d.prepare("SELECT actor_id FROM phone_calls WHERE client_id=? AND claimed_at<=? AND NOT EXISTS(SELECT 1 FROM phone_call_incoming p JOIN incoming_calls i ON i.id=p.incoming_id WHERE p.call_id=phone_calls.id AND i.handoff<>'') ORDER BY claimed_at DESC,seq DESC LIMIT 1").bind(clientId,at).first():null;
  const clientOrders=clientId&&!c?.owner?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(clientId).all()).results:[];
  const shared=!!clientId&&!c?.owner&&!clientOrders.some((r:{data:string})=>activeIncomingOrder(JSON.parse(r.data)));
  const assignee=shared?undefined:(last&&eligible(last.actor_id))||(c?.owner&&eligible(c.owner));

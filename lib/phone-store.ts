@@ -76,9 +76,10 @@ export async function addCallComment(d:ActivityDb,e:Employee,id:string,text:stri
 export async function incomingCallTarget(d:ActivityDb,e:Employee,id:string){
  if(!['admin','department_head','operator'].includes(e.role))throw Error('Звонок из обращения недоступен');
  const row=await incomingForAction(d,id,e,[]);
- if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные и звоните из карточки клиента');
+ if(row.client_id&&!(row.handoff&&row.assignee_id===e.id))throw Error('Обращение уже связано с клиентом. Обновите данные и звоните из карточки клиента');
  const phone=normalizeOutgoingNumber(row.phone);
  if(!phone)throw Error('В обращении нет корректного номера телефона');
- if(await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(phone).first())throw Error('Клиент с этим номером уже появился. Попросите руководителя связать обращение с клиентом');
+ const matched=await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(phone).first() as {client_id:string}|null;
+ if(matched&&matched.client_id!==row.client_id)throw Error('Клиент с этим номером уже появился. Попросите руководителя связать обращение с клиентом');
  return phone;
 }
