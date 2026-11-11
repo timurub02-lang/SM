@@ -26,7 +26,7 @@ for(const status of ['confirm','extra'])assert(!canManageDelivery('operator',sta
 const {confirmSavedTariff}=await import('../lib/cdek-calculator.ts');
 const {packingStage}=await import('../lib/crm.ts');
 const pending={status:'packing',delivery:'cdek_courier',cdekTariff:{code:137,amount:450,needsConfirmation:true,params:{delivery:'cdek_courier',weight:.875}}};
-assert.equal(packingStage(pending),'new');
+assert.equal(packingStage(pending),'calculated');
 const confirmed=confirmSavedTariff(pending);
 assert.equal(confirmed.amount,450);
 assert.equal(confirmed.code,137);

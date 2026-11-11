@@ -11,7 +11,6 @@ async function handleGET(req:Request){
  if(!row)return Response.json({error:'Заказ не найден'},{status:404});
  const order=JSON.parse(row.data);
  if(q.get('format')==='cheatsheet'&&order.delivery!=='moscow_courier')return Response.json({error:'Шпаргалка доступна для доставки Курьер Москва'},{status:400});
- if(q.get('format')!=='cheatsheet'&&order.cdekTariff?.needsConfirmation)return Response.json({error:"Сначала подтвердите ранее рассчитанную доставку"},{status:409});
  const client=await db().prepare('SELECT data FROM clients WHERE id=?').bind(order.clientId).first<{data:string}>();
  if(!client)return Response.json({error:'Клиент не найден'},{status:404});
  const manager=await db().prepare('SELECT data FROM employees WHERE id=?').bind(order.manager).first<{data:string}>();

@@ -357,7 +357,6 @@ async function handlePOST(request:Request){
    if(courierRecalledAtWarehouse(o)&&o.status==='rework')throw Error('Заказ в работе у оператора. Дождитесь возврата на сборку');
    if(!employee||!["admin","logistic","chief_logistic"].includes(employee.role))throw Error("Нет доступа к накладным");
    if(o.courierRepackRequest&&!o.courierRepackRequest.completedAt)throw Error('Сначала оператор или администратор должен сохранить исправленный заказ после приёма посылки');
-   if(o.cdekTariff?.needsConfirmation)throw Error("Сначала подтвердите ранее рассчитанную доставку");
    next.packingWaybillAt=o.packingWaybillAt||now;text="Подготовлена накладная на сборку";
   }else if(p.action==="updateLogisticComment"){
    if(!["admin","logistic","chief_logistic"].includes(employee.role))throw Error("Комментарий доступен только логисту");
@@ -376,7 +375,7 @@ async function handlePOST(request:Request){
    if(quote.params.delivery==='cdek_pickup'&&!quote.deliveryPoint?.code)throw Error('Выберите ПВЗ и рассчитайте доставку повторно');
    assertRoutingSlot(await orderRouting(o),quote.params.slot);
    const tariff=quote.tariffs.find((t:any)=>t.code===p.code);if(!tariff)throw new Error("Тариф не найден в расчёте СДЭК");
-   next.delivery=quote.params.delivery;next.cdekTariff={...tariff,deliveryPoint:quote.deliveryPoint,needsConfirmation:["confirm","extra","check"].includes(o.status),account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
+   next.delivery=quote.params.delivery;next.cdekTariff={...tariff,deliveryPoint:quote.deliveryPoint,needsConfirmation:false,account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
    }
   }else if(p.action==="updateDelivery"){
    if(!employee||!canManageDelivery(employee.role,o.status))throw new Error("Способ доставки выбирает логист до отправки заказа");
@@ -399,7 +398,6 @@ async function handlePOST(request:Request){
     next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o),phase:"pending",operatorBudgetMs:o.courierRecall?.operatorBudgetMs};
    }
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
-   if(["confirm","extra"].includes(o.status)&&next.cdekTariff)next.cdekTariff={...next.cdekTariff,needsConfirmation:true};
    delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
    if(to==='shipping'&&o.delivery==='moscow_courier'){next.status='packing';delete next.shippedAt;delete next.finalHandoffAt;delete next.reworkDeadline;}
    if(courierRecalledAtWarehouse(o)){
