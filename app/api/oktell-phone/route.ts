@@ -29,7 +29,7 @@ export async function POST(req:Request){
    if((mode==='client'&&!b.clientId)||(mode==='order'&&!b.orderId)||(mode==='incoming'&&!b.incomingId))throw Object.assign(Error('Выберите клиента, заказ или обращение'),{status:400});
    let number:string,clientId:string|null=null;
    try{
-    if(mode==='incoming')number=await incomingCallTarget(db(),a,b.incomingId!);
+    if(mode==='incoming'){number=await incomingCallTarget(db(),a,b.incomingId!);clientId=(await db().prepare('SELECT client_id FROM incoming_calls WHERE id=?').bind(b.incomingId).first<{client_id:string|null}>())?.client_id||null;}
     else{const result=await clientPhones(a,mode==='order'?{mode,orderId:b.orderId}:{mode,clientId:b.clientId});clientId=result.clientId;const selected=b.phoneKey?result.phones.find(p=>p.key===b.phoneKey):result.phones[0];if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');number=selected.number;}
    }catch(e){throw Object.assign(e instanceof Error?e:Error('Нет доступа к номеру клиента'),{status:403});}
    await initPhone(db());const callId=crypto.randomUUID().replaceAll('-','');
