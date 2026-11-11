@@ -17,12 +17,12 @@ try{
  for(const sql of authSchema)db.exec(sql);
  const password='synthetic-password-123',hash=await hashPassword(password);
  for(const [id,role,department] of [['admin','admin',''],['one','operator','1'],['two','operator','2'],['head','department_head','1']]){
-  db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify({id,role,department,login:id,name:'Test '+id,version:1}));
+  db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify({id,role,department,login:id,name:'Test '+id,alias:'',skLogin:'',salary:0,bonus:1,version:1}));
   db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
  }
  for(const id of ['one','two']){
-  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run('c-'+id,'+7999000000'+(id==='one'?1:2),JSON.stringify({id:'c-'+id,name:'Test client',phone:'+7999000000'+(id==='one'?1:2),owner:id}));
-  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run('o-'+id,'c-'+id,JSON.stringify({id:'o-'+id,clientId:'c-'+id,manager:id,status:'draft',version:1}));
+  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run('c-'+id,'+7999000000'+(id==='one'?1:2),JSON.stringify({id:'c-'+id,name:'Test client',phone:'+7999000000'+(id==='one'?1:2),owner:id,city:'Москва',address:'Москва',source:'Test',sheet:'К',baseType:'M',createdAt:new Date().toISOString(),assignmentStartedAt:new Date().toISOString(),assignedUntil:'',version:1}));
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run('o-'+id,'c-'+id,JSON.stringify({id:'o-'+id,clientId:'c-'+id,manager:id,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),version:1}));
  }
  const config={project:'synthetic',apiKey:'secret-never-exposed',sender:'TEST',templates:[],revision:'rev-1'};
  db.prepare('INSERT INTO settings VALUES(?,?)').run('mainsms',JSON.stringify(config));
