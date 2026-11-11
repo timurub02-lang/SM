@@ -789,3 +789,27 @@ body:has(.courier-design-aurora){background:#191a1e}
 
 .order-detail-tabs:has(.courier-cheatsheet){flex-direction:row;align-items:center;flex-wrap:wrap;gap:12px}
 .courier-cheatsheet{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;flex-shrink:0}
+
+/* Compact statistics keep the full operator list in two reading columns. */
+.operator-stats-dialog{width:98vw!important;max-width:1800px!important;max-height:97dvh;padding:16px!important;gap:10px;overflow-y:auto}
+.operator-stats-dialog .stack{gap:10px}
+.operator-stats-dialog .stats-period{padding:8px 12px;gap:12px;border-radius:10px}
+.operator-stats-dialog .stats-period label{display:flex;align-items:center;gap:8px}
+.operator-stats-dialog .stats-period input{min-height:30px;padding:4px 8px;font-size:12px}
+.operator-stats-dialog .stats-period .secondary{min-height:30px;padding:4px 12px}
+.operator-stats-dialog .stats-table-wrap{max-height:none;overflow:visible;border-radius:10px}
+.stats-tables{display:grid;gap:12px;align-items:start}
+.stats-tables-pair{grid-template-columns:repeat(2,minmax(0,1fr))}
+.operator-stats-dialog .stats-table{min-width:0;font-size:11px}
+.operator-stats-dialog .stats-table th,.operator-stats-dialog .stats-table td{padding:2px 4px;height:23px;line-height:1.25}
+.operator-stats-dialog .stats-table th:first-child,.operator-stats-dialog .stats-table td:first-child{padding-left:8px}
+.operator-stats-dialog .stats-table td:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.operator-stats-dialog .stats-table thead th{position:static;font-size:11px;height:34px}
+.operator-stats-dialog .stats-metric{min-height:19px;min-width:0;max-width:100%;padding:1px 3px;border-radius:4px;font-size:inherit}
+.stats-sort{display:inline-flex;align-items:center;gap:3px;color:inherit;font:inherit;font-weight:600;background:none;border:0;padding:2px 0;cursor:pointer;text-align:inherit}
+.stats-sort:focus-visible{outline:2px solid #147aff;outline-offset:2px}
+.stats-sort:hover{color:#147aff}
+.stats-totals{margin-top:10px}
+.operator-stats-dialog .stack>p.muted{font-size:11px;line-height:1.4;margin:0}
+@media(max-width:1400px){.stats-tables-pair{grid-template-columns:1fr}.operator-stats-dialog .stats-table{font-size:12px}}
+@media(max-width:700px){.operator-stats-dialog .stats-table-wrap{overflow-x:auto}.operator-stats-dialog .stats-table{min-width:650px}.operator-stats-dialog .stats-period label{display:grid}}
