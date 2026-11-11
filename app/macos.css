@@ -775,3 +775,14 @@ body:has(.courier-design-aurora){background:#191a1e}
 .base-settings-dialog .base-auto-toggle{display:flex;align-items:center;gap:10px;grid-column:1/-1;font-size:14px}.base-settings-dialog .base-auto-toggle input{width:18px;height:18px;accent-color:#4388ed}
 .base-settings-dialog .field small{font-size:12px;line-height:1.5;color:#718198}.base-settings-footer{position:sticky;bottom:-24px;display:flex;align-items:center;gap:14px;padding:14px 0;background:#f5f7fc;border-top:1px solid #dce5f0;z-index:1}.base-settings-footer span{font-size:12px;color:#718198}
 @media(max-width:600px){.base-settings-dialog .action-buttons{flex-wrap:wrap}.base-settings-dialog summary span{display:block;margin:5px 0 0 16px}.base-settings-footer{flex-wrap:wrap}}
+
+/* Keep the basket visible alongside each order in the client card. */
+.client-order-mini { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto 16px; }
+.client-order-mini>div,.client-order-products { min-width:0; overflow-wrap:anywhere; }
+.client-order-products { font-size:13px; line-height:1.6; }
+@media(max-width:600px) {
+  .client-order-mini { grid-template-columns:minmax(0,1fr) auto 16px; }
+  .client-order-products { grid-column:1/-1; grid-row:2; }
+  .client-order-mini>strong { grid-column:2; grid-row:1; }
+  .client-order-mini>svg { grid-column:3; grid-row:1; }
+}
