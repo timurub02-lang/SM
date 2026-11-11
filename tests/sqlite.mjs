@@ -13,7 +13,10 @@ try {
  assert.equal((await d.prepare('SELECT * FROM items').all()).results.length,2);
  assert.equal((await d.prepare('UPDATE items SET value=? WHERE id=?').bind('updated',1).run()).meta.changes,1);
  assert.equal(await d.prepare('SELECT * FROM items WHERE id=3').first(),null);
- console.log('SQLite: reads, writes and transaction rollback passed');
+ let served=false;const pending=setImmediate(()=>{served=true;});
+ try {for(let i=0;i<50;i++)await d.prepare('SELECT 1').first();assert.equal(served,true,'ordinary query chains must yield to pending phone/HTTP work');}
+ finally {clearImmediate(pending);}
+ console.log('SQLite: reads, writes, transaction rollback and request fairness passed');
 } finally { d.close(); }
 
 // A background writer must not freeze timers, reads or phone authorization.
