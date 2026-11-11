@@ -400,7 +400,7 @@ button.waybill-received {background:#e4e7ec;color:#687385;border:1px solid #d2d7
 .stats-table th,.stats-table td{padding:14px 10px;border-bottom:1px solid #e8edf4;text-align:center;vertical-align:middle}
 .stats-table thead th{position:sticky;top:0;z-index:1;background:#edf2f8;font-size:12px;font-weight:600;color:#64748b;line-height:1.5}
 .stats-table th:first-child,.stats-table td:first-child{text-align:left;padding-left:18px;overflow-wrap:anywhere;font-weight:500}
-.stats-table th:nth-child(3),.stats-table td:nth-child(3),.stats-table th:nth-child(4),.stats-table td:nth-child(4){text-align:right;padding-right:16px}
+.stats-table th:nth-child(4),.stats-table td:nth-child(4),.stats-table th:nth-child(5),.stats-table td:nth-child(5){text-align:right;padding-right:16px}
 .stats-table tbody tr:hover{background:#f2f7ff}.stats-table td:not(:first-child){white-space:nowrap}
 .stats-table tfoot th,.stats-table tfoot td{position:sticky;bottom:0;background:#eaf2ff;border-top:1px solid #ccdff8;border-bottom:0;font-weight:700}
 .stats-zero{color:#9aa7b9}.stats-metric{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:30px;min-height:30px;padding:4px 7px;border-radius:8px;color:#146bd5;background:#e7f1ff;font-weight:600;cursor:pointer}
@@ -797,15 +797,25 @@ body:has(.courier-design-aurora){background:#191a1e}
 .operator-stats-dialog .stats-period label{display:flex;align-items:center;gap:8px}
 .operator-stats-dialog .stats-period input{min-height:30px;padding:4px 8px;font-size:12px}
 .operator-stats-dialog .stats-period .secondary{min-height:30px;padding:4px 12px}
-.operator-stats-dialog .stats-table-wrap{max-height:none;overflow:visible;border-radius:10px}
-.operator-stats-dialog .stats-table{min-width:0;font-size:12px}
-.operator-stats-dialog .stats-table th,.operator-stats-dialog .stats-table td{padding:2px 4px;height:23px;line-height:1.25}
+.operator-stats-dialog .stats-table-wrap{max-height:calc(100dvh - 240px);overflow:auto;border-radius:10px}
+.operator-stats-dialog .stats-table{min-width:1050px;font-size:14px}
+.operator-stats-dialog .stats-table th,.operator-stats-dialog .stats-table td{padding:7px 10px;height:38px;line-height:1.4}
 .operator-stats-dialog .stats-table th:first-child,.operator-stats-dialog .stats-table td:first-child{padding-left:8px}
 .operator-stats-dialog .stats-table td:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.operator-stats-dialog .stats-table thead th{position:static;font-size:11px;height:34px}
-.operator-stats-dialog .stats-metric{min-height:19px;min-width:0;max-width:100%;padding:1px 3px;border-radius:4px;font-size:inherit}
+.operator-stats-dialog .stats-table thead th{position:sticky;top:0;font-size:13px;height:46px}
+.operator-stats-dialog .stats-metric{min-height:26px;min-width:36px;max-width:100%;width:auto;padding:3px 8px;border-radius:6px;font-size:inherit}
 .stats-sort{display:inline-flex;align-items:center;gap:3px;color:inherit;font:inherit;font-weight:600;background:none;border:0;padding:2px 0;cursor:pointer;text-align:inherit}
 .stats-sort:focus-visible{outline:2px solid #147aff;outline-offset:2px}
 .stats-sort:hover{color:#147aff}
 .operator-stats-dialog .stack>p.muted{font-size:11px;line-height:1.4;margin:0}
 @media(max-width:700px){.operator-stats-dialog .stats-table-wrap{overflow-x:auto}.operator-stats-dialog .stats-table{min-width:650px}.operator-stats-dialog .stats-period label{display:grid}}
+
+.stats-departments{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:auto}
+.stats-departments button[aria-pressed=true]{background:#dbeafe;color:#174e98;border-color:#8cb9f4}
+.stats-all-switch{margin-left:auto;white-space:nowrap}
+.stats-table tbody tr:nth-child(even){background:rgba(120,145,180,.06)}
+.stats-table td+td,.stats-table th+th{border-left:1px solid rgba(120,145,180,.12)}
+.stats-value{font-weight:600;font-variant-numeric:tabular-nums}
+.dark .stats-departments button[aria-pressed=true]{background:#304b71;color:#e5efff;border-color:#6993ca}
+
+.client-card .retention-hint{flex-basis:100%;font-size:12px;line-height:1.45;text-align:left}

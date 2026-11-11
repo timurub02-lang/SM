@@ -86,7 +86,7 @@ class Deployment(unittest.TestCase):
                 info=path.stat()
                 with patch.object(deploy.os,'fstat',return_value=type('Info',(),{'st_mode':info.st_mode,'st_uid':0})()):
                     self.assertEqual(deploy.github_token(),'synthetic_token_1234567890')
-                for mode,uid in [(0o100644,0),(0o100600,1000),(0o010600,0)]:
+                for mode,uid in [(0o100644,0),(0o100700,0),(0o104600,0),(0o100600,1000),(0o010600,0)]:
                     with patch.object(deploy.os,'fstat',return_value=type('Info',(),{'st_mode':mode,'st_uid':uid})()):
                         with self.assertRaisesRegex(RuntimeError,'Cannot load GitHub credential'):deploy.github_token()
                 path.unlink()
@@ -94,6 +94,9 @@ class Deployment(unittest.TestCase):
                 path.write_text('synthetic_token_1234567890');path.chmod(0o600)
                 link=pathlib.Path(directory)/'link';link.symlink_to(path)
                 with patch.dict(deploy.os.environ,{'SM_CRM_GITHUB_TOKEN_FILE':str(link)}):
+                    with self.assertRaisesRegex(RuntimeError,'Cannot load GitHub credential'):deploy.github_token()
+                for value in ['', 'short', 'synthetic_token_1234567890\nsecond_line', 'a'*4097]:
+                    path.write_text(value)
                     with self.assertRaisesRegex(RuntimeError,'Cannot load GitHub credential'):deploy.github_token()
 
     def test_download_errors_hide_signed_urls_and_respect_size(self):

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {operatorStats,sortOperatorStats} from '../lib/operator-stats.ts';
+import {operatorStats,sortOperatorStats,operatorStatsSummary} from '../lib/operator-stats.ts';
 const employees=[{id:'a',login:'one',role:'operator',department:'1'},{id:'b',login:'two',role:'operator',department:'2'}];
 const order=(id,amount,fields={})=>({id,manager:'a',createdAt:'2026-11-10T21:30:00Z',status:'draft',items:[{name:'Item',quantity:1,price:amount}],...fields});
 const state={employees,events:[],orders:[
@@ -14,8 +14,14 @@ const state={employees,events:[],orders:[
 ]};
 // Duplicate state entry must never double-count a SK order.
 state.orders.push({...state.orders[0]});
+const allSummary=operatorStatsSummary(state,{role:'department_head',department:'1'},'2026-11-11','2026-11-11');
+assert.equal(allSummary.length,2);
+assert.ok(allSummary.every(row=>!('orderLists' in row)&&!('orders' in row)));
+assert.ok(!JSON.stringify(allSummary).includes('CRM-'));
+assert.throws(()=>operatorStatsSummary(state,employees[0],'',''));
 const [a,b]=operatorStats(state,{role:'admin'},'2026-11-11','2026-11-11');
 assert.equal(a.created,6);assert.equal(a.amount,21000);assert.equal(a.average,3500);
+assert.equal(a.inWork,1);assert.deepEqual(a.orderLists.inWork.map(o=>o.id),['SM-SK-1']);
 assert.equal(a.cancelled,1);assert.equal(a.confirmed,4);assert.equal(a.sent,3);
 assert.deepEqual(a.orderLists.sent.map(o=>o.id),['CRM-4','CRM-5','CRM-6']);
 assert.equal(b.created,1);assert.equal(b.amount,7000);
@@ -28,13 +34,15 @@ state.orders[3].status='rework';state.orders[3].cancelledAt='yes';
 const again=operatorStats(state,employees[0],'2026-11-11','2026-11-11')[0];
 assert.equal(again.sent,3);assert.equal(again.confirmed,4);assert.equal(again.cancelled,2);assert.equal(again.amount,21000);
 // A CDEK label or administrator review alone is neither confirmation nor shipment.
+state.orders=[order('returned-to-operator',10,{status:'rework'})];assert.equal(operatorStats(state,employees[0],'','')[0].inWork,1);
+state.orders[0].confirmedAt='yes';assert.equal(operatorStats(state,employees[0],'','')[0].inWork,0);
 state.orders=[order('label',10,{status:'extra',adminReviewedAt:'yes',cdekExported:true,cdekTransferredAt:'yes'})];
 const label=operatorStats(state,employees[0],'','')[0];assert.equal(label.confirmed,0);assert.equal(label.sent,0);
 state.orders[0].cdekAcceptedAt='yes';assert.equal(operatorStats(state,employees[0],'','')[0].sent,1);
 console.log('Operator statistics: six columns, all-order amounts, lifecycle overlap, cohort dates, source deduplication and role scope passed');
 
-const sortable=[{login:'Б',created:2,average:10,amount:20,cancelled:0,confirmed:1,sent:1},{login:'А',created:10,average:2,amount:20,cancelled:3,confirmed:4,sent:2}];
-for(const key of ['login','created','average','amount','cancelled','confirmed','sent']){
+const sortable=[{login:'Б',inWork:2,created:2,average:10,amount:20,cancelled:0,confirmed:1,sent:1},{login:'А',inWork:1,created:10,average:2,amount:20,cancelled:3,confirmed:4,sent:2}];
+for(const key of ['login','created','inWork','average','amount','cancelled','confirmed','sent']){
  for(const ascending of [true,false]){
   const sorted=sortOperatorStats(sortable,key,ascending);
   const comparison=key==='login'?sorted[0].login.localeCompare(sorted[1].login,'ru'):sorted[0][key]-sorted[1][key];
@@ -44,3 +52,10 @@ for(const key of ['login','created','average','amount','cancelled','confirmed','
 assert.equal(sortable[0].login,'Б');
 assert.equal(sortOperatorStats(sortable,'amount',false)[0].login,'А');
 console.log('Every statistics column sorts in both directions without mutating rows');
+
+const {mayCallEndpoint}=await import('../lib/permissions.ts');
+const statsUrl=new URL('https://crm/api/operator-statistics');
+assert.equal(mayCallEndpoint({role:'department_head'},statsUrl,'GET',{}),true);
+assert.equal(mayCallEndpoint({role:'department_head'},statsUrl,'POST',{}),false);
+assert.equal(mayCallEndpoint({role:'operator'},statsUrl,'GET',{}),false);
+console.log('In-work, aggregate-only cross-department summaries and endpoint roles passed');

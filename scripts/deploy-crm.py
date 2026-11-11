@@ -15,7 +15,7 @@ def github_token():
         fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
         with os.fdopen(fd,'r',encoding='ascii') as source:
             info=os.fstat(source.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o077:
+            if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o600:
                 raise ValueError('Unsafe credential file')
             token=source.read(4097).strip()
             if not re.fullmatch(r'[A-Za-z0-9_]{20,4096}',token):raise ValueError('Invalid credential')
