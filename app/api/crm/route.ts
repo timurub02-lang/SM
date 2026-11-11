@@ -158,6 +158,25 @@ async function handlePOST(request:Request){
   ]);
   if(!result[0].meta.changes)throw Error('Клиент или обращение изменились. Обновите данные и повторите');
   message='Номер соединён с клиентом '+c.name;
+ }else if(p.action==="transferIncoming"){
+  if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Передача доступна руководителю и администратору');
+  const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
+  const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');
+  if(!target)throw Error('Выберите оператора');
+  const comment=z.string().trim().min(1,'Напишите комментарий оператору').max(1900).parse(p.comment);
+  const previous=row.handoff?JSON.parse(row.handoff):null;
+  if(row.assignee_id===target.id&&previous?.by===employee.id&&previous.comment===comment)message='Обращение уже передано этому оператору';
+  else{
+  const handoff=json({by:employee.id,name:employee.name,at:now,comment});
+  const event=ev(row.client_id||'','','Входящее обращение '+row.id+' передано оператору · '+target.name+' · '+comment);
+  const result=await d.batch([
+   d.prepare("UPDATE incoming_calls SET assignee_id=?,department_id=?,shared_queue=0,handoff=? WHERE id=? AND client_id IS ? AND assignee_id IS ? AND department_id=? AND COALESCE(shared_queue,0)=? AND handoff=? AND closed_at IS NULL AND spam=0")
+    .bind(target.id,target.department||'',handoff,row.id,row.client_id,row.assignee_id,row.department_id,row.shared_queue||0,row.handoff||''),
+   d.prepare('INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE changes()>0').bind(event.id,event.clientId,'',now,json(event))
+  ]);
+  if(!result[0].meta.changes)throw Error('Обращение изменилось. Обновите данные перед передачей');
+  message='Входящее обращение и комментарий переданы оператору';
+  }
  }else if(p.action==="assignIncoming"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Назначение доступно руководителю и администратору');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
@@ -193,14 +212,15 @@ async function handlePOST(request:Request){
   const incomingId=z.string().min(1).max(100).parse(p.incomingId);
   const reason=z.string().trim().min(1,'Укажите итог обращения').max(2000).parse(p.reason);
   const row=await incomingForAction(d,incomingId,employee,s.employees);
+  const delegated=employee.role==='operator'&&row.assignee_id===employee.id&&!!row.handoff;
   const order=p.action==='incomingResult'?s.orders.find(o=>o.id===p.id):undefined;
   if(p.action==='incomingResult'&&(!order||order.clientId!==row.client_id))throw Error('Выберите заказ этого клиента');
-  if(!order&&s.orders.some(o=>o.clientId===row.client_id&&activeIncomingOrder(o)))throw Error('Откройте действующий заказ и сохраните итог обращения в нём');
+  if(!order&&!delegated&&s.orders.some(o=>o.clientId===row.client_id&&activeIncomingOrder(o)))throw Error('Откройте действующий заказ и сохраните итог обращения в нём');
   const e=row.client_id?ev(row.client_id,order?.id||'','Входящее обращение · '+reason):undefined;
   if(e)e.id='INCOMING-'+incomingId;
   const client=s.clients.find(c=>c.id===row.client_id);
-  const workStatements=client?.owner&&!s.orders.some(o=>o.clientId===client.id&&activeIncomingOrder(o))?await incomingClientWorkStatements(d,client.id,client.owner,employee,incomingId,now,reason):[];
-  const results=await d.batch([incomingCloseStatement(d,incomingId,employee.id,now,reason,order?.id||null),...(e?[d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_by=? AND closed_at=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),incomingId,employee.id,now)]:[]),...workStatements]);
+  const workStatements=client?.owner&&(!delegated||client.owner===employee.id)&&!s.orders.some(o=>o.clientId===client.id&&activeIncomingOrder(o))?await incomingClientWorkStatements(d,client.id,client.owner,employee,incomingId,now,reason):[];
+  const results=await d.batch([incomingCloseStatement(d,incomingId,employee.id,now,reason,order?.id||null,undefined,delegated?row.handoff:undefined),...(e?[d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_by=? AND closed_at=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),incomingId,employee.id,now)]:[]),...workStatements]);
   if(!results[0].meta.changes)throw Error('Обращение уже обработано или появился действующий заказ. Обновите данные');
   message='Обращение закрыто';
  }else if(p.action==="createClient"){

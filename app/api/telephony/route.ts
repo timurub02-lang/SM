@@ -35,7 +35,10 @@ export const POST=authenticated(async(req:Request)=>{
    if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');
    destination=selected.number;
   }
-  if(p.mode==='incoming')destination=await incomingCallTarget(db(),actor,p.incomingId);
+  if(p.mode==='incoming'){
+   destination=await incomingCallTarget(db(),actor,p.incomingId);
+   clientId=(await db().prepare('SELECT client_id FROM incoming_calls WHERE id=?').bind(p.incomingId).first<{client_id:string|null}>())?.client_id||'';
+  }
   if(!destination)throw Error('У клиента не указан корректный российский номер телефона');
   await initPhone(db(),c.callerId);
   const call=await createPhoneCall(db(),{id:crypto.randomUUID().replaceAll('-',''),clientId:clientId||null,orderId:p.mode==='order'?p.orderId:null,actor,incomingId:p.mode==='incoming'?p.incomingId:undefined,echo:p.mode==='echo',destination,sipUser:account.username});
