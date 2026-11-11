@@ -1,6 +1,6 @@
 import {postalBarcode} from './postal-barcode.ts';
 import {jsPDF} from 'jspdf';
-import {postalMoneyPlaceholders,postalSenderSchema,type PostalFormData} from './postal-form.ts';
+import {postalAmountText,postalSenderSchema,type PostalFormData} from './postal-form.ts';
 
 export function postalFormPdf(data:PostalFormData,assets:{font:string;template:Uint8Array}){
  const sender=postalSenderSchema.parse(data.sender),recipient=postalSenderSchema.parse(data.recipient);
@@ -17,15 +17,16 @@ export function postalFormPdf(data:PostalFormData,assets:{font:string;template:U
   for(let i=0;i<bars.length;i++)if(bars[i]==='1')doc.rect(97+i*width,79,width,25,'F');
   doc.setFontSize(9);doc.text(data.trackingNumber,162,114,{align:'center'});
  }
- const fit=(value:string,x:number,y:number,width:number,lines:number,size=9,lineStep?:number)=>{
+ const fit=(value:string,x:number,y:number,width:number,lines:number,size=9,lineStep?:number,centered=false)=>{
   for(let fontSize=size;fontSize>=7;fontSize-=0.5){
    doc.setFontSize(fontSize);
    const wrapped=doc.splitTextToSize(value.replace(/\s+/g,' ').trim(),width) as string[];
    if(wrapped.length<=lines&&wrapped.every(line=>doc.getTextWidth(line)<=width+0.1)){
-    doc.text(wrapped,x,y,{lineHeightFactor:lineStep?lineStep/fontSize:1.15});return;
+    const step=lineStep||fontSize*1.15;
+    doc.text(wrapped,x,centered?y-(wrapped.length-1)*step/2:y,{lineHeightFactor:step/fontSize});return;
    }
   }
-  throw Error('ФИО или адрес слишком длинные для почтового бланка. Сократите их без потери важных данных и скачайте бланк снова.');
+  throw Error('Данные слишком длинные для почтового бланка. Проверьте ФИО, адрес и сумму заказа перед скачиванием.');
  };
  doc.setFontSize(13);doc.text('x',240.38,86.96); // Посылка
  doc.setFontSize(8.5);doc.text('x',337.32,91.84); // Наложенный платёж, как в образце
@@ -39,11 +40,11 @@ export function postalFormPdf(data:PostalFormData,assets:{font:string;template:U
   doc.setFontSize(9);
   [...party.postalCode].forEach((digit,i)=>doc.text(digit,x+i*10.77,y));
  }
- doc.setFontSize(9);
- doc.text(postalMoneyPlaceholders.declaredValue,350,168.23);
- doc.text(postalMoneyPlaceholders.cashOnDelivery,350,196.57);
+ const amount=postalAmountText(data.amount);
+ fit(amount,303.31,168.23,198,2,8.5,8.5,true);
+ fit(amount,303.31,196.57,198,2,8.5,8.5,true);
  doc.setFontSize(8);
- doc.text(`Заказ ${data.id} · Суммы уточняются`,87.87,387);
+ doc.text(`Заказ ${data.id}`,87.87,387);
  return doc;
 }
 
