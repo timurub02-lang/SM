@@ -26,12 +26,14 @@ assert.equal(paidOrder.premiumStage.status,'paid');
 
 const cancelled={status:'refused',manager:'original',cancelledAt:'2026-10-28T10:00:00Z',cancellationAuthor:{id:'original',name:'Operator'}};
 const saved=JSON.stringify(cancelled);
-for(const role of ['operator','department_head']){
+for(const role of ['admin','operator','department_head']){
  assert.equal(showOrderInList(cancelled,{owner:'original'},role),true);
  assert.equal(showOrderInList(cancelled,{owner:''},role),false);
  assert.equal(showOrderInList(cancelled,{owner:'other'},role),false);
 }
-assert.equal(showOrderInList(cancelled,{owner:''},'admin'),true);
+assert.equal(showOrderInList(cancelled,{owner:''},'logistic'),true);
+assert.equal(showOrderInList({...cancelled,status:'returned'},{owner:''},'admin'),true);
+assert.equal(showOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},'admin'),true);
 assert.equal(JSON.stringify(cancelled),saved);
 assert.equal(orderGroup(cancelled).id,'cancelled');
 
