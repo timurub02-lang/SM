@@ -66,6 +66,7 @@ jobs:
           node --experimental-strip-types tests/reminder-tasks.mjs
           node --experimental-strip-types tests/mainsms-http.mjs
           node --experimental-strip-types tests/auth-http.mjs
+          node --experimental-strip-types tests/operator-statistics-http.mjs
           node --experimental-strip-types tests/telephony-http.mjs
           node --experimental-strip-types tests/oktell-browser-http.mjs
           node --experimental-strip-types tests/operator-state-http.mjs
