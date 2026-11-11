@@ -24,7 +24,7 @@ try{
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:35}));
  const now=new Date().toISOString();
  const client={id:'client',name:'Тестовый Получатель',phone:'+79990000001',address:'Старый адрес',source:'Synthetic',base:'M',sheet:'К',city:'Москва',owner:'operator',createdAt:now,version:1};
- const order={id:'order',clientId:client.id,manager:'operator',logistic:'logistic',delivery:'russian_post',status:'packing',address:'101000, г. Москва, ул. Тестовая, дом 1',addressParts:{postalCode:'101000'},items:[],comment:'',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:now,updatedAt:now,version:1};
+ const order={id:'order',clientId:client.id,manager:'operator',logistic:'logistic',delivery:'russian_post',status:'packing',address:'101000, г. Москва, ул. Тестовая, дом 1',addressParts:{postalCode:'101000'},items:[{name:'ИТОГО',quantity:1,price:8900},{name:'Товар',quantity:2,price:0}],comment:'',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:now,updatedAt:now,version:1};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(client.id,client.phone,JSON.stringify(client));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(order.id,client.id,JSON.stringify(order));
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
@@ -49,7 +49,7 @@ try{
  const original=db.prepare('SELECT data FROM orders WHERE id=?').get(order.id).data;
  for(const role of ['admin','logistic','chief_logistic']){
   const r=await call('/api/postal-form?orderId=order&version=1',role);assert.equal(r.status,200,JSON.stringify(r.data));
-  assert.deepEqual(r.data.sender,sender);assert.equal(r.data.recipient.postalCode,'101000');assert(!r.data.recipient.address.includes('Старый'));
+  assert.equal(r.data.amount,8900);assert.deepEqual(r.data.sender,sender);assert.equal(r.data.recipient.postalCode,'101000');assert(!r.data.recipient.address.includes('Старый'));
  }
  assert.equal((await call('/api/postal-form?actorId=admin&orderId=order&version=1','logistic')).status,403);
  assert.equal((await call('/api/postal-form?orderId=order&version=2','logistic')).status,409);
