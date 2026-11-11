@@ -1,10 +1,11 @@
+import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {type Order,type Employee} from './crm.ts';
 import {isCdekOrder,premiumRemittance} from './cdek-remittance.ts';
 import {seesOrder} from './permissions.ts';
 
 export function premiumOrders(orders:Order[],employee:Employee,staff:Employee[]):{order:Order;date:string;amount:number;registry:string;periodId?:string}[]{
  if(!['admin','operator','department_head'].includes(employee.role))return [];
- return orders.filter(o=>!o.testOnly&&o.status==='redeemed'&&seesOrder(employee,o,staff)).flatMap(order=>{
+ return orders.filter(o=>!o.testOnly&&!legacyPremiumPaid(o)&&o.status==='redeemed'&&seesOrder(employee,o,staff)).flatMap(order=>{
   const receipt=premiumRemittance(order);
   if(order.importedPayment){const r=order.importedPayment;return [{order,date:receipt?receipt.paymentDate:'',amount:receipt?receipt.amountCents/100:r.amount,registry:receipt?receipt.registry:'',periodId:r.periodId}];}
   if(isCdekOrder(order)){

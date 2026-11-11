@@ -63,6 +63,11 @@ try{
   const o={id:'LV-'+key,clientId:client.id,status:'redeemed',manager:'original-operator',delivery:'cdek_pickup',items:[],createdAt:at,redeemedAt:at,cdekTrackingNumber:tracking,legacyLv:{orderId:key,track:tracking,originalOperatorLogin:'original.login'}};
   await db.prepare('INSERT INTO cdek_history_recovery(external_id,client_id,tracking,data) VALUES(?,?,?,?)').bind(key,client.id,tracking,JSON.stringify(o)).run();return client;
  }
+ await historyFixture('90010');
+ await db.prepare("UPDATE cdek_history_recovery SET data=json_set(data,'$.legacyLv.status','Выплачен') WHERE external_id='90010'").run();
+ assert.equal((await applyCdekRegistries(db,1,answer(registry('HP',90,'2026-10-28','90010')),at)).archived,1);
+ assert.equal(await db.prepare("SELECT id FROM orders WHERE id='LV-90010'").first(),null);
+ assert.equal(JSON.parse((await db.prepare("SELECT data FROM clients WHERE id='history-90010'").first()).data).legacyOrderHistory.length,1);
  const hc=await historyFixture('90001');
  assert.equal((await applyCdekRegistries(db,1,answer(registry('H1',90,'2026-10-28','90001')),at,true)).recovered,1);
  assert.equal(await db.prepare("SELECT id FROM orders WHERE id='LV-90001'").first(),null);

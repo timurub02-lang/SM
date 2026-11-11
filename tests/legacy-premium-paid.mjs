@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {premiumOrders} from '../lib/premium-orders.ts';
+import {orderDisplayGroup,showOrderInList} from '../lib/order-premium-stage.ts';
+import {periodOrders,applyPremiumStages} from '../lib/premium-ledger.ts';
+const admin={id:'admin',role:'admin'},paid={id:'LV-1',manager:'op',status:'redeemed',legacyLv:{orderId:'1',status:'Выплачен'},delivery:'moscow_courier',paymentReceivedAt:'2026-10-28T12:00:00Z',paymentReceivedAmount:1000};
+const ledger={activePeriod:'2026-11-1',periods:{'2026-11-1':{status:'open',signatures:{}}}};
+assert.equal(orderDisplayGroup(applyPremiumStages(ledger,[paid],[])[0]).id,'premium_paid');
+assert.deepEqual(premiumOrders([paid],admin,[]),[]);assert.deepEqual(periodOrders(ledger,'2026-11-1',[paid],[]),[]);
+assert.equal(showOrderInList(paid,{owner:'other'},'operator'),false);assert.equal(showOrderInList(paid,{owner:'op'},'operator'),true);
+const passive={...paid,legacyLv:{...paid.legacyLv,status:'Пассивные'}};
+assert.equal(orderDisplayGroup(passive).id,'paid');assert.equal(premiumOrders([passive],admin,[]).length,1);
+assert.equal(orderDisplayGroup({...passive,priorPremiumPaid:{at:'now',source:'Administrator confirmation'}}).id,'premium_paid');
+const approved={...paid,importedPayment:{periodId:'2026-11-1',amount:1000,source:'approved.xlsx'}};
+assert.equal(premiumOrders([approved],admin,[]).length,1);
+assert.equal(orderDisplayGroup({...approved,premiumStage:{status:'accrued',periodId:'2026-11-1'}}).id,'accrued');
+console.log('Legacy paid: paid display, no repeat accrual, ownership visibility, passive and explicit import preserved');
