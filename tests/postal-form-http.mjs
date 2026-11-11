@@ -23,8 +23,8 @@ try{
  }
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:35}));
  const now=new Date().toISOString();
- const client={id:'client',name:'Тестовый Получатель',phone:'+79990000001',address:'Старый адрес',owner:'operator',createdAt:now,version:1};
- const order={id:'order',clientId:client.id,manager:'operator',logistic:'logistic',delivery:'russian_post',status:'packing',address:'101000, г. Москва, ул. Тестовая, дом 1',addressParts:{postalCode:'101000'},items:[],createdAt:now,updatedAt:now,version:1};
+ const client={id:'client',name:'Тестовый Получатель',phone:'+79990000001',address:'Старый адрес',source:'Synthetic',base:'M',sheet:'К',city:'Москва',owner:'operator',createdAt:now,version:1};
+ const order={id:'order',clientId:client.id,manager:'operator',logistic:'logistic',delivery:'russian_post',status:'packing',address:'101000, г. Москва, ул. Тестовая, дом 1',addressParts:{postalCode:'101000'},items:[],comment:'',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:now,updatedAt:now,version:1};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(client.id,client.phone,JSON.stringify(client));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(order.id,client.id,JSON.stringify(order));
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
@@ -54,8 +54,31 @@ try{
  assert.equal((await call('/api/postal-form?actorId=admin&orderId=order&version=1','logistic')).status,403);
  assert.equal((await call('/api/postal-form?orderId=order&version=2','logistic')).status,409);
  assert.equal(db.prepare('SELECT data FROM orders WHERE id=?').get(order.id).data,original);
- db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...order,delivery:'moscow_courier'}),order.id);
- assert.equal((await call('/api/postal-form?orderId=order&version=1','logistic')).status,400);
+ await call('/api/crm','admin');
+ const clientBeforeTracking=db.prepare('SELECT data FROM clients WHERE id=?').get(client.id).data;
+ const currentOrder=()=>{const r=db.prepare('SELECT data,version FROM orders WHERE id=?').get(order.id);return {...JSON.parse(r.data),version:r.version};};
+ async function saveTrack(role,trackingNumber,version=currentOrder().version){return call('/api/crm',role,{action:'savePostalTracking',id:order.id,version,trackingNumber});}
+ for(const role of ['operator','department_head','courier']){const denied=await saveTrack(role,'12345678901234');assert([400,403].includes(denied.status));assert.match(denied.data.error,/прав|доступ/);}
+ for(const value of ['<script>','трек','A'.repeat(41)])assert.equal((await saveTrack('logistic',value)).status,400);
+ const trackingSaved=await saveTrack('logistic',' 1234 5678 9012 34 ');
+ assert.equal(trackingSaved.status,200,JSON.stringify(trackingSaved.data));
+ assert.equal(currentOrder().postalTrackingNumber,'12345678901234');
+ const withTrack=await call('/api/postal-form?orderId=order&version='+currentOrder().version,'logistic');
+ assert.equal(withTrack.data.trackingNumber,'12345678901234');assert.deepEqual(withTrack.data.sender,sender);
+ assert.equal((await saveTrack('logistic','99999999999999',1)).status,400,'Stale edits must fail');
+ assert.equal(currentOrder().postalTrackingNumber,'12345678901234');
+ assert.equal((await saveTrack('chief_logistic','ra123456789ru')).status,200);
+ assert.equal(currentOrder().postalTrackingNumber,'RA123456789RU');
+ assert.equal((await saveTrack('admin','')).status,200);
+ assert.equal(currentOrder().postalTrackingNumber,'');
+ const afterTracking=currentOrder();assert.equal(afterTracking.status,order.status);assert.deepEqual(afterTracking.items,order.items);
+ assert.equal(db.prepare('SELECT data FROM clients WHERE id=?').get(client.id).data,clientBeforeTracking);
+ const trackingEvents=db.prepare("SELECT data FROM events WHERE order_id=?").all(order.id).map(r=>JSON.parse(r.data));
+ assert(trackingEvents.some(e=>e.text.includes('12345678901234')));
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...afterTracking,delivery:'moscow_courier'}),order.id);
+ assert.equal((await saveTrack('admin','12345678901234')).status,400,'Only postal orders accept postal tracking');
+
+ assert.equal((await call('/api/postal-form?orderId=order&version='+currentOrder().version,'logistic')).status,400);
  console.log('Postal HTTP: auth/roles, sender validation, revision conflicts, saved order data, no status or financial writes passed');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
