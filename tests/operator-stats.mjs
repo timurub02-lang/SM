@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {operatorStats} from '../lib/operator-stats.ts';
+import {operatorStats,sortOperatorStats} from '../lib/operator-stats.ts';
 const employees=[{id:'a',login:'one',role:'operator',department:'1'},{id:'b',login:'two',role:'operator',department:'2'}];
 const order=(id,amount,fields={})=>({id,manager:'a',createdAt:'2026-11-10T21:30:00Z',status:'draft',items:[{name:'Item',quantity:1,price:amount}],...fields});
 const state={employees,events:[],orders:[
@@ -32,3 +32,15 @@ state.orders=[order('label',10,{status:'extra',adminReviewedAt:'yes',cdekExporte
 const label=operatorStats(state,employees[0],'','')[0];assert.equal(label.confirmed,0);assert.equal(label.sent,0);
 state.orders[0].cdekAcceptedAt='yes';assert.equal(operatorStats(state,employees[0],'','')[0].sent,1);
 console.log('Operator statistics: six columns, all-order amounts, lifecycle overlap, cohort dates, source deduplication and role scope passed');
+
+const sortable=[{login:'Б',created:2,average:10,amount:20,cancelled:0,confirmed:1,sent:1},{login:'А',created:10,average:2,amount:20,cancelled:3,confirmed:4,sent:2}];
+for(const key of ['login','created','average','amount','cancelled','confirmed','sent']){
+ for(const ascending of [true,false]){
+  const sorted=sortOperatorStats(sortable,key,ascending);
+  const comparison=key==='login'?sorted[0].login.localeCompare(sorted[1].login,'ru'):sorted[0][key]-sorted[1][key];
+  assert.ok(ascending?comparison<=0:comparison>=0);
+ }
+}
+assert.equal(sortable[0].login,'Б');
+assert.equal(sortOperatorStats(sortable,'amount',false)[0].login,'А');
+console.log('Every statistics column sorts in both directions without mutating rows');
