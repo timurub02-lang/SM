@@ -817,3 +817,5 @@ body:has(.courier-design-aurora){background:#191a1e}
 .stats-table td+td,.stats-table th+th{border-left:1px solid rgba(120,145,180,.12)}
 .stats-value{font-weight:600;font-variant-numeric:tabular-nums}
 .dark .stats-departments button[aria-pressed=true]{background:#304b71;color:#e5efff;border-color:#6993ca}
+
+.client-card .retention-hint{flex-basis:100%;font-size:12px;line-height:1.45;text-align:left}
