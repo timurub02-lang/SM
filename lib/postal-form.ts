@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {orderTracking} from './order-tracking.ts';
 import type {Client,Order} from './crm.ts';
 
 const text=z.string().trim().min(1,'Заполните поле');
@@ -10,7 +11,7 @@ export const postalSenderSchema=z.object({
 export type PostalParty=z.infer<typeof postalSenderSchema>;
 export const emptyPostalSender:PostalParty={name:'',address:'',postalCode:'',phone:''};
 export const postalMoneyPlaceholders={declaredValue:'Уточнить_1',cashOnDelivery:'Уточнить_2'} as const;
-export type PostalFormData={id:string;sender:PostalParty;recipient:PostalParty};
+export type PostalFormData={id:string;trackingNumber?:string;sender:PostalParty;recipient:PostalParty};
 
 export function postalFormData(order:Order,client:Client,sender:PostalParty):PostalFormData{
  if(order.delivery!=='russian_post')throw Error('Почтовый бланк доступен только для Почты России');
@@ -22,5 +23,5 @@ export function postalFormData(order:Order,client:Client,sender:PostalParty):Pos
  if(!/^\d{6}$/.test(postalCode))throw Error('В адресе заказа нужен почтовый индекс из 6 цифр. Заполните его во вкладке «Адрес и товары» и сохраните заказ.');
  const recipient={name:client.name.trim(),phone:client.phone.trim(),postalCode,address:address.replace(new RegExp(`^${postalCode}[,\\s]+`),'')};
  if(!postalSenderSchema.safeParse(recipient).success)throw Error('Проверьте ФИО, телефон и адрес получателя в заказе и карточке клиента');
- return {id:order.id,sender:postalSenderSchema.parse(sender),recipient};
+ return {id:order.id,trackingNumber:orderTracking(order)?.number,sender:postalSenderSchema.parse(sender),recipient};
 }

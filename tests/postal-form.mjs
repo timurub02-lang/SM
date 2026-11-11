@@ -36,3 +36,14 @@ assert.equal(long.getNumberOfPages(),1);
 writeFileSync('work/postal-form/long-address.pdf',Buffer.from(long.output('arraybuffer')));
 assert.throws(()=>postalFormPdf({...data,recipient:{...data.recipient,address:'Очень длинный адрес '.repeat(24)}},assets),/слишком длинные/);
 console.log('Postal form: current address/index, no mutations, role access, placeholders, PDF and overflow checks passed');
+
+const tracked=postalFormData({...order,postalTrackingNumber:'12345678901234'},client,sender);
+assert.equal(tracked.trackingNumber,'12345678901234');
+assert.deepEqual(tracked.sender,data.sender);
+const trackedDoc=postalFormPdf(tracked,assets);
+assert.equal(trackedDoc.getNumberOfPages(),1);
+writeFileSync('work/postal-form/with-tracking.pdf',Buffer.from(trackedDoc.output('arraybuffer')));
+const {postalBarcode}=await import('../lib/postal-barcode.ts');
+for(const track of ['12345678901234','RA123456789RU'])assert.match(postalBarcode(track),/^[01]+$/);
+assert.notEqual(postalBarcode('12345678901234'),postalBarcode('12345678901235'));
+console.log('Shared sender, saved tracking and barcode generation passed');

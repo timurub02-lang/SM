@@ -1,3 +1,4 @@
+import {postalBarcode} from './postal-barcode.ts';
 import {jsPDF} from 'jspdf';
 import {postalMoneyPlaceholders,postalSenderSchema,type PostalFormData} from './postal-form.ts';
 
@@ -10,6 +11,12 @@ export function postalFormPdf(data:PostalFormData,assets:{font:string;template:U
  doc.setProperties({title:`Почтовый бланк ${data.id}`});
  // Original blank artwork extracted from the supplied form; coordinates retain its print size.
  doc.addImage(assets.template,'JPEG',87.87,70.86,419.53,297.64);
+ if(data.trackingNumber){
+  const bars=postalBarcode(data.trackingNumber),width=130/bars.length;
+  doc.setFillColor('#000000');
+  for(let i=0;i<bars.length;i++)if(bars[i]==='1')doc.rect(97+i*width,79,width,25,'F');
+  doc.setFontSize(9);doc.text(data.trackingNumber,162,114,{align:'center'});
+ }
  const fit=(value:string,x:number,y:number,width:number,lines:number,size=9,lineStep?:number)=>{
   for(let fontSize=size;fontSize>=7;fontSize-=0.5){
    doc.setFontSize(fontSize);

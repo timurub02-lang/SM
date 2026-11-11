@@ -47,6 +47,6 @@ export function shipmentDeletionResult(data:any,deletion:ShipmentDeletion,direct
 }
 export function returnedFromCdek(order:Order,at:string):Order{
  const next={...order,status:'packing' as const,contact:'none' as const,due:'',reason:'',cdekReturnedAt:at,updatedAt:at};
- delete next.cdekStatus;delete next.cdekTransferredAt;delete next.cdekExported;delete next.cdekWaybillReceived;delete next.cdekDeleting;delete next.shippedAt;delete next.contactAuthor;
+ delete next.cdekAcceptedAt;delete next.cdekStatus;delete next.cdekTransferredAt;delete next.cdekExported;delete next.cdekWaybillReceived;delete next.cdekDeleting;delete next.shippedAt;delete next.contactAuthor;
  return next;
 }

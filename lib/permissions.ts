@@ -51,6 +51,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
  if(p.action==='requestOrderCancellation')return allow(['operator','department_head'].includes(e.role)&&typeof p.incomingId==='string');
  if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
+ if(p.action==='savePostalTracking')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
  if(p.action==='updateLogisticComment')return allow(isLogistic(e.role));
  if(p.action==='updateOrder'&&p.operatorFollowup===true)return allow(canOperatorAmendMissed(e,order,s.employees));
  if(p.action==='clientWaiting')return allow(canOperatorReachClient(e,order,s.employees));
