@@ -143,9 +143,9 @@ async function handlePOST(req:Request){
    return reply(await applyCdekShipment(d,c.order,shipment,c.record!.data,data,uuid));
   }
   if(shipment.state!=='ready'||!shipment.uuid)throw Error('СДЭК ещё не подтвердил создание заказа. Обновите статус отправления');
-  if(!shipment.printId||Date.now()-Date.parse(shipment.printAt||'')>50*60000){
-   const data=await json(await api('/print/orders',{orders:[{order_uuid:shipment.uuid}],copy_count:2,type:'tpl_russia'}));
-   if(cdekErrors(data))throw Error(cdekErrors(data));shipment.printId=uuidSchema.parse(data.entity?.uuid);shipment.printAt=new Date().toISOString();await save(shipment,c.record!.data);
+  if(!shipment.printId||shipment.printCopyCount!==1||Date.now()-Date.parse(shipment.printAt||'')>50*60000){
+   const data=await json(await api('/print/orders',{orders:[{order_uuid:shipment.uuid}],copy_count:1,type:'tpl_russia'}));
+   if(cdekErrors(data))throw Error(cdekErrors(data));shipment.printId=uuidSchema.parse(data.entity?.uuid);shipment.printAt=new Date().toISOString();shipment.printCopyCount=1;await save(shipment,c.record!.data);
   }
   const printId=uuidSchema.parse(shipment.printId);const data=await json(await api(`/print/orders/${printId}`));
   const latest=cdekPrintStatus(data.entity?.statuses);

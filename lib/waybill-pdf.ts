@@ -13,15 +13,9 @@ export function waybillPdf(input:WaybillData|WaybillData[],fonts:{regular:string
   doc.addFont(`${style}.ttf`,'LiberationSans',style);
  }
  doc.setProperties({title:'Накладные на сборку'});
- const half=doc.internal.pageSize.getHeight()/2;
- for(let index=0;index<list.length;index+=2){
- if(index){doc.setPage(doc.getNumberOfPages());doc.addPage();}
- const firstPage=doc.getNumberOfPages();
- // Each order keeps its own half of the sheet, including continuation pages.
- for(const [slot,data] of list.slice(index,index+2).entries()){
- const offset=slot*half;
- doc.setPage(firstPage);
- const margin={left:10,right:10,top:offset+8,bottom:half-offset+8};
+ for(const [index,data] of list.entries()){
+ if(index)doc.addPage();
+ const margin={left:10,right:10,top:8,bottom:8};
  autoTable(doc,{
   startY:margin.top,margin,theme:'plain',
   styles:{font:'LiberationSans',fontSize:11,cellPadding:0.6,textColor:0,overflow:'linebreak'},
@@ -48,14 +42,6 @@ export function waybillPdf(input:WaybillData|WaybillData[],fonts:{regular:string
     {content:money(data.items.reduce((s,i)=>s+i.quantity*i.price,0)),styles:{fontStyle:'bold'}}]],
   rowPageBreak:'avoid',
  });
- }
- }
- for(let page=1;page<=doc.getNumberOfPages();page++){
-  doc.setPage(page);
-  doc.setDrawColor(150);
-  doc.setLineWidth(0.2);
-  doc.setLineDashPattern([2,2],0);
-  doc.line(10,half,200,half);
  }
  return doc;
 }

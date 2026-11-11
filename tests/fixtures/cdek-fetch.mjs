@@ -12,6 +12,9 @@ globalThis.fetch=async(input,options={})=>{
  const response=(data,status=200)=>Response.json(data,{status});
  if(path==='/v2/deliverypoints')return response(state.points||[]);
  if(path==='/v2/calculator/tarifflist')return response({tariff_codes:[{tariff_code:136,tariff_name:'Synthetic pickup',delivery_mode:4,delivery_sum:350,period_min:2,period_max:4}]});
+ if(method==='POST'&&path==='/v2/print/orders')return response({entity:{uuid:crypto.randomUUID()}});
+ if(path.startsWith('/v2/print/orders/')&&path.endsWith('.pdf'))return new Response('%PDF-synthetic',{headers:{'Content-Type':'application/pdf'}});
+ if(path.startsWith('/v2/print/orders/'))return response({entity:{statuses:[{code:'READY',date_time:new Date().toISOString()}]}});
  if(path==='/v2/registries')return response({registries:[]});
  if(path.endsWith('/oauth/token'))return response({access_token:'synthetic-token'});
  if(method==='POST'&&path==='/v2/orders'){

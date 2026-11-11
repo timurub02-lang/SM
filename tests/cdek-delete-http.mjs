@@ -160,6 +160,22 @@ try{
  assert.equal(exported.data.shipment.form.deliveryPoint,'PVZ-ONE');
  assert.equal(upstream().calls.filter(c=>c.path==='/v2/orders'&&c.method==='POST').at(-1).body.delivery_point,'PVZ-ONE');
  console.log('Quote PVZ passed: available points, required selection, saved address/hours, confirmation and authoritative export point.');
+ // Old cached two-copy PDFs are regenerated once, then reused for repeat and batch downloads.
+ const printing=fixture('SYNTHETIC-PRINT');
+ const previousPrint=shipment(printing.order.id);
+ db.prepare('UPDATE settings SET data=? WHERE id=?').run(JSON.stringify({...previousPrint,printAt:new Date().toISOString()}),'cdek-shipment-'+printing.order.id);
+ const printCalls=()=>upstream().calls.filter(c=>c.path==='/v2/print/orders'&&c.method==='POST');
+ const beforePrint=printCalls().length;
+ const printedPdf=await call(path,'logistic',{action:'print',orderId:printing.order.id});
+ assert.equal(printedPdf.status,200,printedPdf.text);
+ assert(printedPdf.text.startsWith('%PDF-'));
+ assert.deepEqual(printCalls().at(-1).body,{orders:[{order_uuid:printing.uuid}],copy_count:1,type:'tpl_russia'});
+ assert.equal(printCalls().length,beforePrint+1);
+ assert.equal(shipment(printing.order.id).printCopyCount,1);
+ assert.notEqual(shipment(printing.order.id).printId,previousPrint.printId);
+ assert.equal((await call(path,'logistic',{action:'print',orderId:printing.order.id})).status,200);
+ assert.equal(printCalls().length,beforePrint+1,'The new single-copy PDF is reused');
+ console.log('Single-order CDEK printing passed: one copy, old cache renewal and repeated download.');
  // A network outage must not create a rejection; the next worker resumes after the web app stops.
  const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
  change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');
