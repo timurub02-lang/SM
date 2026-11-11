@@ -317,3 +317,5 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .redemption-edit-dialog>.browser-call-dock .browser-call-summary{flex-basis:100%;overflow-wrap:anywhere}
 .redemption-edit-dialog>.browser-call-dock .browser-call-controls{flex:1 1 100%;min-width:0;max-width:100%;justify-content:flex-end}
 .redemption-edit-dialog>.browser-call-dock .browser-call-controls button{max-width:100%;white-space:normal}
+
+.sk-request-client-link{font-weight:700;text-align:left;text-decoration:underline;text-underline-offset:3px}.sk-request-client-link:hover{color:#075dc8}.sk-request-client-link:focus-visible{outline:2px solid #075dc8;outline-offset:3px}
