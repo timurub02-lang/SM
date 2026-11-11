@@ -785,6 +785,7 @@ try{
  const invalidRetention=structuredClone(retentionConfig);invalidRetention.retention.operators.one.days=-7;
  assert.equal((await call('/api/base',{cookie:cookies.admin,body:{config:invalidRetention,revision:retentionSaved.data.revision}})).status,400);
  const retentionClient={id:'retention-client',name:'Retention test',phone:'+79998887766',owner:'one',sheet:'К',baseType:'M',returnSheet:'Т1',createdAt:new Date(Date.now()-30*86400000).toISOString(),assignmentStartedAt:new Date(Date.now()-30*86400000).toISOString(),importRetentionUntil:new Date(Date.now()+30*86400000).toISOString(),assignedUntil:'',version:1};
+ retentionClient.assignmentStartedAt=retentionClient.createdAt;
  const retentionOrder={id:'retention-order',clientId:retentionClient.id,manager:'one',status:'redeemed',createdAt:retentionClient.createdAt,redeemedAt:new Date(Date.now()-20*86400000).toISOString(),updatedAt:retentionClient.createdAt,items:[],version:1};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(retentionClient.id,retentionClient.phone,JSON.stringify(retentionClient));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(retentionOrder.id,retentionClient.id,JSON.stringify(retentionOrder));
