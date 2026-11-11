@@ -18,3 +18,11 @@ export function operatorStats(state:State,actor:Employee,from:string,to:string){
   return {id:employee.id,login:employee.login,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,sent:sent.length,orderLists:{created,cancelled,confirmed,sent}};
  });
 }
+
+export type StatsSortKey='login'|'created'|'average'|'amount'|'cancelled'|'confirmed'|'sent';
+export function sortOperatorStats(rows:ReturnType<typeof operatorStats>,key:StatsSortKey,ascending:boolean){
+ return [...rows].sort((a,b)=>{
+  const comparison=key==='login'?a.login.localeCompare(b.login,'ru',{numeric:true}):a[key]-b[key];
+  return (ascending?comparison:-comparison)||a.login.localeCompare(b.login,'ru',{numeric:true});
+ });
+}
