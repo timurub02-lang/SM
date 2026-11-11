@@ -33,6 +33,7 @@ import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
 import {departmentWorkStage,isDepartmentOrder} from "@/lib/department-orders";
 import {conditionalJson} from '@/lib/conditional-json';
+import {RequestTiming} from '@/lib/request-timing';
 import {visibleState,authorizeCrm,hideClientNumbers} from '@/lib/permissions';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
@@ -91,13 +92,14 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
  return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
-async function handleGET(request:Request){try{const user=await identity();await initialize();return conditionalJson(request,await responseState(user));}catch(e){console.error(e);return Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503});}}
+async function handleGET(request:Request){const timing=new RequestTiming();try{const user=await identity();await initialize();const state=await timing.measure('snapshot',()=>responseState(user));return timing.finish(conditionalJson(request,state));}catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503}));}}
 async function handlePOST(request:Request){
+ const timing=new RequestTiming();
  try{
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
  const raw=await readLimitedText(request,6000000);if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
- const p=JSON.parse(raw);const d=db();const s=await readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
+ const p=JSON.parse(raw);const d=db();const s=await timing.measure('read',()=>readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action)));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
@@ -592,11 +594,12 @@ async function handlePOST(request:Request){
   // ponytail: bounded imports; background chunked jobs when files exceed 1000 clients.
   let actual=0;for(let i=0;i<statements.length;i+=50){const results=await d.batch(statements.slice(i,i+50));actual+=results.filter((_,j)=>j%2===0).reduce((n,r)=>n+r.meta.changes,0);}message=`Добавлено: ${actual}. Дубли: ${duplicates+added-actual}. Адресов требуют проверки: ${review}. Ошибки ДаДата: ${errors}`;
  }else throw new Error("Неизвестное действие");
- const state=await responseState(user,true);
- if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return Response.json({statePatch:orderSavePatch(s,state,p.id),message});
- return Response.json({state,message});
- }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400});}
+ const state=await timing.measure('snapshot',()=>responseState(user,true));
+ if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return timing.finish(Response.json({statePatch:orderSavePatch(s,state,p.id),message}));
+ return timing.finish(Response.json({state,message}));
+ }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return timing.finish(Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400}));}
 }
 
 export const GET=authenticated(handleGET);
 export const POST=authenticated(handlePOST);
+
