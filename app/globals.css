@@ -311,3 +311,9 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 .premium-department-summary td:not(:first-child),.premium-department-summary th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
 .premium-department-summary tbody tr:nth-child(even){background:rgba(240,243,250,.55)}
 .premium-department-summary tbody tr.premium-department-total{background:#e8f4ed;font-weight:700;color:#327452}
+
+/* Keep call controls inside the narrower redemption card. */
+.redemption-edit-dialog>.browser-call-dock{position:sticky;bottom:0;left:auto;transform:none;width:100%;min-width:0;flex-wrap:wrap;margin-top:12px}
+.redemption-edit-dialog>.browser-call-dock .browser-call-summary{flex-basis:100%;overflow-wrap:anywhere}
+.redemption-edit-dialog>.browser-call-dock .browser-call-controls{flex:1 1 100%;min-width:0;max-width:100%;justify-content:flex-end}
+.redemption-edit-dialog>.browser-call-dock .browser-call-controls button{max-width:100%;white-space:normal}
