@@ -1,0 +1,99 @@
+.login-page { background:#f5f5f7; }
+.login-form { background:white; }
+.theme-toggle > span { display:flex; align-items:center; gap:8px; }
+
+/* Shared tokens also cover portalled menus and dialogs. */
+@media screen {
+html.dark:not(:has(.courier-app)) {
+  color-scheme:dark;
+  --background:#141a24;
+  --foreground:#e5eaf2;
+  --border:#3a4659;
+  --dark-panel:#202938;
+  --dark-raised:#293548;
+  --dark-muted:#a8b6ca;
+  --color-muted:#293548;
+  --color-muted-foreground:#a8b6ca;
+  --color-accent:#30435e;
+  --color-accent-foreground:#e5eaf2;
+  --color-popover:#202938;
+  --color-popover-foreground:#e5eaf2;
+  --color-sidebar:#202938;
+  --color-sidebar-foreground:#e5eaf2;
+  --color-sidebar-accent:#30435e;
+  --color-sidebar-accent-foreground:#e5eaf2;
+  --color-sidebar-border:#3a4659;
+  --popover:#202938;
+  --popover-foreground:#e5eaf2;
+}
+.dark:not(:has(.courier-app)) body { background:radial-gradient(ellipse at 0% 0%,#243653,transparent 55%),#141a24; color:var(--foreground); }
+.dark:not(:has(.courier-app)) [data-slot=sidebar-inset] { background:#18202be8; }
+.dark:not(:has(.courier-app)) [data-slot=sidebar-inner] { background:linear-gradient(135deg,#263247,#1c2535); border-color:var(--border); box-shadow:0 8px 32px #0003; }
+.dark:not(:has(.courier-app)) [data-slot=sidebar-menu-button] { color:var(--foreground); }
+.dark:not(:has(.courier-app)) [data-slot=sidebar-menu-button]:hover { background:var(--dark-raised); }
+.dark:not(:has(.courier-app)) [data-slot=sidebar-menu-button][data-active=true] { background:linear-gradient(#247bda,#1768c2); color:#fff; }
+.dark:not(:has(.courier-app)) .topbar { background:#202938ed; border-color:var(--border); color:var(--dark-muted); }
+.dark:not(:has(.courier-app)) :is(h1,h2,h3,.topbar b,.profile b,.card-identity h2,.card-numbers strong,.stat strong,.settings-card h2,.table-link,.order-dates dd,.delivery-field legend,.delivery-brand,.history-event p,.journal-entry,.basket-total b) { color:var(--foreground); }
+.dark:not(:has(.courier-app)) :is(.muted,.field,.page-heading p,.profile small,.nav-label,.brand b span,.sidebar-note,.sidebar-note strong,.sidebar-note p,.sidebar-settings-toggle,.card-identity p,.card-serial,.card-bottom,.card-bottom b,.card-numbers small,.stat>span,.stat small,.table-link small,.settings-card p,.order-mini small,.detail-hero p,.history-event small,.item-read small,.order-dates dt,.order-dates>small,.order-basket-summary,.bottom-note,.basket-total,.delivery-options label,.journal-entry small,.journal-client,.warehouse-product-source,.next-premium-period,.integration-tile-caption) { color:var(--dark-muted); }
+.dark:not(:has(.courier-app)) :is(.table-panel,.settings-card,.stat,.client-card,.stats .stat[aria-pressed=true],.order-mini,.activity-card,.cash-action,.cash-form,.cash-pending,.employee-cash-card,.integration-tile,.packing-guide) { background:var(--dark-panel); border-color:var(--border); color:var(--foreground); box-shadow:0 4px 16px #0002; }
+.dark:not(:has(.courier-app)) :is(.client-card .card-top,.client-card .card-identity) { background:transparent; }
+.dark:not(:has(.courier-app)) :is(.card-bottom,.contact-summary,.notice,.delivery-row,.cash-summary>div,.integration-tiles,.warehouse-address-inline,.order-detail-tabs,.title-count,.demo-label,.address-options button,.packing-guide-steps button) { background:var(--dark-raised); border-color:var(--border); color:var(--dark-muted); box-shadow:none; }
+.dark:not(:has(.courier-app)) :is(.client-card .avatar,.avatar) { background:linear-gradient(145deg,#405674,#2b3b54); color:#c8dfff; border-color:#53647b; box-shadow:none; outline-color:transparent; }
+.dark:not(:has(.courier-app)) :is(.table-panel th,.redemption-grid th) { background:#263246; color:var(--dark-muted); border-color:var(--border); }
+.dark:not(:has(.courier-app)) :is(.table-panel td,.redemption-grid td) { color:var(--foreground); border-color:var(--border); }
+.dark:not(:has(.courier-app)) :is(.table-panel tbody tr:hover,.warehouse-table tbody tr:hover,.order-mini:hover,.cash-action:hover,.integration-tile:hover) { background:#2b3a50; }
+.dark:not(:has(.courier-app)) :is(.secondary,.pick,.search,.field input,.field textarea,textarea,.cash-form input,.cash-form select,.cash-form textarea) { background:#192230; color:var(--foreground); border-color:#4a5a71; box-shadow:none; }
+.dark:not(:has(.courier-app)) :is(.secondary:hover,.address-options button:hover,.address-options button[aria-selected=true]) { background:#30435e; }
+.dark:not(:has(.courier-app)) .search input { color:var(--foreground); }
+.dark:not(:has(.courier-app)) input::placeholder,.dark:not(:has(.courier-app)) textarea::placeholder { color:#96a6bd; }
+.dark:not(:has(.courier-app)) :is(.field input:disabled,.field textarea:disabled) { background:#2a3342; color:#a3afc0; -webkit-text-fill-color:#a3afc0; border-color:var(--border); }
+.dark:not(:has(.courier-app)) :is(.text-button,.icon-button,.settings-card>svg,.empty svg) { color:#7ab7ff; }
+.dark:not(:has(.courier-app)) .tabs-line { background:#192230; border-color:var(--border); box-shadow:none; }
+.dark:not(:has(.courier-app)) .tabs-line button { color:var(--dark-muted); }
+.dark:not(:has(.courier-app)) .tabs-line [data-state=active] { background:#364a66; color:#fff; box-shadow:0 0 0 1px #53749c; }
+.dark:not(:has(.courier-app)) .order-status-tabs .order-payment-group { background:#243348; border-color:#405875; box-shadow:none; }
+.dark:not(:has(.courier-app)) :is([data-slot=dialog-content],[data-slot=sheet-content],[data-slot=select-content],[data-slot=popover-content],[data-slot=dropdown-menu-content],.client-detail-dialog,.form-dialog,.detail-sheet,.address-search .address-options) { background:var(--dark-panel); color:var(--foreground); border-color:var(--border); box-shadow:0 24px 80px #0006; }
+.dark:not(:has(.courier-app)) :is(.client-detail-dialog [data-slot=dialog-header],.detail-sheet [data-slot=sheet-header]) { background:#263246; border-color:var(--border); }
+.dark:not(:has(.courier-app)) :is([data-slot=dialog-title],[data-slot=sheet-title],.client-detail-dialog [data-slot=dialog-title],.form-dialog [data-slot=dialog-title],.detail-sheet [data-slot=sheet-title]) { color:var(--foreground); }
+.dark:not(:has(.courier-app)) :is(.client-detail-dialog [data-slot=dialog-description],.form-dialog [data-slot=dialog-description],.detail-sheet [data-slot=sheet-description]) { color:var(--dark-muted); }
+.dark:not(:has(.courier-app)) :is([data-slot=dialog-overlay],[data-slot=sheet-overlay]) { background:#0008; }
+.dark:not(:has(.courier-app)) :is([data-slot=dialog-close],.detail-sheet>button:last-child) { background:#34445c; color:var(--foreground); }
+.dark:not(:has(.courier-app)) [data-slot=select-item][data-highlighted] { background:#286cba; color:#fff; }
+.dark:not(:has(.courier-app)) :is(.mint,.cash-summary .cash-balance) { background:#203f36; color:#8edbb4; border-color:#3b6654; }
+.dark:not(:has(.courier-app)) :is(.amber,.attention,.call-reminders,.call-reminder-due,.address-review,.activity-warning) { background:#403522; color:#edca8b; border-color:#79613c; }
+.dark:not(:has(.courier-app)) :is(.attention strong,.attention p,.address-review strong,.cash-balance strong) { color:inherit; }
+.dark:not(:has(.courier-app)) .violet { background:#3b2e53; color:#d1b8f4; }
+.dark:not(:has(.courier-app)) :is(.activity-idle,.courier-door-alerts,.courier-door-card) { background:#48292f; color:#ffc1c5; border-color:#a95763; }
+.dark:not(:has(.courier-app)) :is(.activity-break,.activity-off,.activity-unknown,.call-reminder,.reminder-read .call-reminder) { background:var(--dark-raised); color:var(--foreground); }
+.dark:not(:has(.courier-app)) :is(.overdue-call,.overdue-call.block.muted) { color:#f0a1aa; }
+.dark:not(:has(.courier-app)) :is(.call-due,.call-due.block.muted,.all-orders.selected) { color:#85baff; }
+.dark:not(:has(.courier-app)) .upload-zone { background:#22364f; border-color:#638bbb; color:#bedaff; }
+.dark:not(:has(.courier-app)) :is(.upload-zone span,.contact-summary p,.activity-card small,.cash-summary small,.cash-action small,.cash-purpose-group small) { color:var(--dark-muted); }
+.dark:not(:has(.courier-app)) :is(.profile,.sidebar-note,.card-action,.card-numbers>div+div,.basket-total,.integration,.settings-card hr) { border-color:var(--border); }
+.dark:not(:has(.courier-app)) [data-slot=switch][data-state=unchecked] { background:#536278; }
+.dark:not(:has(.courier-app)) .redemption-grid td { background:var(--dark-panel); }
+.dark:not(:has(.courier-app)) :is(.redemption input:not([type=checkbox]),.redemption select) { background:#192230; color:var(--foreground); }
+.dark:not(:has(.courier-app)) :is(.redemption-comments article,.redemption-action) { background:var(--dark-raised); color:var(--foreground); }
+.dark:not(:has(.courier-app)) .redemption .redemption-grid tr.redemption-held td { background:#29313e!important; color:#a6b0bf; }
+.dark:not(:has(.courier-app)) .redemption .due { background:#483a22!important; color:#edca8b; }
+.dark:not(:has(.courier-app)) .login-page { background:#141a24; }
+.dark:not(:has(.courier-app)) .login-form { background:var(--dark-panel); }
+
+.dark:not(:has(.courier-app)) :is(.brand b,.order-overview h3,.order-overview dd,.operator-workspace h2) { color:var(--foreground); }
+.dark:not(:has(.courier-app)) :is(.base-summary,.order-overview,.order-main-actions>.order-note,.call-history-item,.call-answer-analysis,.incoming-card,.incoming-card.incoming-card-has-order,.client-work-form,.redemption-order-summary,.redemption-stat,.operator-workspace,.premium-approval,.premium-signer,.premium-signature,.base-settings-dialog .base-settings-group,.base-settings-dialog .base-sheet-settings,.stats-table-wrap) { background:var(--dark-panel); color:var(--foreground); border-color:var(--border); box-shadow:none; }
+.dark:not(:has(.courier-app)) :is(.order-note p,.base-summary p,.base-summary small,.base-sheet-summary,.operator-workspace-heading p,.operator-presence,.operator-workspace-foot,.operator-daily-metric dt,.operator-daily-metric dd,.product-choice-trigger small,.product-choice-option small,.stats-period label,.order-overview dt) { color:var(--dark-muted); }
+.dark:not(:has(.courier-app)) :is(.order-quick-bar,.browser-call-dock,.incoming-card-status,.incoming-card-footer,.incoming-card-body,.premium-dates,.premium-search>div,.stats-period,.stats-table thead th,.stats-table tfoot th,.stats-table tfoot td,.operator-controls,.operator-daily-metric,.base-settings-footer,.base-settings-dialog .base-sheet-settings[open]>summary,.redemption-date-panel,.redemption-comment-history article,.replacement-status-list,.timesheet-scroll thead th,.timesheet-scroll tr>th:first-child,.timesheet-scroll thead th:first-child) { background:var(--dark-raised); color:var(--foreground); border-color:var(--border); }
+.dark:not(:has(.courier-app)) :is(.product-choice-trigger,.product-choice-tags button,.product-choice-command [data-slot=command-input-wrapper],.retention-dialog select,.retention-table input,.replacement-settings input[type=number],.replacement-settings textarea,.stats-period input,.stats-order-select option,.order-quick-dialog select,.incoming-card .field select,.redemption-date-panel input,.base-settings-dialog input:not([type=checkbox]),.base-settings-dialog select) { background:#192230; color:var(--foreground); border-color:#4a5a71; }
+.dark:not(:has(.courier-app)) .product-choice-dialog { background:var(--dark-panel)!important; color:var(--foreground); border-color:var(--border); }
+.dark:not(:has(.courier-app)) .product-choice-command [data-slot=command-input] { color:var(--foreground); }
+.dark:not(:has(.courier-app)) :is(.product-choice-trigger:hover,.product-choice-option[data-selected=true],.product-choice-tags button[aria-pressed=true],.stats-table tbody tr:hover,.stats-metric,.notification-tabs [aria-pressed=true],.client-work-filters .selected) { background:#30435e; color:#c1dcff; }
+.dark:not(:has(.courier-app)) .operator-workspace button.operator-control { background:#293548; color:var(--foreground); border-color:#4a5a71; }
+.dark:not(:has(.courier-app)) .operator-workspace button.operator-control:hover:not(:disabled) { background:#364a66; }
+.dark:not(:has(.courier-app)) .operator-workspace button.operator-ready[aria-pressed=true],.dark:not(:has(.courier-app)) .premium-signature.is-signed { background:#203f36; color:#8edbb4; border-color:#3b6654; }
+.dark:not(:has(.courier-app)) :is(.error-banner,.operator-connection-message) { background:#403522; color:#edca8b; border-color:#79613c; }
+.dark:not(:has(.courier-app)) .buyout-choice { background:var(--dark-panel); color:var(--foreground); border-color:var(--border); --choice-ink:#b8cce6; --choice-bg:#30435e; }
+.dark:not(:has(.courier-app)) .buyout-choice[aria-pressed=true],.dark:not(:has(.courier-app)) .buyout-choice:not(:disabled):hover { background:var(--choice-bg); border-color:var(--choice-ink); }
+.dark:not(:has(.courier-app)) .order-group-badge { background:rgba(var(--status-tint),.15); color:rgb(var(--status-tint)); border-color:#ffffff20; box-shadow:none; }
+.dark:not(:has(.courier-app)) .order-status-tile { background:var(--dark-panel); color:rgb(var(--status-tint)); border-color:var(--status-edge); box-shadow:none; }
+.dark:not(:has(.courier-app)) .order-status-tile[data-state=active] { background:var(--dark-raised); color:rgb(var(--status-tint)); border-color:var(--status-edge); box-shadow:0 0 0 2px var(--status-edge); }
+}

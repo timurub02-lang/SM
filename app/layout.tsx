@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./macos.css";
+import "./dark.css";
+import { CrmThemeProvider } from "@/components/theme-toggle";
 
 export const metadata: Metadata = {
   title: "СМ · Клиенты и заказы",
@@ -20,8 +22,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru">
-      <body className="antialiased">{children}</body>
+    <html lang="ru" suppressHydrationWarning>
+      <body className="antialiased"><CrmThemeProvider>{children}</CrmThemeProvider></body>
     </html>
   );
 }
