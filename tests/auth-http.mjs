@@ -212,6 +212,19 @@ try{
  db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('return-stock','return-product',10,'Fixture','admin',new Date().toISOString());
  const flow=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...flow,address:'Address',delivery:'cdek_courier',items:[{name:'Test',quantity:1,price:1}]}),flowId);
+ // The warehouse hides completed LV goods even when they retain a positive balance.
+ for(const [id,active] of [['warehouse-active',1],['warehouse-completed',0]]){
+  db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run(id,id,JSON.stringify({name:id}));
+  db.prepare('INSERT INTO lv_stock(product_id,lv_id,lv_name,active,available,synced_at) VALUES(?,?,?,?,?,?)').run(id,id,id,active,10,new Date().toISOString());
+ }
+ for(const cookie of [cookies.admin,cookies.one,cookies.head,editor.cookie]){
+  const warehouse=await call('/api/warehouse',{cookie});
+  assert.equal(warehouse.status,200);
+  assert(warehouse.data.products.some(p=>p.id==='warehouse-active'));
+  assert(warehouse.data.products.some(p=>p.id==='return-product'));
+  assert(!warehouse.data.products.some(p=>p.id==='warehouse-completed'));
+ }
+ assert(db.prepare("SELECT id FROM products WHERE id='warehouse-completed'").get(),'Completed goods remain stored');
  // Operators see current free stock in the picker, never product prices or integration secrets.
  db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('catalog-zero','empty catalog product',JSON.stringify({name:'Empty catalog product',cost:100,payment:500}));
  for(const cookie of [returnOperator.cookie,cookies.head]){
