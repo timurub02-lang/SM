@@ -27,6 +27,8 @@ export async function syncRedemption(d:Db,now=new Date()){
  await initRedemption(d);const at=now.toISOString();
  await d.prepare(`INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) SELECT o.id,?,'{}' FROM orders o WHERE json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.statuses') WHERE settings.id='redemption-config' AND json_each.value=json_extract(o.data,'$.cdekStatus.code'))`).bind(at).run();
  await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.pendingEnrollment',json('false')),entered_at=?,version=version+1 WHERE json_extract(data,'$.pendingEnrollment')=1 AND EXISTS(SELECT 1 FROM orders o WHERE o.id=order_id AND json_extract(o.data,'$.status')='shipping' AND EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.statuses') WHERE settings.id='redemption-config' AND json_each.value=json_extract(o.data,'$.cdekStatus.code')))` ).bind(at).run();
+ // Release previously scheduled refusal follow-ups once, without restarting active deadlines.
+ await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.operatorReturn.previousStartsAt',json_extract(data,'$.operatorReturn.startsAt'),'$.operatorReturn.startsAt',?,'$.operatorReturn.deadline',?,'$.resultDate',?,'$.changedBy','Система','$.changeKind','operator_return_start_now','$.updatedAt',?),version=version+1 WHERE json_extract(data,'$.operatorReturn.startsAt')>? AND json_extract(data,'$.operatorReturn.resolvedAt') IS NULL AND json_extract(data,'$.action')='refusal' AND json_extract(data,'$.result')='date'`).bind(at,new Date(now.getTime()+2*60*60*1000).toISOString(),dayOf(now),at,at).run();
  await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.operatorReturn.resolvedAt',?,'$.operatorReturn.outcome','Оператор не проработал заказ','$.result','to_return','$.resultDate','','$.dateConfirmation',NULL,'$.author','Система','$.authorId','system','$.changedBy','Система','$.changeKind','operator_return_timeout','$.updatedAt',?,'$.lastDay',?),version=version+1 WHERE json_extract(data,'$.operatorReturn.deadline')<=? AND json_extract(data,'$.operatorReturn.resolvedAt') IS NULL`).bind(at,at,dayOf(now),at).run();
  await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.result','delivered','$.author','API','$.authorId','API','$.resultDate','','$.changedBy','API','$.changeKind','delivery','$.updatedAt',?,'$.lastDay',?),version=version+1 WHERE COALESCE(json_extract(data,'$.result'),'') NOT IN ('delivered','to_return','returned') AND EXISTS(SELECT 1 FROM orders o WHERE o.id=order_id AND json_extract(o.data,'$.cdekStatus.code')='DELIVERED')`).bind(at,dayOf(now)).run();
  await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.operatorReturn.resolvedAt',?,'$.operatorReturn.outcome','Вручен','$.updatedAt',?,'$.changeKind','delivery'),version=version+1 WHERE json_extract(data,'$.result')='delivered' AND json_extract(data,'$.operatorReturn') IS NOT NULL AND json_extract(data,'$.operatorReturn.resolvedAt') IS NULL`).bind(at,at).run();
@@ -54,7 +56,7 @@ export function allowedResults(action:string,row:any,role:string,day:string){
  if(action==='date'||action==='work')return ['date'];
  if(action==='nd')return ['none'];
  if(action==='courier')return ['courier'];
- if(action==='refusal')return row.refusalRetryUsed?['to_return']:[...(!expired&&row.storageUntil&&refusalRetryDate(day)<=row.storageUntil?['date']:[]),'to_return',...(role==='redemption'?['returned']:[])];
+ if(action==='refusal')return row.refusalRetryUsed?['to_return']:[...(!expired&&row.storageUntil?['date']:[]),'to_return',...(role==='redemption'?['returned']:[])];
  if(action==='po')return expired||row.storageUntil&&refusalRetryDate(day)>row.storageUntil?['date']:[];
  return [];
 }
@@ -126,14 +128,14 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if((awaitingOperator(row)||incoming)&&p.action==='po'&&p.responsibilityConfirmed!==true)throw Error('Подтвердите, что клиент точно выкупит заказ после окончания срока хранения');
   let date='';if(p.result==='date'){
    if(!row.storageUntil&&(p.action!=='po'||incoming))throw Error('СДЭК пока не передал срок хранения');
-   date=p.action==='refusal'?refusalRetryDate(day):p.date;
+   date=p.action==='refusal'?day:p.date;
    if(incoming&&p.action==='po'&&date<=row.storageUntil)throw Error('Под ответственность выберите дату после срока хранения');
    if(!validDate(date||'')||date<day||p.action!=='po'&&date>row.storageUntil)throw Error('Дата должна быть не раньше сегодня и не позже СХ');
   }
   if(p.action==='refusal'&&p.result==='date'){
    const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(row.manager).first();
    if(!manager||JSON.parse(manager.data).role!=='operator')throw Error('У заказа нет ответственного оператора');
-   next.operatorReturn={sourceTab:'work',reason:'Отработать отказ',comment:'Повторная обработка после отказа: +2 рабочих дня',author:e.name,authorId:e.id,at,startsAt:date+'T06:00:00.000Z',deadline:date+'T08:00:00.000Z'};
+   next.operatorReturn={sourceTab:'work',reason:'Отработать отказ',comment:'Проработать отказ сразу после передачи',author:e.name,authorId:e.id,at,deadline:new Date(now.getTime()+2*60*60*1000).toISOString()};
   }
   if(awaitingOperator(row))next.operatorReturn={...v.operatorReturn,resolvedAt:at,resolvedBy:e.name,resolvedById:e.id};
   Object.assign(next,{incomingScheduled:!!incoming&&p.result==='date',resultSource:incoming?'incoming':null,refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?(incoming?'incoming':'pending'):null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,dateVerifiedAt:null,dateVerifiedBy:null,dateVerifiedById:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,authorRole:e.role,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at,ndCount:redemptionNdCount(v,day)+(p.action==='nd'?1:0)}}});
