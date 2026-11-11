@@ -75,6 +75,7 @@ html.dark:not(:has(.courier-app)) {
 .dark:not(:has(.courier-app)) :is(.redemption input:not([type=checkbox]),.redemption select) { background:#192230; color:var(--foreground); }
 .dark:not(:has(.courier-app)) :is(.redemption-comments article,.redemption-action) { background:var(--dark-raised); color:var(--foreground); }
 .dark:not(:has(.courier-app)) .redemption .redemption-grid tr.redemption-held td { background:#29313e!important; color:#a6b0bf; }
+.dark:not(:has(.courier-app)) .redemption .storage-due { background:#492c35!important; color:#ffb4bd; }
 .dark:not(:has(.courier-app)) .redemption .due { background:#483a22!important; color:#edca8b; }
 .dark:not(:has(.courier-app)) .login-page { background:#141a24; }
 .dark:not(:has(.courier-app)) .login-form { background:var(--dark-panel); }
