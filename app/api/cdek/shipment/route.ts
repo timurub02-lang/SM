@@ -10,7 +10,7 @@ import {rankRecipientPoints} from '@/lib/cdek-points';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {cdekToken} from '@/lib/cdek';
-import {shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,deletionRequestKey,type Shipment} from '@/lib/cdek-shipment';
+import {importedCdekShipment,shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,deletionRequestKey,type Shipment} from '@/lib/cdek-shipment';
 import type {Order,Client} from '@/lib/crm';
 import type {Product} from '@/lib/warehouse';
 import {z} from 'zod';
@@ -65,7 +65,8 @@ async function handlePOST(req:Request){
    const result=await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(JSON.stringify(next),c.key,previous).run();
    if(!result.meta.changes)throw Error('Отправление изменилось. Обновите карточку');
   };
-  if(c.order.legacyLv&&['create','delete'].includes(p.action))throw Error('Заказ перенесён из ЛВ: повторная выгрузка и удаление отправления недоступны');
+  if(p.action==='create'&&importedCdekShipment(c.order))throw Error('Заказ уже отправлялся через ЛВ: повторная выгрузка недоступна');
+  if(p.action==='delete'&&c.order.legacyLv)throw Error('Заказ перенесён из ЛВ: удаление отправления недоступно');
   if(p.action==='delete'){
    if(!['admin','chief_logistic'].includes(c.actor.role))return Response.json({error:'Удалить отправление может только администратор или главный логист'},{status:403});
    if(p.confirmed!==true||!p.reason)throw Error('Укажите причину и подтвердите удаление отправления из СДЭК');
@@ -90,6 +91,7 @@ async function handlePOST(req:Request){
    if(c.shipment&&c.shipment.state!=='invalid')return reply({shipment:c.shipment});
    if(c.order.version!==p.version)throw Error('Заказ изменён. Закройте карточку и откройте заново');
    const form=shipmentFormSchema.parse(p.form);
+   if(c.order.delivery==='cdek_pickup'&&c.order.cdekTariff?.deliveryPoint)form.deliveryPoint=c.order.cdekTariff.deliveryPoint.code;
    if(c.order.cdekTariff?.params.originMode==='warehouse'){
     const warehouse=await d.prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
     form.shipmentPoint=warehouse?JSON.parse(warehouse.data).shipmentPoint?.code||'':'';

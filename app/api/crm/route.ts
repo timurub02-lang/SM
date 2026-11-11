@@ -348,9 +348,10 @@ async function handlePOST(request:Request){
    }else{
    const row=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-quote-${o.id}`).first<{data:string}>();const quote=row?JSON.parse(row.data):null;
    if(!quote||quote.id!==p.quoteId||Date.now()-Date.parse(quote.calculatedAt)>3600000||JSON.stringify(quote.items)!==JSON.stringify(o.items)||quote.address!==o.address||JSON.stringify(quote.addressParts)!==JSON.stringify(o.addressParts))throw new Error("Расчёт устарел. Рассчитайте доставку повторно");
+   if(quote.params.delivery==='cdek_pickup'&&!quote.deliveryPoint?.code)throw Error('Выберите ПВЗ и рассчитайте доставку повторно');
    assertRoutingSlot(await orderRouting(o),quote.params.slot);
    const tariff=quote.tariffs.find((t:any)=>t.code===p.code);if(!tariff)throw new Error("Тариф не найден в расчёте СДЭК");
-   next.delivery=quote.params.delivery;next.cdekTariff={...tariff,needsConfirmation:["confirm","extra","check"].includes(o.status),account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
+   next.delivery=quote.params.delivery;next.cdekTariff={...tariff,deliveryPoint:quote.deliveryPoint,needsConfirmation:["confirm","extra","check"].includes(o.status),account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
    }
   }else if(p.action==="updateDelivery"){
    if(!employee||!canManageDelivery(employee.role,o.status))throw new Error("Способ доставки выбирает логист до отправки заказа");

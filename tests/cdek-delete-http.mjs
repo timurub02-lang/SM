@@ -126,6 +126,40 @@ try{
  change(s=>{delete s.orders[unknownGone.uuid].gone;s.orders[unknownGone.uuid].deletion='SUCCESSFUL';});
  assert.equal((await worker()).completed,1);
  console.log('Deleted-entity responses passed: acknowledged exact UUID only, API refresh and worker; forbidden, wrong UUID and unacknowledged deletion stay blocked.');
+ // Select a recipient point during the quote, keep it through confirmation, and enforce it on export.
+ const pickup=fixture('SM-QUOTE-PVZ');
+ db.prepare('DELETE FROM settings WHERE id=?').run('cdek-shipment-'+pickup.order.id);
+ const pickupOrder={...pickup.order,legacyLv:{orderId:'synthetic-import',track:'',trial:false,status:'Отправка БП'},cdekStatus:undefined,cdekTransferredAt:undefined,status:'confirm',delivery:'cdek_pickup',cdekTariff:undefined,cdekExported:false,cdekWaybillReceived:false};
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(pickupOrder),pickupOrder.id);
+ change(s=>{s.points=[
+  {code:'PVZ-ONE',status:'ACTIVE',is_handout:true,is_reception:true,allowed_cod:true,work_time:'09:00–21:00',location:{address_full:'Москва, ул. Тестовая, д. 2',postal_code:'101000'}},
+  {code:'CLOSED',status:'INACTIVE',is_handout:true},
+  {code:'SENDER',status:'ACTIVE',is_handout:false}
+ ];});
+ const quoteInput={orderId:pickupOrder.id,slot:1,delivery:'cdek_pickup',originPostalCode:'101000',originMode:'warehouse',weight:.875,length:10,width:10,height:10};
+ const pointList=await call('/api/cdek/calculate','logistic',{...quoteInput,action:'points'});
+ assert.equal(pointList.status,200,pointList.text);
+ assert.deepEqual(pointList.data.points.map(p=>p.code),['PVZ-ONE']);
+ assert.equal(db.prepare('SELECT data FROM settings WHERE id=?').get('cdek-quote-'+pickupOrder.id),undefined,'Listing points does not save a quote');
+ for(const deliveryPoint of [undefined,'CLOSED','SENDER','UNKNOWN'])assert.equal((await call('/api/cdek/calculate','logistic',{...quoteInput,deliveryPoint})).status,400);
+ const quote=await call('/api/cdek/calculate','logistic',{...quoteInput,deliveryPoint:'PVZ-ONE'});
+ assert.equal(quote.status,200,quote.text);
+ await call('/api/crm','logistic');
+ const selected=await call('/api/crm','logistic',{action:'selectCdekTariff',id:pickupOrder.id,version:readOrder(pickupOrder.id).version,quoteId:quote.data.quoteId,code:136});
+ assert.equal(selected.status,200,selected.text);
+ const savedPoint=readOrder(pickupOrder.id).cdekTariff.deliveryPoint;
+ assert.deepEqual(savedPoint,{code:'PVZ-ONE',address:'Москва, ул. Тестовая, д. 2',workTime:'09:00–21:00'});
+ const packing={...readOrder(pickupOrder.id),status:'packing'};
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(packing),packing.id);
+ const confirmedPickup=await call('/api/crm','logistic',{action:'selectCdekTariff',id:packing.id,version:packing.version,confirmSaved:true});
+ assert.equal(confirmedPickup.status,200,confirmedPickup.text);
+ assert.deepEqual(readOrder(packing.id).cdekTariff.deliveryPoint,savedPoint);
+ db.prepare("INSERT INTO settings(id,data) VALUES('warehouse-address',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify({address:'Synthetic warehouse',shipmentPoint:{code:'PVZ-ONE'}}));
+ const exported=await call(path,'logistic',{action:'create',orderId:packing.id,version:readOrder(packing.id).version,form:{shipmentPoint:'',deliveryPoint:'TAMPERED',senderAddress:'Synthetic warehouse',payment:'prepaid',deliveryCost:0}});
+ assert.equal(exported.status,200,exported.text);
+ assert.equal(exported.data.shipment.form.deliveryPoint,'PVZ-ONE');
+ assert.equal(upstream().calls.filter(c=>c.path==='/v2/orders'&&c.method==='POST').at(-1).body.delivery_point,'PVZ-ONE');
+ console.log('Quote PVZ passed: available points, required selection, saved address/hours, confirmation and authoritative export point.');
  // A network outage must not create a rejection; the next worker resumes after the web app stops.
  const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
  change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');
