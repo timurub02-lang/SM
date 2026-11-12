@@ -1,3 +1,4 @@
+import {orderStageDate} from './order-stage-date.ts';
 import {cdekStatuses} from './cdek-statuses.ts';
 import {packingDisplayStage} from './packing-display-stage.ts';
 import {departmentOrders,deliveryQueue,reworkStage,confirmationStage,orderLocation,statuses,total,type Order,type State,type Employee} from './crm.ts';
@@ -6,13 +7,14 @@ import {courierRecalledAtWarehouse,courierDoorRefusal} from './courier.ts';
 import {normalizeOrderSearch} from './order-search.ts';
 import {compareRedemptionPriority} from './redemption-priority.ts';
 export const orderListViews=['orders','rework','confirm','check','shipping','moscow','post'] as const;
-export const orderSortKeys=['createdAt','id','client','status','location','action','total','manager'] as const;
+export const orderSortKeys=['stageDate','createdAt','id','client','status','location','action','total','manager'] as const;
 export type OrderSortKey=typeof orderSortKeys[number];
 export type OrderListQuery={view:string;filter:string;query:string;showNextPremium:boolean;sort?:OrderSortKey;direction?:'asc'|'desc'};
-export function filteredOrderList(state:State,employee:Employee,{view,filter,query,showNextPremium,sort='createdAt',direction='desc'}:OrderListQuery,reminderNow=Date.now()){
+export function filteredOrderList(state:State,employee:Employee,{view,filter,query,showNextPremium,sort='stageDate',direction='desc'}:OrderListQuery,reminderNow=Date.now()){
  const actor=employee.id,clientsById=new Map(state.clients.map(c=>[c.id,c]));
  const employeesById=new Map(state.employees.map(e=>[e.id,e]));
  const value=(o:Order):string|number=>{switch(sort){
+  case 'stageDate':return Date.parse(orderStageDate(o).at||'')||0;
   case 'createdAt':return Date.parse(o.createdAt)||0;
   case 'id':return o.id;
   case 'client':return clientsById.get(o.clientId)?.name||'';
@@ -22,7 +24,7 @@ export function filteredOrderList(state:State,employee:Employee,{view,filter,que
   case 'total':return total(o);
   case 'manager':return employeesById.get(o.manager)?.name||'';
  }};
- const compare=(a:Order,b:Order)=>{const av=value(a),bv=value(b);return (typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'ru',{numeric:true,sensitivity:'base'}))*(direction==='asc'?1:-1)||(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0)||a.id.localeCompare(b.id);};
+ const compare=(a:Order,b:Order)=>{const av=value(a),bv=value(b);if(sort==='stageDate'&&(!av||!bv))return Number(!av)-Number(!bv)||(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0);return (typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'ru',{numeric:true,sensitivity:'base'}))*(direction==='asc'?1:-1)||(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0)||a.id.localeCompare(b.id);};
  const shippingView=['shipping','moscow','post'].includes(view);
  const scopedOrders=employee.role==='operator'?state.orders.filter(o=>o.manager===actor):employee.role==='department_head'?departmentOrders(state.orders,state.employees,employee):state.orders;
  const visibleOrders=view==='orders'?scopedOrders.filter(o=>showOrderInList(o,clientsById.get(o.clientId),employee.role)):scopedOrders;
