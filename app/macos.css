@@ -854,3 +854,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .operator-stats-dialog .stats-table :is(.stats-metric,.stats-zero,.stats-value){display:inline-block;width:100%;min-width:0;padding:3px 8px;text-align:right;text-align-last:right;font-variant-numeric:tabular-nums}
 .operator-stats-dialog .stats-table .stats-metric{appearance:none;background:transparent!important;color:inherit!important;border:0;border-radius:0;box-shadow:none;font-weight:inherit}
 .operator-stats-dialog .stats-table .stats-metric:hover{text-decoration:underline}
+
+.premium-archive-toolbar{justify-content:flex-start;flex-wrap:wrap;gap:16px}.premium-archive-toolbar .search{flex:0 1 380px;margin-left:0;min-width:240px}

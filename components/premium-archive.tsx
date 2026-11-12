@@ -1,4 +1,5 @@
 "use client";
+import {Search} from "lucide-react";
 import {useEffect,useState} from 'react';
 import {money,type Employee,type Order} from '@/lib/crm';
 import type {PayrollOrder} from '@/lib/premium-ledger';
@@ -10,7 +11,7 @@ export function PremiumArchive({employee,employees,orders,onOpen,onReload}:{empl
  useEffect(()=>{let active=true;fetch('/api/premium/archive?actorId='+encodeURIComponent(employee.id),{cache:'no-store'}).then(async r=>{const data=await r.json() as {periods:Period[];error?:string};if(!r.ok)throw Error(data.error||'Не удалось загрузить архив');if(active){setPeriods(data.periods);setSelected(data.periods[0]?.id||'');}}).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[employee.id]);
  const period=periods.find(p=>p.id===selected),search=query.trim().toLowerCase();
  const found=(search?periods:period?[period]:[]).flatMap(p=>[...p.orders,...(search?p.historyOrders:[])].map(o=>({...o,period:p.label}))).filter(o=>!search||[o.externalId,o.id,o.login].join(' ').toLowerCase().includes(search));
- return <div className="stack"><h3>История оплат</h3><div className="toolbar"><label>Выплаченный период <select aria-label="Период архива премии" value={selected} onChange={e=>{setSelected(e.target.value);setQuery('');setPage(0);}}>{periods.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><input aria-label="Поиск по истории выплат" placeholder="Номер заказа или логин — по всему архиву" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></div>
+ return <div className="stack"><h3>История оплат</h3><div className="toolbar premium-archive-toolbar"><label>Выплаченный период <select aria-label="Период архива премии" value={selected} onChange={e=>{setSelected(e.target.value);setQuery('');setPage(0);}}>{periods.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><div className="search"><Search size={17} aria-hidden="true"/><input aria-label="Поиск по истории выплат" placeholder="Номер заказа или логин — по всему архиву" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></div></div>
  {loading?<p>Загрузка архива…</p>:error?<p role="alert">{error}</p>:!period?<p>Выплаченных периодов пока нет.</p>:<>
  <p>{period.label} · Выплачено: <strong>{money(period.payout)}</strong> · Заказов: {period.count}</p>{period.source&&<small className="muted">Источник: {period.source}</small>}
  {!search&&!!period.historyOrders.length&&<p className="notice">Отдельно в старой истории: {period.historyOrders.map(o=>o.externalId).join(', ')}. Эти заказы уже выплачены, но не входят в подтверждённый расчёт периода; суммы в источнике отсутствуют.</p>}
