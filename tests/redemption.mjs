@@ -90,6 +90,11 @@ try{
   await assert.rejects(edit(actor,{operation:'confirm_date'}),/недоступен|Подтверждение доступно/);
  }
  assert(canSeeRedemption(buyer,await row(),false));
+ await edit(buyer,{action:'courier',result:'courier',replaceConfirmed:true});
+ assert.equal((await row()).action,'courier');assert.equal((await row()).result,'courier');assert.equal((await row()).dateConfirmation,null);
+ const priorDate=JSON.parse((await d.prepare("SELECT data FROM redemption_history WHERE json_extract(data,'$.authorId')=? AND json_extract(data,'$.result')='date' ORDER BY id DESC LIMIT 1").bind(op.id).first()).data);
+ assert.equal(priorDate.resultDate,'2026-10-18');
+ await edit(op,{action:'date',result:'date',date:'2026-10-18'});
  assert(!inWorkday(await row(),'2026-10-18'));
  assert(canSeeRedemption(admin,await row(),false));
  await edit(admin,{operation:'confirm_date'});
