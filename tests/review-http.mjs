@@ -42,6 +42,14 @@ try{
  for(let i=0;i<501;i++)db.prepare('INSERT INTO activity_incidents VALUES(?,?,?,?,?,?)').run('foreign-'+i,'other','2026-01-02','2026-01-02',null,'fixture');
  const activity=await fetch(base+'/api/activity',{headers:{cookie:headLogin.headers.get('set-cookie').split(';')[0]}});
  assert.equal(activity.status,200);assert.deepEqual((await activity.json()).incidents.map(i=>i.id),['own']);
+ db.prepare('INSERT INTO settings VALUES(?,?)').run('activity-samples',JSON.stringify({one:{locked:true,day:'2000-01-01'}}));
+ const blockedHead=await fetch(base+'/api/activity',{headers:{cookie:headLogin.headers.get('set-cookie').split(';')[0]}});
+ const blockedData=await blockedHead.json();assert.equal(blockedHead.status,200);assert.deepEqual(blockedData.rows,[]);assert.deepEqual(blockedData.incidents,[]);
+ const blockedAdmin=(await call('/api/activity')).data;assert.ok(!blockedAdmin.rows.some(r=>r.id==='one'));assert.ok(!blockedAdmin.incidents.some(r=>r.employeeId==='one'));
+ assert.ok(blockedAdmin.rows.some(r=>r.id==='other'),'Unblocked employees remain visible to the administrator');
+ db.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").run(JSON.stringify({one:{locked:false}}));
+ const unblocked=await fetch(base+'/api/activity',{headers:{cookie:headLogin.headers.get('set-cookie').split(';')[0]}});const restored=await unblocked.json();assert.deepEqual(restored.rows.map(r=>r.id),['one']);assert.deepEqual(restored.incidents.map(i=>i.id),['own']);
+
  const inject=plan=>writeFileSync(raceFile,JSON.stringify(plan));
  const used=()=>assert.equal(existsSync(raceFile),false,'Fault injection must actually execute');
  // A completed cash operation lands after the zero-balance precheck.
