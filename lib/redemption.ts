@@ -59,7 +59,10 @@ export function inRedemptionTab(row:any,tab:string,day:string){if(row.pendingEnr
 export async function redemptionRows(d:Db,includePending=false){const rows=(await d.prepare(`SELECT r.*,o.data order_data,c.data client_data,e.data employee_data,s.data shipment FROM redemption_entries r JOIN orders o ON o.id=r.order_id JOIN clients c ON c.id=o.client_id LEFT JOIN employees e ON e.id=json_extract(o.data,'$.manager') LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id ORDER BY r.entered_at,r.order_id`).all()).results;return rows.filter((r:any)=>includePending||!JSON.parse(r.data).pendingEnrollment).map((r:any)=>{const o=JSON.parse(r.order_data),c=JSON.parse(r.client_data),e=JSON.parse(r.employee_data||'{}'),v=JSON.parse(r.data);return {order_id:r.order_id,entered_at:r.entered_at,version:r.version,...v,clientId:c.id,clientName:c.name,phone:c.phone,manager:o.manager,operator:e.name||'',login:e.login||'',department:e.department||'',status:o.cdekStatus?.code||'',track:JSON.parse(r.shipment||'{}').number||o.testTrack||'',storageUntil:o.cdekStorageUntil||(o.testOnly?v.manualStorage:'')||'',storageSource:o.cdekStorageUntil?'СДЭК':o.testOnly&&v.manualStorage?'Тестовые данные':'Не указан',testOnly:!!o.testOnly,total:(o.items||[]).reduce((sum:number,i:any)=>sum+i.quantity*i.price,0),comments:v.comments||[],days:v.days||{}};});}
 export function allowedResults(action:string,row:any,role:string,day:string){
  if(awaitingOperator(row))return action==='refusal'?['to_return']:(action==='date'&&row.storageUntil&&row.storageUntil>day||action==='po'&&row.storageUntil&&row.storageUntil<=day)?['date']:[];
- if(row.result==='to_return')return role==='redemption'?['returned']:[];
+ if(row.result==='to_return'){
+  if(!['admin','redemption'].includes(role))return [];
+  if(action==='refusal')return ['to_return',...(role==='redemption'?['returned']:[])];
+ }
  if(action==='client_delivered')return ['client_delivered'];
  const expired=row.storageUntil&&row.storageUntil<=day;
  if(expired&&!['refusal','po'].includes(action))return [];
