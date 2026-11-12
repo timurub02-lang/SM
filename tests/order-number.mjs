@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {nextOrderId} from '../lib/order-number.ts';
+const d=openDatabase(':memory:');
+await d.prepare('CREATE TABLE orders(id TEXT PRIMARY KEY)').run();
+for(const id of ['LV-159999','LV-160716','SM-SK-51653870087','SM-d999076e-2eb','LV-IN-999999'])await d.prepare('INSERT INTO orders VALUES(?)').bind(id).run();
+assert.equal(await nextOrderId(d,'new:first'),'SM-160717');
+assert.equal(await nextOrderId(d,'new:first'),'SM-160717');
+const ids=await Promise.all(Array.from({length:20},(_,i)=>nextOrderId(d,'new:'+i)));
+assert.equal(new Set(ids).size,20);assert.ok(ids.every(id=>/^SM-1607\d+$/.test(id)));
+const retries=await Promise.all(Array.from({length:10},()=>nextOrderId(d,'sk:123')));
+assert.equal(new Set(retries).size,1);
+await d.prepare("INSERT INTO orders VALUES('LV-170000')").run();
+assert.equal(await nextOrderId(d,'after-import'),'SM-170001');
+await d.prepare("DELETE FROM orders WHERE id='LV-170000'").run();
+assert.equal(await nextOrderId(d,'after-delete'),'SM-170002');
+assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,5,'existing order IDs are untouched');
+d.close();console.log('Order numbering: LV maximum, ignored legacy IDs, parallel allocation, retry identity, later imports and no reuse passed');

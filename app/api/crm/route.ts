@@ -1,3 +1,4 @@
+import {nextOrderId} from '@/lib/order-number';
 import {initCrmReadIndexes} from '@/lib/crm-read-indexes';
 import {filteredClientList} from '@/lib/crm-client-list';
 import {maintenanceHealthy} from '@/lib/crm-maintenance';
@@ -328,7 +329,7 @@ async function handlePOST(request:Request){
   if(hasActiveOrder(s.orders,c.id)&&!approved)throw Error("У клиента уже есть активный заказ. Запросите разрешение руководителя отдела");
   const items=itemsSchemaFor(employee?.role==='admin').parse(p.items);const comment=z.string().max(3000).parse(p.comment||"");
   if(employee?.role==="operator"&&c.owner&&c.owner!==employee.id)throw new Error("Клиент закреплён за другим оператором");const manager=employee?.role==="operator"?employee.id:c.owner;ownerValid(manager);if(!manager)throw new Error("Сначала закрепите клиента за оператором");
-  const o:Order={id:id("SM-"),clientId:c.id,delivery:deliverySchema.parse(p.delivery??""),addressParts:addressPartsSchema.optional().parse(p.addressParts??c.addressParts),address:z.string().trim().max(500).parse(p.address??c.address),status:"draft",draftHours:s.settings.orderPolicy!.draftHours,items,comment,reason:"",contact:"none",due:"",round:1,extra:false,createdAt:now,updatedAt:now,manager,logistic:"",version:1};
+  const o:Order={id:await nextOrderId(d,id("create:")),clientId:c.id,delivery:deliverySchema.parse(p.delivery??""),addressParts:addressPartsSchema.optional().parse(p.addressParts??c.addressParts),address:z.string().trim().max(500).parse(p.address??c.address),status:"draft",draftHours:s.settings.orderPolicy!.draftHours,items,comment,reason:"",contact:"none",due:"",round:1,extra:false,createdAt:now,updatedAt:now,manager,logistic:"",version:1};
   if(comment.trim()&&employee)o.operatorComments=[{text:comment,at:now,by:employee.id,name:employee.name}];
   const addressWarnings=orderAddressWarnings(o.address||'',o.addressParts);
   if(addressWarnings.length&&p.addressConfirmed!==true)throw Error('В адресе возможна ошибка: '+addressWarnings.map(w=>w.message).join(' ')+' Проверьте адрес и подтвердите создание заказа вручную.');
