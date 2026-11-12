@@ -180,6 +180,7 @@ def run(rollback=None):
 def validate_jobs(path,meta):
     expected={'sync-activity.mjs','sync-base.mjs','sync-cdek-deletions.mjs','sync-cdek-shipments.mjs','sync-lv-warehouse.mjs','sync-redemption.mjs','sync-sk-orders.mjs'}
     if meta.get('maintenance')==1:expected.add('sync-maintenance.mjs')
+    if meta.get('exports')==1:expected.add('sync-exports.mjs')
     if {p.name for p in path.glob('sync-*.mjs')}!=expected:raise ValueError('Background jobs are missing or unexpected')
 
 if __name__=='__main__':

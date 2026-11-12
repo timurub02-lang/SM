@@ -1,0 +1,11 @@
+[Unit]
+Description=Check pending CRM Excel exports
+
+[Timer]
+OnBootSec=5s
+OnUnitInactiveSec=2s
+AccuracySec=1s
+Unit=sm-crm-exports.service
+
+[Install]
+WantedBy=timers.target

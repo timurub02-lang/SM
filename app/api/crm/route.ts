@@ -87,18 +87,18 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  ...s.events.map(e=>d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e))),
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
-async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId=''){
+async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId='',list:''|'orders'|'mine'=''){
  const worker=process.env.CRM_MAINTENANCE_WORKER==='1'&&await maintenanceHealthy(db());
  const state=worker&&!fanout&&!orderId&&!clientId?await cachedCrmState(db(),()=>readState(false,'',false,'',compact),compact?'compact':'full'):await readState(true,'',false,orderId,false,clientId);
  if(!worker||fanout||orderId||clientId)await saveReminders(state,fanout?undefined:user.employee?.id,(orderId||clientId)?state.clients[0]?.id:undefined);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
- if(['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),(orderId||clientId)?await readRetentionSales(db(),state.clients,config):state.orders);}
+ if(list!=='orders'&&['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),(orderId||clientId)?await readRetentionSales(db(),state.clients,config):state.orders);}
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
- if(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee)){
+ if(!list&&(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee))){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});
  }
- const incoming=await readIncoming(db(),user.employee,state.employees,state.orders);
+ const incoming=!list||user.employee.role==='department_head'?await readIncoming(db(),user.employee,state.employees,state.orders):[];
  if(user.employee.role==='department_head'){
   const sharedIds=new Set(incoming.filter(i=>!i.closedAt&&i.clientId&&i.sharedQueue).map(i=>i.clientId));
   visible.clients.push(...state.clients.filter(c=>sharedIds.has(c.id)&&!visible.clients.some(v=>v.id===c.id)).map(hideClientNumbers));
@@ -106,7 +106,10 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
   visible.events.push(...state.events.filter(e=>sharedIds.has(e.clientId)&&!visible.events.some(v=>v.id===e.id)));
  }
 
+ // Paged lists retain their selectors' inputs; full-screen tasks and account metadata are not returned.
+ if(list==='orders')return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses};
  const clientReminders=await personalClientReminders(db(),state,user.employee);
+ if(list==='mine')return {...visible,clientReminders,clientWork:await readClientWork(db(),user.employee)};
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
  return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
@@ -117,7 +120,7 @@ async function handleGET(request:Request){
   const user=await identity(),params=new URL(request.url).searchParams;
   const list=params.has('list')?listSchema.safeParse(Object.fromEntries(params)):null;
   if(list&&!list.success)return Response.json({error:'Некорректная страница заказов'},{status:400});
-  await initialize();const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||params.get('transport')==='compact-v1'));
+  await initialize();const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||params.get('transport')==='compact-v1','',list?.success?list.data.list:''));
   if(list?.success){
    if(!user.employee||['courier','purchasing','redemption'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
    const q=list.data;

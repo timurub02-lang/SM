@@ -88,6 +88,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/operator-statistics')return method==='GET'&&e.role==='department_head';
  if(path==='/api/timesheet')return ['GET','POST'].includes(method)&&e.role==='department_head';
  if(path==='/api/premium/archive')return method==='GET'&&['department_head','operator'].includes(e.role);
+ if(path==='/api/exports')return ['GET','POST'].includes(method)&&e.role==='department_head';
  if(path==='/api/premium/export')return method==='GET'&&e.role==='department_head';
  if(path==='/api/premium/statistics')return method==='GET'&&e.role==='department_head';
  if(path==='/api/premium/lifecycle')return method==='POST'&&e.role==='department_head';
