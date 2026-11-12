@@ -1,6 +1,6 @@
 'use client';
 import {useState} from 'react';
-import {departments,initials,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
+import {initials,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
 import {PhoneIncoming,ChevronRight} from 'lucide-react';
 import {canOpenClientCard} from '@/lib/permissions';
 import {CallButton} from './browser-phone';
@@ -19,17 +19,17 @@ export function IncomingHandoffNote({item}:{item:IncomingRequest}){
  if(!item.handoff)return null;
  return <div className="notice stack"><strong>Комментарий при передаче · {item.handoff.name}</strong><small>{stamp(item.handoff.at,'Europe/Moscow')} МСК</small><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{item.handoff.comment}</p></div>;
 }
-export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item:IncomingRequest;employee:Employee;operators:Pick<Employee,'id'|'name'|'department'>[];busy:boolean;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>}){
+export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item:IncomingRequest;employee:Employee;operators:Pick<Employee,'id'|'name'|'department'|'login'>[];busy:boolean;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>}){
  const [operator,setOperator]=useState(operators.some(e=>e.id===item.assigneeId)?item.assigneeId||'':''),[comment,setComment]=useState('');
  if(!['admin','department_head'].includes(employee.role)||item.closedAt||item.spam)return null;
  return <form className="notice stack incoming-transfer" onSubmit={async e=>{e.preventDefault();if(operator&&comment.trim()&&await onTransfer(item.id,operator,comment.trim()))setComment('');}}>
   <strong>Передать входящее оператору</strong>
-  <label className="field"><span>Оператор *</span><select aria-label="Оператор для передачи входящего" required disabled={busy} value={operator} onChange={e=>setOperator(e.target.value)}><option value="">Выберите оператора</option>{operators.map(e=><option key={e.id} value={e.id}>{e.name}{e.department?' · '+departments[e.department]?.replace(/_$/,''):''}</option>)}</select></label>
+  <label className="field"><span>Оператор *</span><select aria-label="Оператор для передачи входящего" required disabled={busy} value={operator} onChange={e=>setOperator(e.target.value)}><option value="">Выберите оператора</option>{operators.map(e=><option key={e.id} value={e.id}>{e.login} · {e.name}</option>)}</select></label>
   <label className="field"><span>Комментарий оператору *</span><textarea required maxLength={1900} rows={3} disabled={busy} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Что выяснили в разговоре и что нужно сделать оператору"/></label>
   <button type="submit" className="primary" disabled={busy||!operator||!comment.trim()}>Передать входящее с комментарием</button>
  </form>;
 }
-export function IncomingInbox({items,clients,employees,employee,busy,onReload,onCreate,onLink,onTransfer,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];onReload:()=>Promise<unknown>;clients:Client[];employees:Pick<Employee,"id"|"name"|"department">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string,incomingId?:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string,orderId?:string)=>Promise<boolean>}){
+export function IncomingInbox({items,clients,employees,employee,busy,onReload,onCreate,onLink,onTransfer,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];onReload:()=>Promise<unknown>;clients:Client[];employees:Pick<Employee,"id"|"name"|"department"|"login">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string,incomingId?:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string,orderId?:string)=>Promise<boolean>}){
  const [resultId,setResultId]=useState(''),[resultOrder,setResultOrder]=useState('');
  const resultItem=items.find(i=>i.id===resultId&&!i.closedAt);
  function afterCall(item:IncomingRequest){setResultId(item.id);setResultOrder(item.orderIds?.length===1?item.orderIds[0]:'');void onReload();}
