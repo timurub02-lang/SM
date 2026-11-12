@@ -181,6 +181,26 @@ try{
  assert.equal((await call(path,'logistic',{action:'print',orderId:printing.order.id})).status,200);
  assert.equal(printCalls().length,beforePrint+1,'The new single-copy PDF is reused');
  console.log('Single-order CDEK printing passed: one copy, old cache renewal and repeated download.');
+ // A quote keeps its tariff/PVZ when current routing selects a different account.
+ const reroute=fixture('SM-REROUTE'),saved={...reroute.order,status:'packing',delivery:'cdek_pickup',shippedAt:undefined,cdekTransferredAt:undefined,cdekStatus:undefined,cdekTariff:{...reroute.order.cdekTariff,code:136,deliveryPoint:{code:'TEST-PVZ',address:'Saved pickup point'},params:{...reroute.order.cdekTariff.params,delivery:'cdek_pickup'}}};
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(saved),saved.id);
+ db.prepare('DELETE FROM settings WHERE id=?').run('cdek-shipment-'+saved.id);
+ db.prepare('INSERT INTO settings VALUES(?,?)').run('cdek-2',JSON.stringify({name:'Current routing account',clientId:'synthetic-client-2',clientSecret:'synthetic-secret-2'}));
+ db.prepare('INSERT INTO settings VALUES(?,?)').run('cdek-routing',JSON.stringify({enabled:true,revision:'reroute',rules:[{id:'current',name:'Current rule',enabled:true,slot:2,from:'',to:'',departments:[],products:[],weekdays:[],period:'day',maxCount:1,maxAmount:null}]}));
+ change(s=>s.points=[{code:'TEST-PVZ',status:'ACTIVE',is_handout:true,allowed_cod:true}]);
+ r=await call(path,'logistic',{action:'create',orderId:saved.id,version:readOrder(saved.id).version,form:{shipmentPoint:'',deliveryPoint:'OTHER-PVZ',senderAddress:'Москва, ул. Складская, д. 1',payment:'cod',deliveryCost:0}});
+ assert.equal(r.status,200,r.text);assert.equal(r.data.shipment.slot,2);assert.equal(r.data.shipment.account,'Current routing account');assert.equal(r.data.shipment.routingRuleId,'current');
+ const sent=upstream().calls.filter(x=>x.path==='/v2/orders'&&x.method==='POST').at(-1).body;
+ assert.equal(sent.tariff_code,136);assert.equal(sent.delivery_point,'TEST-PVZ');assert.equal(sent.packages[0].items[0].payment.value,100);
+ assert.deepEqual(readOrder(saved.id).cdekTariff,saved.cdekTariff,'Saved quote is not rewritten');
+ // Current limits still protect the actual destination account.
+ const blocked=fixture('SM-QUOTA');db.prepare('DELETE FROM settings WHERE id=?').run('cdek-shipment-'+blocked.order.id);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...blocked.order,status:'packing',shippedAt:undefined,cdekTransferredAt:undefined,cdekStatus:undefined}),blocked.order.id);
+ const beforeQuota=upstream().calls.length;
+ r=await call(path,'logistic',{action:'create',orderId:blocked.order.id,version:readOrder(blocked.order.id).version,form:{shipmentPoint:'',deliveryPoint:'',senderAddress:'Москва, ул. Складская, д. 1',payment:'cod',deliveryCost:0}});
+ assert.equal(r.status,400);assert.match(r.data.error,/лимиты исчерпаны/);assert.equal(upstream().calls.length,beforeQuota);
+ db.prepare("DELETE FROM settings WHERE id='cdek-routing'").run();
+ console.log('Account changes do not require recalculation; current account, quota, saved tariff, PVZ and amounts verified.');
  // A network outage must not create a rejection; the next worker resumes after the web app stops.
  const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
  change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');

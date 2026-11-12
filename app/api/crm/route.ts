@@ -32,7 +32,6 @@ import {initBaseStorage,workingClientsQuery} from '@/lib/base-storage';
 import {moscowDate,normalizedPhone} from '@/lib/base-distribution';
 import {orderSettings} from '@/lib/order-policy-store';
 import {orderDataEditingEnabled} from '@/lib/order-policy';
-import {orderRouting,assertRoutingSlot} from '@/lib/cdek-routing-store';
 import {courierDoorRefusal,canHandleCourierDoor,applyCourierCommand,canEditCourierOrder,canEditRecalledCourierOrder,courierRecalledAtWarehouse,pauseCourierOperatorBudget,courierPhase,courierStage,courierDeadline,courierWarehouseReturn,cancelCourierWork,courierOutstanding} from '@/lib/courier';
 import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
@@ -409,12 +408,11 @@ async function handlePOST(request:Request){
    if(!employee||!canManageDelivery(employee.role,o.status))throw new Error("Выбор тарифа доступен только логисту до отправки");
    if(p.confirmSaved===true){
     next.cdekTariff=confirmSavedTariff(o);
-    assertRoutingSlot(await orderRouting(o),next.cdekTariff.slot);text="Подтверждён ранее рассчитанный тариф СДЭК";
+    text="Подтверждён ранее рассчитанный тариф СДЭК";
    }else{
    const row=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-quote-${o.id}`).first<{data:string}>();const quote=row?JSON.parse(row.data):null;
    if(!quote||quote.id!==p.quoteId||Date.now()-Date.parse(quote.calculatedAt)>3600000||JSON.stringify(quote.items)!==JSON.stringify(o.items)||quote.address!==o.address||JSON.stringify(quote.addressParts)!==JSON.stringify(o.addressParts))throw new Error("Расчёт устарел. Рассчитайте доставку повторно");
    if(quote.params.delivery==='cdek_pickup'&&!quote.deliveryPoint?.code)throw Error('Выберите ПВЗ и рассчитайте доставку повторно');
-   assertRoutingSlot(await orderRouting(o),quote.params.slot);
    const tariff=quote.tariffs.find((t:any)=>t.code===p.code);if(!tariff)throw new Error("Тариф не найден в расчёте СДЭК");
    next.delivery=quote.params.delivery;next.cdekTariff={...tariff,deliveryPoint:quote.deliveryPoint,needsConfirmation:false,account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
    }
