@@ -65,7 +65,7 @@ try{
  assert.ok(Array.isArray(patch.state.incoming),'incoming permissions are rechecked in the patch');
  assert.equal((await read(2,'?part=tasks')).status,200,'independent tasks remain available after the save');
  assert.equal((await save({action:'comment',id:'o-2',version,text:'Stale overwrite',responseMode:'entity-patch-v2'})).status,400);
- assert.equal((await save({action:'comment',id:'o-3',version:1,text:'Foreign write',responseMode:'entity-patch-v2'})).status,400);
+ assert.equal((await save({action:'comment',id:'o-3',version:1,text:'Foreign write',responseMode:'entity-patch-v2'})).status,403);
  const legacySave=await save({action:'comment',id:'o-2',version:patch.state.orders[0].version,text:'Compatible save',responseMode:'entity-patch'});
  assert.equal(legacySave.status,200);assert.ok(Array.isArray((await legacySave.json()).entityPatch.state.tasks),'existing patch clients retain the full contract');
  database.prepare("INSERT INTO settings(id,data) VALUES('sk-order-import',?)").run(JSON.stringify({enabled:true,resultIds:[47]}));

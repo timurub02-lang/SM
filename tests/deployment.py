@@ -111,13 +111,35 @@ class Deployment(unittest.TestCase):
             (runtime/'server.js').write_text('fixture');(p/'public').mkdir();(p/'.next/static').mkdir();(p/'scripts').mkdir();(runtime/'jobs').mkdir()
             for job in ['exports','sk-events','lv-incoming']:
                 (p/('scripts/sync-'+job+'.mjs')).write_text('fixture');(runtime/('jobs/sync-'+job+'.mjs')).write_text('fixture')
-            with patch.object(pack.subprocess,'run',return_value=type('Probe',(),{'returncode':1,'stderr':'CRM_DATABASE_PATH is required'})()) as run:
+            def probe(args,**kwargs):return type('Probe',(),{'returncode':0 if '--input-type=module' in args else 1,'stderr':'CRM_DATABASE_PATH is required'})()
+            with patch.object(pack.subprocess,'run',side_effect=probe) as run:
                 pack.package('c'*40,p)
             meta=json.loads((runtime/'release.json').read_text());self.assertEqual((meta['exports'],meta['skEvents'],meta['lvIncoming']),(1,1,1))
             self.assertTrue(any('trace-job-dependencies.mjs' in str(c.args[0]) for c in run.call_args_list))
-            probes=[c for c in run.call_args_list if 'cwd' in c.kwargs];self.assertEqual(len(probes),3)
+            probes=[c for c in run.call_args_list if 'cwd' in c.kwargs];self.assertEqual(len(probes),4)
             for probe in probes:
                 self.assertFalse(probe.kwargs['cwd'].is_relative_to(p));self.assertNotIn('CRM_DATABASE_PATH',probe.kwargs['env']);self.assertNotIn('NODE_PATH',probe.kwargs['env'])
+                if '--input-type=module' not in probe.args[0]:self.assertEqual(pathlib.Path(probe.args[0][1]).parent.name,'scripts')
+
+    def test_installer_creates_only_internal_dependency_alias(self):
+        with tempfile.TemporaryDirectory() as folder:
+            staged=pathlib.Path(folder);dependencies=staged/'.next/standalone/node_modules';dependencies.mkdir(parents=True)
+            with patch.object(pathlib.Path,'symlink_to',autospec=True) as link:
+                deploy.link_job_dependencies(staged)
+                link.assert_called_once_with(staged/'node_modules','.next/standalone/node_modules',target_is_directory=True)
+            dependencies.rmdir()
+            with self.assertRaises(ValueError):deploy.link_job_dependencies(staged)
+
+    @unittest.skipIf(__import__('os').name=='nt','Windows account cannot create symlinks; Linux CI exercises the real alias')
+    def test_installed_scripts_resolve_internal_dependencies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            staged=pathlib.Path(folder);package=staged/'.next/standalone/node_modules/fixture-dependency';package.mkdir(parents=True)
+            (package/'package.json').write_text('{"name":"fixture-dependency","main":"index.js"}');(package/'index.js').write_text('module.exports=42')
+            (staged/'scripts').mkdir();script=staged/'scripts/probe.mjs';script.write_text("import value from 'fixture-dependency';if(value!==42)throw Error('Wrong dependency');")
+            deploy.link_job_dependencies(staged)
+            self.assertEqual((staged/'node_modules').readlink(),pathlib.Path('.next/standalone/node_modules'))
+            self.assertEqual((staged/'node_modules').resolve(),(staged/'.next/standalone/node_modules').resolve())
+            deploy.subprocess.run(['node',str(script)],cwd=staged,check=True,capture_output=True)
 
     def test_reject_traversal_and_links(self):
         for name,kind in [('runtime/../../escape',tarfile.REGTYPE),('/escape',tarfile.REGTYPE),('runtime/link',tarfile.SYMTYPE),('runtime/.env',tarfile.REGTYPE)]:

@@ -167,6 +167,7 @@ def run(rollback=None):
             staged=tmp/'release';(staged/'.next').mkdir(parents=True)
             validate_jobs(runtime/'jobs',meta)
             (runtime/'jobs').rename(staged/'scripts');runtime.rename(staged/'.next/standalone')
+            link_job_dependencies(staged)
             static=staged/'.next/standalone/.next/static'
             meta['staticFiles']=[p.relative_to(static).as_posix() for p in static.rglob('*') if p.is_file()]
             # Serve immutable chunks from the two preceding builds for already open browser tabs.
@@ -180,6 +181,12 @@ def run(rollback=None):
             subprocess.run(['chown','-R','crmadmin:crmadmin',str(staged)],check=True);staged.rename(target)
     if json.loads(get(API+'/commits/main'))['sha']!=sha:print('A newer commit arrived; update deferred');return
     print('Deployed '+sha if activate(target,previous,state) else 'Active call; update deferred')
+
+def link_job_dependencies(staged):
+    # Jobs live at release/scripts; the web bundle keeps its traced dependencies inside standalone.
+    dependencies=staged/'.next/standalone/node_modules'
+    if dependencies.is_symlink() or not dependencies.is_dir():raise ValueError('Missing trusted runtime dependencies')
+    (staged/'node_modules').symlink_to('.next/standalone/node_modules',target_is_directory=True)
 
 def validate_jobs(path,meta):
     expected={'sync-activity.mjs','sync-base.mjs','sync-cdek-deletions.mjs','sync-cdek-shipments.mjs','sync-lv-warehouse.mjs','sync-redemption.mjs','sync-sk-orders.mjs'}
