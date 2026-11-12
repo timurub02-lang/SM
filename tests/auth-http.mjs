@@ -9,8 +9,10 @@ import {once} from 'node:events';
 import {courierBalance} from '../lib/courier.ts';
 import {moscowDate} from '../lib/base-distribution.ts';
 import {authSchema} from '../lib/auth-schema.ts';
+import {orderMutationActions,mergeOrderEntityPatch} from '../lib/order-entity-patch.ts';
 import {cashSpendPurposes} from '../lib/cash.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
+import {mergeOrderSavePatch} from '../lib/order-save-patch.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-auth-')), db=new DatabaseSync(join(dir,'test.sqlite'));
 const password='test-password-only-123',changed='changed-password-only-456';
 const origin='https://crm.test',port=process.env.AUTH_TEST_PORT||'3097',base=`http://127.0.0.1:${port}`;
@@ -32,7 +34,22 @@ try{
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(ready,'Server failed to start');
- async function call(path,{cookie,body,headers={},method}={}){const r=await fetch(base+path,{method:method||(body?'POST':'GET'),redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}return {status:r.status,data,headers:r.headers,text};}
+ async function call(path,{cookie,body,headers={},method}={}){
+  const bounded=process.env.CRM_TEST_ENTITY_PATCH==='1'&&path==='/api/crm'&&cookie&&body&&!body.responseMode&&orderMutationActions.has(body.action);
+  const before=bounded?await call('/api/crm',{cookie}):null;
+  if(bounded)body={...body,responseMode:'entity-patch'};
+  const r=await fetch(base+path,{method:method||(body?'POST':'GET'),redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}
+  if(bounded&&r.ok){
+   assert.ok(data.entityPatch,'successful order mutation must use a bounded response');
+   const patch=data.entityPatch;assert(patch.state.clients.every(c=>c.id===patch.clientId));assert(patch.state.orders.every(o=>o.clientId===patch.clientId));
+   data.state=mergeOrderEntityPatch(before.data,patch);
+   const check=await call('/api/crm',{cookie});
+   const sort=rows=>[...rows].sort((a,b)=>a.id.localeCompare(b.id));
+   assert.deepEqual(sort(data.state.orders.filter(o=>o.clientId===patch.clientId)),sort(check.data.orders.filter(o=>o.clientId===patch.clientId)),'scoped save and full read agree');
+   assert.deepEqual(sort(data.state.clients.filter(c=>c.id===patch.clientId)),sort(check.data.clients.filter(c=>c.id===patch.clientId)));
+  }
+  return {status:r.status,data,headers:r.headers,text};
+ }
  async function login(name,pw=password){return call('/api/auth/login',{body:{login:name,password:pw}});}
  const unauth=await call('/api/crm',{headers:{'oai-authenticated-user-id':'admin','oai-authenticated-user-email':'admin@test.local'}});assert.equal(unauth.status,401);
  assert.equal((await call('/')).status,307);
@@ -47,6 +64,12 @@ try{
  for(let i=0;i<3;i++){const r=await call('/api/auth/me',{cookie:cookies.admin});assert.equal(r.data.employee.role,'admin');}
  for(const id of ['one','head']){const r=await call('/api/crm',{cookie:cookies[id]});assert.equal(r.status,200,r.text);assert.equal(r.data.currentEmployeeId,id);assert.deepEqual(r.data.orders.map(o=>o.id),['o-one']);assert.deepEqual(r.data.clients.map(c=>c.id),['c-one']);assert.equal(r.data.clients[0].phone,'');assert.ok(!r.text.includes('password_hash'));assert.ok(!JSON.stringify(r.data.clients).includes('+7999'));}
  const snapshot=await call('/api/crm',{cookie:cookies.one});
+ const compressedSnapshot=await call('/api/crm',{cookie:cookies.one,headers:{'Accept-Encoding':'gzip, deflate, br'}});
+ assert.equal(compressedSnapshot.headers.get('content-encoding'),'br');
+ assert.deepEqual(compressedSnapshot.data,snapshot.data,'Brotli must preserve all authorized snapshot fields');
+ assert.equal((await call('/api/crm',{cookie:cookies.one,headers:{'Accept-Encoding':'br','If-None-Match':compressedSnapshot.headers.get('etag')}})).status,304);
+ assert.equal((await call('/api/crm',{cookie:cookies.two,headers:{'Accept-Encoding':'br','If-None-Match':compressedSnapshot.headers.get('etag')}})).status,200);
+ assert.equal((await call('/api/crm',{headers:{'Accept-Encoding':'br','If-None-Match':compressedSnapshot.headers.get('etag')}})).status,401);
  assert.equal((await call('/api/crm',{cookie:cookies.one,headers:{'If-None-Match':snapshot.headers.get('etag')}})).status,304);
  assert.equal((await call('/api/crm',{headers:{'If-None-Match':snapshot.headers.get('etag')}})).status,401);
  assert.equal((await call('/api/crm',{cookie:cookies.two,headers:{'If-None-Match':snapshot.headers.get('etag')}})).status,200);
@@ -1043,6 +1066,39 @@ try{
  assert(fastSaved.text.length<fastBefore.text.length/2,'Saving one order must not resend the full database');
  assert.equal((await call('/api/crm',{cookie:fastAdmin.cookie,body:{action:'transition',id:fastOrder.id,version:fastVersion,to:'packing',responseMode:'order-patch'}})).status,400,'Stale writes still fail');
  const fastRead=await call('/api/crm',{cookie:fastAdmin.cookie});assert.equal(fastRead.data.orders.find(o=>o.id===fastOrder.id).status,'packing');
+ const mergedFast=mergeOrderSavePatch(fastBefore.data,fastSaved.data.statePatch);
+ for(const key of ['orders','clients','events'])assert.deepEqual([...mergedFast[key]].sort((a,b)=>a.id.localeCompare(b.id)),[...fastRead.data[key]].sort((a,b)=>a.id.localeCompare(b.id)),key+' patch must match the next full read');
+ for(const key of ['tasks','reminders','incoming','clientReminders','clientWork'])assert.deepEqual(mergedFast[key],fastRead.data[key],key+' must be refreshed by the POST response');
+ const fastEvents=db.prepare('SELECT COUNT(*) AS n FROM events WHERE order_id=?').get(fastOrder.id).n;
+ const fastCurrent=fastRead.data.orders.find(o=>o.id===fastOrder.id);
+ const competing=await Promise.all(['first','second'].map(text=>call('/api/crm',{cookie:fastAdmin.cookie,body:{action:'comment',id:fastOrder.id,version:fastCurrent.version,text,responseMode:'order-patch'}})));
+ assert.equal(competing.filter(r=>r.status===200).length,1,'One optimistic version has only one successful writer');
+ assert.equal(competing.filter(r=>r.status===400).length,1);
+ assert.equal(db.prepare('SELECT COUNT(*) AS n FROM events WHERE order_id=?').get(fastOrder.id).n,fastEvents+1,'Rejected writes leave no ghost event');
+ const scoped=await fixture('patch-scope-operator','patch-scope');
+ const scopedClient={id:'patch-scope-client',owner:scoped.e.id,name:'Synthetic scoped client',phone:'+79999999801',source:'Synthetic',sheet:'К',createdAt:new Date().toISOString(),version:1};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(scopedClient.id,scopedClient.phone,JSON.stringify(scopedClient));
+ const scopedOrder={...fastOrder,id:'patch-scope-order',clientId:scopedClient.id,manager:scoped.e.id,status:'draft',items:[],createdAt:new Date().toISOString()};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(scopedOrder.id,scopedOrder.clientId,JSON.stringify(scopedOrder));
+ const scopedRead=await call('/api/crm',{cookie:scoped.cookie});
+ const scopedCommand={action:'comment',id:scopedOrder.id,version:scopedRead.data.orders.find(o=>o.id===scopedOrder.id).version,text:'Synthetic scoped comment',responseMode:'order-patch'};
+ assert.equal((await call('/api/crm',{cookie:scoped.cookie,body:{...scopedCommand,actorId:fastAdmin.e.id}})).status,403,'Spoofing an actor is rejected, including compact requests');
+ const scopedSaved=await call('/api/crm',{cookie:scoped.cookie,body:scopedCommand});
+ assert.equal(scopedSaved.status,200,scopedSaved.text);assert.equal(scopedSaved.data.statePatch,undefined,'A requested patch never grants admin scope');
+ assert.equal(scopedSaved.data.state.currentEmployeeId,scoped.e.id);assert(!scopedSaved.data.state.orders.some(o=>o.id===fastOrder.id));
+ assert(scopedSaved.data.state.clients.every(c=>!c.phone),'Operator fallback still redacts phones');
+ assert.equal((await call('/api/crm',{cookie:scoped.cookie,body:{action:'comment',id:fastOrder.id,version:fastCurrent.version+1,text:'Forbidden',responseMode:'order-patch'}})).status,403);
+ const callbackDue=new Date(Date.now()+3600000).toISOString();
+ const callbackSaved=await call('/api/crm',{cookie:fastAdmin.cookie,body:{action:'contact',id:scopedOrder.id,version:scopedSaved.data.state.orders.find(o=>o.id===scopedOrder.id).version,contact:'callback',reason:'Synthetic callback',due:callbackDue,responseMode:'order-patch'}});
+ assert.equal(callbackSaved.status,200,callbackSaved.text);
+ assert.equal(callbackSaved.data.statePatch.orders.find(o=>o.id===scopedOrder.id).due,callbackDue);
+ const callbackId='call:'+scopedOrder.id+':'+callbackDue;
+ assert(db.prepare('SELECT id FROM reminders WHERE employee_id=? AND id=?').get(scoped.e.id,callbackId),'Compact response still fans reminders out to the operator without an extra GET');
+ const callbackVersion=callbackSaved.data.statePatch.orders.find(o=>o.id===scopedOrder.id).version;
+ const callbackClosed=await call('/api/crm',{cookie:fastAdmin.cookie,body:{action:'contact',id:scopedOrder.id,version:callbackVersion,contact:'missed',reason:'Synthetic no callback',due:'',responseMode:'order-patch'}});
+ assert.equal(callbackClosed.status,200,callbackClosed.text);
+ const callbackRead=await call('/api/crm',{cookie:scoped.cookie});
+ assert.equal(callbackRead.data.reminders.find(r=>r.id===callbackId).resolved,true,'Resolved callback remains consistent after a compact save');
  console.log('Compact admin order save, history, payload size and version guard passed');
  console.log('HTTP auth passed: login, refresh, scopes, actor spoofing, CSRF, account creation/reset/disable, session revocation, logout and rate limiting.');
 }catch(e){console.error(logs);throw e;}finally{if(server){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

@@ -1,0 +1,15 @@
+[Unit]
+Description=CRM deadlines, retention and reminders (no external integrations)
+After=sm-crm.service
+ConditionPathExists=/srv/crm/current/scripts/sync-maintenance.mjs
+
+[Service]
+Type=oneshot
+User=crmadmin
+Group=crmadmin
+EnvironmentFile=/etc/sm-crm.env
+ExecStart=/usr/bin/node /srv/crm/current/scripts/sync-maintenance.mjs
+TimeoutStartSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+

@@ -22,7 +22,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    const crmOrderWrite=url.pathname==='/api/crm'&&['requestOrderCancellation','resolveOrderCancellation','clientWaiting','markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','savePostalTracking','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment','incomingResult'].includes(body?.action);
    const orderId=body?.orderId||url.searchParams.get('orderId')||(crmOrderWrite?body.id:undefined);
    let order;
-   if(orderId&&(!crmOrderWrite||['operator','department_head'].includes(employee.role))){
+   if(orderId&&url.pathname!=='/api/crm/history'&&(!crmOrderWrite||['operator','department_head'].includes(employee.role))){
     const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(orderId).first<{data:string}>();
     const staff=await db().prepare('SELECT data FROM employees').all<{data:string}>();
     if(!row||!seesOrder(employee,JSON.parse(row.data),staff.results.map(x=>JSON.parse(x.data)))&&!((url.pathname==='/api/call-history'&&!write||url.pathname==='/api/telephony'&&req.method==='POST')&&await sharedIncomingClientAccess(db(),employee,JSON.parse(row.data).clientId)))return Response.json({error:'Заказ недоступен'},{status:403});

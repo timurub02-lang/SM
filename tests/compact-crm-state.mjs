@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {seed} from '../lib/crm.ts';
+import {compactCrmState} from '../lib/compact-crm-state.ts';
+import {cancellationDetails} from '../lib/order-cancellation.ts';
+const order={id:'o',status:'refused',reason:''};
+const state={...seed(),clients:[{id:'c',name:'Client',legacyOrderHistory:[{externalId:'old'}],importFields:{raw:'private'}}],orders:[order],events:[{id:'new',orderId:'o',text:'→ Отказ · причина',at:'2026-11-12T01:00:00Z',actor:'Newest'},{id:'old',orderId:'o',text:'Заказ отменён: старое',at:'2026-11-11T01:00:00Z',actor:'Older'},{id:'other',orderId:'x',text:'Note'}]};
+const small=compactCrmState(state);
+assert.deepEqual(cancellationDetails(order,small.events),cancellationDetails(order,state.events));
+assert.deepEqual(small.clients,[{id:'c',name:'Client'}]);assert.equal(small.events.length,1);assert.equal(state.clients[0].legacyOrderHistory.length,1);
+console.log('Compact state: deferred histories, cancellation fallback and source immutability passed');

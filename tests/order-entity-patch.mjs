@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {seed} from '../lib/crm.ts';
+import {mergeOrderEntityPatch} from '../lib/order-entity-patch.ts';
+const initial=seed(),client={id:'client',name:'Client',source:'Test',owner:'operator',version:1},order={id:'order',clientId:client.id,version:1};
+initial.clients=[client,{...client,id:'other'}];initial.orders=[order,{...order,id:'other-order',clientId:'other'}];
+initial.tasks=[{id:'keep',clientId:'other',title:'keep',text:'',at:''},{id:'old',clientId:client.id,title:'old',text:'',at:''}];
+initial.retentionPreview={[client.id]:{until:'old'},other:{until:'keep'}};
+const next={...initial,clients:[],orders:[],events:[],tasks:[],retentionPreview:{}};
+const result=mergeOrderEntityPatch(initial,{clientId:client.id,state:next});
+assert.ok(!result.clients.some(c=>c.id===client.id));assert.ok(!result.orders.some(o=>o.clientId===client.id));
+assert.deepEqual(result.tasks,[initial.tasks[0]]);assert.deepEqual(result.retentionPreview,{other:{until:'keep'}});
+assert.deepEqual(result.employees,initial.employees);assert.ok(initial.clients.includes(client));
+assert.deepEqual(mergeOrderEntityPatch(result,{clientId:client.id,state:next}),result);
+const updated={...initial,clients:[{...client,name:'new'}],orders:order?[{...order,version:order.version+1}]:[],events:[],tasks:[{...initial.tasks[1],id:'new'}],retentionPreview:{[client.id]:{until:'new'}}};
+const merged=mergeOrderEntityPatch(initial,{clientId:client.id,state:updated});
+assert.equal(merged.clients.find(c=>c.id===client.id).name,'new');assert.equal(merged.tasks.length,2);
+console.log('Entity patches: scoped replacement, revoked access, side data, idempotency and unrelated records passed');

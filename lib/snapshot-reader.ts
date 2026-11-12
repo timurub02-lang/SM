@@ -7,8 +7,9 @@ export class SnapshotReader<T> {
  private value:T|undefined;
  private url:string;
  private request:typeof fetch;
- constructor(url:string,request:typeof fetch=(...args)=>fetch(...args)){this.url=url;this.request=request;}
- invalidate(){this.generation++;this.controller?.abort();this.pending=undefined;this.etag='';this.value=undefined;}
+ private decode:(value:T,previous?:T)=>T;
+ constructor(url:string,request:typeof fetch=(...args)=>fetch(...args),decode:(value:T,previous?:T)=>T=value=>value){this.url=url;this.request=request;this.decode=decode;}
+ invalidate(preserveCache=false){this.generation++;this.controller?.abort();this.pending=undefined;if(!preserveCache){this.etag='';this.value=undefined;}}
  read():Promise<T|null>{
   if(this.pending)return this.pending;
   const generation=this.generation,controller=new AbortController();this.controller=controller;
@@ -22,7 +23,7 @@ export class SnapshotReader<T> {
     const data=await response.json() as T&{error?:string};
     if(generation!==this.generation)return null;
     if(!response.ok)throw Object.assign(Error(data.error||'Не удалось загрузить данные'),{status:response.status});
-    this.etag=response.headers.get('etag')||'';this.value=data;return data as T;
+    this.value=this.decode(data,this.value);this.etag=response.headers.get('etag')||'';return this.value;
    }catch(error){if(controller.signal.aborted)return null;if(timeout.aborted)throw Error("CRM не успела загрузить данные. Проверьте соединение и повторите загрузку.");throw error;}
    finally{if(generation===this.generation){this.pending=undefined;this.controller=undefined;}}
   })();
