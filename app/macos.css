@@ -856,3 +856,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .operator-stats-dialog .stats-table .stats-metric:hover{text-decoration:underline}
 
 .premium-archive-toolbar{justify-content:flex-start;flex-wrap:wrap;gap:16px}.premium-archive-toolbar .search{flex:0 1 380px;margin-left:0;min-width:240px}
+
+.order-pagination-slot{margin-bottom:16px}
