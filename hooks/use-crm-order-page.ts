@@ -4,7 +4,7 @@ import {readJsonResponse} from '@/lib/read-json-response';
 import type {State,Order,Client} from '@/lib/crm';
 import type {OrderListQuery} from '@/lib/crm-order-list';
 type Page={rows:Order[];clients:Client[];total:number;page:number};
-export function useCrmOrderPage(query:(OrderListQuery&{page:number;clientWorkFilter:string})|null,state:State,actor:string){
+export function useCrmOrderPage(query:(OrderListQuery&{page:number;clientWorkFilter:string})|null,state:State,actor:string,refreshKey=''){
  const key=query?new URLSearchParams({list:query.view==='mine'?'mine':'orders',clientWorkFilter:query.clientWorkFilter,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,view:query.view,filter:query.filter,query:query.query,next:query.showNextPremium?'1':'0',page:String(query.page)}).toString():'';
  const [result,setResult]=useState<{key:string;data?:Page;error?:string}>({key:''});
  const [attempt,retry]=useState(0),[loading,setLoading]=useState(false);
@@ -22,7 +22,7 @@ export function useCrmOrderPage(query:(OrderListQuery&{page:number;clientWorkFil
   const request=()=>{queue.request();if(timer)return;timer=setTimeout(()=>{timer=undefined;void queue.flush(()=>controller.signal.aborted,read);},150);};
   refresh.current=request;request();
   return()=>{refresh.current=()=>{};clearTimeout(timer);controller.abort();};
- },[key,actor,attempt]);
+ },[key,actor,attempt,refreshKey]);
  // Background snapshots queue one more read; only changing the page context cancels it.
  useEffect(()=>refresh.current(),[state]);
  const current=result.key===actor+key?result:undefined;

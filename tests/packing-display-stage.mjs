@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {packingStage,seed} from '../lib/crm.ts';
+import {packingDisplayStage} from '../lib/packing-display-stage.ts';
+import {filteredOrderList} from '../lib/crm-order-list.ts';
+const now=Date.parse('2026-11-12T21:00:00Z'); // Midnight in Moscow.
+const order={id:'today',clientId:'client',manager:'manager',status:'shipping',delivery:'cdek_pickup',items:[],cdekExported:true,cdekWaybillReceived:true,cdekTransferredAt:'2026-11-12T21:00:00Z'};
+assert.equal(packingStage(order),'dispatched');
+assert.equal(packingDisplayStage(order,now),'dispatched');
+assert.equal(packingDisplayStage({...order,cdekTransferredAt:'2026-11-12T20:59:59Z'},now),'in_cdek');
+assert.equal(packingDisplayStage({...order,cdekTransferredAt:undefined,shippedAt:order.cdekTransferredAt},now),'dispatched');
+assert.equal(packingDisplayStage({...order,cdekTransferredAt:undefined},now),'in_cdek');
+assert.equal(packingDisplayStage({...order,cdekTransferredAt:'invalid'},now),'in_cdek');
+assert.equal(packingDisplayStage(order,now+86400000),'in_cdek');
+assert.equal(packingDisplayStage({...order,status:'redeemed'},now),'completed');
+assert.equal(packingDisplayStage({...order,delivery:'russian_post',cdekExported:false},now),'exported');
+const state=seed(),employee={id:'logistic',role:'logistic'};
+state.clients=[{id:'client',name:'Client'}];state.orders=[order,{...order,id:'earlier',cdekTransferredAt:'2026-11-12T20:59:59Z'},{...order,id:'unknown',cdekTransferredAt:undefined}];
+const list=filter=>filteredOrderList(state,employee,{view:'shipping',filter,query:'',showNextPremium:false},now).map(o=>o.id);
+assert.deepEqual(list('dispatched'),['today']);assert.deepEqual(list('in_cdek'),['earlier','unknown']);
+assert.deepEqual(filteredOrderList(state,employee,{view:'shipping',filter:'dispatched',query:'earlier',showNextPremium:false},now).map(o=>o.id),['earlier']);
+console.log('CDEK display tabs: Moscow midnight, fallback/missing dates, next day, other stages, shared list filtering and cross-tab search passed');
