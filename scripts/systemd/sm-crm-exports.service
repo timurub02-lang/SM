@@ -1,0 +1,20 @@
+[Unit]
+Description=CRM Excel exports in an isolated worker
+After=sm-crm.service
+ConditionPathExists=/srv/crm/current/scripts/sync-exports.mjs
+
+[Service]
+Type=oneshot
+User=crmadmin
+Group=crmadmin
+EnvironmentFile=/etc/sm-crm.env
+ExecStart=/opt/sm-node/bin/node /srv/crm/current/scripts/sync-exports.mjs
+TimeoutStartSec=125
+KillMode=control-group
+MemoryMax=1536M
+CPUQuota=100%
+Nice=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+

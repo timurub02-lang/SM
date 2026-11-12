@@ -1,4 +1,5 @@
 "use client";
+import {downloadExport} from '@/lib/download-export';
 import {departmentTotals} from '@/lib/premium-departments';
 import {Tabs,TabsList,TabsTrigger} from '@/components/ui/tabs';
 import {createPortal} from 'react-dom';
@@ -14,7 +15,7 @@ export function PremiumPayroll({orders,employee,employees,period,view,group,onGr
  const [snapshot,setSnapshot]=useState<PayrollRow[]|null>(null),[lifecycle,setLifecycle]=useState<PayrollResponse['lifecycle']>(null);
  function receive(data:PayrollResponse){setSaved(data.adjustments);setSnapshot(data.payroll);setLifecycle(data.lifecycle);}
  const [exporting,setExporting]=useState(false);
- async function downloadExcel(){setExporting(true);setError('');try{const response=await fetch('/api/premium/export?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(period));if(!response.ok){const data=await response.json() as {error?:string};throw Error(data.error||'Не удалось скачать Excel');}const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download='Премия_'+period+'_'+(employee.role==='admin'?'все_отделы':'отдел')+'.xlsx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setError(e instanceof Error?e.message:'Ошибка выгрузки');}finally{setExporting(false);}}
+ async function downloadExcel(){setExporting(true);setError('');try{await downloadExport('premium',period,'/api/premium/export?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(period),'Премия_'+period+'_'+(employee.role==='admin'?'все_отделы':'отдел')+'.xlsx',()=>{});}catch(e){setError(e instanceof Error?e.message:'Ошибка выгрузки');}finally{setExporting(false);}}
  const [saved,setSaved]=useState<Record<string,PremiumSaved>|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [edit,setEdit]=useState<{employee:Employee;input:PremiumAdjustment;rate:number;revision:string}|null>(null);
  const request=useCallback(async(body?:unknown)=>{const r=await fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(period),body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'});const data=await r.json() as PayrollResponse;if(!r.ok)throw Error(data.error||'Не удалось загрузить расчёт');return data;},[employee.id,period]);

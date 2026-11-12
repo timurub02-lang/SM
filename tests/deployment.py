@@ -41,6 +41,10 @@ class Deployment(unittest.TestCase):
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1})
             (path/'sync-maintenance.mjs').write_text('fixture')
             deploy.validate_jobs(path,{'maintenance':1})
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1})
+            (path/'sync-exports.mjs').write_text('fixture')
+            deploy.validate_jobs(path,{'maintenance':1,'exports':1})
+            (path/'sync-exports.mjs').unlink()
             (path/'sync-base.mjs').unlink()
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1})
 
