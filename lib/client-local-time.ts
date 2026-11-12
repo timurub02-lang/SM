@@ -14,6 +14,6 @@ export function clientLocalTime(client:Pick<Client,'city'|'address'|'addressPart
  if(zones.size!==1)return 'Местное время не определено';
  const zone=[...zones][0],local=clock(zone,now),moscow=clock('Europe/Moscow',now);
  const minutes=(s:string)=>Number(s.slice(0,2))*60+Number(s.slice(3));
- let difference=(minutes(local)-minutes(moscow))/60;if(difference< -1)difference+=24;
+ let difference=(minutes(local)-minutes(moscow))/60;if(difference< -1)difference+=24;if(difference>9)difference-=24;
  return `У клиента ${local} · МСК${difference===0?'':difference>0?' +'+difference:' '+difference}`;
 }

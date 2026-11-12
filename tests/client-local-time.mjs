@@ -12,3 +12,5 @@ assert.equal(clientLocalTime(c('Неизвестно'),now),'Местное вр
 assert.equal(clientLocalTime(c('ул. Московская'),now),'Местное время не определено');
 assert.equal(clientLocalTime({...c('Калининградская область'),addressParts:{region:'Челябинская область'}},now),'У клиента 01:40 · МСК +2');
 console.log('Client local time: regions, abbreviation, midnight, Moscow offsets, ambiguity and unknown addresses passed');
+
+assert.equal(clientLocalTime(c('Калининградская область'),Date.parse('2026-11-12T21:40:00Z')),'У клиента 23:40 · МСК -1');
