@@ -64,11 +64,10 @@ export async function requestPreparedWorkspace(d:ActivityDb,employeeId:string,no
  await d.prepare('INSERT INTO crm_model_demand(employee_id,requested_at) VALUES(?,?) ON CONFLICT(employee_id) DO UPDATE SET requested_at=excluded.requested_at WHERE requested_at<?').bind(employeeId,now,now-30000).run();
 }
 export async function readPreparedModel<T>(d:ActivityDb,kind:string,scope:string,sourceRevision?:string,now=Date.now(),jsonPath='$'):Promise<PreparedModel<T>>{
- const source=await readModelSource(d);
- const row=await d.prepare('SELECT schema_version,source_revision,access_revision,computed_at,valid_until,CASE WHEN json_valid(data) THEN json_extract(data,?) ELSE NULL END AS data FROM crm_read_models WHERE kind=? AND scope=?').bind(jsonPath,kind,scope).first();
- const health=await d.prepare('SELECT ok,heartbeat,message FROM crm_model_worker WHERE id=1').first();
- const healthy=health?.ok===1&&now-health.heartbeat>=0&&now-health.heartbeat<10000;
- if(!row||row.schema_version!==1||row.access_revision!==source.accessRevision)return {status:healthy?'pending':'error',schemaVersion:1,message:healthy?'Сводка готовится':'Обработчик сводок недоступен. Ожидаем готовые данные.'};
+ await initPreparedModels(d);
+ const row=await d.prepare("SELECT c.epoch||':'||m.epoch||':'||m.access AS current_access_revision,r.schema_version,r.source_revision,r.access_revision,r.computed_at,r.valid_until,CASE WHEN json_valid(r.data) THEN json_extract(r.data,?) ELSE NULL END AS data,w.ok AS worker_ok,w.heartbeat AS worker_heartbeat FROM crm_model_source m JOIN crm_change_clock c ON c.id=1 LEFT JOIN crm_read_models r ON r.kind=? AND r.scope=? LEFT JOIN crm_model_worker w ON w.id=1 WHERE m.id=1").bind(jsonPath,kind,scope).first();
+ const healthy=row?.worker_ok===1&&now-row.worker_heartbeat>=0&&now-row.worker_heartbeat<10000;
+ if(!row||row.schema_version!==1||row.access_revision!==row.current_access_revision)return {status:healthy?'pending':'error',schemaVersion:1,message:healthy?'Сводка готовится':'Обработчик сводок недоступен. Ожидаем готовые данные.'};
  try{
   if(row.data===null)throw Error('Missing or damaged prepared value');
   const data=JSON.parse(row.data) as T;

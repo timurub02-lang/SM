@@ -13,9 +13,9 @@ try {
  assert.equal((await d.prepare('SELECT * FROM items').all()).results.length,2);
  assert.equal((await d.prepare('UPDATE items SET value=? WHERE id=?').bind('updated',1).run()).meta.changes,1);
  assert.equal(await d.prepare('SELECT * FROM items WHERE id=3').first(),null);
- let served=false;const pending=setImmediate(()=>{served=true;});
- try {for(let i=0;i<50;i++)await d.prepare('SELECT 1').first();assert.equal(served,true,'ordinary query chains must yield to pending phone/HTTP work');}
- finally {clearImmediate(pending);}
+ let completed=0,servedAt=-1,timerProgress=0;const total=8000,pending=setImmediate(()=>{servedAt=completed;}),pulse=setInterval(()=>{if(completed>0&&completed<total)timerProgress++;},1);
+ try {await Promise.all(Array.from({length:4},async()=>{for(let i=0;i<2000;i++){await d.prepare('SELECT 1').first();completed++;}}));assert.ok(servedAt>=0&&servedAt<total,'parallel query chains must yield to pending phone/HTTP work');assert.ok(timerProgress>0,'timers must keep progressing during query chains');}
+ finally {clearImmediate(pending);clearInterval(pulse);}
  console.log('SQLite: reads, writes, transaction rollback and request fairness passed');
 } finally { d.close(); }
 

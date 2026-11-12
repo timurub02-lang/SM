@@ -4,13 +4,19 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 export function openDatabase(path: string) {
   const connection = new DatabaseSync(path);
   connection.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=0;");
+  let yieldDeadline=performance.now()+2,pendingYield:Promise<void>|undefined;
   // SQLite's synchronous busy timeout freezes HTTP and phone WebSocket authorization.
   // Retry outside transactions so other requests can run while another process writes.
   async function retryBusy<T>(operation: () => T): Promise<T> {
-    // Resolved Promise chains otherwise monopolize the loop across many queries.
-    await new Promise<void>(resolve => setImmediate(resolve));
-    const deadline = performance.now() + 5000;
+    let deadline=0;
     for (;;) {
+      // Share a short CPU budget, not one queue round-trip for every tiny SQL query.
+      // Recheck after waking so concurrent callers cannot all bypass the budget.
+      while(performance.now()>=yieldDeadline){
+        pendingYield??=new Promise<void>(resolve=>setImmediate(()=>{yieldDeadline=performance.now()+2;pendingYield=undefined;resolve();}));
+        await pendingYield;
+      }
+      if(!deadline)deadline=performance.now()+5000;
       try { return operation(); }
       catch (error) {
         if (!error || typeof error !== "object" || !("errcode" in error) || (Number(error.errcode) & 255) !== 5 || performance.now() >= deadline) throw error;
