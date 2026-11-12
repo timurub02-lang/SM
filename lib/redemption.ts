@@ -128,6 +128,11 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  }else if(p.operation==='verify_return'){if(!['admin','redemption'].includes(e.role)||!returnConfirmedToday(row,day)||!row.returnWaybill||row.returnVerifiedAt)throw Error('Проверить возврат может сотрудник выкупа после сохранения накладной');Object.assign(next,{returnVerifiedAt:at,returnVerifiedBy:e.name,returnVerifiedById:e.id});}
  else if(p.operation==='verify_date'){if(!['admin','redemption'].includes(e.role)||!dateConfirmedToday(row,day)||row.dateVerifiedAt)throw Error('Проверить может сотрудник выкупа после подтверждения даты');Object.assign(next,{dateVerifiedAt:at,dateVerifiedBy:e.name,dateVerifiedById:e.id});}
  else if(p.operation==='confirm_date'){if(!['admin','redemption'].includes(e.role)||!awaitingDateConfirmation(row)||row.resultDate<day)throw Error('Подтверждение доступно администратору и сотруднику выкупа для ожидающей даты');Object.assign(next,{dateConfirmation:'confirmed',dateConfirmedBy:e.name,dateConfirmedById:e.id,dateConfirmedAt:at});}
+ else if(p.operation==='operator_nd'){
+  if(!awaitingOperator(row)||!['operator','department_head'].includes(e.role))throw Error('Отметка НД доступна оператору в возвращённом заказе');
+  if(typeof p.comment!=='string'||p.comment.length>3000)throw Error('Комментарий должен быть до 3000 символов');
+  next.operatorReturn={...v.operatorReturn,attempts:[...(v.operatorReturn.attempts||[]),{action:'nd',author:e.name,authorId:e.id,at,comment:p.comment.trim()}]};
+ }
  else if(p.operation==='comment'){if(typeof p.text!=='string'||!p.text.trim()||p.text.length>3000)throw Error('Введите комментарий до 3000 символов');next.comments=[...(v.comments||[]),{id:crypto.randomUUID(),text:p.text.trim(),author:e.name,authorId:e.id,at}];}
  else if(p.operation==='storage'){throw Error('Срок хранения обновляется автоматически из СДЭК');}
  else {
