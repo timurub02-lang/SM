@@ -5,6 +5,8 @@ export async function initBaseStorage(d:Db){
  await initBaseMovements(d);
  await d.prepare("CREATE INDEX IF NOT EXISTS idx_clients_owned ON clients(id) WHERE COALESCE(json_extract(data,'$.owner'),'')<>''").run();
  await d.prepare('CREATE TABLE IF NOT EXISTS client_phone_index(phone TEXT PRIMARY KEY,client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE)').run();
+ // The update trigger removes by client_id; backfill otherwise scans the growing table for every client.
+ await d.prepare('CREATE INDEX IF NOT EXISTS idx_client_phone_client ON client_phone_index(client_id)').run();
  const source="SELECT phone AS value FROM clients WHERE id=NEW.id UNION SELECT value FROM json_each(COALESCE(json_extract(NEW.data,'$.linkedPhones'),'[]'))";
  const clean="replace(replace(replace(replace(replace(value,'+',''),' ',''),'-',''),'(',''),')','')";
  const normalized=`CASE WHEN length(${clean})=11 AND substr(${clean},1,1)='8' THEN '7'||substr(${clean},2) ELSE ${clean} END`;
