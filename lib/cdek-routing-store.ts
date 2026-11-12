@@ -17,4 +17,3 @@ export async function orderRouting(order:Order){
  const choice=chooseRouting(settings.config,settings.accounts,order,manager?JSON.parse(manager.data).department||'':'',rows.results);
  return {...settings,choice,managerRaw:manager?.data||'',amountCents:routingAmount(order)};
 }
-export function assertRoutingSlot(route:Awaited<ReturnType<typeof orderRouting>>,slot:number){if(route.choice&&route.choice.slot!==slot)throw Error('СДЭК: изменился аккаунт по правилам. Пересчитайте доставку перед выгрузкой');}
