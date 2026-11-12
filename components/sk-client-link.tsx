@@ -12,5 +12,5 @@ export function SkClientLink({orderId,actorId}:{orderId:string;actorId:string}){
  const icon=<img src="/skorozvon-icon.png" width={32} height={32} alt=""/>;
  if(url)return <a className="sk-client-icon" href={url} target="_blank" rel="noopener noreferrer" aria-label="Открыть клиента в Скорозвоне" title="Открыть клиента в Скорозвоне">{icon}</a>;
  if(loading||error)return <button type="button" className="sk-client-icon" disabled={loading} onClick={()=>setRetry(n=>n+1)} aria-label={loading?'Проверяется ссылка на клиента СК':'Повторить проверку ссылки на клиента СК'} title={loading?'Проверяется ссылка на клиента СК':'Не удалось получить ссылку. Нажмите, чтобы повторить'}>{icon}{error&&<span aria-hidden="true">!</span>}</button>;
- return null;
+ return <button type="button" className="sk-client-icon" disabled aria-label="Связь с клиентом Скорозвона не найдена" title="Связь с клиентом Скорозвона не найдена">{icon}</button>;
 }

@@ -122,6 +122,11 @@ try{
  db.prepare("UPDATE clients SET data=json_set(data,'$.owner','one') WHERE id='c-one'").run();
 
  db.prepare("UPDATE orders SET data=json_remove(data,'$.skLeadId') WHERE id='o-one'").run();
+ const linkedHistory=JSON.parse(db.prepare("SELECT data FROM orders WHERE id='o-one'").get().data);
+ for(const [id,clientId,skLeadId] of [['sk-link-history','c-one','51000000001'],['sk-link-foreign','c-two','51000000002']])db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...linkedHistory,id,clientId,skLeadId}));
+ const inheritedSk=await call('/api/sk-client-link?orderId=o-one',{cookie:cookies.one});assert.equal(inheritedSk.status,200,inheritedSk.text);assert.deepEqual(inheritedSk.data,{url:'https://app1.skorozvon.ru/#/leads/51000000001'});
+ db.prepare("DELETE FROM orders WHERE id IN ('sk-link-history','sk-link-foreign')").run();
+
 
  // Period adjustments and the shared operator rate are atomic and scoped.
  const premiumEmployee={...staff[1],id:'premium-op',login:'premium-op',sentinel:'preserve'};
