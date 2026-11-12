@@ -1,8 +1,13 @@
+import {initCrmReadIndexes} from '@/lib/crm-read-indexes';
+import {filteredClientList} from '@/lib/crm-client-list';
+import {maintenanceHealthy} from '@/lib/crm-maintenance';
+import {filteredOrderList,orderListViews} from '@/lib/crm-order-list';
+import {cachedCrmState} from '@/lib/crm-state-cache';
 import {crmSnapshotResponse} from '@/lib/crm-snapshot-response';
 import {compactCrmState} from '@/lib/compact-crm-state';
 import {snapshotOrdersQuery,snapshotOrder,type SnapshotOrderRow} from '@/lib/snapshot-orders';
 import {clientRetentionPreview} from '@/lib/client-retention-preview';
-import {readOrderState,orderMutationActions,readRetentionSales} from '@/lib/order-state';
+import {readOrderState,readClientState,orderMutationActions,readRetentionSales} from '@/lib/order-state';
 import {orderPatchActions,orderSavePatch} from '@/lib/order-save-patch';
 import {editLeaderRates} from '@/lib/leader-premium-edit';
 import {requestOrderCancellation,resolveOrderCancellation} from '@/lib/order-cancellation';
@@ -52,9 +57,13 @@ import {z} from "zod";
 export const dynamic="force-dynamic";
 const json=JSON.stringify;
 async function identity(){const u=await getChatGPTUser();if(!u)throw new Error("Требуется вход в CRM");return u;}
-async function readState(reconcile=true,extraClientId='',includeFree=false,orderId=''):Promise<State>{
- if(orderId){await initInventory();return readOrderState(db(),orderId,reconcile);}
- await initInventory();const d=db();await initBaseStorage(d);const tables=await Promise.all([(includeFree?d.prepare("SELECT data,version FROM clients ORDER BY id"):d.prepare(workingClientsQuery).bind(extraClientId)).all(),d.prepare(snapshotOrdersQuery).all<SnapshotOrderRow>(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
+async function readState(reconcile=true,extraClientId='',includeFree=false,orderId='',compact=false,clientId=''):Promise<State>{
+ if(orderId||clientId){await initInventory();return orderId?readOrderState(db(),orderId,reconcile):readClientState(db(),clientId,reconcile);}
+ await initInventory();const d=db();await initBaseStorage(d);await initCrmReadIndexes(d);
+ // Only the read-only transport projection may omit history; mutation snapshots stay complete.
+ const clientQuery=compact&&!reconcile?workingClientsQuery.replace('SELECT data,version',"SELECT json_remove(data,'$.legacyOrderHistory','$.importFields') AS data,version"):workingClientsQuery;
+ const eventsQuery=compact&&!reconcile?"SELECT e.data FROM events e JOIN orders o ON o.id=e.order_id WHERE json_extract(o.data,'$.status')='refused' AND (json_extract(e.data,'$.text') LIKE '%→ Отказ%' OR json_extract(e.data,'$.text') LIKE 'Заказ отменён:%' OR instr(json_extract(e.data,'$.text'),'Отказ у двери подтверждён')>0) ORDER BY e.at DESC,e.id DESC":"SELECT data FROM events ORDER BY at DESC";
+ const tables=await Promise.all([(includeFree?d.prepare("SELECT data,version FROM clients ORDER BY id"):d.prepare(clientQuery).bind(extraClientId)).all(),d.prepare(snapshotOrdersQuery).all<SnapshotOrderRow>(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare(eventsQuery).all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
  const state:State={clients:tables[0].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),orders:tables[1].results.map(snapshotOrder),employees:tables[2].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),events:tables[3].results.map((r:any)=>JSON.parse(r.data)),settings:tables[4]?JSON.parse(tables[4].data):{retentionDays:30}};
  state.settings.orderPolicy=(await orderSettings()).policy;
  if(reconcile){
@@ -78,10 +87,12 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  ...s.events.map(e=>d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e))),
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
-async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId=''){
- const state=await readState(true,'',false,orderId);await saveReminders(state,fanout?undefined:user.employee?.id,orderId?state.clients[0]?.id:undefined);if(!user.employee)return state;
+async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId=''){
+ const worker=process.env.CRM_MAINTENANCE_WORKER==='1'&&await maintenanceHealthy(db());
+ const state=worker&&!fanout&&!orderId&&!clientId?await cachedCrmState(db(),()=>readState(false,'',false,'',compact),compact?'compact':'full'):await readState(true,'',false,orderId,false,clientId);
+ if(!worker||fanout||orderId||clientId)await saveReminders(state,fanout?undefined:user.employee?.id,(orderId||clientId)?state.clients[0]?.id:undefined);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
- if(['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),orderId?await readRetentionSales(db(),state.clients,config):state.orders);}
+ if(['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),(orderId||clientId)?await readRetentionSales(db(),state.clients,config):state.orders);}
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
  if(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee)){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
@@ -99,14 +110,35 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
  return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
-async function handleGET(request:Request){const timing=new RequestTiming();try{const user=await identity();await initialize();const state=await timing.measure('snapshot',()=>responseState(user));return timing.finish(new URL(request.url).searchParams.get('transport')==='compact-v1'?await crmSnapshotResponse(request,compactCrmState(state),user.userId):await conditionalJson(request,state));}catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503}));}}
+const listSchema=z.object({list:z.enum(['orders','mine']),view:z.enum(['mine',...orderListViews]),filter:z.string().max(80).default('all'),query:z.string().max(150).default(''),next:z.enum(['0','1']).default('0'),timeZone:z.string().max(100).default('Europe/Moscow').refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}}),clientWorkFilter:z.enum(['all','needed','planned','done']).default('all'),page:z.coerce.number().int().min(0).max(100000).default(0)});
+async function handleGET(request:Request){
+ const timing=new RequestTiming();
+ try{
+  const user=await identity(),params=new URL(request.url).searchParams;
+  const list=params.has('list')?listSchema.safeParse(Object.fromEntries(params)):null;
+  if(list&&!list.success)return Response.json({error:'Некорректная страница заказов'},{status:400});
+  await initialize();const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||params.get('transport')==='compact-v1'));
+  if(list?.success){
+   if(!user.employee||['courier','purchasing','redemption'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
+   const q=list.data;
+   if(q.list==='mine'){
+    if(!['operator','department_head'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
+    const all=filteredClientList(compactCrmState(state),user.employee,q),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1));
+    return timing.finish(await conditionalJson(request,{rows:[],clients:all.slice(page*50,(page+1)*50),total:all.length,page}));
+   }
+   const all=filteredOrderList(state,user.employee,{...q,showNextPremium:q.next==='1'}),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1)),rows=all.slice(page*50,(page+1)*50),ids=new Set(rows.map(o=>o.clientId));
+   return timing.finish(await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page}));
+  }
+  return timing.finish(params.get('transport')==='compact-v1'?await crmSnapshotResponse(request,compactCrmState(state),user.userId):await conditionalJson(request,state));
+ }catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==='Требуется вход в CRM'?e.message:'Не удалось подключиться к базе CRM'},{status:503}));}
+}
 async function handlePOST(request:Request){
  const timing=new RequestTiming();
  try{
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
  const raw=await readLimitedText(request,6000000);if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
- const p=JSON.parse(raw);const d=db();const scopedOrder=user.employee&&p.responseMode==='entity-patch'&&orderMutationActions.has(p.action)?z.string().min(1).max(100).parse(p.id):'';const s=await timing.measure('read',()=>readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action),scopedOrder));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
+ const p=JSON.parse(raw);const d=db();const scopedOrder=user.employee&&p.responseMode==='entity-patch'&&p.action!=='createOrder'&&orderMutationActions.has(p.action)?z.string().min(1).max(100).parse(p.id):'';const scopedClient=user.employee&&p.responseMode==='entity-patch'&&p.action==='createOrder'?z.string().min(1).max(100).parse(p.clientId):'';const scopedMutation=!!(scopedOrder||scopedClient);const s=await timing.measure('read',()=>readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action),scopedOrder,false,scopedClient));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
@@ -115,7 +147,7 @@ async function handlePOST(request:Request){
  const eventSQL=(e:Event)=>d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e));
  const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
  const assignedUntil=()=>"";
- await saveReminders(s);
+ await saveReminders(s,undefined,scopedMutation?s.clients[0]?.id:undefined);
  if(p.action==="saveClientWork"){
   if(!employee)throw Error("Требуется сотрудник");
   await saveClientWork(d,s,employee,p,now);message="Результат работы сохранён";
@@ -131,7 +163,7 @@ async function handlePOST(request:Request){
   if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные');
   const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');if(!target)throw Error('Выберите оператора');
   const data=clientSchema.parse({name:p.name,phone:row.phone,owner:target.id,source:'Входящее обращение'});
-  await initBaseStorage(d);
+  await initBaseStorage(d);await initCrmReadIndexes(d);
   if(await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(normalizedPhone(data.phone)).first())throw Error('Клиент с этим номером уже существует. Найдите его и соедините номер');
   const baseType=z.enum(baseTypes).parse(p.baseType);
   const savedBase=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();
@@ -152,7 +184,7 @@ async function handlePOST(request:Request){
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
   if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные');
   const c=s.clients.find(c=>c.id===z.string().min(1).max(100).parse(p.clientId));if(!c)throw Error('Клиент не найден');
-  await initBaseStorage(d);
+  await initBaseStorage(d);await initCrmReadIndexes(d);
   const phone=normalizePhone(row.phone);if(!phone)throw Error('В обращении отсутствует корректный номер');
   const existing=await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(normalizedPhone(phone)).first<{client_id:string}>();
   if(existing&&existing.client_id!==c.id)throw Error('Этот номер уже принадлежит другому клиенту');
@@ -601,9 +633,9 @@ async function handlePOST(request:Request){
   // ponytail: bounded imports; background chunked jobs when files exceed 1000 clients.
   let actual=0;for(let i=0;i<statements.length;i+=50){const results=await d.batch(statements.slice(i,i+50));actual+=results.filter((_,j)=>j%2===0).reduce((n,r)=>n+r.meta.changes,0);}message=`Добавлено: ${actual}. Дубли: ${duplicates+added-actual}. Адресов требуют проверки: ${review}. Ошибки ДаДата: ${errors}`;
  }else throw new Error("Неизвестное действие");
- const response=await timing.measure('snapshot',()=>responseState(user,true,scopedOrder));
+ const response=await timing.measure('snapshot',()=>responseState(user,true,scopedOrder,false,scopedClient));
  const state=p.transport==='compact-v1'?compactCrmState(response):response;
- if(scopedOrder)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state},message}));
+ if(scopedMutation)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state},message}));
  if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return timing.finish(Response.json({statePatch:orderSavePatch(s,state,p.id),message}));
  return timing.finish(Response.json({state,message}));
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return timing.finish(Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400}));}

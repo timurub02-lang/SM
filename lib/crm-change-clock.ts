@@ -20,7 +20,10 @@ async function install(d:ActivityDb){
  for(const table of tables.filter(t=>existing.includes(t))){
   const columns=(await d.prepare(`PRAGMA table_info(${table})`).all()).results.map((r:{name:string})=>r.name);
   const changed=columns.map((name:string)=>`OLD."${name}" IS NOT NEW."${name}"`).join(' OR ');
-  for(const operation of ['INSERT','UPDATE','DELETE'])statements.push(d.prepare(`CREATE TRIGGER IF NOT EXISTS crm_clock_${table}_${operation} AFTER ${operation} ON ${table} ${operation==='UPDATE'?`WHEN ${changed}`:''} BEGIN UPDATE crm_change_clock SET revision=revision+1 WHERE id=1; END`));
+  for(const operation of ['INSERT','UPDATE','DELETE']){
+   const conditions=[...(operation==='UPDATE'?[`(${changed})`]:[]),...(table==='settings'?[`${operation==='DELETE'?'OLD':'NEW'}.id<>'crm-maintenance-health'`]:[])];
+   statements.push(d.prepare(`CREATE TRIGGER IF NOT EXISTS crm_clock_${table}_${operation} AFTER ${operation} ON ${table} ${conditions.length?'WHEN '+conditions.join(' AND '):''} BEGIN UPDATE crm_change_clock SET revision=revision+1 WHERE id=1; END`));
+  }
  }
  if(statements.length)await d.batch(statements);
 }

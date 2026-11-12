@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {seed} from '../lib/crm.ts';
+import {filteredOrderList} from '../lib/crm-order-list.ts';
+import {filteredClientList} from '../lib/crm-client-list.ts';
+const state=seed(),now=Date.parse('2026-11-12T00:30:00Z'),at=new Date(now).toISOString();
+const employee={id:'operator',role:'operator',department:'1'};state.employees=[employee];
+state.clients=[{id:'one',name:'Иван',phone:'',city:'Москва',owner:'operator',createdAt:at},{id:'two',name:'Другой',phone:'',city:'',owner:'other',createdAt:at}];
+const order={id:'O-123',clientId:'one',manager:'operator',status:'draft',items:[],createdAt:at,updatedAt:at,contact:'callback',due:'2026-11-11T23:30:00Z',reason:'',comment:'',round:0};
+state.orders=[order,{...order,id:'O-456',clientId:'two',manager:'other'}];
+assert.deepEqual(filteredOrderList(state,employee,{view:'orders',filter:'cancelled',query:'123',showNextPremium:false},now).map(o=>o.id),['O-123'],'search crosses status tabs, retaining ownership');
+assert.equal(filteredOrderList(state,employee,{view:'orders',filter:'cancelled',query:'',showNextPremium:false},now).length,0);
+assert.deepEqual(filteredClientList(state,employee,{filter:'today',query:'',clientWorkFilter:'all',timeZone:'Europe/Moscow'},now).map(c=>c.id),['one']);
+assert.equal(filteredClientList(state,employee,{filter:'today',query:'',clientWorkFilter:'all',timeZone:'UTC'},now).length,0,'server must use the browser calendar day');
+assert.equal(filteredClientList(state,employee,{filter:'all',query:'O-123',clientWorkFilter:'all'},now).length,1,'client search includes order IDs');
+console.log('List selectors: cross-tab search, ownership and browser calendar boundaries passed');

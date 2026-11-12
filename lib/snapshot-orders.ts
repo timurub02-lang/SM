@@ -6,6 +6,7 @@ export const snapshotOrdersQuery=`SELECT o.data,o.version,
  json_extract(s.data,'$.number') AS shipment_number,
  json_extract(s.data,'$.downloadedAt') IS NOT NULL AS cdek_waybill_received
  FROM orders o LEFT JOIN settings s ON s.id='cdek-shipment-' || o.id ORDER BY o.id DESC`;
+export const snapshotOrdersForClientQuery=snapshotOrdersQuery.replace(' ORDER BY o.id DESC',' WHERE o.client_id=? ORDER BY o.id DESC');
 
 export type SnapshotOrderRow={data:string;version:number;shipment_state:unknown;shipment_number:unknown;cdek_waybill_received:number};
 export function snapshotOrder(row:SnapshotOrderRow):Order{

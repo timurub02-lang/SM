@@ -17,7 +17,7 @@ def package(commit,root=pathlib.Path('.')):
             probe=subprocess.run(['node',str(job)],env=env,capture_output=True,text=True,timeout=15)
             if probe.returncode==0 or 'CRM_DATABASE_PATH is required' not in probe.stderr:
                 raise RuntimeError('Background job failed import check: '+job.name+'\n'+probe.stderr)
-    (standalone/'release.json').write_text(json.dumps({'commit':commit,'format':1})+'\n')
+    (standalone/'release.json').write_text(json.dumps({'commit':commit,'format':1,**({'maintenance':1} if any(p.name=='sync-maintenance.mjs' for p in jobs) else {})})+'\n')
     output=root/'dist';output.mkdir(exist_ok=True)
     def allowed(info):
         parts=pathlib.PurePosixPath(info.name).parts

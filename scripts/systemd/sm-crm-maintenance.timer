@@ -1,0 +1,11 @@
+[Unit]
+Description=Check CRM deadlines independently of browser reads
+
+[Timer]
+OnBootSec=5s
+OnUnitInactiveSec=5s
+AccuracySec=1s
+Unit=sm-crm-maintenance.service
+
+[Install]
+WantedBy=timers.target

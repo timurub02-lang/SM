@@ -26,6 +26,17 @@ class Deployment(unittest.TestCase):
             pack.package('a'*40,p);deploy.extract(p/'dist/crm-runtime.tgz',p/'unpack')
             self.assertFalse((p/'unpack/runtime/.env').exists())
             self.assertEqual(json.loads((p/'unpack/runtime/release.json').read_text())['commit'],'a'*40)
+    def test_maintenance_job_and_legacy_releases(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=pathlib.Path(folder)
+            for name in ['activity','base','cdek-deletions','cdek-shipments','lv-warehouse','redemption','sk-orders']:(path/('sync-'+name+'.mjs')).write_text('fixture')
+            deploy.validate_jobs(path,{'format':1})
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1})
+            (path/'sync-maintenance.mjs').write_text('fixture')
+            deploy.validate_jobs(path,{'maintenance':1})
+            (path/'sync-base.mjs').unlink()
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1})
+
     def test_reject_traversal_and_links(self):
         for name,kind in [('runtime/../../escape',tarfile.REGTYPE),('/escape',tarfile.REGTYPE),('runtime/link',tarfile.SYMTYPE),('runtime/.env',tarfile.REGTYPE)]:
             with tempfile.TemporaryDirectory() as d:

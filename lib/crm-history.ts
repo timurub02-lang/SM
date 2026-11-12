@@ -1,10 +1,12 @@
 import type {ActivityDb} from './activity-store.ts';
+import {initCrmReadIndexes} from './crm-read-indexes.ts';
 import type {Employee,Client,Order,Event} from './crm.ts';
 import {clientHistoryEntries} from './client-order-history.ts';
 import {visibleState,canOpenClientCard} from './permissions.ts';
 
 export type HistoryQuery={clientId?:string;orderId?:string;employeeId?:string;page:number;legacy?:boolean};
 export async function readCrmHistory(d:ActivityDb,actor:Employee,q:HistoryQuery){
+ await initCrmReadIndexes(d);
  if(['courier','purchasing'].includes(actor.role))throw Error('История недоступна');
  const staff:Employee[]=(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data));
  const operators=actor.role==='department_head'?staff.filter(e=>e.role==='operator'&&!!actor.department&&e.department===actor.department).map(e=>e.id):[actor.id];

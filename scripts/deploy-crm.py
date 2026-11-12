@@ -161,7 +161,7 @@ def run(rollback=None):
             runtime=tmp/'runtime';meta=json.loads((runtime/'release.json').read_text())
             if meta.get('commit')!=sha or meta.get('format')!=1 or not (runtime/'server.js').is_file():raise ValueError('Runtime identity mismatch')
             staged=tmp/'release';(staged/'.next').mkdir(parents=True)
-            if len(list((runtime/'jobs').glob('sync-*.mjs')))!=7:raise ValueError('Background jobs are missing')
+            validate_jobs(runtime/'jobs',meta)
             (runtime/'jobs').rename(staged/'scripts');runtime.rename(staged/'.next/standalone')
             static=staged/'.next/standalone/.next/static'
             meta['staticFiles']=[p.relative_to(static).as_posix() for p in static.rglob('*') if p.is_file()]
@@ -176,6 +176,11 @@ def run(rollback=None):
             subprocess.run(['chown','-R','crmadmin:crmadmin',str(staged)],check=True);staged.rename(target)
     if json.loads(get(API+'/commits/main'))['sha']!=sha:print('A newer commit arrived; update deferred');return
     print('Deployed '+sha if activate(target,previous,state) else 'Active call; update deferred')
+
+def validate_jobs(path,meta):
+    expected={'sync-activity.mjs','sync-base.mjs','sync-cdek-deletions.mjs','sync-cdek-shipments.mjs','sync-lv-warehouse.mjs','sync-redemption.mjs','sync-sk-orders.mjs'}
+    if meta.get('maintenance')==1:expected.add('sync-maintenance.mjs')
+    if {p.name for p in path.glob('sync-*.mjs')}!=expected:raise ValueError('Background jobs are missing or unexpected')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--rollback');args=parser.parse_args()
