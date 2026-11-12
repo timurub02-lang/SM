@@ -125,6 +125,7 @@ async function handleGET(request:Request){
   if(list&&!list.success)return Response.json({error:'Некорректная страница заказов'},{status:400});
   await initialize();
   const split=splitWorkspaceEnabled(user.employee),part=params.get('part');
+  if(part&&list)return Response.json({error:'Выберите страницу или часть рабочей области'},{status:400});
   if(part&&!['bootstrap','context','tasks','card'].includes(part))return Response.json({error:'Неизвестная часть рабочей области'},{status:400});
   if(split&&part==='bootstrap')return timing.finish(Response.json(await workspaceBootstrap(db(),user.employee!)));
   if(part&&part!=='bootstrap'&&!split)return Response.json({error:'Раздельная загрузка недоступна'},{status:403});
@@ -136,7 +137,7 @@ async function handleGET(request:Request){
    return timing.finish(Response.json(compactCrmState(await responseState(user,false,'',true,'','',card,false))));
   }
   const scoped=split&&(!!list||part==='context'||part==='tasks')?await timing.measure('read',()=>readWorkspaceState(db(),user.employee!,part!=='tasks')):undefined;
-  const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||params.get('transport')==='compact-v1','',list?.success?list.data.list:part==='tasks'?'tasks':'',scoped,part!=='context'));
+  const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||part==='bootstrap'||params.get('transport')==='compact-v1','',list?.success?list.data.list:part==='tasks'?'tasks':'',scoped,part!=='context'));
   if(split&&part==='tasks')return timing.finish(Response.json({tasks:state.tasks,reminders:state.reminders,incoming:state.incoming,callOrders:[...scheduledCalls(state.orders,user.employee!,state.employees),...state.orders.filter(o=>courierDoorRefusal(o)&&!scheduledCalls([o],user.employee!,state.employees).length)],maintenanceHealthy:await maintenanceHealthy(db())}));
   if(split&&part==='context')return timing.finish(Response.json(compactCrmState(state)));
   if(part==='bootstrap')return timing.finish(Response.json(compactCrmState(state)));

@@ -58,7 +58,7 @@ try{
   const tasks=(await get('/api/crm?part=tasks')).data;assert.ok(Array.isArray(tasks.tasks)&&Array.isArray(tasks.reminders));assert.equal(tasks.clients,undefined);assert.equal(tasks.orders,undefined);assert.equal(tasks.maintenanceHealthy,true);
   const card=(await get('/api/crm?part=card&type=order&id=o-c-060')).data;assert.equal(card.clients.length,1);assert.equal(card.orders.length,1);assert.equal(card.orders[0].id,'o-c-060');assert.equal(card.orders[0].comment,'');
   for(const type of ['client','order'])assert.equal((await get('/api/crm?part=card&type='+type+'&id='+(type==='client'?'c-111':'o-c-111'))).status,404);
-  assert.equal((await get('/api/crm?part=card&type=wrong&id=c-000')).status,400);assert.equal((await get('/api/crm?part=unknown')).status,400);
+  assert.equal((await get('/api/crm?part=card&type=wrong&id=c-000')).status,400);assert.equal((await get('/api/crm?part=unknown')).status,400);assert.equal((await get('/api/crm?part=tasks&list=mine&view=mine')).status,400);assert.equal((await get('/api/crm?part=card&type=client&id=c-111&actorId=two')).status,404);
  }else assert.equal((await get('/api/crm?part=bootstrap')).data.splitReads,undefined,'disabled flag keeps the existing snapshot');
  const page0=await get('/api/crm?list=orders&view=orders&filter=all&page=0'),page1=await get('/api/crm?list=orders&view=orders&filter=all&page=1');
  assert.equal(page0.status,200);assert.equal(page0.data.total,61);assert.equal(page0.data.rows.length,50);assert.equal(page1.data.rows.length,11);assert.equal(new Set([...page0.data.rows,...page1.data.rows].map(o=>o.id)).size,61);
