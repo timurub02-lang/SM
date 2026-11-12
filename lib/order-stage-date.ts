@@ -18,3 +18,10 @@ export function orderStageDate(o:Order):{label:string;at?:string}{
  }
  return {label,at:at&&Number.isFinite(Date.parse(at))?at:undefined};
 }
+
+export function orderStageDateLabel(o:Order){
+ const {label,at}=orderStageDate(o);
+ if(!at)return label+': Дата не указана';
+ const dateOnly=/^\d{4}-\d{2}-\d{2}$/.test(at);
+ return label+': '+new Date(at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',...(dateOnly?{}:{hour:'2-digit',minute:'2-digit'})});
+}

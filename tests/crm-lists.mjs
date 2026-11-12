@@ -38,3 +38,6 @@ assert.equal(orderStageDate({...order,status:'redeemed',priorPremiumPaid:{at,sou
 assert.equal(orderStageDate({...order,status:'redeemed',premiumStage:{status:'paid',periodId:'2026-11-1',paidAt:at}}).at,at);
 assert.equal(orderStageDate({...order,status:'redeemed',premiumStage:{status:'accrued',periodId:'2026-11-1'},paymentReceivedAt:at}).at,at);
 console.log('Stage dates: lifecycle mapping, unknown dates and ascending/descending order passed');
+
+const {orderStageDateLabel}=await import('../lib/order-stage-date.ts');
+assert.equal(orderStageDateLabel({...order,status:'redeemed',redeemedAt:'2026-11-12'}),'Оплачен: 12.11.2026');
