@@ -36,8 +36,13 @@ export async function readCrmHistory(d:ActivityDb,actor:Employee,q:HistoryQuery)
  if(q.employeeId){
   if(actor.role!=='admin'&&q.employeeId!==actor.id)throw Error('Журнал сотрудника недоступен');
   const e=staff.find(e=>e.id===q.employeeId);if(!e)throw Error('Сотрудник не найден');
+  // The journal only links targets the employee can reopen, before applying LIMIT.
+  const journalOrder=['operator','department_head'].includes(actor.role)?"json_extract(j.data,'$.manager') IN (SELECT value FROM json_each(?))":'1';
+  const journalClient=['operator','department_head'].includes(actor.role)?own:'1';
+  clauses.push(`c.id IS NOT NULL AND ((e.order_id='' AND ${journalClient}) OR EXISTS(SELECT 1 FROM orders j WHERE j.id=e.order_id AND ${journalOrder}))`);
+  if(journalClient.includes('?'))args.push(owners);if(journalOrder.includes('?'))args.push(owners);
   const suffix=' · от имени '+e.name;
-  clauses.push("(json_extract(e.data,'$.actorId')=? OR (json_extract(e.data,'$.actorId') IS NULL AND (json_extract(e.data,'$.actor')=? OR substr(json_extract(e.data,'$.actor'),-length(?))=?)))");args.push(e.id,e.login,suffix,suffix);
+  clauses.push("(json_extract(e.data,'$.actorId')=? OR (COALESCE(json_extract(e.data,'$.actorId'),'')='' AND (json_extract(e.data,'$.actor')=? OR substr(json_extract(e.data,'$.actor'),-length(?))=?)))");args.push(e.id,e.login,suffix,suffix);
  }
  const from=`FROM events e LEFT JOIN clients c ON c.id=e.client_id WHERE ${clauses.join(' AND ')}`;
  const count=await d.prepare(`SELECT COUNT(*) AS n ${from}`).bind(...args).first();

@@ -23,5 +23,7 @@ try{
  await assert.rejects(readCrmHistory(d,operator,{employeeId:'two',page:0}));
  assert.equal((await readCrmHistory(d,operator,{clientId:'one',page:1,legacy:true})).rows.length,11);
  await assert.rejects(readCrmHistory(d,operator,{clientId:'two',page:0,legacy:true}));
+ await d.prepare("INSERT INTO incoming_calls VALUES('two',NULL,1)").run();assert.equal((await readCrmHistory(d,head,{clientId:'two',orderId:'o-two',page:0})).total,61,'shared incoming history remains visible');
+ await d.prepare("UPDATE events SET data=json_set(data,'$.actorId','') WHERE client_id='one'").run();assert.equal((await readCrmHistory(d,operator,{employeeId:'one',page:0})).total,61,'empty legacy actor IDs retain login matching');
  console.log('History: pagination, tied timestamps, operator/head scopes, actor journals and legacy access passed');
 }finally{d.close();}

@@ -18,7 +18,7 @@ try{
  for(const sql of authSchema)database.exec(sql);
  const hash=await hashPassword(password);
  for(const id of ['one','two']){
-  database.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify({id,login:id,name:id,role:'operator',department:'1',salary:0,bonus:0,version:1}));
+  database.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify({id,login:id,name:id,role:'operator',department:id==='two'?'2':'1',salary:0,bonus:0,version:1}));
   database.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
  }
  database.prepare('INSERT INTO settings VALUES(?,?)').run('main','{"retentionDays":30}');
@@ -74,6 +74,11 @@ try{
  await get('/api/crm?transport=compact-v1');assert.equal(JSON.parse(database.prepare("SELECT data FROM orders WHERE id='o-c-001'").get().data).status,'draft');
  database.prepare("UPDATE settings SET data=? WHERE id='crm-maintenance-health'").run(JSON.stringify({ok:false,at:now}));
  await get('/api/crm?transport=compact-v1');assert.equal(JSON.parse(database.prepare("SELECT data FROM orders WHERE id='o-c-001'").get().data).status,'refused');
+ const head={id:'head',login:'head',name:'Head',role:'department_head',department:'1',salary:0,bonus:0,version:1};database.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(head.id,JSON.stringify(head));database.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(head.id,hash);
+ const h=await fetch(base+'/api/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({login:'head',password})});const headCookie=h.headers.get('set-cookie').split(';')[0];
+ assert.equal((await get('/api/crm/history?clientId=c-111&orderId=o-c-111',headCookie)).data.total,0);
+ database.prepare("INSERT INTO incoming_calls(id,client_id,at,phone,called_number,shared_queue) VALUES('shared','c-111',?,'','',1)").run(now);
+ const shared=await get('/api/crm/history?clientId=c-111&orderId=o-c-111',headCookie);assert.equal(shared.status,200);assert.equal(shared.data.total,3,'shared incoming history must not be rejected by a different endpoint guard');
  console.log('HTTP transport: compact/full parity, role scopes, server pages/search, remote history, deltas, bounded save, reminders, version conflicts and worker fallback passed');
 }catch(error){console.error(logs);throw error;}finally{
  if(server){server.kill();await once(server,'exit');}database.close();rmSync(dir,{recursive:true,force:true});
