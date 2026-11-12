@@ -22,7 +22,9 @@ try{
  const {baseWorkbook}=require(join(dir,'helpers.cjs')),legacy=await baseWorkbook(d,'M'),original=new ExcelJS.Workbook();await original.xlsx.load(await legacy.xlsx.writeBuffer());
  await build({entryPoints:['scripts/sync-exports.mjs'],bundle:true,platform:'node',format:'esm',plugins:[{name:'installed-exceljs',setup(build){build.onResolve({filter:/^exceljs$/},()=>({path:pathToFileURL(require.resolve('exceljs')).href,external:true}));}}],outfile:join(dir,'worker.mjs'),logLevel:'silent'});
  // Bundle local dependencies and use the installed ExcelJS module exactly as the release does.
- const run=()=>new Promise((resolve,reject)=>{let logs='';const p=spawn(process.execPath,[join(dir,'worker.mjs')],{env:{...process.env,CRM_DATABASE_PATH:path,CRM_EXPORT_DIRECTORY:join(dir,'files')},stdio:['ignore','pipe','pipe']});p.stdout.on('data',x=>logs+=x);p.stderr.on('data',x=>logs+=x);p.once('error',reject);p.once('exit',code=>resolve({code,logs}));});
+ const run=(worker='worker.mjs')=>new Promise((resolve,reject)=>{let logs='';const p=spawn(process.execPath,[join(dir,worker)],{env:{...process.env,CRM_DATABASE_PATH:path,CRM_EXPORT_DIRECTORY:join(dir,'files')},stdio:['ignore','pipe','pipe'],windowsHide:true});p.stdout.on('data',x=>logs+=x);p.stderr.on('data',x=>logs+=x);p.once('error',reject);p.once('exit',code=>resolve({code,logs}));});
+ await build({entryPoints:['scripts/sync-exports.mjs'],bundle:true,platform:'node',format:'esm',plugins:[{name:'unavailable-idle-exceljs',setup(build){build.onResolve({filter:/^exceljs$/},()=>({path:pathToFileURL(join(dir,'intentionally-absent-exceljs.mjs')).href,external:true}));}}],outfile:join(dir,'idle-worker.mjs'),logLevel:'silent'});
+ const idle=await run('idle-worker.mjs');assert.equal(idle.code,0,idle.logs);assert.match(idle.logs,/"processed":false/,'an empty queue must publish health without loading the spreadsheet engine');
  const first=await queueExport(d,admin,'base','M','first'),second=await queueExport(d,admin,'base','M','second');
  const runs=await Promise.all([run(),run()]);assert.ok(runs.every(r=>r.code===0),JSON.stringify(runs));await run();
  for(const job of [first,second]){

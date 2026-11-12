@@ -80,7 +80,7 @@ export async function createSummaryWorker(writer:ActivityDb,reader:Reader,token=
     else if(financialChangedForScope){built=await refreshWorkspaceFinancialContext(reader,actor,state,financial!,currentTime());state.financialReadModel={status:'ready',schemaVersion:1,computedAt:new Date(currentTime()).toISOString(),sourceRevision:source.financeRevision};stats.financialContextRefreshes++;}
     const computedAt=currentTime(),rows:PreparedWrite[]=[];
     if(built){rows.push({kind:'context',scope:actor.id,data:state,sourceRevision:versions.workspace,accessRevision:source.accessRevision,computedAt,validUntil:computedAt+3000});stats.contextWrites++;}
-    if(built||financialChangedForScope||computedAt-(lastSummaries.get(actor.id)||0)>=2000){rows.push({kind:'summary',scope:actor.id,data:buildWorkspaceSummary(state,actor,computedAt),sourceRevision:versions.workspace,accessRevision:source.accessRevision,computedAt,validUntil:computedAt+3000});stats.summaryBuilds++;}
+    if(built||financialChangedForScope||computedAt-(lastSummaries.get(actor.id)||0)>=1000){rows.push({kind:'summary',scope:actor.id,data:buildWorkspaceSummary(state,actor,computedAt),sourceRevision:versions.workspace,accessRevision:source.accessRevision,computedAt,validUntil:computedAt+3000});stats.summaryBuilds++;}
     return {source,actor,contextKey,state,built,rows,computedAt,revision:versions.workspace};
    });
    if(!snapshot){published=false;stats.rejected++;financial=undefined;break;}

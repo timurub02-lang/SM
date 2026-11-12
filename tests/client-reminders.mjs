@@ -22,4 +22,11 @@ await assert.rejects(changeClientReminder(d,s,other,{...p,action:'closeClientRem
 await changeClientReminder(d,s,e,{...p,action:'closeClientReminder',resolution:'done'},due);
 assert.equal((await personalClientReminders(d,s,e)).length,0);
 assert.equal(c.owner,e.id);assert.equal(s.orders.length,0);
+ const unreadState={get clients(){assert.fail('empty reminder result must not traverse CRM clients');},get orders(){assert.fail('empty reminder result must not traverse CRM orders');}};
+ assert.deepEqual(await personalClientReminders(d,unreadState,e),[]);
+ assert.deepEqual(clientReminderTasks([],unreadState,Date.parse(due)),[]);
+ assert.deepEqual(clientReminderTasks([{...p,id:'future',createdAt:now}],unreadState,Date.parse(due)-1),[]);
+ const mixed=[{id:'first',clientId:'c',due,text:'One',createdAt:now},{id:'future',clientId:'c',due:'2027-01-01T00:00:00Z',text:'Later',createdAt:now},{id:'missing',clientId:'missing',due,text:'No client',createdAt:now},{id:'last',clientId:'c',due,text:'Two',createdAt:now}];
+ const expected=mixed.filter(r=>Date.parse(r.due)<=Date.parse(due)).map(r=>({kind:'task',id:'task:client-reminder:'+r.id,clientId:r.clientId,title:'Напоминание на клиента',text:[s.clients.find(c=>c.id===r.clientId)?.name,r.text].filter(Boolean).join(' · '),at:r.createdAt,due:r.due}));
+ assert.deepEqual(clientReminderTasks(mixed,s,Date.parse(due)),expected,'due order, missing-client text and task fields match the previous calculation');
 console.log('Personal client reminders: due times, idempotency, isolation, access and completion passed');

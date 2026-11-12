@@ -19,6 +19,55 @@ try {
  console.log('SQLite: reads, writes, transaction rollback and request fairness passed');
 } finally { d.close(); }
 
+// Prepared SQL is reused, but bindings, rows and schema metadata must never be cached.
+const cached=openDatabase(':memory:');
+const nativePrepare=DatabaseSync.prototype.prepare,preparations=new Map();
+DatabaseSync.prototype.prepare=function(sql,...options){
+ preparations.set(sql,(preparations.get(sql)??0)+1);
+ return nativePrepare.call(this,sql,...options);
+};
+const select=cached.prepare('SELECT ? AS a, ? AS b');
+try {
+ assert.deepEqual({...await select.bind(1,'first').first()},{a:1,b:'first'});
+ assert.deepEqual({...await select.bind(2,'second').first()},{a:2,b:'second'});
+ assert.deepEqual({...((await select.bind(3).all()).results[0])},{a:3,b:null},'omitted bindings must clear prior values');
+ assert.equal(preparations.get(select.sql),1,'first/all must share prepared SQL');
+ await cached.prepare('CREATE TABLE reuse(id INTEGER PRIMARY KEY, value TEXT UNIQUE)').run();
+ const insert=cached.prepare('INSERT INTO reuse VALUES(?,?)'),rows=cached.prepare('SELECT * FROM reuse ORDER BY id');
+ await insert.bind(1,'first').run();
+ await assert.rejects(cached.batch([insert.bind(2,'second'),insert.bind(3,'first')]));
+ await insert.bind(2,'second').run();
+ assert.equal(preparations.get(insert.sql),1,'a failed transaction must leave cached statements reusable');
+ assert.deepEqual((await rows.all()).results.map(row=>({...row})),[{id:1,value:'first'},{id:2,value:'second'}]);
+ await cached.prepare("ALTER TABLE reuse ADD COLUMN extra TEXT DEFAULT 'added'").run();
+ assert.equal((await rows.first()).extra,'added','cached SELECT must reprepare after ALTER');
+ await cached.prepare('DROP TABLE reuse').run();
+ await assert.rejects(rows.all(),/no such table/);
+ await cached.prepare('CREATE TABLE reuse(id INTEGER PRIMARY KEY, replacement INTEGER)').run();
+ await cached.prepare('INSERT INTO reuse VALUES(9,42)').run();
+ assert.deepEqual({...await rows.first()},{id:9,replacement:42},'cached SELECT must recover after drop/recreate');
+ assert.equal(preparations.get(rows.sql),1,'schema changes should use native automatic reprepare');
+} finally {cached.close();DatabaseSync.prototype.prepare=nativePrepare;}
+await assert.rejects(select.bind(4,'closed').first(),/not open|finalized/);
+await assert.rejects(cached.prepare('SELECT 1').all(),/not open|finalized/);
+
+const lru=openDatabase(':memory:');
+preparations.clear();
+DatabaseSync.prototype.prepare=function(sql,...options){
+ preparations.set(sql,(preparations.get(sql)??0)+1);
+ return nativePrepare.call(this,sql,...options);
+};
+try {
+ for(let i=0;i<256;i++) await lru.prepare(`SELECT ${i} AS value`).first();
+ await lru.prepare('SELECT 0 AS value').first();
+ await lru.prepare('SELECT 256 AS value').first();
+ await lru.prepare('SELECT 0 AS value').first();
+ assert.equal(preparations.get('SELECT 0 AS value'),1,'recently used SQL must remain cached');
+ await lru.prepare('SELECT 1 AS value').first();
+ assert.equal(preparations.get('SELECT 1 AS value'),2,'the 257th SQL must evict the least recently used entry');
+} finally {lru.close();DatabaseSync.prototype.prepare=nativePrepare;}
+console.log('SQLite statement cache: bindings, schema changes, rollback reuse, 256-entry LRU and close passed');
+
 // A background writer must not freeze timers, reads or phone authorization.
 const folder=mkdtempSync(join(tmpdir(),'crm-sqlite-busy-')),file=join(folder,'test.sqlite');
 const shared=openDatabase(file),writer=new DatabaseSync(file);

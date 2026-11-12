@@ -1,8 +1,9 @@
 import {baseSettingsSchema,initialBaseSettings} from './base-policy';
 import {clientSheet,type Client} from './crm';
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import type {db} from './db';
 export async function baseWorkbook(d:ReturnType<typeof db>,base:'M'|'J',filename?:string){
+ const {default:ExcelJS}=await import('exceljs');
  const saved=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>(),config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings())[base];
  const rows=(await d.prepare("SELECT data FROM clients WHERE COALESCE(json_extract(data,'$.baseType'),'M')=? ORDER BY id").bind(base).all<{data:string}>()).results.map(r=>JSON.parse(r.data) as Client);
  const employees=(await d.prepare('SELECT data FROM employees').all<{data:string}>()).results.map(r=>JSON.parse(r.data));const logins=new Map(employees.map(e=>[e.id,e.login]));

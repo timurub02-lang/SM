@@ -6,7 +6,7 @@ import {openDatabase} from '../server/sqlite.ts';
 import {createSummaryWorker} from '../lib/crm-summary-worker.ts';
 import {requestPreparedWorkspace,readPreparedModel,readModelSource} from '../lib/crm-read-model.ts';
 const directory=mkdtempSync(join(tmpdir(),'crm-publish-')),path=join(directory,'synthetic.sqlite');
-const d=openDatabase(path),reader=openDatabase(path),wallClock=Date.now;let now=wallClock();Date.now=()=>now;
+const d=openDatabase(path),reader=openDatabase(path),wallClock=Date.now;let now=Date.parse('2026-11-12T09:00:00Z');Date.now=()=>now;
 try{
  for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await d.prepare(sql).run();
  await d.prepare('CREATE TABLE auth_accounts(employee_id TEXT PRIMARY KEY,password_hash TEXT,enabled INTEGER)').run();
@@ -30,6 +30,24 @@ try{
  assert.equal(await d.prepare("SELECT valid_until-computed_at AS ttl FROM crm_read_models WHERE kind='summary' AND scope='b'").first('ttl'),3000,'freshness was not obtained by extending TTL');
  assert.equal((await readPreparedModel(d,'summary','a')).status,'stale','earlier data is honestly expired after the delayed scope');
  reader.readSnapshot=snapshot;now+=1;await worker.tick();assert.equal((await readPreparedModel(d,'summary','a')).status,'ready');
+ // Non-exact one-second visits must leave room before the unchanged three-second expiry.
+ const jitterStart=now;
+ await d.prepare('INSERT INTO client_reminders(id,employee_id,client_id,due,text,created_at) VALUES(?,?,?,?,?,?)').bind('jitter-due','a','a',new Date(now+1500).toISOString(),'Synthetic',new Date(now).toISOString()).run();
+ await worker.tick();const builds=worker.stats.contextBuilds,writes=worker.stats.contextWrites;
+ assert.equal((await readPreparedModel(d,'summary','a')).data.work.needed,0);
+ now=jitterStart+990;await worker.tick();
+ assert.equal(Date.parse((await readPreparedModel(d,'summary','a')).computedAt),jitterStart,'an early visit need not rebuild counts');
+ now=jitterStart+1980;await worker.tick();
+ const refreshed=await readPreparedModel(d,'summary','a');
+ assert.equal(Date.parse(refreshed.computedAt),now,'a 2000ms gate skips this second visit and misses the freshness budget');
+ assert.equal(refreshed.data.work.needed,1,'real count calculation observes the newly due reminder, not just a renewed expiry');
+ assert.equal(worker.stats.contextBuilds,builds,'time-only refresh reuses enriched context');
+ assert.equal(worker.stats.contextWrites,writes,'time-only refresh does not rewrite enriched context');
+ now=jitterStart+3005;
+ assert.equal((await readPreparedModel(d,'summary','a')).status,'ready','a delayed third visit does not cause a ready/stale flap');
+ assert.equal(await d.prepare("SELECT valid_until-computed_at AS ttl FROM crm_read_models WHERE kind='summary' AND scope='a'").first('ttl'),3000);
+ now=jitterStart+4980;assert.equal((await readPreparedModel(d,'summary','a')).status,'stale','without another calculation the result still expires after three seconds');
+ now+=1;await worker.tick();
  // A financial mutation immediately before scoped publication must roll back that scope,
  // while preserving the previously published financial generation and context.
  const before=await d.prepare("SELECT data,computed_at FROM crm_read_models WHERE kind='summary' AND scope='a'").first();

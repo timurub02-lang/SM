@@ -15,4 +15,22 @@ const other=await crmSnapshotResponse(new Request(url,{headers:{'If-None-Match':
 assert.equal((await other.json()).kind,undefined,'never use another user cache as a delta base');
 reader.invalidate();assert.deepEqual(await reader.read(),current,'missing cursor recovers with full state');
 assert.throws(()=>decodeCrmSnapshot({kind:'crm-delta'},undefined));
+const contract={clients:[{id:'c1',name:'Contract'}],orders:[{id:'o1',clientId:'c1',version:3,premiumStage:{status:'paid',periodId:'2026-11-1'}}],employees:[],events:[],settings:{retentionDays:30}};
+const golden=await crmSnapshotResponse(new Request(url),contract,'golden');
+assert.equal(golden.headers.get('etag'),'W/"0uyuG7NkJNI3aAeK_U3MVLB-NxvO6l0rgubRtL26Lbw"','existing SHA256 transport ETag remains bit-for-bit compatible');
+assert.equal(await golden.text(),JSON.stringify(contract));
+const changed={...contract,orders:[{...contract.orders[0],premiumStage:{status:'accrued',periodId:'2026-11-1'}}]};
+const derived=await crmSnapshotResponse(new Request(url,{headers:{'If-None-Match':golden.headers.get('etag')}}),changed,'golden'),delta=await derived.json();
+assert.notEqual(derived.headers.get('etag'),golden.headers.get('etag'));
+assert.equal(delta.entities.orders.upsert[0].version,3,'unchanged base version does not hide a derived financial change');
+assert.deepEqual(decodeCrmSnapshot(delta,contract),changed);
+const unrelated=await crmSnapshotResponse(new Request(url,{headers:{'If-None-Match':golden.headers.get('etag')}}),changed,'isolated-user');
+assert.deepEqual(await unrelated.json(),changed,'shared content hashes never authorize another user delta base');
+// More unique rows and content than the bounded hash cache can retain, plus one oversized row.
+const large={...contract,clients:Array.from({length:24001},(_,i)=>({id:'large-'+i,name:'Synthetic '+i,biography:'x'.repeat(500)})),orders:[{id:'oversized',comment:'z'.repeat(600000)}]};
+let timerProgress=false;const timer=setTimeout(()=>{timerProgress=true;},0);
+const largeResponse=await crmSnapshotResponse(new Request(url),large,'large');clearTimeout(timer);
+assert.equal(timerProgress,true,'a large fingerprint pass must allow unrelated timers to run before completion');
+assert.deepEqual(await largeResponse.json(),large,'cache eviction and oversized rows preserve full transport data');
+assert.equal((await crmSnapshotResponse(new Request(url),contract,'golden-again')).headers.get('etag'),golden.headers.get('etag'),'cache churn cannot change the wire fingerprint');
 console.log('Snapshot deltas: update/add/delete/order, unchanged response, user isolation and recovery passed');
