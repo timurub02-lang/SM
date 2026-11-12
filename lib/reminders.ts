@@ -4,7 +4,7 @@ import {draftDeadline,scheduledCalls,type State,type Employee} from './crm';
 import {db} from './db';
 import {initReminderStore} from './reminder-store.ts';
 import {seesOrder,ownsClient} from './permissions';
-export type Reminder={incomingId?:string;kind?:"order-cancellation"|"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
+export type Reminder={incomingId?:string;kind?:"order-paid"|"order-cancellation"|"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
 export async function initReminders(){await initReminderStore(db());}
 export {orderDecisionReminder} from './reminder-maintenance';
 export async function saveReminders(s:State,employeeId?:string,clientId?:string){return maintainReminders(db(),s,employeeId,clientId);}

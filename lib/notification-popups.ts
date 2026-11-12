@@ -3,7 +3,7 @@ import type {Reminder} from './reminders.ts';
 export function popupNotifications(tasks:Reminder[],events:Reminder[]){
  const ordinary=(r:Reminder)=>!r.resolved&&!['call','courier-door'].includes(r.kind||'');
  const active=tasks.filter(ordinary);
- return [...active,...events.filter(r=>ordinary(r)&&!r.readAt&&!tasks.some(t=>r.orderId?t.orderId===r.orderId:t.clientId===r.clientId))];
+ return [...active,...events.filter(r=>ordinary(r)&&!r.readAt&&(r.kind==='order-paid'||!tasks.some(t=>r.orderId?t.orderId===r.orderId:t.clientId===r.clientId)))];
 }
 
 // The first loaded snapshot is a baseline, so entering or refreshing CRM never replays old work.
