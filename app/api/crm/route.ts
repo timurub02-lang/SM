@@ -1,3 +1,5 @@
+import {clientListSummaries} from '@/lib/crm-client-summary';
+import {splitWorkspaceEnabled,workspaceBootstrap,readWorkspaceState,readWorkspaceCard,hydrateWorkspaceOrders} from '@/lib/crm-workspace-read';
 import {nextOrderId} from '@/lib/order-number';
 import {initCrmReadIndexes} from '@/lib/crm-read-indexes';
 import {filteredClientList} from '@/lib/crm-client-list';
@@ -37,7 +39,7 @@ import {courierDoorRefusal,canHandleCourierDoor,applyCourierCommand,canEditCouri
 import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
 import {clearCashGuard} from '@/lib/cash';
-import {normalizePhone,total,canReceivePayment,isLogistic} from '@/lib/crm';
+import {normalizePhone,total,canReceivePayment,isLogistic,scheduledCalls} from '@/lib/crm';
 import {removalPlan,settledPayrollGuard} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
@@ -87,18 +89,18 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  ...s.events.map(e=>d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e))),
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
-async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId='',list:''|'orders'|'mine'=''){
+async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId='',list:''|'orders'|'mine'|'tasks'='',provided?:State,includeTasks=true){
  const worker=process.env.CRM_MAINTENANCE_WORKER==='1'&&await maintenanceHealthy(db());
- const state=worker&&!fanout&&!orderId&&!clientId?await cachedCrmState(db(),()=>readState(false,'',false,'',compact),compact?'compact':'full'):await readState(true,'',false,orderId,false,clientId);
- if(!worker||fanout||orderId||clientId)await saveReminders(state,fanout?undefined:user.employee?.id,(orderId||clientId)?state.clients[0]?.id:undefined);if(!user.employee)return state;
+ const state=provided??(worker&&!fanout&&!orderId&&!clientId?await cachedCrmState(db(),()=>readState(false,'',false,'',compact),compact?'compact':'full'):await readState(true,'',false,orderId,false,clientId));
+ if(!provided&&(!worker||fanout||orderId||clientId))await saveReminders(state,fanout?undefined:user.employee?.id,(orderId||clientId)?state.clients[0]?.id:undefined);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
- if(list!=='orders'&&['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),(orderId||clientId)?await readRetentionSales(db(),state.clients,config):state.orders);}
+ if(list!=='orders'&&list!=='tasks'&&['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),(provided||orderId||clientId)?await readRetentionSales(db(),state.clients,config):state.orders);}
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
  if(!list&&(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee))){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});
  }
- const incoming=!list||user.employee.role==='department_head'?await readIncoming(db(),user.employee,state.employees,state.orders):[];
+ const incoming=!list||list==='tasks'||user.employee.role==='department_head'?await readIncoming(db(),user.employee,state.employees,state.orders,!!provided):[];
  if(user.employee.role==='department_head'){
   const sharedIds=new Set(incoming.filter(i=>!i.closedAt&&i.clientId&&i.sharedQueue).map(i=>i.clientId));
   visible.clients.push(...state.clients.filter(c=>sharedIds.has(c.id)&&!visible.clients.some(v=>v.id===c.id)).map(hideClientNumbers));
@@ -109,9 +111,10 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
  // Paged lists retain their selectors' inputs; full-screen tasks and account metadata are not returned.
  if(list==='orders')return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses};
  const clientReminders=await personalClientReminders(db(),state,user.employee);
-if(list==='mine')return {...visible,clientReminders,clientWork:await readClientWork(db(),user.employee)};
+ if(list==='tasks'){await initReminders();return {...visible,incoming,tasks:[...clientReminderTasks(clientReminders,state),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)};}
+ if(list==='mine')return {...visible,clientReminders,clientWork:await readClientWork(db(),user.employee)};
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department,login})=>({id,name,department,login})):[];
- return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
+ return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),...(includeTasks?{tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)}:{}),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 const listSchema=z.object({sort:z.enum(orderSortKeys).default('createdAt'),direction:z.enum(['asc','desc']).default('desc'),list:z.enum(['orders','mine']),view:z.enum(['mine',...orderListViews]),filter:z.string().max(80).default('all'),query:z.string().max(150).default(''),next:z.enum(['0','1']).default('0'),timeZone:z.string().max(100).default('Europe/Moscow').refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}}),clientWorkFilter:z.enum(['all','needed','planned','done']).default('all'),page:z.coerce.number().int().min(0).max(100000).default(0)});
 async function handleGET(request:Request){
@@ -120,17 +123,35 @@ async function handleGET(request:Request){
   const user=await identity(),params=new URL(request.url).searchParams;
   const list=params.has('list')?listSchema.safeParse(Object.fromEntries(params)):null;
   if(list&&!list.success)return Response.json({error:'Некорректная страница заказов'},{status:400});
-  await initialize();const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||params.get('transport')==='compact-v1','',list?.success?list.data.list:''));
+  await initialize();
+  const split=splitWorkspaceEnabled(user.employee),part=params.get('part');
+  if(part&&!['bootstrap','context','tasks','card'].includes(part))return Response.json({error:'Неизвестная часть рабочей области'},{status:400});
+  if(split&&part==='bootstrap')return timing.finish(Response.json(await workspaceBootstrap(db(),user.employee!)));
+  if(part&&part!=='bootstrap'&&!split)return Response.json({error:'Раздельная загрузка недоступна'},{status:403});
+  if(split&&part==='card'){
+   const target=z.object({type:z.enum(['client','order']),id:z.string().min(1).max(100)}).safeParse(Object.fromEntries(params));
+   if(!target.success)return Response.json({error:'Некорректная карточка'},{status:400});
+   const card=await readWorkspaceCard(db(),user.employee!,target.data.type,target.data.id);
+   if(!card)return Response.json({error:'Карточка недоступна'},{status:404});
+   return timing.finish(Response.json(compactCrmState(await responseState(user,false,'',true,'','',card,false))));
+  }
+  const scoped=split&&(!!list||part==='context'||part==='tasks')?await timing.measure('read',()=>readWorkspaceState(db(),user.employee!,part!=='tasks')):undefined;
+  const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||params.get('transport')==='compact-v1','',list?.success?list.data.list:part==='tasks'?'tasks':'',scoped,part!=='context'));
+  if(split&&part==='tasks')return timing.finish(Response.json({tasks:state.tasks,reminders:state.reminders,incoming:state.incoming,callOrders:[...scheduledCalls(state.orders,user.employee!,state.employees),...state.orders.filter(o=>courierDoorRefusal(o)&&!scheduledCalls([o],user.employee!,state.employees).length)],maintenanceHealthy:await maintenanceHealthy(db())}));
+  if(split&&part==='context')return timing.finish(Response.json(compactCrmState(state)));
+  if(part==='bootstrap')return timing.finish(Response.json(compactCrmState(state)));
+
   if(list?.success){
    if(!user.employee||['courier','purchasing','redemption'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
    const q=list.data;
    if(q.list==='mine'){
     if(!['operator','department_head'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
     const all=filteredClientList(compactCrmState(state),user.employee,q),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1));
-    return timing.finish(await conditionalJson(request,{rows:[],clients:all.slice(page*50,(page+1)*50),total:all.length,page}));
+    const clients=all.slice(page*50,(page+1)*50);
+    return timing.finish(await conditionalJson(request,{rows:[],clients,total:all.length,page,...(scoped?{summaries:clientListSummaries(state,clients),employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
    }
-   const all=filteredOrderList(state,user.employee,{...q,showNextPremium:q.next==='1'}),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1)),rows=all.slice(page*50,(page+1)*50),ids=new Set(rows.map(o=>o.clientId));
-   return timing.finish(await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page}));
+   const all=filteredOrderList(state,user.employee,{...q,showNextPremium:q.next==='1'}),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1)),selected=all.slice(page*50,(page+1)*50),rows=scoped?await hydrateWorkspaceOrders(db(),state,selected,user.employee):selected,ids=new Set(rows.map(o=>o.clientId));
+   return timing.finish(await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page,...(scoped?{employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
   }
   return timing.finish(params.get('transport')==='compact-v1'?await crmSnapshotResponse(request,compactCrmState(state),user.userId):await conditionalJson(request,state));
  }catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==='Требуется вход в CRM'?e.message:'Не удалось подключиться к базе CRM'},{status:503}));}

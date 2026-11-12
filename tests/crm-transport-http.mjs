@@ -24,7 +24,7 @@ try{
   database.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
  }
  database.prepare('INSERT INTO settings VALUES(?,?)').run('main','{"retentionDays":30}');
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_MAINTENANCE_WORKER:'1',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_SPLIT_READS:process.env.CRM_SPLIT_READS||'0',CRM_MAINTENANCE_WORKER:'1',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<100;i++){try{await fetch(base+'/login');break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.equal((await fetch(base+'/api/crm/changes')).status,401);
@@ -51,6 +51,15 @@ try{
  const first=await get('/api/crm?transport=compact-v1');assert.equal(first.status,200);
  assert.deepEqual(first.data,compactCrmState(full.data),'read-only compact projection preserves all non-history behavior');
  assert.equal(first.data.events.length,0);assert.ok(first.data.clients.every(c=>!c.legacyOrderHistory&&!c.importFields));
+ if(process.env.CRM_SPLIT_READS==='1'){
+  for(const part of ['bootstrap','context','tasks'])assert.equal((await fetch(base+'/api/crm?part='+part)).status,401);
+  const boot=(await get('/api/crm?part=bootstrap')).data;assert.equal(boot.splitReads,true);assert.equal(boot.orders.length+boot.clients.length+boot.events.length,0);assert.equal(boot.employees.length,1);assert.ok(Buffer.byteLength(JSON.stringify(boot))<16384);
+  const context=(await get('/api/crm?part=context')).data;assert.equal(context.tasks,undefined);assert.equal(context.reminders,undefined);assert.equal(context.clients.length,61);assert.ok(context.clients.every(c=>c.owner==='one'&&!c.phone&&!c.importFields));
+  const tasks=(await get('/api/crm?part=tasks')).data;assert.ok(Array.isArray(tasks.tasks)&&Array.isArray(tasks.reminders));assert.equal(tasks.clients,undefined);assert.equal(tasks.orders,undefined);assert.equal(tasks.maintenanceHealthy,true);
+  const card=(await get('/api/crm?part=card&type=order&id=o-c-060')).data;assert.equal(card.clients.length,1);assert.equal(card.orders.length,1);assert.equal(card.orders[0].id,'o-c-060');assert.equal(card.orders[0].comment,'');
+  for(const type of ['client','order'])assert.equal((await get('/api/crm?part=card&type='+type+'&id='+(type==='client'?'c-111':'o-c-111'))).status,404);
+  assert.equal((await get('/api/crm?part=card&type=wrong&id=c-000')).status,400);assert.equal((await get('/api/crm?part=unknown')).status,400);
+ }else assert.equal((await get('/api/crm?part=bootstrap')).data.splitReads,undefined,'disabled flag keeps the existing snapshot');
  const page0=await get('/api/crm?list=orders&view=orders&filter=all&page=0'),page1=await get('/api/crm?list=orders&view=orders&filter=all&page=1');
  assert.equal(page0.status,200);assert.equal(page0.data.total,61);assert.equal(page0.data.rows.length,50);assert.equal(page1.data.rows.length,11);assert.equal(new Set([...page0.data.rows,...page1.data.rows].map(o=>o.id)).size,61);
  assert.ok(page0.data.clients.every(c=>c.owner==='one'&&!c.legacyOrderHistory&&!c.importFields));
@@ -80,6 +89,7 @@ try{
  const h=await fetch(base+'/api/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({login:'head',password})});const headCookie=h.headers.get('set-cookie').split(';')[0];
  assert.equal((await get('/api/crm/history?clientId=c-111&orderId=o-c-111',headCookie)).data.total,0);
  database.prepare("INSERT INTO incoming_calls(id,client_id,at,phone,called_number,shared_queue) VALUES('shared','c-111',?,'','',1)").run(now);
+ if(process.env.CRM_SPLIT_READS==='1'){const card=await get('/api/crm?part=card&type=client&id=c-111',headCookie);assert.equal(card.status,200);assert.equal(card.data.clients[0].phone,'');assert.ok(card.data.orders.some(o=>o.id==='o-c-111'));}
  const shared=await get('/api/crm/history?clientId=c-111&orderId=o-c-111',headCookie);assert.equal(shared.status,200);assert.equal(shared.data.total,3,'shared incoming history must not be rejected by a different endpoint guard');
  // The lighter page projection must preserve the full snapshot's business filters and row payloads.
  const admin={...head,id:'admin',login:'admin',role:'admin'};
@@ -99,6 +109,7 @@ try{
    assert.deepEqual(page.clients,expected.slice(0,50));assert.equal(page.total,expected.length);
   }
  }
+ if(process.env.CRM_SPLIT_READS==='1'){assert.equal((await get('/api/crm?part=bootstrap',adminCookie)).data.splitReads,undefined);assert.equal((await get('/api/crm?part=card&type=client&id=c-000',adminCookie)).status,403);}
  console.log('HTTP transport: compact/full parity, role scopes, server pages/search, remote history, deltas, bounded save, reminders, version conflicts and worker fallback passed');
 }catch(error){console.error(logs);throw error;}finally{
  if(server){server.kill();await once(server,'exit');}database.close();rmSync(dir,{recursive:true,force:true});
