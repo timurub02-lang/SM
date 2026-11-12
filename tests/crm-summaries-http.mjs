@@ -17,7 +17,7 @@ const child=(args,extra={})=>{const p=spawn(process.execPath,args,{env:{...env,.
 const read=(part,i=0)=>fetch(base+'/api/crm'+part,{headers:{cookie:cookies[i]}});
 const json=async(part,i=0)=>{const r=await read(part,i);return {status:r.status,body:await r.json()};};
 async function start(flag){server=child([resolve('.next/standalone/server.js')],{CRM_SUMMARIES_WORKER:flag});for(let i=0;i<200;i++){try{if((await fetch(base+'/login')).ok)return;}catch{}await pause(100);}throw Error('standalone startup timeout');}
-async function ready(){for(let i=0;i<150;i++){const r=await json('?part=summary');if(r.body.status==='ready')return r.body;await pause(100);}throw Error('prepared summary timeout');}
+async function ready(afterComputedAt=0){for(let i=0;i<150;i++){const r=await json('?part=summary');if(r.body.status==='ready'&&Date.parse(r.body.computedAt)>afterComputedAt)return r.body;await pause(100);}throw Error('prepared summary timeout');}
 try{
  d.exec('PRAGMA journal_mode=WAL');d.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of authSchema)d.exec(sql);
  const now=new Date().toISOString();
@@ -38,17 +38,20 @@ try{
  assert.equal((await json('?part=summary')).body.data,undefined);
  const list=await json('?list=mine&view=mine&filter=all&clientWorkFilter=all');assert.equal(list.status,200);assert.equal(list.body.clients[0].id,'c-0');assert.equal(list.body.workCounts.all,1);assert.ok(list.body.financialReadModel);
  const run=child(['--experimental-strip-types',resolve('scripts/sync-summaries.mjs'),'--once'],{CRM_SUMMARIES_WORKER:'1'});assert.equal((await once(run,'exit'))[0],0);
- assert.ok(d.prepare("SELECT data FROM crm_read_models WHERE kind='summary' AND scope='operator-0'").get());
+ const onceSummary=d.prepare("SELECT computed_at FROM crm_read_models WHERE kind='summary' AND scope='operator-0'").get();assert.ok(onceSummary);
  // A stopped worker explicitly marks its persisted output stale, never ready/zero.
  assert.equal((await json('?part=summary')).body.status,'stale');
  worker=child(['--experimental-strip-types',resolve('scripts/sync-summaries.mjs')],{CRM_SUMMARIES_WORKER:'1'});
- const summary=await ready();assert.equal(summary.data.mine.all,1);assert.equal(summary.data.work.all,1);assert.equal(typeof summary.data.listRevision,'string');
+ // Claiming the lease makes still-fresh --once output ready before the new daemon's
+ // cache is warm. Wait for its own scope publication before testing cache reuse.
+ const summary=await ready(onceSummary.computed_at);assert.equal(summary.data.mine.all,1);assert.equal(summary.data.work.all,1);assert.equal(typeof summary.data.listRevision,'string');
  const context=await json('?part=context');assert.equal(context.status,200);assert.equal(context.body.readModel.status,'ready');assert.deepEqual(context.body.clients.map(c=>c.id),['c-0']);assert.equal(context.body.financialReadModel.status,'ready');
  const previousFinance=context.body.financialReadModel.sourceRevision;
+ const previousContextJson=d.prepare("SELECT data FROM crm_read_models WHERE kind='context' AND scope='operator-0'").get().data;
  d.prepare("UPDATE orders SET data=json_set(data,'$.paymentReceipt.amount',1100),version=version+1 WHERE id='o-1'").run();
  await ready();
  const refreshed=await json('?part=context');assert.equal(refreshed.status,200);assert.equal(refreshed.body.readModel.status,'ready');assert.equal(refreshed.body.financialReadModel.status,'ready');assert.notEqual(refreshed.body.financialReadModel.sourceRevision,previousFinance);
- assert.equal(JSON.parse(d.prepare("SELECT data FROM crm_read_models WHERE kind='context' AND scope='operator-0'").get().data).financialReadModel.sourceRevision,previousFinance,'unchanged context need not rewrite its large JSON when unrelated finance changes');
+ assert.equal(d.prepare("SELECT data FROM crm_read_models WHERE kind='context' AND scope='operator-0'").get().data,previousContextJson,'unchanged context need not rewrite its large JSON when unrelated finance changes');
  assert.equal((await json('?part=card&type=client&id=c-1')).status,404);
  await stop(worker);worker=undefined;
  d.prepare("UPDATE orders SET data=json_set(data,'$.comment','saved'),version=version+1 WHERE id='o-0'").run();
