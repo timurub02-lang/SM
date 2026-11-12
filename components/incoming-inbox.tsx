@@ -38,6 +38,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
  async function protection(payload:any){setProtecting(true);setProtectionError('');try{const r=await fetch('/api/incoming-protection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await r.json() as any;if(!r.ok)throw Error(data.error);setConfirmBlock('');await onReload();return true;}catch(e){setProtectionError(e instanceof Error?e.message:'Не удалось сохранить');return false;}finally{setProtecting(false);}}
  async function openProtection(){setProtectionError('');try{const r=await fetch('/api/incoming-protection');const data=await r.json() as any;if(!r.ok)throw Error(data.error);setSettings(data);}catch(e){setProtectionError(e instanceof Error?e.message:'Ошибка загрузки');}}
  const history=tab==='closed';
+ const sharedCallback=(item:IncomingRequest)=>!!item.sharedQueue&&!item.closedAt&&!item.hasActiveOrder&&['admin','department_head'].includes(employee.role);
  const delegated=(item:IncomingRequest)=>employee.role==='operator'&&item.assigneeId===employee.id&&!!item.handoff;
 
  const shown=items.filter(i=>tab==='spam'?i.spam:!i.spam&&(tab==='closed'?!!i.closedAt:!i.closedAt&&(tab==='mine'?i.assigneeId===employee.id:tab==='known'?!!i.clientId:!i.clientId))).sort((a,b)=>Number(!!b.hasActiveOrder)-Number(!!a.hasActiveOrder));
@@ -81,10 +82,10 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
     {confirmBlock===item.id&&<div role="alert"><p>Звонки с этого номера будут завершаться без соединения и сохраняться в спаме. Заблокировать?</p><button className="primary" disabled={protecting} onClick={()=>void protection({id:item.id,operation:'block'})}>Подтвердить блокировку</button><button className="secondary" onClick={()=>setConfirmBlock('')}>Отмена</button></div>}
    </div>}
 
-   {!item.spam&&!item.closedAt&&(!item.clientId||delegated(item))&&(['admin','department_head'].includes(employee.role)||employee.role==='operator'&&item.assigneeId===employee.id)&&<CallButton target={{mode:'incoming',incomingId:item.id}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
+   {!item.spam&&!item.closedAt&&(!item.clientId||delegated(item)||sharedCallback(item))&&(['admin','department_head'].includes(employee.role)||employee.role==='operator'&&item.assigneeId===employee.id)&&<CallButton target={{mode:'incoming',incomingId:item.id}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    {!item.spam&&item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&<div className="action-buttons">
     <button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!,item.closedAt?undefined:item.id)}>Карточка клиента</button>
-    {!item.hasActiveOrder&&!delegated(item)&&<CallButton target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
+    {!item.hasActiveOrder&&!delegated(item)&&!sharedCallback(item)&&<CallButton target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    </div>}
    <IncomingTransfer item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/>
    {!item.spam&&(item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>

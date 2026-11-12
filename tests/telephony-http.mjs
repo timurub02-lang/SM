@@ -387,6 +387,38 @@ try{
  assert.equal((await claimRequest(beforeSpam.data)).status,403);
  assert.equal((await api('/api/telephony',{mode:'incoming',incomingId:spamRequest},cookies.admin)).status,400);
  assert.equal((await api('/api/telephony',{mode:'incoming',incomingId:lookup},cookies.head)).status,400,'Linked client uses ordinary client access');
+ // Known free clients in the shared queue can be called without loading or assigning a card.
+ const sharedCallbackClient={id:'shared-callback-client',name:'Free shared client',phone:'+79995550011',owner:'',baseType:'M',sheet:'T1',city:'',address:'',source:'Test',createdAt:new Date().toISOString(),version:1};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(sharedCallbackClient.id,sharedCallbackClient.phone,JSON.stringify(sharedCallbackClient));
+ const sharedCallbackId='b2'.repeat(16);await incoming(sharedCallbackId,'79995550011');
+ const sharedCallbackTarget={mode:'incoming',incomingId:sharedCallbackId},sharedCallbackBefore=db.prepare('SELECT data FROM clients WHERE id=?').get(sharedCallbackClient.id).data,sharedCounts=counts();
+ assert.equal((await state('admin')).incoming.find(i=>i.id===sharedCallbackId).sharedQueue,true);
+ for(const role of ['admin','head','head2','head0']){
+  const r=await api('/api/telephony',sharedCallbackTarget,cookies[role]);assert.equal(r.status,200,r.text);
+  assert.equal(db.prepare('SELECT destination FROM phone_call_targets WHERE call_id=?').get(r.data.callId).destination,'79995550011');
+  assert.equal((await claimRequest(r.data)).status,200);
+ }
+ for(const role of ['one','two','logistic','courier'])assert.equal((await api('/api/telephony',sharedCallbackTarget,cookies[role])).status,400,role);
+ const changedOwnerGrant=await api('/api/telephony',sharedCallbackTarget,cookies.head);
+ db.prepare("UPDATE clients SET data=json_set(data,'$.owner','one') WHERE id=?").run(sharedCallbackClient.id);
+ assert.equal((await claimRequest(changedOwnerGrant.data)).status,403,'A newly assigned client revokes the shared callback');
+ db.prepare('UPDATE clients SET data=? WHERE id=?').run(sharedCallbackBefore,sharedCallbackClient.id);
+ const activeOrderGrant=await api('/api/telephony',sharedCallbackTarget,cookies.head);
+ const sharedOrder={id:'shared-callback-order',clientId:sharedCallbackClient.id,manager:'one',status:'draft',items:[],createdAt:new Date().toISOString(),version:1};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(sharedOrder.id,sharedOrder.clientId,JSON.stringify(sharedOrder));
+ assert.equal((await claimRequest(activeOrderGrant.data)).status,403,'A new active order revokes the shared callback');
+ db.prepare('DELETE FROM orders WHERE id=?').run(sharedOrder.id);
+ db.prepare('UPDATE incoming_calls SET phone=? WHERE id=?').run('+79990000001',sharedCallbackId);
+ assert.equal((await api('/api/telephony',sharedCallbackTarget,cookies.head)).status,400,'Cannot dial another client');
+ db.prepare('UPDATE incoming_calls SET phone=? WHERE id=?').run('+79995550012',sharedCallbackId);
+ assert.equal((await api('/api/telephony',sharedCallbackTarget,cookies.head)).status,400,'Cannot dial a number outside the client phone index');
+ db.prepare('UPDATE incoming_calls SET phone=? WHERE id=?').run(sharedCallbackClient.phone,sharedCallbackId);
+ const closingSharedGrant=await api('/api/telephony',sharedCallbackTarget,cookies.head);
+ assert.equal((await api('/api/crm',{action:'closeIncoming',incomingId:sharedCallbackId,reason:'Consultation complete'},cookies.head)).status,200);
+ assert.equal((await claimRequest(closingSharedGrant.data)).status,403,'Closing shared incoming revokes the prepared call');
+ assert.equal(db.prepare('SELECT data FROM clients WHERE id=?').get(sharedCallbackClient.id).data,sharedCallbackBefore);
+ assert.deepEqual(counts(),sharedCounts,'Shared callbacks and results do not create clients/orders');
+ console.log('Shared known incoming: admin/heads callback, server destination, role checks, stale grants and unchanged ownership passed.');
  // A supervisor hands off only the incoming request, including clients with active orders.
  const handoffClient={id:'handoff-client',name:'Handoff client',phone:'+79998887711',city:'',address:'',source:'Test',owner:'one',sheet:'К',baseType:'M',assignedUntil:new Date(Date.now()+86400000).toISOString(),assignmentStartedAt:new Date().toISOString(),createdAt:new Date().toISOString(),version:1};
  const handoffOrder={id:'handoff-order',clientId:handoffClient.id,manager:'one',logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:handoffClient.createdAt,updatedAt:handoffClient.createdAt,version:1};
