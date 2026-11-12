@@ -9,13 +9,14 @@ export function useCrmOrderPage(query:(OrderListQuery&{page:number;clientWorkFil
  const key=query?new URLSearchParams({list:query.view==='mine'?'mine':'orders',clientWorkFilter:query.clientWorkFilter,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,view:query.view,filter:query.filter,query:query.query,next:query.showNextPremium?'1':'0',sort:query.sort||'createdAt',direction:query.direction||'desc',page:String(query.page)}).toString():'';
  const [result,setResult]=useState<{key:string;data?:Page;error?:string}>({key:''});
  const [attempt,retry]=useState(0),[loading,setLoading]=useState(false);
- const refresh=useRef(()=>{});
+ const refresh=useRef(()=>{}),currentRevision=useRef(revision);currentRevision.current=revision;
+ const cached=useRef<{key:string;etag:string;data:Page}|undefined>(undefined);
  useEffect(()=>{
   if(!key){setLoading(false);return;}
   const controller=new AbortController(),queue=new ChangeRefresh();let timer:ReturnType<typeof setTimeout>|undefined;
   const read=async()=>{
-   setLoading(true);
-   try{const response=await fetch('/api/crm?'+key,{cache:'no-store',signal:controller.signal});const data=await readJsonResponse<Page>(response);if(!controller.signal.aborted)setResult({key:actor+key,data});}
+   setLoading(true);const readRevision=currentRevision.current,previous=cached.current?.key===actor+key?cached.current:undefined;
+   try{const response=await fetch('/api/crm?'+key,{cache:'no-store',signal:controller.signal,headers:previous?{'If-None-Match':previous.etag}:{}});const data=response.status===304&&previous?previous.data:await readJsonResponse<Page>(response);if(!controller.signal.aborted&&readRevision===currentRevision.current){cached.current={key:actor+key,etag:response.headers.get('etag')||'',data};setResult({key:actor+key,data});}}
    catch(error){if(!controller.signal.aborted)setResult(previous=>({key:actor+key,data:previous.key===actor+key?previous.data:undefined,error:error instanceof Error?error.message:'Страница недоступна'}));return false;}
    finally{if(!controller.signal.aborted)setLoading(false);}
    return !controller.signal.aborted;
@@ -25,7 +26,7 @@ export function useCrmOrderPage(query:(OrderListQuery&{page:number;clientWorkFil
   return()=>{refresh.current=()=>{};clearTimeout(timer);controller.abort();};
  },[key,actor,attempt,refreshKey]);
  // Background snapshots queue one more read; only changing the page context cancels it.
- useEffect(()=>refresh.current(),[state]);
+ useEffect(()=>refresh.current(),[revision===undefined?state:revision]);
  const current=result.key===actor+key?result:undefined;
  return {enabled:!!key,data:current?.data,error:current?.error,loading:!!key&&(loading||!current),retry:()=>retry(n=>n+1)};
 }

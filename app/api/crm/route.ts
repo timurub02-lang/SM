@@ -1,3 +1,4 @@
+import {cachedWorkspaceResponse} from '@/lib/crm-workspace-cache';
 import {clientListSummaries} from '@/lib/crm-client-summary';
 import {splitWorkspaceEnabled,workspaceBootstrap,readWorkspaceState,readWorkspaceCard,hydrateWorkspaceOrders} from '@/lib/crm-workspace-read';
 import {nextOrderId} from '@/lib/order-number';
@@ -136,6 +137,7 @@ async function handleGET(request:Request){
    if(!card)return Response.json({error:'Карточка недоступна'},{status:404});
    return timing.finish(Response.json(compactCrmState(await responseState(user,false,'',true,'','',card,false))));
   }
+  const read=async()=>{
   const scoped=split&&(!!list||part==='context'||part==='tasks')?await timing.measure('read',()=>readWorkspaceState(db(),user.employee!,part!=='tasks')):undefined;
   const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||part==='bootstrap'||params.get('transport')==='compact-v1','',list?.success?list.data.list:part==='tasks'?'tasks':'',scoped,part!=='context'));
   if(split&&part==='tasks')return timing.finish(Response.json({tasks:state.tasks,reminders:state.reminders,incoming:state.incoming,callOrders:[...scheduledCalls(state.orders,user.employee!,state.employees),...state.orders.filter(o=>courierDoorRefusal(o)&&!scheduledCalls([o],user.employee!,state.employees).length)],maintenanceHealthy:await maintenanceHealthy(db())}));
@@ -155,6 +157,9 @@ async function handleGET(request:Request){
    return timing.finish(await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page,...(scoped?{employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
   }
   return timing.finish(params.get('transport')==='compact-v1'?await crmSnapshotResponse(request,compactCrmState(state),user.userId):await conditionalJson(request,state));
+  };
+  if(split&&(list?.success||part==='context'||part==='tasks'))return timing.finish(await cachedWorkspaceResponse(db(),user.employee!,request,part==='tasks'?'tasks':'workspace',list?.success?list.data:{part},read));
+  return await read();
  }catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==='Требуется вход в CRM'?e.message:'Не удалось подключиться к базе CRM'},{status:503}));}
 }
 async function handlePOST(request:Request){
