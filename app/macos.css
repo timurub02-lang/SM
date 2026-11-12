@@ -819,3 +819,20 @@ body:has(.courier-design-aurora){background:#191a1e}
 .dark .stats-departments button[aria-pressed=true]{background:#304b71;color:#e5efff;border-color:#6993ca}
 
 .client-card .retention-hint{flex-basis:100%;font-size:12px;line-height:1.45;text-align:left}
+
+/* Keep the existing per-user preference; extend readability to every CRM section. */
+body.large-order-text{font-size:18px;line-height:1.5}
+body.large-order-text :is(p,small,label,input,textarea,select,button,td,th,dt,dd,legend,li,a,.muted,.notice,.badge,.nav-label,.nav-count,.card-serial,.card-bottom,.topbar,.eyebrow,.field,.section-title,.contact-summary,.base-movements,.item-read){font-size:18px!important;line-height:1.5}
+body.large-order-text :is(button,a,label,td,th,small) :is(span,small){font-size:inherit!important}
+body.large-order-text :is(.client-card,.incoming-card) h2{font-size:20px}
+body.large-order-text [data-slot=sidebar-menu-button]{height:auto;min-height:48px}
+body.large-order-text [data-slot=sidebar-menu-button]>span:not(.nav-icon){white-space:normal;overflow-wrap:anywhere}
+body.large-order-text .sidebar-settings-toggle{align-items:center;gap:12px}
+body.large-order-text .sidebar-settings-toggle>span{flex:1;min-width:0}
+body.large-order-text .sidebar-settings-toggle [role=switch]{flex-shrink:0}
+body.large-order-text [role=tablist]{height:auto;flex-wrap:wrap}
+body.large-order-text [role=tab]{height:auto;min-height:44px;white-space:normal}
+body.large-order-text :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,button:not([role=switch])){min-height:44px}
+body.large-order-text .topbar{height:auto;min-height:76px;flex-wrap:wrap;gap:12px}
+body.large-order-text .heading-actions{flex-wrap:wrap}
+body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:44px;padding:0;flex-shrink:0}
