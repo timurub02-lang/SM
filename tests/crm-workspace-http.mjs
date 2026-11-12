@@ -10,6 +10,7 @@ import {once} from 'node:events';
 import {authSchema} from '../lib/auth-schema.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-workspace-http-')),file=join(dir,'test.sqlite'),database=new DatabaseSync(file);
 const port=process.env.WORKSPACE_TEST_PORT||'3131',base=`http://127.0.0.1:${port}`,streams=[],cookies=[];
+const webhookKey='synthetic-webhook-key-only-0123456789abcdef';
 let server,logs='';
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const until=async(predicate,message)=>{const start=performance.now();while(!predicate()){assert.ok(performance.now()-start<8000,message);await pause(20);}};
@@ -28,7 +29,7 @@ try{
   database.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
  }
  database.prepare("INSERT INTO settings VALUES('main','{\"retentionDays\":30}')").run();
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_SPLIT_READS:'1',CRM_MAINTENANCE_WORKER:'1',CRM_ORIGIN:base,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_SPLIT_READS:'1',CRM_MAINTENANCE_WORKER:'1',CRM_SK_WEBHOOK_KEY:webhookKey,CRM_ORIGIN:base,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<200;i++){try{await fetch(base+'/login');break;}catch{await pause(100);}}
  const read=(i,path='?list=orders&view=orders&filter=all',etag='')=>fetch(base+'/api/crm'+path,{headers:{cookie:cookies[i],...(etag?{'If-None-Match':etag}:{})}});
@@ -55,6 +56,26 @@ try{
  database.prepare("UPDATE clients SET version=version+1 WHERE id='c-0'").run();const recovered=await connect(0,cursor);await until(()=>recovered.frames.length===1,'reconnect recovers missed change');assert.notEqual(recovered.frames[0].frame.match(/id: (.+)/)[1],cursor);
  database.prepare("UPDATE auth_accounts SET enabled=0 WHERE employee_id='operator-1'").run();await until(()=>active[1].ended,'revoked stream closes');assert.equal((await read(1)).status,401);
  database.prepare("UPDATE employees SET data=json_set(data,'$.department','2') WHERE id='operator-0'").run();await until(()=>recovered.frames.some(f=>f.frame.includes('event: access')),'rights change requires fresh bootstrap');
+ const version=database.prepare("SELECT version FROM orders WHERE id='o-2'").get().version;
+ const save=body=>fetch(base+'/api/crm',{method:'POST',headers:{cookie:cookies[2],Origin:base,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const saved=await save({action:'comment',id:'o-2',version,text:'Independent workspace save',responseMode:'entity-patch-v2'});
+ assert.equal(saved.status,200);const patch=(await saved.json()).entityPatch;assert.equal(patch.deferredWorkspace,true);
+ assert.equal(patch.state.orders.length,1);assert.equal(patch.state.orders[0].id,'o-2');assert.ok(patch.state.orders[0].version>version);
+ for(const key of ['tasks','reminders','clientReminders','clientWork'])assert.equal(patch.state[key],undefined,'save response does not rebuild '+key);
+ assert.ok(Array.isArray(patch.state.incoming),'incoming permissions are rechecked in the patch');
+ assert.equal((await read(2,'?part=tasks')).status,200,'independent tasks remain available after the save');
+ assert.equal((await save({action:'comment',id:'o-2',version,text:'Stale overwrite',responseMode:'entity-patch-v2'})).status,400);
+ assert.equal((await save({action:'comment',id:'o-3',version:1,text:'Foreign write',responseMode:'entity-patch-v2'})).status,400);
+ const legacySave=await save({action:'comment',id:'o-2',version:patch.state.orders[0].version,text:'Compatible save',responseMode:'entity-patch'});
+ assert.equal(legacySave.status,200);assert.ok(Array.isArray((await legacySave.json()).entityPatch.state.tasks),'existing patch clients retain the full contract');
+ database.prepare("INSERT INTO settings(id,data) VALUES('sk-order-import',?)").run(JSON.stringify({enabled:true,resultIds:[47]}));
+ const callback=authorization=>fetch(base+'/api/sk-order-events',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':'synthetic-event-1',...(authorization?{Authorization:authorization}:{})},body:JSON.stringify({type:'call_result',call:{id:123,result_id:47},call_result:{result_id:47,comment:'Synthetic import'}})});
+ assert.equal((await callback()).status,403,'provider endpoint cannot rely on browser cookies or an absent key');
+ assert.equal((await callback('Bearer wrong')).status,403);
+ assert.equal((await callback('Bearer '+webhookKey)).status,202,'authenticated provider event is durably accepted without browser session');
+ assert.equal((await callback('Bearer '+webhookKey)).status,202);
+ assert.equal(database.prepare('SELECT COUNT(*) n FROM sk_order_events').get().n,1,'HTTP retry does not duplicate queued work');
+ assert.equal(database.prepare("SELECT COUNT(*) n FROM orders WHERE id NOT LIKE 'o-%'").get().n,0,'HTTP ingress never invokes provider APIs or imports synchronously');
  latencies.sort((a,b)=>a-b);
  const result={synthetic:true,distinctSessions:100,concurrentSse:100,concurrentListRequests:100,ownChangeMs:active[0].frames[1].at-start,foreignEvents:0,listP50Ms:latencies[49],listP95Ms:latencies[94],listMaxMs:latencies[99],reconnect:true,revocation:true,rightsReset:true,fast304:true,note:'Small fixture: one order/client per actor. This is protocol/concurrency validation, not production capacity certification.'};
  if(process.env.WORKSPACE_TEST_OUTPUT)writeFileSync(process.env.WORKSPACE_TEST_OUTPUT,JSON.stringify(result,null,2));console.log(JSON.stringify(result));

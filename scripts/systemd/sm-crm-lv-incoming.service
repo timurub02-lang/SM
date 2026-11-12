@@ -1,0 +1,18 @@
+[Unit]
+Description=CRM independent LeadVertex incoming reconciliation
+After=network-online.target
+ConditionPathExists=/srv/crm/current/scripts/sync-lv-incoming.mjs
+
+[Service]
+Type=oneshot
+User=crmadmin
+Group=crmadmin
+EnvironmentFile=/etc/sm-crm.env
+ExecStart=/opt/sm-node/bin/node /srv/crm/current/scripts/sync-lv-incoming.mjs
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sm-crm

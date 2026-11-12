@@ -34,46 +34,69 @@ export async function releaseSummaryLease(d:ActivityDb,token:string){await d.pre
 export async function createSummaryWorker(writer:ActivityDb,reader:Reader,token=crypto.randomUUID()){
  // All lazy stores/triggers are ready before the dedicated read transaction starts.
  await initWorkspaceContext(reader);await initCrmReadIndexes(reader);await initFinancialProjection(reader);await initPreparedModels(reader);await initPreparedModels(writer);
- const cache=new ContextCache();let financial:FinancialProjection|undefined,financialKey='',lastFinance=0,lastSummary=0;
+ const cache=new ContextCache(),lastSummaries=new Map<string,number>();let financial:FinancialProjection|undefined,financialKey='',lastFinance=0;
  const stats={ticks:0,financialBuilds:0,contextBuilds:0,financialContextRefreshes:0,contextWrites:0,summaryBuilds:0,rejected:0};
- async function tick(now=Date.now()){
+ async function tick(injectedNow?:number){
+  // Tests may freeze time explicitly; the daemon samples the real clock per scope.
+  const now=injectedNow??Date.now(),currentTime=()=>injectedNow??Date.now();
   if(!await claimSummaryLease(writer,token,now))return {leader:false,...stats,cacheBytes:cache.bytes};
   await writer.prepare('DELETE FROM crm_model_demand WHERE requested_at<?').bind(now-3600000).run();
   // A new schema may have appeared since the previous tick; initialise outside BEGIN.
   await initPreparedModels(reader);await initPreparedModels(writer);
   const month=moscowMonth(now);
-  const snapshot=await reader.readSnapshot(async()=>{
+  const financeSnapshot=await reader.readSnapshot(async()=>{
    const source=await readModelSource(reader),key=source.financeRevision+':'+source.accessRevision+':'+month;
    const scopes=(await reader.prepare("SELECT e.id,e.data,e.version FROM crm_model_demand q JOIN employees e ON e.id=q.employee_id WHERE q.requested_at>=? AND json_extract(e.data,'$.role') IN ('operator','department_head') ORDER BY q.requested_at DESC,e.id LIMIT 128").bind(now-3600000).all()).results.map((r:{data:string;version:number})=>({...JSON.parse(r.data),version:r.version})) as Employee[];
    cache.retain(new Set(scopes.map(e=>e.id)));
    const financeChanged=!financial||financialKey!==key;
-   if(financeChanged){financial=await buildFinancialProjection(reader,now);financialKey=key;stats.financialBuilds++;}
-   const financeDue=financeChanged||now-lastFinance>=20000,rows:PreparedWrite[]=[],contexts:{id:string;key:string;state:State}[]=[],refresh:{id:string;revision:string;financialChanged:boolean}[]=[];
-   const write=(kind:string,scope:string,data:unknown,revision:string,ttl:number)=>rows.push({kind,scope,data,sourceRevision:revision,accessRevision:source.accessRevision,computedAt:now,validUntil:now+ttl});
-   if(financeDue){write('finance','global',financial,source.financeRevision,30000);write('finance-meta','global',{activePeriod:financial!.activePeriod,nextPeriod:financial!.stageProjection.nextPeriod},source.financeRevision,30000);}
-   for(const actor of scopes){
+   const projection=financeChanged?await buildFinancialProjection(reader,now):financial!;
+   if(financeChanged)stats.financialBuilds++;
+   return {source,key,projection,scopes,financeDue:financeChanged||now-lastFinance>=20000};
+  });
+  let published=true;
+  if(financeSnapshot.financeDue){
+   const {source,projection}=financeSnapshot;
+   const rows:PreparedWrite[]=[{kind:'finance',scope:'global',data:projection},{kind:'finance-meta',scope:'global',data:{activePeriod:projection.activePeriod,nextPeriod:projection.stageProjection.nextPeriod}}].map(row=>({...row,sourceRevision:source.financeRevision,accessRevision:source.accessRevision,computedAt:now,validUntil:now+30000}));
+   published=await publishPreparedModels(writer,rows,await financialStageStatements(writer,projection),token);
+   if(published){financial=projection;financialKey=financeSnapshot.key;lastFinance=now;}else{stats.rejected++;financial=undefined;}
+  }
+  const active=new Set(financeSnapshot.scopes.map(e=>e.id));for(const id of lastSummaries.keys())if(!active.has(id))lastSummaries.delete(id);
+  // Publish each scope before reading the next one. A slow/cold department cannot hold
+  // already computed operational summaries behind a whole-workspace transaction.
+  for(const requested of published?financeSnapshot.scopes:[]){
+   const snapshot=await reader.readSnapshot(async()=>{
+    const source=await readModelSource(reader);
+    if(source.financeRevision!==financeSnapshot.source.financeRevision||source.accessRevision!==financeSnapshot.source.accessRevision)return null;
+    const employee=await reader.prepare('SELECT data,version FROM employees WHERE id=?').bind(requested.id).first();
+    if(!employee)return null;const actor={...JSON.parse(employee.data),version:employee.version} as Employee;
+    if(!['operator','department_head'].includes(actor.role))return null;
     const versions=await workspaceVersions(reader,actor);
     // All scoped source changes bump tasks; a foreign redeemed-order broadcast only bumps workspace/cards.
     // Access, employee/settings changes and day boundaries still require a full enriched rebuild.
-    const contextKey=[versions.tasks,source.accessRevision,moscowDay(now)].join(':');
+    const contextKey=[versions.tasks,source.accessRevision,moscowDay(currentTime())].join(':');
     let state=cache.get(actor.id,contextKey),built=false;
     const financialChangedForScope=!!state&&cache.entries.get(actor.id)?.financialRevision!==source.financeRevision;
-    if(!state){const raw=await readWorkspaceState(reader,actor,false);applyFinancialProjection(financial!,raw);raw.financialReadModel={status:'ready',schemaVersion:1,computedAt:new Date(now).toISOString(),sourceRevision:source.financeRevision};state=compactCrmState(await buildWorkspaceContext(reader,actor,raw,now));stats.contextBuilds++;built=true;contexts.push({id:actor.id,key:contextKey,state});}
-    else if(financialChangedForScope){built=await refreshWorkspaceFinancialContext(reader,actor,state,financial!,now);state.financialReadModel={status:'ready',schemaVersion:1,computedAt:new Date(now).toISOString(),sourceRevision:source.financeRevision};stats.financialContextRefreshes++;if(built)contexts.push({id:actor.id,key:contextKey,state});}
-    if(built){write('context',actor.id,state,versions.workspace,3000);stats.contextWrites++;}
-    if(built||financialChangedForScope||now-lastSummary>=2000){if(!built)refresh.push({id:actor.id,revision:versions.workspace,financialChanged:financialChangedForScope});write('summary',actor.id,buildWorkspaceSummary(state,actor,now),versions.workspace,3000);stats.summaryBuilds++;}
-   }
-   return {source,financeDue,rows,contexts,refresh,scopeCount:scopes.length};
-  });
-  const stages=snapshot.financeDue?await financialStageStatements(writer,financial!):[];
-  // Refresh freshness without rewriting large unchanged context blobs.
-  for(const item of snapshot.refresh)stages.push(writer.prepare("UPDATE crm_read_models SET source_revision=?,valid_until=? WHERE kind='context' AND scope=? AND access_revision=?").bind(item.revision,now+3000,item.id,snapshot.source.accessRevision));
-  // Scoped versions mark concurrent non-access edits stale without starving every other scope.
-  const published=!snapshot.rows.length||await publishPreparedModels(writer,snapshot.rows,stages,token);
-  if(published){for(const c of snapshot.contexts)cache.set(c.id,c.key,c.state,snapshot.source.financeRevision);for(const item of snapshot.refresh){const entry=cache.entries.get(item.id);if(entry&&item.financialChanged)entry.financialRevision=snapshot.source.financeRevision;}if(snapshot.financeDue)lastFinance=now;if(snapshot.rows.some(r=>r.kind==='summary'))lastSummary=now;}
-  else {stats.rejected++;financial=undefined;}
+    if(!state){const raw=await readWorkspaceState(reader,actor,false);applyFinancialProjection(financial!,raw);raw.financialReadModel={status:'ready',schemaVersion:1,computedAt:new Date(currentTime()).toISOString(),sourceRevision:source.financeRevision};state=compactCrmState(await buildWorkspaceContext(reader,actor,raw,currentTime()));stats.contextBuilds++;built=true;}
+    else if(financialChangedForScope){built=await refreshWorkspaceFinancialContext(reader,actor,state,financial!,currentTime());state.financialReadModel={status:'ready',schemaVersion:1,computedAt:new Date(currentTime()).toISOString(),sourceRevision:source.financeRevision};stats.financialContextRefreshes++;}
+    const computedAt=currentTime(),rows:PreparedWrite[]=[];
+    if(built){rows.push({kind:'context',scope:actor.id,data:state,sourceRevision:versions.workspace,accessRevision:source.accessRevision,computedAt,validUntil:computedAt+3000});stats.contextWrites++;}
+    if(built||financialChangedForScope||computedAt-(lastSummaries.get(actor.id)||0)>=2000){rows.push({kind:'summary',scope:actor.id,data:buildWorkspaceSummary(state,actor,computedAt),sourceRevision:versions.workspace,accessRevision:source.accessRevision,computedAt,validUntil:computedAt+3000});stats.summaryBuilds++;}
+    return {source,actor,contextKey,state,built,rows,computedAt,revision:versions.workspace};
+   });
+   if(!snapshot){published=false;stats.rejected++;financial=undefined;break;}
+   if(!snapshot.rows.length)continue;
+   const extra=snapshot.built?[]:[writer.prepare("UPDATE crm_read_models SET source_revision=?,valid_until=? WHERE kind='context' AND scope=? AND access_revision=?").bind(snapshot.revision,snapshot.computedAt+3000,snapshot.actor.id,snapshot.source.accessRevision)];
+   // Fence the financial generation used by this scope even though finance itself
+   // was already published in a separate atomic transaction.
+   extra.unshift(writer.prepare("UPDATE crm_model_publish_guard SET allowed=CASE WHEN EXISTS(SELECT 1 FROM crm_model_source m CROSS JOIN crm_change_clock c WHERE m.id=1 AND c.id=1 AND c.epoch||':'||m.epoch||':'||m.finance=?) THEN 1 ELSE 0 END WHERE id=1").bind(snapshot.source.financeRevision));
+   const accepted=await publishPreparedModels(writer,snapshot.rows,extra,token);
+   if(!accepted){published=false;stats.rejected++;financial=undefined;break;}
+   if(snapshot.built)cache.set(snapshot.actor.id,snapshot.contextKey,snapshot.state,snapshot.source.financeRevision);
+   else {const entry=cache.entries.get(snapshot.actor.id);if(entry)entry.financialRevision=snapshot.source.financeRevision;}
+   lastSummaries.set(snapshot.actor.id,snapshot.computedAt);
+  }
   await writer.prepare("UPDATE crm_model_worker SET ok=1,heartbeat=?,message='' WHERE id=1 AND token=? AND lease_until>?").bind(Date.now(),token,Date.now()).run();
-  stats.ticks++;return {leader:true,published,...stats,cacheBytes:cache.bytes,scopes:snapshot.scopeCount};
+  stats.ticks++;return {leader:true,published,...stats,cacheBytes:cache.bytes,scopes:financeSnapshot.scopes.length};
  }
  return {tick,cache,stats,token};
 }

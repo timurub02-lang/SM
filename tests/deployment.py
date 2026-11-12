@@ -47,6 +47,14 @@ class Deployment(unittest.TestCase):
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1})
             (path/'sync-summaries.mjs').write_text('fixture')
             deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1})
+            for marker,job in [('skEvents','sk-events'),('lvIncoming','lv-incoming')]:
+                meta={'maintenance':1,'exports':1,'summaries':1,marker:1}
+                with self.assertRaises(ValueError):deploy.validate_jobs(path,meta)
+                (path/('sync-'+job+'.mjs')).write_text('fixture');deploy.validate_jobs(path,meta)
+                (path/('sync-'+job+'.mjs')).unlink()
+            for job in ['sk-events','lv-incoming']:(path/('sync-'+job+'.mjs')).write_text('fixture')
+            deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1,'skEvents':1,'lvIncoming':1})
+            for job in ['sk-events','lv-incoming']:(path/('sync-'+job+'.mjs')).unlink()
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1})
             (path/'sync-summaries.mjs').unlink()
             (path/'sync-exports.mjs').unlink()
@@ -66,7 +74,11 @@ class Deployment(unittest.TestCase):
                 with self.subTest(active=active),patch.object(deploy,'healthy'),patch.object(deploy.subprocess,'run') as run:
                     run.return_value.returncode=active
                     deploy.switch(target)
-                    self.assertEqual(run.call_args_list,[call(['systemctl','restart','sm-crm'],check=True),call(['systemctl','is-active','--quiet','sm-crm-summaries'],check=False)]+([call(['systemctl','try-restart','sm-crm-summaries'],check=True)] if active==0 else []))
+                    expected=[call(['systemctl','restart','sm-crm'],check=True)]
+                    for service in ['sm-crm-summaries','sm-crm-sk-events']:
+                        expected.append(call(['systemctl','is-active','--quiet',service],check=False))
+                        if active==0:expected.append(call(['systemctl','try-restart',service],check=True))
+                    self.assertEqual(run.call_args_list,expected)
 
     def test_failed_web_health_does_not_restart_summary_worker(self):
         with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)):
@@ -82,6 +94,30 @@ class Deployment(unittest.TestCase):
             (p/'scripts/sync-summaries.mjs').write_text('fixture');(runtime/'jobs/sync-summaries.mjs').write_text('fixture')
             with patch.object(pack.subprocess,'run',return_value=type('Probe',(),{'returncode':1,'stderr':'CRM_DATABASE_PATH is required'})()):pack.package('b'*40,p)
             self.assertEqual(json.loads((runtime/'release.json').read_text())['summaries'],1)
+
+    def test_ingress_workers_remain_independent(self):
+        sync=(root/'scripts/sync-sk-orders.mjs').read_text()
+        self.assertNotIn('syncLvIncoming',sync)
+        self.assertIn('syncLvIncoming',(root/'scripts/sync-lv-incoming.mjs').read_text())
+        unit=(root/'scripts/systemd/sm-crm-sk-events.service').read_text()
+        for value in ['Type=simple','ConditionPathExists=/srv/crm/current/scripts/sync-sk-events.mjs','MemoryMax=384M','Restart=on-failure']:
+            self.assertIn(value,unit)
+        self.assertIn('OnUnitActiveSec=60s',(root/'scripts/systemd/sm-crm-sk-orders.timer').read_text())
+        self.assertIn('OnUnitActiveSec=60s',(root/'scripts/systemd/sm-crm-lv-incoming.timer').read_text())
+
+    def test_ingress_manifest_and_isolated_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=pathlib.Path(folder);runtime=p/'.next/standalone';runtime.mkdir(parents=True)
+            (runtime/'server.js').write_text('fixture');(p/'public').mkdir();(p/'.next/static').mkdir();(p/'scripts').mkdir();(runtime/'jobs').mkdir()
+            for job in ['exports','sk-events','lv-incoming']:
+                (p/('scripts/sync-'+job+'.mjs')).write_text('fixture');(runtime/('jobs/sync-'+job+'.mjs')).write_text('fixture')
+            with patch.object(pack.subprocess,'run',return_value=type('Probe',(),{'returncode':1,'stderr':'CRM_DATABASE_PATH is required'})()) as run:
+                pack.package('c'*40,p)
+            meta=json.loads((runtime/'release.json').read_text());self.assertEqual((meta['exports'],meta['skEvents'],meta['lvIncoming']),(1,1,1))
+            self.assertTrue(any('trace-job-dependencies.mjs' in str(c.args[0]) for c in run.call_args_list))
+            probes=[c for c in run.call_args_list if 'cwd' in c.kwargs];self.assertEqual(len(probes),3)
+            for probe in probes:
+                self.assertFalse(probe.kwargs['cwd'].is_relative_to(p));self.assertNotIn('CRM_DATABASE_PATH',probe.kwargs['env']);self.assertNotIn('NODE_PATH',probe.kwargs['env'])
 
     def test_reject_traversal_and_links(self):
         for name,kind in [('runtime/../../escape',tarfile.REGTYPE),('/escape',tarfile.REGTYPE),('runtime/link',tarfile.SYMTYPE),('runtime/.env',tarfile.REGTYPE)]:

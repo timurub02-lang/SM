@@ -1,6 +1,7 @@
 import {skorozvonToken,type SkCredentials} from './skorozvon.ts';
 import {initActivity,recordActivityIncidents,type ActivityDb} from './activity-store.ts';
 import {shiftWindow,type ActivitySample,type WorkSchedule} from './activity.ts';
+import {skProviderRequest} from './sk-provider-request.ts';
 const iso=(v:unknown)=>{if(typeof v!=='string'||!v)return '';const s=/Z$|[+-]\d\d:\d\d$/.test(v)?v:v.replace(' ','T')+'Z';return Number.isFinite(Date.parse(s))?new Date(s).toISOString():'';};
 export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=Date.now(),wait=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))){
  await initActivity(d);
@@ -12,23 +13,22 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
  const health=await read('activity-health');
  const orders=await read('sk-order-health');
  if([health?.retryAt,orders?.retryAt].some(value=>Date.parse(value||'')>now))return {employees:0,callsImported:0,deferred:true};
- const started=Date.now(),clock=()=>now+Date.now()-started;let retryAt='';
+ const started=Date.now();let virtualNow=now,retryAt='';const clock=()=>Math.max(now+Date.now()-started,virtualNow),pause=async(ms:number)=>{virtualNow=clock()+ms;await wait(ms);};
  try{
   const config=await read('skorozvon') as SkCredentials|null;if(!config)throw Error('Скорозвон не подключён');
   const mapping=await read('activity-sk-map') as Record<string,number>|null;if(!mapping||!Object.keys(mapping).length)throw Error('Сотрудники Скорозвона не сопоставлены');
-  const token=await skorozvonToken(config,request);
+  const token=await skorozvonToken(config,(url,init)=>skProviderRequest(d,request,String(url),init||{},clock,pause));
   const api=async(path:string,body?:unknown):Promise<any>=>{
    for(let attempt=0;;attempt++){
-    // Stay below SK's 10 requests/second; a busy report can also return 429.
-    await wait(200);
-    const r=await request('https://api.skorozvon.ru'+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000),redirect:'error'});
+    const r=await skProviderRequest(d,request,'https://api.skorozvon.ru'+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000),redirect:'error'},clock,pause,false);
     if(r.status!==429){if(!r.ok)throw Error(`Скорозвон: запрос не выполнен (${r.status})`);return await r.json();}
     const limitedAt=clock(),header=r.headers.get('Retry-After'),advised=header===null?NaN:/^\d+$/.test(header)?Number(header)*1000:Date.parse(header)-limitedAt;
     const delay=Math.max(1000,Number.isFinite(advised)?advised:[5000,15000,60000][attempt]);
     await r.body?.cancel();
     retryAt=new Date(limitedAt+delay).toISOString();
+    await d.prepare('UPDATE sk_api_control SET retry_at=MAX(retry_at,?) WHERE id=1').bind(limitedAt+delay).run();
     if(attempt===2||delay>15000)throw Error('Скорозвон временно ограничил запросы. Обновление автоматически повторится после паузы.');
-    await wait(delay);retryAt='';
+    await pause(delay);retryAt='';
    }
   };
   const staff=(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data));

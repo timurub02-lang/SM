@@ -1,0 +1,11 @@
+[Unit]
+Description=Check LV incoming independently of SK every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=sm-crm-lv-incoming.service
+
+[Install]
+WantedBy=timers.target

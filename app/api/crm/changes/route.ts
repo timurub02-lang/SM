@@ -1,4 +1,6 @@
 import {workspaceVersions} from '@/lib/crm-workspace-clock';
+import {workspaceSummarySignal} from '@/lib/crm-summary-signal';
+import {preparedModelsEnabled} from '@/lib/crm-read-model';
 import {splitWorkspaceEnabled} from '@/lib/crm-workspace-read';
 import {personalAuth,sessionEmployee} from '@/lib/auth';
 import {db} from '@/lib/db';
@@ -27,7 +29,8 @@ export async function GET(request:Request){
      const employee=scoped?await sessionEmployee(request.headers):initial;
      if(!employee){stop();close();return;}
      if(scoped&&access(employee)!==access(initial)){controller.enqueue(encoder.encode('event: access\ndata: {}\n\n'));stop();close();return;}
-     const versions=scoped?await workspaceVersions(d,employee):null;
+     const workspace=scoped?await workspaceVersions(d,employee):null;
+     const versions=workspace?{...workspace,...(preparedModelsEnabled()?{summary:await workspaceSummarySignal(d,employee.id,workspace.workspace)}:{})}:null;
      const revision=versions?Object.values(versions).join('.'):await crmChangeRevision(d);if(stopped)return;
      if(revision!==previous){
       if(!await sessionEmployee(request.headers)){stop();close();return;}
