@@ -21,6 +21,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  if(!['admin','department_head','operator'].includes(actor.role))return null;
  const sourceRows=!visible?[]:summaryMode?summary.map(row=>({...row,orderLists:{created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}})):operatorStats(state,actor,from,to);
  const invalid=!!from&&!!to&&from>to,rows=invalid||!visible?[]:sortOperatorStats(sourceRows.filter(r=>r.created>0&&(!department||r.department===department)),sort.key,sort.ascending);
+ const buyoutRows=invalid?[]:sourceRows.filter(r=>!department||r.department===department);
  const columns: [StatsSortKey,string][]=[["login","Оператор"],["created","Создано"],["inWork","В работе"],["average","Средний чек"],["amount","Сумма"],["cancelled","Отменено"],["confirmed","Подтверждено"],["awaitingShipment","Ожидают отправки"],["sent","Отправлено"]];
  const colgroup=<colgroup><col style={{width:"28%"}}/>{Array.from({length:8},(_,i)=><col key={i}/>)}</colgroup>;
  const headers=<thead><tr>{columns.map(([key,label])=><th key={key} aria-sort={sort.key===key?(sort.ascending?"ascending":"descending"):"none"}><button className="stats-sort" onClick={()=>setSort({key,ascending:sort.key===key?!sort.ascending:key==="login"})}>{label} <span aria-hidden="true">{sort.key===key?(sort.ascending?"↑":"↓"):"↕"}</span></button></th>)}</tr></thead>;
@@ -46,7 +47,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
      {actor.role==='department_head'&&<label className="stats-all-switch"><Switch aria-label="Показать все отделы" checked={showAll} onCheckedChange={checked=>{setShowAll(checked);setDepartment('');}}/>Показать все отделы</label>}
     </div>
     {summaryMode&&<p className="muted">Общая сводка: только показатели, без доступа к заказам.</p>}
-    {summaryMode&&summaryLoading?<p role="status">Загрузка статистики отделов…</p>:summaryMode&&summaryError?<p role="alert">{summaryError}</p>:invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<div className="stats-results"><div className="stats-table-wrap"><table className="stats-table">{colgroup}{headers}
+    {summaryMode&&summaryLoading?<p role="status">Загрузка статистики отделов…</p>:summaryMode&&summaryError?<p role="alert">{summaryError}</p>:invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<div className="stats-results"><section aria-label="Выкупы за выбранный период"><h3>Выкупы за выбранный период</h3><div className="stats-buyouts">{([['buyoutCdek','СДЭК'],['buyoutPost','Почта России'],['buyoutMoscow','Курьер Москва']] as const).map(([key,label])=><div key={key}><span>{label}</span><strong>{buyoutRows.reduce((sum,row)=>sum+row[key],0)}</strong></div>)}</div><p className="muted">По дате выкупа, включая перенесённые заказы ЛВ. Без известной даты выкупа заказ в эти показатели не входит. Даты — по Москве.</p></section><div className="stats-table-wrap"><table className="stats-table">{colgroup}{headers}
      <tbody>{rows.map(r=><tr key={r.id}>
       <td title={r.login}>{r.login}</td><td>{metric(r.created,r.orderLists.created,"Создано заказов")}</td>
       <td>{metric(r.inWork,r.orderLists.inWork,"В работе")}</td>
