@@ -848,3 +848,9 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .client-detail-dialog.has-header-call:has(.call-client-time)>[data-slot=dialog-header]{min-height:132px}
 
 .order-sort-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.order-sort-controls label{display:flex;align-items:center;gap:8px}.order-sort-heading{border:0;background:transparent;color:inherit;font:inherit;padding:0;text-align:left;cursor:pointer}.order-sort-heading:hover{text-decoration:underline}
+
+/* Keep clickable statistics values aligned with zeros and aggregate-only values. */
+.operator-stats-dialog .stats-table th:not(:first-child),.operator-stats-dialog .stats-table td:not(:first-child){text-align:right;padding-right:10px}
+.operator-stats-dialog .stats-table :is(.stats-metric,.stats-zero,.stats-value){display:inline-block;width:100%;min-width:0;padding:3px 8px;text-align:right;text-align-last:right;font-variant-numeric:tabular-nums}
+.operator-stats-dialog .stats-table .stats-metric{appearance:none;background:transparent!important;color:inherit!important;border:0;border-radius:0;box-shadow:none;font-weight:inherit}
+.operator-stats-dialog .stats-table .stats-metric:hover{text-decoration:underline}

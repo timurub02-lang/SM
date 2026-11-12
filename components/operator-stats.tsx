@@ -31,7 +31,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
   if(summaryMode)return <span className="stats-value">{value}</span>;
   if(!orders.length)return <span className="stats-zero">{value}</span>;
   if(orders.length===1)return <button className="stats-metric" aria-label={`${label}: открыть заказ ${orders[0].id}`} onClick={()=>openOrder(orders[0].id)}>{value}</button>;
-  return <select className="stats-metric stats-order-select" aria-label={`${label}: выбрать заказ`} value="" onChange={e=>{if(e.target.value)openOrder(e.target.value);}}><option value="" disabled>{value} ▾</option>{orders.map(o=><option key={o.id} value={o.id}>{o.id} · {state.clients.find(c=>c.id===o.clientId)?.name||'Клиент'} · {statuses[o.status]} · {money(o.items.reduce((n,i)=>n+i.price*i.quantity,0))}</option>)}</select>;
+  return <select className="stats-metric stats-order-select" aria-label={`${label}: выбрать заказ`} value="" onChange={e=>{if(e.target.value)openOrder(e.target.value);}}><option value="" disabled>{value}</option>{orders.map(o=><option key={o.id} value={o.id}>{o.id} · {state.clients.find(c=>c.id===o.clientId)?.name||'Клиент'} · {statuses[o.status]} · {money(o.items.reduce((n,i)=>n+i.price*i.quantity,0))}</option>)}</select>;
  }
  const buyoutCells: [ 'buyoutCdek'|'buyoutPost'|'buyoutMoscow'|'buyoutCount'|'buyoutAmount',string,string[]?][]=[['buyoutCdek','СДЭК',['cdek_pickup','cdek_courier']],['buyoutPost','Почта России',['russian_post']],['buyoutMoscow','Курьер Москва',['moscow_courier']],['buyoutCount','Всего выкуплено'],['buyoutAmount','Сумма выкупов']];
  const allOrders=(key:'created'|'inWork'|'cancelled'|'confirmed'|'awaitingShipment'|'sent')=>rows.flatMap(r=>r.orderLists[key]);
