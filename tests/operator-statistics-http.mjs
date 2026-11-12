@@ -29,8 +29,8 @@ try{
  assert.equal((await call(path,cookies.operator)).status,403);
  for(const id of ['admin','head']){
   const response=await call(path,cookies[id]);assert.equal(response.status,200,response.text);
-  const row=JSON.parse(response.text).rows.find(r=>r.id==='other');assert.equal(row.created,1);assert.equal(row.inWork,1);assert.equal(row.amount,12345);assert.equal(row.department,'2');
-  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','sent'].sort());
+  const row=JSON.parse(response.text).rows.find(r=>r.id==='other');assert.equal(row.created,1);assert.equal(row.inWork,1);assert.equal(row.awaitingShipment,0);assert.equal(row.amount,12345);assert.equal(row.department,'2');
+  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','awaitingShipment','sent'].sort());
   for(const privateValue of ['PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001'])assert.ok(!response.text.includes(privateValue));
  }
  assert.equal((await call(path+'&actorId=admin',cookies.head)).status,403);

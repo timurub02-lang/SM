@@ -22,6 +22,8 @@ assert.throws(()=>operatorStatsSummary(state,employees[0],'',''));
 const [a,b]=operatorStats(state,{role:'admin'},'2026-11-11','2026-11-11');
 assert.equal(a.created,6);assert.equal(a.amount,21000);assert.equal(a.average,3500);
 assert.equal(a.inWork,1);assert.deepEqual(a.orderLists.inWork.map(o=>o.id),['SM-SK-1']);
+assert.equal(a.awaitingShipment,1);assert.deepEqual(a.orderLists.awaitingShipment.map(o=>[o.id,o.status]),[['CRM-3','packing']]);
+assert.equal(allSummary[0].awaitingShipment,1);
 assert.equal(a.cancelled,1);assert.equal(a.confirmed,4);assert.equal(a.sent,3);
 assert.deepEqual(a.orderLists.sent.map(o=>o.id),['CRM-4','CRM-5','CRM-6']);
 assert.equal(b.created,1);assert.equal(b.amount,7000);
@@ -33,6 +35,8 @@ assert.equal(operatorStats(state,employees[0],'2026-11-20','2026-11-20')[0].aver
 state.orders[3].status='rework';state.orders[3].cancelledAt='yes';
 const again=operatorStats(state,employees[0],'2026-11-11','2026-11-11')[0];
 assert.equal(again.sent,3);assert.equal(again.confirmed,4);assert.equal(again.cancelled,2);assert.equal(again.amount,21000);
+state.orders[2].cancelledAt='yes';state.orders[2].status='refused';
+assert.equal(operatorStats(state,employees[0],'2026-11-11','2026-11-11')[0].awaitingShipment,0);
 // A CDEK label or administrator review alone is neither confirmation nor shipment.
 state.orders=[order('returned-to-operator',10,{status:'rework'})];assert.equal(operatorStats(state,employees[0],'','')[0].inWork,1);
 state.orders[0].confirmedAt='yes';assert.equal(operatorStats(state,employees[0],'','')[0].inWork,0);
@@ -41,8 +45,8 @@ const label=operatorStats(state,employees[0],'','')[0];assert.equal(label.confir
 state.orders[0].cdekAcceptedAt='yes';assert.equal(operatorStats(state,employees[0],'','')[0].sent,1);
 console.log('Operator statistics: six columns, all-order amounts, lifecycle overlap, cohort dates, source deduplication and role scope passed');
 
-const sortable=[{login:'Б',inWork:2,created:2,average:10,amount:20,cancelled:0,confirmed:1,sent:1},{login:'А',inWork:1,created:10,average:2,amount:20,cancelled:3,confirmed:4,sent:2}];
-for(const key of ['login','created','inWork','average','amount','cancelled','confirmed','sent']){
+const sortable=[{login:'Б',inWork:2,created:2,average:10,amount:20,cancelled:0,confirmed:1,awaitingShipment:0,sent:1},{login:'А',inWork:1,created:10,average:2,amount:20,cancelled:3,confirmed:4,awaitingShipment:2,sent:2}];
+for(const key of ['login','created','inWork','average','amount','cancelled','confirmed','awaitingShipment','sent']){
  for(const ascending of [true,false]){
   const sorted=sortOperatorStats(sortable,key,ascending);
   const comparison=key==='login'?sorted[0].login.localeCompare(sorted[1].login,'ru'):sorted[0][key]-sorted[1][key];
