@@ -26,6 +26,13 @@ class Deployment(unittest.TestCase):
             pack.package('a'*40,p);deploy.extract(p/'dist/crm-runtime.tgz',p/'unpack')
             self.assertFalse((p/'unpack/runtime/.env').exists())
             self.assertEqual(json.loads((p/'unpack/runtime/release.json').read_text())['commit'],'a'*40)
+    def test_maintenance_uses_production_node(self):
+        unit=(root/'scripts/systemd/sm-crm-maintenance.service').read_text()
+        sync=(root/'scripts/systemd/sm-crm-sk-orders.service').read_text()
+        runtime=next(line.split('=',1)[1].split()[0] for line in sync.splitlines() if line.startswith('ExecStart='))
+        self.assertIn('ExecStart='+runtime+' /srv/crm/current/scripts/sync-maintenance.mjs',unit)
+        self.assertIn('ConditionPathExists=/srv/crm/current/scripts/sync-maintenance.mjs',unit)
+
     def test_maintenance_job_and_legacy_releases(self):
         with tempfile.TemporaryDirectory() as folder:
             path=pathlib.Path(folder)
