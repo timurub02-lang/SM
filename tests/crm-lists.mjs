@@ -13,3 +13,15 @@ assert.deepEqual(filteredClientList(state,employee,{filter:'today',query:'',clie
 assert.equal(filteredClientList(state,employee,{filter:'today',query:'',clientWorkFilter:'all',timeZone:'UTC'},now).length,0,'server must use the browser calendar day');
 assert.equal(filteredClientList(state,employee,{filter:'all',query:'O-123',clientWorkFilter:'all'},now).length,1,'client search includes order IDs');
 console.log('List selectors: cross-tab search, ownership and browser calendar boundaries passed');
+
+state.orders=Array.from({length:65},(_,i)=>({...order,id:'SORT-'+i,createdAt:new Date(now+i*60000).toISOString(),items:[{name:'Товар',quantity:1,price:65-i}]}));
+const query={view:'orders',filter:'new',query:'',showNextPremium:false};
+assert.equal(filteredOrderList(state,employee,query,now)[0].id,'SORT-64','newest first across the complete list');
+assert.equal(filteredOrderList(state,employee,{...query,direction:'asc'},now)[0].id,'SORT-0');
+assert.equal(filteredOrderList(state,employee,{...query,sort:'total',direction:'desc'},now)[0].id,'SORT-0');
+assert.equal(filteredOrderList(state,employee,{...query,sort:'id',direction:'asc'},now)[10].id,'SORT-10','numeric order identifiers');
+assert.equal(filteredOrderList(state,employee,query,now).slice(50)[0].id,'SORT-14','pagination happens after sorting');
+state.redemptionStatuses=['READY_FOR_PICKUP'];
+state.orders=[{...order,id:'older-action',status:'shipping',delivery:'cdek_courier',createdAt:'2026-11-01T00:00:00Z',cdekStatus:{code:'READY_FOR_PICKUP'}},{...order,id:'newer-waiting',status:'shipping',delivery:'cdek_courier',cdekStatus:{code:'CREATED'}}];
+assert.equal(filteredOrderList(state,employee,{...query,filter:'sent'},now)[0].id,'older-action','keep sent orders needing work above waiting orders');
+console.log('Order sorting: descending dates, directions, amount, natural IDs, pagination and redemption priority passed');
