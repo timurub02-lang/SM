@@ -1,3 +1,4 @@
+import {redemptionTransferText} from './redemption-transfer-history.ts';
 import type {ActivityDb} from './activity-store.ts';
 import {initCrmReadIndexes} from './crm-read-indexes.ts';
 import type {Employee,Client,Order,Event} from './crm.ts';
@@ -44,8 +45,15 @@ export async function readCrmHistory(d:ActivityDb,actor:Employee,q:HistoryQuery)
   const suffix=' · от имени '+e.name;
   clauses.push("(json_extract(e.data,'$.actorId')=? OR (COALESCE(json_extract(e.data,'$.actorId'),'')='' AND (json_extract(e.data,'$.actor')=? OR substr(json_extract(e.data,'$.actor'),-length(?))=?)))");args.push(e.id,e.login,suffix,suffix);
  }
- const from=`FROM events e LEFT JOIN clients c ON c.id=e.client_id WHERE ${clauses.join(' AND ')}`;
+ let source='events',sourceArgs:unknown[]=[];
+ if(q.clientId&&await d.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redemption_history'").first()){
+  const filter="json_extract(h.data,'$.operatorReturn') IS NOT NULL AND (json_extract(h.data,'$.changeKind') IN ('return_operator','operator_return_timeout','operator_nd','operator_return_start_now','operator_return_48_hours','operator_return_storage_limit') OR (json_extract(h.data,'$.changeKind')='action' AND json_extract(h.data,'$.operatorReturn.at')=json_extract(h.data,'$.updatedAt')) OR json_extract(h.data,'$.operatorReturn.resolvedAt')=json_extract(h.data,'$.updatedAt'))";
+  source=`(SELECT id,client_id,order_id,at,data FROM events UNION ALL SELECT 'REDEMPTION-HISTORY-'||h.id,o.client_id,h.order_id,h.at,json_object('id','REDEMPTION-HISTORY-'||h.id,'clientId',o.client_id,'orderId',h.order_id,'at',h.at,'actor',COALESCE(json_extract(h.data,'$.changedBy'),json_extract(h.data,'$.author'),'Система'),'_redemption',json(h.data)) FROM redemption_history h JOIN orders o ON o.id=h.order_id WHERE o.client_id=? ${q.orderId?'AND h.order_id=?':''} AND ${filter})`;
+  sourceArgs=[q.clientId,...(q.orderId?[q.orderId]:[])];
+ }
+ const from=`FROM ${source} e LEFT JOIN clients c ON c.id=e.client_id WHERE ${clauses.join(' AND ')}`;
+ args.unshift(...sourceArgs);
  const count=await d.prepare(`SELECT COUNT(*) AS n ${from}`).bind(...args).first();
- const rows=(await d.prepare(`SELECT e.data ${from} ORDER BY e.at DESC,e.id DESC LIMIT 50 OFFSET ?`).bind(...args,q.page*50).all()).results.map((r:{data:string})=>JSON.parse(r.data) as Event);
+ const rows=(await d.prepare(`SELECT e.data ${from} ORDER BY e.at DESC,e.id DESC LIMIT 50 OFFSET ?`).bind(...args,q.page*50).all()).results.map((r:{data:string})=>{const {_redemption,...event}=JSON.parse(r.data);return {...event,...(_redemption?{text:redemptionTransferText(_redemption)}:{})} as Event;});
  return {rows,total:Number(count.n),page:q.page};
 }
