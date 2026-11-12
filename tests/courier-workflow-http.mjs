@@ -9,6 +9,7 @@ import {once} from 'node:events';
 import {authSchema} from '../lib/auth-schema.ts';
 import {inventorySQL} from '../lib/inventory-sql.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
+import {defaultOrderPolicy} from '../lib/order-policy.ts';
 import {courierBalance,courierReminderNeedsAction} from '../lib/courier.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-courier-')),db=new DatabaseSync(join(dir,'test.sqlite')),origin='https://crm.test',port='3098',base='http://127.0.0.1:'+port,password='synthetic-password-123';
 let server,logs='';
@@ -292,6 +293,33 @@ try{
  assert.ok(!noticeState.tasks.some(r=>r.id===moneyReceipt),'Unread receipt never counts as a task');
  await call('courier','/api/crm',{action:'readReminder',id:moneyReceipt});
  notices=courierNotices((await call('courier')).data);assert.ok(!notices.active.some(r=>r.id===moneyReceipt));assert.ok(notices.history.length<=20);
+ const editableMoscow=await create();await assembled(editableMoscow);await act(editableMoscow,'courier',{action:'courierAccept',confirmed:true});
+ const clientRow=()=>db.prepare('SELECT data,version FROM clients WHERE id=?').get(order(editableMoscow).clientId);
+ const details=()=>({action:'updateMoscowDetails',responseMode:'entity-patch',clientVersion:clientRow().version,name:'Updated recipient',address:'Москва, ул. Тверская, д. 22, кв. 5',addressParts:{postalCode:'125009',region:'Москва',city:'Москва',street:'Тверская',house:'22',flat:'5'},logisticComment:'Entrance 2, call before arrival',addressConfirmed:true});
+ const snapshot=order(editableMoscow),oldClient=clientRow();
+ for(const actor of ['operator','head','courier','stranger'])await act(editableMoscow,actor,details(),['courier','stranger'].includes(actor)?403:400);
+ await act(editableMoscow,'logistic',{...details(),clientVersion:oldClient.version+100},400);
+ assert.deepEqual(order(editableMoscow),snapshot,'Client conflict must not partially update order');
+ await call('logistic','/api/crm',{id:editableMoscow,version:snapshot.version+100,...details()},400);
+ assert.deepEqual(clientRow(),oldClient,'Order conflict must not partially update client');
+ for(const actor of ['logistic','chief','admin']){
+  const response=await act(editableMoscow,actor,{...details(),name:'Updated '+actor,items:[{name:'Injected',price:1,quantity:1}],delivery:'russian_post'});
+  assert.equal(response.entityPatch.state.clients.find(c=>c.id===snapshot.clientId).name,'Updated '+actor);
+  const next=order(editableMoscow);assert.deepEqual(next.courier,snapshot.courier);assert.deepEqual(next.items,snapshot.items);assert.equal(next.delivery,'moscow_courier');assert.equal(next.status,snapshot.status);assert.equal(next.manualDeliveryCost,snapshot.manualDeliveryCost);
+  assert.equal(next.address,details().address);assert.equal(next.logisticComment,details().logisticComment);
+ }
+ const courierState=(await call('courier')).data;
+ assert.equal(courierState.clients.find(c=>c.id===snapshot.clientId).name,'Updated admin');assert.equal(courierState.orders.find(o=>o.id===editableMoscow).address,details().address);
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Логист уточнил данные получателя%' ").get(editableMoscow).n,3);
+ const beforePolicy=order(editableMoscow);db.prepare("INSERT OR REPLACE INTO settings VALUES('order-policy',?)").run(JSON.stringify({revision:'test',policy:{...defaultOrderPolicy,logisticDetailsEdit:false}}));
+ await act(editableMoscow,'logistic',details(),400);assert.deepEqual(order(editableMoscow),beforePolicy);
+ db.prepare("DELETE FROM settings WHERE id='order-policy'").run();
+ for(const status of ['redeemed','returned','refused']){
+  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...beforePolicy,status}),editableMoscow);
+  await act(editableMoscow,'logistic',details(),400);
+ }
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...beforePolicy,delivery:'russian_post'}),editableMoscow);await act(editableMoscow,'logistic',details(),400);
+ console.log('Moscow recipient edits: logistics/chief/admin, courier visibility, client/order CAS, audit, policy and terminal/other-delivery guards; basket, money and courier state unchanged.');
  console.log('Money, warehouse and repacking receipts: one notification, correct recipient, read/history and revoked order access passed.');
  console.log('All active courier tasks persist, viewed tasks stay actionable, missing tasks recover, completed history limited to 20.');
  console.log('Moscow API: real create/handoff/accept, operator-only returns, forbidden retired actions, operator calls, shared budget and legacy migration, money, expiry, physical return and stock passed.');

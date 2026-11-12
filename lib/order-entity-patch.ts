@@ -1,5 +1,5 @@
 import type {State} from './crm.ts';
-export const orderMutationActions=new Set(['createOrder','requestOrderCancellation','resolveOrderCancellation','updateLogisticComment','clientWaiting','markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','savePostalTracking','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment']);
+export const orderMutationActions=new Set(['createOrder','updateMoscowDetails','requestOrderCancellation','resolveOrderCancellation','updateLogisticComment','clientWaiting','markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','savePostalTracking','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment']);
 export type OrderEntityPatch={clientId:string;state:State};
 export function mergeOrderEntityPatch(current:State,patch:OrderEntityPatch):State{
  const {clientId,state:next}=patch;
