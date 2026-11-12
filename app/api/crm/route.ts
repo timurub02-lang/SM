@@ -2,7 +2,7 @@ import {nextOrderId} from '@/lib/order-number';
 import {initCrmReadIndexes} from '@/lib/crm-read-indexes';
 import {filteredClientList} from '@/lib/crm-client-list';
 import {maintenanceHealthy} from '@/lib/crm-maintenance';
-import {filteredOrderList,orderListViews} from '@/lib/crm-order-list';
+import {filteredOrderList,orderListViews,orderSortKeys} from '@/lib/crm-order-list';
 import {cachedCrmState} from '@/lib/crm-state-cache';
 import {crmSnapshotResponse} from '@/lib/crm-snapshot-response';
 import {compactCrmState} from '@/lib/compact-crm-state';
@@ -110,7 +110,7 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
  return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
-const listSchema=z.object({list:z.enum(['orders','mine']),view:z.enum(['mine',...orderListViews]),filter:z.string().max(80).default('all'),query:z.string().max(150).default(''),next:z.enum(['0','1']).default('0'),timeZone:z.string().max(100).default('Europe/Moscow').refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}}),clientWorkFilter:z.enum(['all','needed','planned','done']).default('all'),page:z.coerce.number().int().min(0).max(100000).default(0)});
+const listSchema=z.object({sort:z.enum(orderSortKeys).default('createdAt'),direction:z.enum(['asc','desc']).default('desc'),list:z.enum(['orders','mine']),view:z.enum(['mine',...orderListViews]),filter:z.string().max(80).default('all'),query:z.string().max(150).default(''),next:z.enum(['0','1']).default('0'),timeZone:z.string().max(100).default('Europe/Moscow').refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}}),clientWorkFilter:z.enum(['all','needed','planned','done']).default('all'),page:z.coerce.number().int().min(0).max(100000).default(0)});
 async function handleGET(request:Request){
  const timing=new RequestTiming();
  try{

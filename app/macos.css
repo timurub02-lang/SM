@@ -846,3 +846,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .call-client-time svg{flex-shrink:0}
 .call-client-time small{padding-left:21px;color:var(--muted-foreground);font-size:13px}
 .client-detail-dialog.has-header-call:has(.call-client-time)>[data-slot=dialog-header]{min-height:132px}
+
+.order-sort-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.order-sort-controls label{display:flex;align-items:center;gap:8px}.order-sort-heading{border:0;background:transparent;color:inherit;font:inherit;padding:0;text-align:left;cursor:pointer}.order-sort-heading:hover{text-decoration:underline}

@@ -5,7 +5,7 @@ import type {State,Order,Client} from '@/lib/crm';
 import type {OrderListQuery} from '@/lib/crm-order-list';
 type Page={rows:Order[];clients:Client[];total:number;page:number};
 export function useCrmOrderPage(query:(OrderListQuery&{page:number;clientWorkFilter:string})|null,state:State,actor:string,refreshKey=''){
- const key=query?new URLSearchParams({list:query.view==='mine'?'mine':'orders',clientWorkFilter:query.clientWorkFilter,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,view:query.view,filter:query.filter,query:query.query,next:query.showNextPremium?'1':'0',page:String(query.page)}).toString():'';
+ const key=query?new URLSearchParams({list:query.view==='mine'?'mine':'orders',clientWorkFilter:query.clientWorkFilter,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,view:query.view,filter:query.filter,query:query.query,next:query.showNextPremium?'1':'0',sort:query.sort||'createdAt',direction:query.direction||'desc',page:String(query.page)}).toString():'';
  const [result,setResult]=useState<{key:string;data?:Page;error?:string}>({key:''});
  const [attempt,retry]=useState(0),[loading,setLoading]=useState(false);
  const refresh=useRef(()=>{});
