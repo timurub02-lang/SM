@@ -59,7 +59,11 @@ async function install(d:ActivityDb){
     body=bump(recipients,table==='reminders'?['tasks']:table==='events'?['cards']:areas);
    }
    // Premium membership can cross departments through duplicated external order IDs.
-   if(table==='orders')body+=` INSERT INTO crm_workspace_clock(scope,area,revision) SELECT '*',area,1 FROM (SELECT 'workspace' AS area UNION ALL SELECT 'cards') WHERE (${images.map(row=>`${json(row,'status')}='redeemed'`).join(' OR ')}) ON CONFLICT(scope,area) DO UPDATE SET revision=revision+1;`;
+   if(table==='orders'){
+    // Comments/version bumps on a redeemed order still notify its owners, but cannot change cross-department premium membership.
+    const financialChange=op==='UPDATE'?['id','manager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery','premiumStage'].map(key=>`${json('OLD',key)} IS NOT ${json('NEW',key)}`).join(' OR '):'1';
+    body+=` INSERT INTO crm_workspace_clock(scope,area,revision) SELECT '*',area,1 FROM (SELECT 'workspace' AS area UNION ALL SELECT 'cards') WHERE (${images.map(row=>`${json(row,'status')}='redeemed'`).join(' OR ')}) AND (${financialChange}) ON CONFLICT(scope,area) DO UPDATE SET revision=revision+1;`;
+   }
    let when=op==='UPDATE'?columns.map((c:string)=>`OLD."${c}" IS NOT NEW."${c}"`).join(' OR '):'1';
    if(table==='settings'){
     // Reuse the legacy clock's tested classification of health timestamps and unknown settings.
@@ -80,6 +84,8 @@ export async function workspaceVersions(d:ActivityDb,e:Employee):Promise<Workspa
  await initWorkspaceClock(d);
  const epoch=await d.prepare('SELECT epoch FROM crm_change_clock WHERE id=1').first('epoch');
  const rows=(await d.prepare("SELECT scope,area,revision FROM crm_workspace_clock WHERE scope IN ('*',?) ORDER BY scope,area").bind(e.id).all()).results;
- const access=JSON.stringify(e);
+ // Session decoding adds defaults (for example testOnly:false); workers use stored employees.
+ // Hash only canonical permission fields. Employee edits already advance the durable clock.
+ const access=JSON.stringify([e.id,e.role,e.department||'',e.baseAccess||'']);
  return Object.fromEntries(areas.map(area=>[area,hash(JSON.stringify([epoch,access,area,rows.filter((r:{area:string})=>r.area===area)]))])) as WorkspaceVersions;
 }

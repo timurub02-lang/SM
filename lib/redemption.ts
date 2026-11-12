@@ -17,7 +17,8 @@ export function operatorReturnDeadline(storageUntil:string,now=new Date()){
  return validDate(storageUntil||'')?[limit,storageUntil+'T20:59:59.999Z'].sort()[0]:limit;
 }
 export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:false};
-export async function initRedemption(d:Db){await d.batch([
+const redemptionSchemas=new WeakMap<Db,Promise<unknown>>();
+export async function initRedemption(d:Db){let schema=redemptionSchemas.get(d);if(!schema){schema=d.batch([
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_entries(order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,entered_at TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)`),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_history(id INTEGER PRIMARY KEY AUTOINCREMENT,order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,at TEXT NOT NULL,data TEXT NOT NULL)`),
  d.prepare('CREATE INDEX IF NOT EXISTS redemption_history_at ON redemption_history(at)'),
@@ -26,7 +27,7 @@ export async function initRedemption(d:Db){await d.batch([
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_dispatch(day TEXT PRIMARY KEY,state TEXT NOT NULL,data TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL)`),
  d.prepare(`CREATE TRIGGER IF NOT EXISTS redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`),
  ...['INSERT','UPDATE OF data'].map((event,i)=>d.prepare(`CREATE TRIGGER IF NOT EXISTS redemption_enter_${i} AFTER ${event} ON orders WHEN json_extract(NEW.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.statuses') WHERE settings.id='redemption-config' AND json_each.value=json_extract(NEW.data,'$.cdekStatus.code')) BEGIN INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(NEW.id,strftime('%Y-%m-%dT%H:%M:%fZ','now'),'{}'); END`))
-]);}
+]);redemptionSchemas.set(d,schema);schema.catch(()=>redemptionSchemas.delete(d));}await schema;}
 export async function redemptionConfig(d:Db){return {...defaults,...JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='redemption-config'").first())?.data||'{}')};}
 export async function syncRedemption(d:Db,now=new Date()){
  await initRedemption(d);const at=now.toISOString();

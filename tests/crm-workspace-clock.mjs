@@ -22,6 +22,7 @@ try{
  for(const [id,owner] of [['ca','a'],['cb','b']])await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(id,id,JSON.stringify({id,owner})).run();
  for(const [id,clientId,manager] of [['oa','ca','a'],['ob','cb','b']])await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(id,clientId,JSON.stringify({id,clientId,manager,status:'draft'})).run();
  let before=await versions();
+ assert.deepEqual(await workspaceVersions(d,{...staff[0],testOnly:false,version:1}),await workspaceVersions(d,staff[0]),'HTTP session defaults and worker employee rows share the same revision');
  await d.prepare("UPDATE orders SET version=version+1 WHERE id='oa'").run();changed(before,await versions(),[0,2]);
  before=await versions();await d.prepare("UPDATE orders SET data=data").run();assert.deepEqual(await versions(),before);
  await assert.rejects(d.batch([d.prepare("UPDATE orders SET version=version+1"),d.prepare("INSERT INTO clients(id,phone,data) VALUES('ca','duplicate','{}')")]));assert.deepEqual(await versions(),before,'rollback rolls back counters');
@@ -38,6 +39,8 @@ try{
  before=await versions();await d.prepare("INSERT INTO redemption_entries VALUES('ob','{}')").run();changed(before,await versions(),[1,3]);
  before=await versions();await d.prepare("INSERT INTO phone_calls(id,client_id,actor_id,actor_name,caller_number,started_at,status) VALUES('p','cb','b','','','','completed')").run();changed(before,await versions(),[1,3]);
  before=await versions();await d.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed') WHERE id='ob'").run();changed(before,await versions(),[0,1,2,3]);changed(before,await versions(),[1,3],'tasks');
+ before=await versions();await d.prepare("UPDATE orders SET data=json_set(data,'$.comment','note'),version=version+1 WHERE id='ob'").run();changed(before,await versions(),[1,3]);
+ before=await versions();await d.prepare("UPDATE orders SET data=json_set(data,'$.priorPremiumPaid',1) WHERE id='ob'").run();changed(before,await versions(),[0,1,2,3]);
  await save('settings','cdek-sync-health',{checkedAt:'one',ok:true});before=await versions();
  await d.prepare("UPDATE settings SET data=json_set(data,'$.checkedAt','two') WHERE id='cdek-sync-health'").run();assert.deepEqual(await versions(),before);
  await d.prepare("UPDATE settings SET data=json_set(data,'$.ok',0) WHERE id='cdek-sync-health'").run();changed(before,await versions(),[0,1,2,3]);

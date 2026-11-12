@@ -44,9 +44,44 @@ class Deployment(unittest.TestCase):
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1})
             (path/'sync-exports.mjs').write_text('fixture')
             deploy.validate_jobs(path,{'maintenance':1,'exports':1})
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1})
+            (path/'sync-summaries.mjs').write_text('fixture')
+            deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1})
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1})
+            (path/'sync-summaries.mjs').unlink()
             (path/'sync-exports.mjs').unlink()
             (path/'sync-base.mjs').unlink()
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1})
+
+    def test_summary_service_is_bounded_and_opt_in(self):
+        unit=(root/'scripts/systemd/sm-crm-summaries.service').read_text()
+        for value in ['Type=simple','ConditionPathExists=/srv/crm/current/scripts/sync-summaries.mjs','ExecStart=/opt/sm-node/bin/node --max-old-space-size=512 /srv/crm/current/scripts/sync-summaries.mjs','MemoryMax=768M','CPUQuota=100%','Restart=on-failure','Environment=CRM_SUMMARIES_WORKER=1']:
+            self.assertIn(value,unit)
+        self.assertFalse((root/'scripts/systemd/sm-crm-summaries.timer').exists(),'the daemon owns its cadence; no second timer')
+
+    def test_switch_restarts_only_an_active_summary_worker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            deploy.BASE=pathlib.Path(folder);target=deploy.BASE/'new';target.mkdir()
+            for active in [0,3,4]:
+                with self.subTest(active=active),patch.object(deploy,'healthy'),patch.object(deploy.subprocess,'run') as run:
+                    run.return_value.returncode=active
+                    deploy.switch(target)
+                    self.assertEqual(run.call_args_list,[call(['systemctl','restart','sm-crm'],check=True),call(['systemctl','is-active','--quiet','sm-crm-summaries'],check=False)]+([call(['systemctl','try-restart','sm-crm-summaries'],check=True)] if active==0 else []))
+
+    def test_failed_web_health_does_not_restart_summary_worker(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)):
+            target=deploy.BASE/'new';target.mkdir()
+            with patch.object(deploy,'healthy',side_effect=RuntimeError('unhealthy')),patch.object(deploy.subprocess,'run') as run:
+                with self.assertRaisesRegex(RuntimeError,'unhealthy'):deploy.switch(target)
+                run.assert_called_once_with(['systemctl','restart','sm-crm'],check=True)
+
+    def test_summary_manifest_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=pathlib.Path(folder);runtime=p/'.next/standalone';runtime.mkdir(parents=True)
+            (runtime/'server.js').write_text('fixture');(p/'public').mkdir();(p/'.next/static').mkdir();(p/'scripts').mkdir();(runtime/'jobs').mkdir()
+            (p/'scripts/sync-summaries.mjs').write_text('fixture');(runtime/'jobs/sync-summaries.mjs').write_text('fixture')
+            with patch.object(pack.subprocess,'run',return_value=type('Probe',(),{'returncode':1,'stderr':'CRM_DATABASE_PATH is required'})()):pack.package('b'*40,p)
+            self.assertEqual(json.loads((runtime/'release.json').read_text())['summaries'],1)
 
     def test_reject_traversal_and_links(self):
         for name,kind in [('runtime/../../escape',tarfile.REGTYPE),('/escape',tarfile.REGTYPE),('runtime/link',tarfile.SYMTYPE),('runtime/.env',tarfile.REGTYPE)]:

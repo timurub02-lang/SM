@@ -1,3 +1,5 @@
+import {preparedModelsEnabled} from './crm-read-model.ts';
+import {attachPreparedPremiumStages} from './crm-financial-projection.ts';
 import type {ActivityDb} from './activity-store.ts';
 import type {Employee,Order,State} from './crm.ts';
 import {initCrmReadIndexes} from './crm-read-indexes.ts';
@@ -16,7 +18,7 @@ const orderQuery=(where:string,projection=true)=>snapshotOrdersQuery.replace('o.
 
 export async function workspaceBootstrap(d:ActivityDb,employee:Employee){
  const [main,policy]=await Promise.all([d.prepare("SELECT data FROM settings WHERE id='main'").first(),d.prepare("SELECT data FROM settings WHERE id='order-policy'").first()]);
- return {clients:[],orders:[],events:[],employees:[employee],settings:{...(main?JSON.parse(main.data):{retentionDays:30}),orderPolicy:orderPolicySchema.parse(policy?JSON.parse(policy.data).policy:defaultOrderPolicy)},historyRemote:true,currentEmployeeId:employee.id,personalAuth:true,splitReads:true} satisfies State&{currentEmployeeId:string;personalAuth:boolean;splitReads:boolean};
+ return {clients:[],orders:[],events:[],employees:[employee],settings:{...(main?JSON.parse(main.data):{retentionDays:30}),orderPolicy:orderPolicySchema.parse(policy?JSON.parse(policy.data).policy:defaultOrderPolicy)},historyRemote:true,currentEmployeeId:employee.id,personalAuth:true,splitReads:true,preparedSummaries:preparedModelsEnabled()} satisfies State&{currentEmployeeId:string;personalAuth:boolean;splitReads:boolean};
 }
 
 async function workspaceScope(d:ActivityDb,e:Employee){
@@ -36,6 +38,7 @@ async function workspaceScope(d:ActivityDb,e:Employee){
 }
 
 async function premiumStages(d:ActivityDb,state:State){
+ if(preparedModelsEnabled()){state.financialReadModel=await attachPreparedPremiumStages(d,state);return;}
  const row=await d.prepare('SELECT data FROM settings WHERE id=?').bind(ledgerKey).first();
  const ledger:PremiumLedger|null=row?JSON.parse(row.data):null;
  // Membership uses external IDs across departments; keep the existing financial rule intact.

@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import type {ActivityDb} from './activity-store.ts';
 import type {Employee} from './crm.ts';
 import {workspaceVersions,type WorkspaceVersions} from './crm-workspace-clock.ts';
+import {preparedModelsEnabled,readPreparedModel,readModelSource} from './crm-read-model.ts';
 type Entry={body:Uint8Array;headers:Headers;at:number;bytes:number};
 const stores=new WeakMap<ActivityDb,{entries:Map<string,Entry>;pending:Map<string,Promise<Entry>>;bytes:number}>();
 const maxBytes=32*1024*1024,maxEntries=256,ttl=5000;
@@ -10,7 +11,8 @@ const maxBytes=32*1024*1024,maxEntries=256,ttl=5000;
 export async function cachedWorkspaceResponse(d:ActivityDb,e:Employee,request:Request,area:keyof WorkspaceVersions,parameters:unknown,build:()=>Promise<Response>){
  let store=stores.get(d);if(!store){store={entries:new Map(),pending:new Map(),bytes:0};stores.set(d,store);}
  const revision=(await workspaceVersions(d,e))[area],now=Date.now();
- const key=JSON.stringify([e.id,revision,parameters,request.headers.get('accept-encoding'),Math.floor(now/ttl)]);
+ const finance=preparedModelsEnabled()?await readPreparedModel(d,'finance-meta','global',(await readModelSource(d)).financeRevision):undefined;
+ const key=JSON.stringify([e.id,revision,finance&&[finance.status,finance.sourceRevision,finance.computedAt],parameters,request.headers.get('accept-encoding'),Math.floor(now/ttl)]);
  const etag='W/"'+createHash('sha256').update(key).digest('base64url')+'"';
  const headers={'ETag':etag,'Cache-Control':'private, no-store','Vary':'Cookie, Accept-Encoding','X-CRM-Source-Revision':revision,'X-CRM-Schema-Version':'1'};
  // A revision-based 304 never constructs or hashes the entity lists.

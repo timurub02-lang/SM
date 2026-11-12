@@ -1,3 +1,7 @@
+import {preparedModelsEnabled,requestPreparedWorkspace,readPreparedModel,readModelSource} from '@/lib/crm-read-model';
+import {workspaceVersions} from '@/lib/crm-workspace-clock';
+import {buildClientWorkCounts,type WorkspaceSummary} from '@/lib/crm-workspace-summary';
+import {buildWorkspaceContext} from '@/lib/crm-workspace-context';
 import {cachedWorkspaceResponse} from '@/lib/crm-workspace-cache';
 import {clientListSummaries} from '@/lib/crm-client-summary';
 import {splitWorkspaceEnabled,workspaceBootstrap,readWorkspaceState,readWorkspaceCard,hydrateWorkspaceOrders} from '@/lib/crm-workspace-read';
@@ -92,6 +96,7 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
 async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId='',list:''|'orders'|'mine'|'tasks'='',provided?:State,includeTasks=true){
+ if(provided&&!list&&!includeTasks&&user.employee&&splitWorkspaceEnabled(user.employee))return buildWorkspaceContext(db(),user.employee,provided);
  const worker=process.env.CRM_MAINTENANCE_WORKER==='1'&&await maintenanceHealthy(db());
  const state=provided??(worker&&!fanout&&!orderId&&!clientId?await cachedCrmState(db(),()=>readState(false,'',false,'',compact),compact?'compact':'full'):await readState(true,'',false,orderId,false,clientId));
  if(!provided&&(!worker||fanout||orderId||clientId))await saveReminders(state,fanout?undefined:user.employee?.id,(orderId||clientId)?state.clients[0]?.id:undefined);if(!user.employee)return state;
@@ -128,9 +133,21 @@ async function handleGET(request:Request){
   await initialize();
   const split=splitWorkspaceEnabled(user.employee),part=params.get('part');
   if(part&&list)return Response.json({error:'Выберите страницу или часть рабочей области'},{status:400});
-  if(part&&!['bootstrap','context','tasks','card'].includes(part))return Response.json({error:'Неизвестная часть рабочей области'},{status:400});
+  if(part&&!['bootstrap','context','tasks','card','summary'].includes(part))return Response.json({error:'Неизвестная часть рабочей области'},{status:400});
   if(split&&part==='bootstrap')return timing.finish(Response.json(await workspaceBootstrap(db(),user.employee!)));
   if(part&&part!=='bootstrap'&&!split)return Response.json({error:'Раздельная загрузка недоступна'},{status:403});
+  if(split&&preparedModelsEnabled()){
+   await requestPreparedWorkspace(db(),user.employee!.id);
+   if(part==='summary'||part==='context'){
+    const revision=(await workspaceVersions(db(),user.employee!)).workspace;
+    if(part==='summary')return timing.finish(Response.json(await readPreparedModel<WorkspaceSummary>(db(),'summary',user.employee!.id,revision)));
+    const prepared=await readPreparedModel<State>(db(),'context',user.employee!.id,revision),{data,...readModel}=prepared;
+    if(!data)return timing.finish(Response.json({error:prepared.message||'Рабочие данные готовятся',readModel},{status:503}));
+    const {data:financialData,...finance}=await readPreparedModel(db(),'finance-meta','global',(await readModelSource(db())).financeRevision);
+    const financialReadModel=finance.status==='ready'&&data.financialReadModel?.sourceRevision!==finance.sourceRevision?{...finance,status:'stale' as const,message:'Этапы выплат в рабочей области обновляются'}:finance;
+    return timing.finish(await conditionalJson(request,{...data,readModel,financialReadModel}));
+   }
+  }else if(part==='summary')return timing.finish(Response.json({error:'Подготовленные сводки недоступны'},{status:403}));
   if(split&&part==='card'){
    const target=z.object({type:z.enum(['client','order']),id:z.string().min(1).max(100)}).safeParse(Object.fromEntries(params));
    if(!target.success)return Response.json({error:'Некорректная карточка'},{status:400});
@@ -152,10 +169,11 @@ async function handleGET(request:Request){
     if(!['operator','department_head'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
     const all=filteredClientList(compactCrmState(state),user.employee,q),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1));
     const clients=all.slice(page*50,(page+1)*50);
-    return timing.finish(await conditionalJson(request,{rows:[],clients,total:all.length,page,...(scoped?{summaries:clientListSummaries(state,clients),employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
+    return timing.finish(await conditionalJson(request,{rows:[],clients,total:all.length,page,...(scoped?{workCounts:buildClientWorkCounts(state,user.employee,q),financialReadModel:state.financialReadModel,summaries:clientListSummaries(state,clients),employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
    }
+   if(scoped&&preparedModelsEnabled()&&(['accrued','premium_paid'].includes(q.filter)||q.next==='1')&&(!state.financialReadModel||['pending','error'].includes(state.financialReadModel.status)))return Response.json({error:'Финансовые расчёты готовятся. Повторите загрузку.',readModel:state.financialReadModel},{status:503});
    const all=filteredOrderList(state,user.employee,{...q,showNextPremium:q.next==='1'}),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1)),selected=all.slice(page*50,(page+1)*50),rows=scoped?await hydrateWorkspaceOrders(db(),state,selected,user.employee):selected,ids=new Set(rows.map(o=>o.clientId));
-   return timing.finish(await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page,...(scoped?{employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
+   return timing.finish(await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page,...(scoped?{financialReadModel:state.financialReadModel,employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
   }
   return timing.finish(params.get('transport')==='compact-v1'?await crmSnapshotResponse(request,compactCrmState(state),user.userId):await conditionalJson(request,state));
   };

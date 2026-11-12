@@ -53,6 +53,11 @@ export function openDatabase(path: string) {
         }
       });
     },
+    // Dedicated worker connections only: an async read transaction must never be shared with HTTP.
+    async readSnapshot<T>(read: () => Promise<T>): Promise<T> {
+      connection.exec("BEGIN");
+      try { return await read(); } finally { connection.exec("ROLLBACK"); }
+    },
     close() { connection.close(); },
   };
 }

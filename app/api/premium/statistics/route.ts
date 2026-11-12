@@ -1,3 +1,6 @@
+import {db} from '@/lib/db';
+import type {Employee} from '@/lib/crm';
+import {readPreparedFinancialStatistics} from '@/lib/crm-financial-projection';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {readPremiumState} from '@/lib/premium-store';
@@ -9,6 +12,13 @@ export const GET=authenticated(async(req:Request)=>{
  try{
   const q=new URL(req.url).searchParams,month=q.get('month')||'';
   if(month&&!/^\d{4}-\d{2}$/.test(month))throw Error('Выберите месяц');
+  if(process.env.CRM_SUMMARIES_WORKER==='1'){
+   const d=db(),row=await d.prepare('SELECT data,version FROM employees WHERE id=?').bind(q.get('actorId')||'').first<{data:string;version:number}>(),actor=row?{...JSON.parse(row.data),version:row.version} as Employee:null;
+   if(!actor||!['admin','department_head'].includes(actor.role))return Response.json({error:'Недостаточно прав'},{status:403});
+   const result=await readPreparedFinancialStatistics(d,actor,month),{readModel}=result;
+   if(!('response' in result)||!result.response)return Response.json({error:readModel.message||'Финансовая сводка ещё не подготовлена',readModel},{status:503,headers:{'Cache-Control':'no-store','Retry-After':'2'}});
+   return Response.json({...result.response,readModel},{headers:{'Cache-Control':'no-store'}});
+  }
   const s=await readPremiumState(month+'-1'),actor=s.employees.find(e=>e.id===q.get('actorId'));
   if(!actor||!['admin','department_head'].includes(actor.role))return Response.json({error:'Недостаточно прав'},{status:403});
   if(!s.ledger)return Response.json({months:[],rows:[],periods:[]});

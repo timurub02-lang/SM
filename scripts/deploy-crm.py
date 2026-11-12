@@ -99,6 +99,9 @@ def healthy():
 def switch(target):
     link=BASE/'current.next';link.unlink(missing_ok=True);link.symlink_to(target);os.replace(link,BASE/'current')
     subprocess.run(['systemctl','restart','sm-crm'],check=True);healthy()
+    # Long-lived derived-data code must follow current; deliberately stopped workers stay stopped.
+    if subprocess.run(['systemctl','is-active','--quiet','sm-crm-summaries'],check=False).returncode==0:
+        subprocess.run(['systemctl','try-restart','sm-crm-summaries'],check=True)
 
 def retain(history,live):
     if live.parent!=BASE/'releases' or not NAME.fullmatch(live.name):raise ValueError('Unexpected current release')
@@ -181,6 +184,7 @@ def validate_jobs(path,meta):
     expected={'sync-activity.mjs','sync-base.mjs','sync-cdek-deletions.mjs','sync-cdek-shipments.mjs','sync-lv-warehouse.mjs','sync-redemption.mjs','sync-sk-orders.mjs'}
     if meta.get('maintenance')==1:expected.add('sync-maintenance.mjs')
     if meta.get('exports')==1:expected.add('sync-exports.mjs')
+    if meta.get('summaries')==1:expected.add('sync-summaries.mjs')
     if {p.name for p in path.glob('sync-*.mjs')}!=expected:raise ValueError('Background jobs are missing or unexpected')
 
 if __name__=='__main__':
