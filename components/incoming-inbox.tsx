@@ -18,7 +18,7 @@ export function IncomingResult({item,busy,onSave,onRequestCancellation}:{item:In
 }
 export function IncomingHandoffNote({item}:{item:IncomingRequest}){
  if(!item.handoff)return null;
- return <div className="notice stack"><strong>Комментарий при передаче · {item.handoff.name}</strong><small>{stamp(item.handoff.at,'Europe/Moscow')} МСК</small><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{item.handoff.comment}</p></div>;
+ return <div className="notice stack incoming-handoff-note"><strong>Комментарий при передаче · {item.handoff.name}</strong><small>{stamp(item.handoff.at,'Europe/Moscow')} МСК</small><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{item.handoff.comment}</p></div>;
 }
 export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item:IncomingRequest;employee:Employee;operators:Pick<Employee,'id'|'name'|'department'|'login'>[];busy:boolean;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>}){
  const [operator,setOperator]=useState(operators.some(e=>e.id===item.assigneeId)?item.assigneeId||'':''),[comment,setComment]=useState('');
@@ -88,7 +88,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    </div>}
    {!item.closedAt&&!item.spam&&['admin','department_head'].includes(employee.role)&&<details className="incoming-transfer-fold"><summary>Передать оператору</summary><IncomingTransfer item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/></details>}
    {!item.spam&&(item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>
-    {item.hasActiveOrder&&!delegated(item)?<><span>Действующие заказы</span><div className="action-buttons">{item.orderIds?.map(id=><button className="primary" key={id} onClick={()=>onOpen(id,item.id)}>Открыть {id}</button>)}</div>{!item.orderIds?.length&&<p>Заказ недоступен вашей роли. Обратитесь к администратору.</p>}</>:<><span>{item.hasActiveOrder?'Переданное входящее обращение':'Действующего заказа нет'}</span><IncomingResult item={item} busy={busy} onSave={reason=>onClose(item.id,reason)}/></>}
+    {item.hasActiveOrder&&!delegated(item)?<><span>Действующие заказы</span><div className="action-buttons">{item.orderIds?.map(id=><button className="primary" key={id} onClick={()=>onOpen(id,item.id)}>Открыть {id}</button>)}</div>{!item.orderIds?.length&&<p>Заказ недоступен вашей роли. Обратитесь к администратору.</p>}</>:<details className="incoming-result-fold"><summary>Итог обращения / закрыть</summary><IncomingResult item={item} busy={busy} onSave={reason=>onClose(item.id,reason)}/></details>}
    </>)}
    </div>
   </details>)}</div>
