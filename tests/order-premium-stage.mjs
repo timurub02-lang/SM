@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {orderDisplayGroup,orderDisplayGroups,showOrderInList} from '../lib/order-premium-stage.ts';
 import {orderGroup,closedOrderCallBlocked} from '../lib/crm.ts';
-assert.deepEqual(orderDisplayGroups.slice(4,7).map(g=>g.label),['Оплачен','Начислено','Выплачено']);
+assert.deepEqual(orderDisplayGroups.slice(orderDisplayGroups.findIndex(g=>g.id==='paid'),orderDisplayGroups.findIndex(g=>g.id==='paid')+3).map(g=>g.label),['Оплачен','Начислено','Выплачено']);
 const order={status:'redeemed'};
 assert.equal(orderDisplayGroup(order).id,'paid');
 for(const [status,id] of [['accrued','accrued'],['paid','premium_paid']]){
