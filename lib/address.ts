@@ -22,3 +22,8 @@ export function orderAddressWarnings(address:string,parts?:AddressParts):Address
  else if(warnings.some(w=>w.field==='postalCode')&&!parts.flat.trim()&&/(?:^|[\s,])(?:к\.?|корп\.?|корпус)\s*\d/i.test(parts.house))warnings.push({field:'house',message:'«к» в поле «Дом» означает корпус. Если это номер квартиры, уберите его из дома и заполните поле «Квартира».'});
  return warnings;
 }
+
+export function missingCourierHouse(order:{delivery?:string;address?:string;addressParts?:AddressParts},fallbackAddress=''){
+ if(!['cdek_courier','moscow_courier'].includes(order.delivery||''))return false;
+ return order.addressParts?!/\d/.test(order.addressParts.house):!/(?:^|[\s,])(?:дом|д\.?)\s*\d/i.test(order.address??fallbackAddress);
+}

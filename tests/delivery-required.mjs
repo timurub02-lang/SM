@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {validateTransition,deliverySchema} from '../lib/crm.ts';
-const base={createdAt:new Date().toISOString(),status:'draft',address:'Address',items:[{name:'Product',quantity:1,price:1}]};
+const base={createdAt:new Date().toISOString(),status:'draft',address:'Москва, ул. Тестовая, дом 1',items:[{name:'Product',quantity:1,price:1}]};
 for(const [status,extra,to] of [['draft',false,'confirm'],['rework',false,'confirm'],['rework',true,'extra']]){
  const order={...base,status,extra};
  for(const delivery of ['',undefined,['cdek_pickup','russian_post']])assert.throws(()=>validateTransition({...order,delivery},to,{name:'Тестовый Клиент'},''),/доставки/);
@@ -43,3 +43,18 @@ for(const items of [[],[{name:'ИТОГО',quantity:1,price:0}],[{name:'Това
  assert.throws(()=>validateTransition({...ready,items},'confirm',{name:'Иванов Иван'},'','admin'));
 }
 console.log('Only admin may save and hand off zero total; required goods and quantities remain enforced');
+
+for(const delivery of ['cdek_courier','moscow_courier']){
+ for(const status of ['draft','rework','confirm','check']){
+  const to=status==='draft'||status==='rework'?'confirm':status==='confirm'?'check':'packing';
+  for(const addressParts of [undefined,{postalCode:'393765',region:'Тамбовская область',city:'Мичуринск',street:'ул 7 Ноября',house:'',flat:''}]){
+   const o={...base,status,delivery,address:'Мичуринск, ул 7 Ноября',addressParts};
+   assert.equal(orderMissingField(o,{name:'Test Client'}).field,'address');
+   for(const role of ['operator','department_head','admin','logistic'])assert.throws(()=>validateTransition(o,to,{name:'Test Client'},'',role),/номер дома/);
+  }
+ }
+ assert.equal(orderMissingField({...base,delivery,addressParts:{postalCode:'',region:'',city:'Москва',street:'Тестовая',house:'74',flat:''}},{name:'Test Client'}),null,'Private house needs no flat');
+ assert.equal(orderMissingField({...base,delivery,addressParts:{postalCode:'',region:'',city:'Москва',street:'Тестовая',house:'',flat:'15'}},{name:'Test Client'}).field,'address','A flat is not a house');
+}
+assert.equal(orderMissingField({...base,delivery:'cdek_pickup',address:'Глазов'},{name:'Test Client'}),null);
+console.log('Courier house is required for every handoff role and existing check/packing transitions; street digits and flat do not pass; private houses and PVZ remain valid');
