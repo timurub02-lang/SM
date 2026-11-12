@@ -30,3 +30,16 @@ for(const role of ['operator','department_head','admin']){
  assert.throws(()=>validateTransition({...ready,address:'  ',items},'confirm',{name:'Иванов Иван',address:'Другой адрес'},'',role),/адрес/);
 }
 console.log('Handoff requires client name, saved address, goods, quantity and positive total; zero-priced goods with ИТОГО remain valid');
+
+const {itemsSchemaFor}=await import('../lib/crm.ts');
+const freeItems=[{name:'Товар',quantity:2,price:0},{name:'ИТОГО',quantity:1,price:0}];
+for(const role of ['admin','operator','department_head','logistic']){
+ const allowed=role==='admin';
+ assert.equal(itemsSchemaFor(allowed).safeParse(freeItems).success,allowed);
+ const send=()=>validateTransition({...ready,items:freeItems},'confirm',{name:'Иванов Иван'},'',role);
+ if(allowed)assert.doesNotThrow(send);else assert.throws(send,/сумму/);
+}
+for(const items of [[],[{name:'ИТОГО',quantity:1,price:0}],[{name:'Товар',quantity:0,price:0}],[{name:'Товар',quantity:1,price:-1}]]){
+ assert.throws(()=>validateTransition({...ready,items},'confirm',{name:'Иванов Иван'},'','admin'));
+}
+console.log('Only admin may save and hand off zero total; required goods and quantities remain enforced');

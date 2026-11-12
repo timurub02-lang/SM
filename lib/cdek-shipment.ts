@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import type {Order,Client} from './crm.ts';
-import {itemsSchema,normalizePhone} from './crm.ts';
+import {itemsSchemaFor,normalizePhone} from './crm.ts';
 import type {Product} from './warehouse.ts';
 export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).prefault(''),deliveryPoint:z.string().trim().max(255).prefault(''),senderAddress:z.string().trim().max(255).prefault(''),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
@@ -19,7 +19,7 @@ export function shipmentPayload(order:Order,client:Client,products:Product[],for
  if(order.delivery==='cdek_pickup'&&!form.deliveryPoint)throw Error('Выберите ПВЗ получателя');
  if(order.delivery==='cdek_courier'&&(!order.addressParts?.house||!order.address))throw Error('Укажите полный адрес получателя с домом в заказе');
  if(!order.items.length)throw Error('Корзина заказа пуста');
- const items=itemsSchema.parse(order.items).map(item=>{
+ const items=itemsSchemaFor(true).parse(order.items).map(item=>{
   const product=products.find(x=>x.name.trim().toLowerCase()===item.name.trim().toLowerCase());
   if(!product?.sku||!product.weight||product.cost===null)throw Error(`Заполните артикул, вес и объявленную стоимость товара «${item.name}» на складе`);
   return {name:item.name,ware_key:product.sku,payment:{value:form.payment==='prepaid'?0:Math.round(item.price*100)/100},cost:product.cost,weight:product.weight,amount:item.quantity};
