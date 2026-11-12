@@ -10,6 +10,7 @@ for(const bad of ['https://evil.test/#/leads/51054288060','https://app1.skorozvo
 const d=openDatabase(':memory:');
 await d.prepare('CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)').run();
 await d.prepare('CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)').run();
+await d.prepare('CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)').run();
 await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({skLeadId:'11'})).run();
 const order={id:'SM-SK-999',clientId:'c'},source={...order,skLeadId:'51054288060'};
 assert.equal(await orderSkClientLink(d,source),link);
@@ -37,3 +38,30 @@ for(const role of ['operator','department_head','logistic','chief_logistic','red
 for(const role of ['courier','purchasing'])assert.equal(mayCallEndpoint({role},new URL('https://crm/api/sk-client-link'),'GET',{}),false);
 assert.equal(mayCallEndpoint({role:'operator'},new URL('https://crm/api/sk-client-link'),'POST',{}),false);
 console.log('SK client links: exact lead IDs, historical precedence, LV trusted URLs, missing/ambiguous sources and permissions passed; no external requests.');
+
+// A new CRM order inherits only an unambiguous link from the same client's history.
+await d.prepare("UPDATE settings SET data=? WHERE id='lv-warehouse'").bind(JSON.stringify({host:'fixture.leadvertex.ru',token:'test'})).run();
+await d.prepare("UPDATE clients SET data=? WHERE id='c'").bind(JSON.stringify({phone:'+79990000001',linkedPhones:['+79990000002']})).run();
+await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('old-lv','c',JSON.stringify({id:'old-lv',clientId:'c',legacyLv:{orderId:'43'}})).run();
+await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('other-client','other',JSON.stringify({id:'other-client',clientId:'other',legacyLv:{orderId:'44'}})).run();
+const native={id:'native',clientId:'c'};
+const inherited=async(url)=>{assert.equal(url.searchParams.get('ids'),'43');return Response.json({'43':{phone:'89990000001',additional9:link}});};
+assert.equal(await orderSkClientLink(d,native,inherited),link);
+assert.equal(await orderSkClientLink(d,native,async()=>Response.json({'43':{phone:'+79990000002',additional9:link}})),link,'Linked phone also matches');
+assert.equal(await orderSkClientLink(d,native,async()=>Response.json({'43':{phone:'+79990000003',additional9:link}})),null,'Different customer phone never inherits a link');
+await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('second-lv','c',JSON.stringify({id:'second-lv',clientId:'c',legacyLv:{orderId:'45'}})).run();
+assert.equal(await orderSkClientLink(d,native,async()=>Response.json({'43':{phone:'+79990000001',additional9:link},'45':{phone:'+79990000001',additional9:skLeadUrl('99')}})),null,'Ambiguous historical links never choose an arbitrary lead');
+await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('old-sk','c',JSON.stringify({id:'old-sk',clientId:'c',skLeadId:'51054288060'})).run();
+assert.equal(await orderSkClientLink(d,native,async()=>{throw Error('LV must not be called for an existing SK link');}),link);
+await d.prepare('INSERT INTO sk_order_transfers VALUES(?,?,?)').bind('old-sk','imported',JSON.stringify({leadId:'51054288060'})).run();
+assert.equal(await orderSkClientLink(d,native),link,'Identical references are one link');
+await d.prepare('INSERT INTO sk_order_transfers VALUES(?,?,?)').bind('second-lv','imported',JSON.stringify({leadId:'99'})).run();
+assert.equal(await orderSkClientLink(d,native),null,'Conflicting SK history is not guessed');
+console.log('Manual CRM order regression: same-client SK/LV history, matching main/linked phone, foreign client exclusion and ambiguity passed.');
+
+await assert.rejects(orderSkClientLink(d,lv,async()=>Response.json([])),/не найден/);
+await d.prepare('INSERT INTO clients VALUES(?,?)').bind('bulk',JSON.stringify({phone:'+79990000003'})).run();
+for(let i=0;i<101;i++)await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('bulk-'+i,'bulk',JSON.stringify({id:'bulk-'+i,clientId:'bulk',legacyLv:{orderId:String(1000+i)}})).run();
+const sizes=[];
+assert.equal(await orderSkClientLink(d,{id:'native-bulk',clientId:'bulk'},async url=>{const ids=url.searchParams.get('ids').split(',');sizes.push(ids.length);return Response.json(Object.fromEntries(ids.map(id=>[id,{phone:'+79990000003',additional9:link}])));}),link);
+assert.deepEqual(sizes.sort((a,b)=>a-b),[1,100],'LV history requests respect the provider batch size');
