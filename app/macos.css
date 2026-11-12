@@ -832,7 +832,7 @@ body.large-order-text .sidebar-settings-toggle>span{flex:1;min-width:0}
 body.large-order-text .sidebar-settings-toggle [role=switch]{flex-shrink:0}
 body.large-order-text [role=tablist]{height:auto;flex-wrap:wrap}
 body.large-order-text [role=tab]{height:auto;min-height:44px;white-space:normal}
-body.large-order-text :is(input,select,button:not([role=switch])){min-height:44px}
+body.large-order-text :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,button:not([role=switch])){min-height:44px}
 body.large-order-text .topbar{height:auto;min-height:76px;flex-wrap:wrap;gap:12px}
 body.large-order-text .heading-actions{flex-wrap:wrap}
 body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:44px;padding:0;flex-shrink:0}
