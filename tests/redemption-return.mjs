@@ -19,7 +19,14 @@ try{
  await edit({...buyer,role:'admin'},send);assert(inRedemptionTab(await row(),'work','2026-10-16'));await assert.rejects(edit(buyer,{operation:'comment',text:'blocked'}),/у оператора/);assert(awaitingOperator(await row()));assert(!awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));
  assert(canSeeRedemption(op,await row(),false));assert(canSeeRedemption(head,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),true));assert(!canSeeRedemption({...op,id:'other'},await row(),false));
  await assert.rejects(edit(op,{action:'nd',result:'none'}));
- await edit(head,{action:'date',result:'date',date:'2026-10-20'});assert(!awaitingOperator(await row()));assert(awaitingDateConfirmation(await row()));
+ const beforeNd=await row();
+ await edit(op,{operation:'operator_nd',comment:''});
+ const afterNd=await row();assert(awaitingOperator(afterNd));assert.equal(afterNd.operatorReturn.deadline,beforeNd.operatorReturn.deadline);assert.equal(afterNd.action,beforeNd.action);assert.equal(afterNd.result,beforeNd.result);assert.equal(afterNd.resultDate,beforeNd.resultDate);assert.deepEqual(afterNd.days,beforeNd.days);assert.equal(afterNd.operatorReturn.attempts.length,1);
+ await edit(head,{operation:'operator_nd',comment:'Повторная попытка'});assert.equal((await row()).operatorReturn.attempts.length,2);assert.equal((await row()).operatorReturn.deadline,beforeNd.operatorReturn.deadline);
+ await assert.rejects(edit({...op,id:'stranger'},{operation:'operator_nd'}));
+ await assert.rejects(edit(buyer,{operation:'operator_nd',comment:''}),/у оператора/);
+
+ await edit(head,{action:'date',result:'date',date:'2026-10-20'});assert(!awaitingOperator(await row()));await assert.rejects(edit(op,{operation:'operator_nd',comment:''}),/возвращённом/);assert(awaitingDateConfirmation(await row()));
  await assert.rejects(edit(buyer,send),/Из вкладок/);
  await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.dateConfirmation','confirmed','$.result','') WHERE order_id='o'").run();
  await edit(buyer,send);await edit(op,{action:'refusal',result:'to_return'});assert(awaitingReturn(await row()));
@@ -29,6 +36,7 @@ try{
  await edit(op,{operation:'comment',text:'working'},new Date('2026-10-16T11:00:00Z'));assert.equal((await row()).operatorReturn.deadline,deadline);
  await syncRedemption(d,new Date('2026-10-18T09:59:59Z'));assert(awaitingOperator(await row()));
  await edit(op,{operation:'comment',text:'After daily closing'},new Date('2026-10-18T09:59:59Z'));assert.equal((await row()).operatorReturn.deadline,deadline);
+ await assert.rejects(edit(op,{operation:'operator_nd',comment:''},new Date(deadline)),/Срок обработки/);
  await assert.rejects(edit(op,{action:'refusal',result:'to_return'},new Date(deadline)),/Срок обработки/);
  await syncRedemption(d,new Date(deadline));assert(!awaitingOperator(await row()));assert.equal((await row()).result,'to_return');assert(awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));assert(!canSeeRedemption(head,await row(),true));assert.equal((await row()).operatorReturn.outcome,'Оператор не проработал заказ');assert(canSeeRedemption(buyer,await row(),false));assert(!canSeeRedemption(op,await row(),false));assert.equal(redemptionLeads([await row()],'2026-10-17','https://example.test').length,0);
  const version=(await row()).version;await syncRedemption(d,new Date('2026-10-18T10:01:00Z'));assert.equal((await row()).version,version);
