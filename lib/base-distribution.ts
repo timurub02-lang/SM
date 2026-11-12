@@ -1,5 +1,7 @@
 // Dates are calendar dates in Moscow; timestamps stay in UTC.
-export const moscowDate=(now=new Date())=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
+// ICU formatters own native memory; reuse one across every order and request.
+const moscowDateFormatter=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'});
+export const moscowDate=(now=new Date())=>moscowDateFormatter.format(now);
 export function workDate(date:string,days:number){const d=new Date(date+'T12:00:00Z');while(days>0){d.setUTCDate(d.getUTCDate()+1);if(d.getUTCDay()!==0&&d.getUTCDay()!==6)days--;}return d.toISOString().slice(0,10);}
 export function distributionEligible(client:{owner?:string;releasedAt?:string},today:string){return !client.owner&&(!client.releasedAt||workDate(moscowDate(new Date(client.releasedAt)),2)<=today);}
 export function normalizedPhone(value:unknown){let n=String(value??'').trim().replace(/[\s()+.\-]/g,'');if(/^8\d{10}$/.test(n))n='7'+n.slice(1);return /^7\d{10}$/.test(n)?n:'';}
