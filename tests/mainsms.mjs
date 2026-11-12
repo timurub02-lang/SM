@@ -18,3 +18,6 @@ assert.equal(smsDelivery([1],{'1':'non-delivered'}).failed,true);
 assert.equal(smsDelivery([],{}).status,'pending');
 globalThis.fetch=async(url,options)=>{assert.ok(url.endsWith('/status'));assert.equal(options.body.get('messages_id'),'1');return Response.json({status:'success',messages:{'1':'delivered'}})};
 assert.equal((await mainSmsCall({project:'p',apiKey:'k'},'status',{messages_id:'1'})).messages['1'],'delivered');
+
+assert.equal(smsDelivery([1],{'1':'overdue'}).reason,'Истёк срок ожидания доставки');
+assert.equal(smsDelivery([1],{'1':'canceled'}).reason,'Отправка отменена');
