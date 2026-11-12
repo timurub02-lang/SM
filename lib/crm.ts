@@ -5,7 +5,7 @@ import type {CourierAssignment,CourierRecall} from './courier.ts';
 import {isBasketTotal} from './basket-total.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
 import type {Reminder} from './reminders';
-import {addressPartsSchema,type AddressParts} from "./address.ts";
+import {missingCourierHouse,addressPartsSchema,type AddressParts} from "./address.ts";
 import { z } from "zod";
 import {headDraftStage,departmentWorkStage,isDepartmentOrder,isOrderOperator,type OrderActionAuthor} from './department-orders.ts';
 export const statuses = {draft:"Оформление",confirm:"Подтверждение",rework:"Возврат оператору",check:"Проверка",extra:"Доп. подтверждение",packing:"Упаковка",phone:"Подготовка телефона",shipping:"В доставке",pickup:"Ожидает выкупа",redeemed:"Выкуплен",refused:"Отказ",returned:"Возврат"} as const;
@@ -62,13 +62,14 @@ export const itemsSchemaFor=(allowZero=false)=>z.array(z.object({name:z.string()
 export const itemsSchema=itemsSchemaFor();
 export const needsDepartment=(role:string)=>!["admin","logistic","chief_logistic","courier","redemption","purchasing"].includes(role);
 export const employeeSchema=z.object({sz:z.boolean().optional(),baseAccess:z.enum(["M","J","both"]).prefault("both"),name:z.string().trim().min(2).max(150),alias:z.string().trim().max(100),login:z.string().trim().min(1).max(100),skLogin:z.string().trim().max(100),role:z.enum(["operator","logistic","chief_logistic","courier","admin","redemption","department_head","purchasing"]),department:z.enum(departmentIds,{error:"Выберите отдел"}).optional(),salary:z.number().min(0).max(10000000),bonus:z.number().min(0).max(100)}).superRefine((employee,ctx)=>{if(needsDepartment(employee.role)&&!employee.department)ctx.addIssue({code:z.ZodIssueCode.custom,path:["department"],message:"Выберите отдел"});}).transform(employee=>({...employee,department:needsDepartment(employee.role)?employee.department:undefined}));
-export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:Pick<Client,"address"|"name">,role?:string){
+export function orderMissingField(o:Pick<Order,"delivery"|"address"|"addressParts"|"items">,c:Pick<Client,"address"|"name">,role?:string){
  if(!o.delivery||!deliverySchema.safeParse(o.delivery).success)return {field:"delivery",label:"Выберите способ доставки"} as const;
  if(!c.name?.trim()||c.name.trim().length<2||/^неизвестный клиент$/i.test(c.name.trim()))return {field:"name",label:"Заполните ФИО в карточке клиента"} as const;
  if(!o.items.some(item=>!isBasketTotal(item)&&item.name.trim()))return {field:"basket",label:"Добавьте товар"} as const;
  if(!Number.isFinite(total(o))||(role==='admin'?total(o)<0:total(o)<=0))return {field:"basket",label:"Укажите положительную сумму заказа в «Итого»"} as const;
  if(!itemsSchemaFor(role==='admin').safeParse(o.items).success)return {field:"basket",label:"Заполните данные товара"} as const;
  if(!(o.address??c.address??"").trim())return {field:"address",label:"Заполните адрес"} as const;
+ if(missingCourierHouse(o,c.address))return {field:"address",label:"Укажите номер дома для доставки курьером"} as const;
  return null;
 }
 export const deliveryChannel=(delivery:DeliveryMethod|undefined)=>delivery?.startsWith("cdek_")?"cdek":delivery||"";
@@ -115,6 +116,7 @@ export function validateTransition(o:Order,to:Status,c:Client,reason:string,role
  const deadline=draftDeadline(o);if(deadline&&Date.now()>=Date.parse(deadline))throw Error("Срок оформления истёк. Заказ подлежит отмене");
  if(o.status==="rework"&&o.reworkDeadline&&Date.now()>=Date.parse(o.reworkDeadline))throw Error("Срок доработки истёк. Заказ подлежит отмене");
  if(["draft","rework"].includes(o.status)&&(["confirm","extra"].includes(to)||to==='packing'&&courierRecalledAtWarehouse(o))){const missing=orderMissingField(o,c,role);if(missing)throw Error(missing.label);}
+ if(["confirm","extra","check","packing","shipping"].includes(to)&&missingCourierHouse(o,c.address))throw Error("Укажите номер дома для доставки курьером");
  const allowed=allowedOrderTransitions(o,role);
  if(!allowed.includes(to))throw new Error("Этот переход недоступен для текущего этапа");
  if(["confirm","extra","check","packing"].includes(to)&&(!(o.address??c.address).trim()||!o.items.length))throw new Error("Заполните адрес клиента и корзину заказа");
