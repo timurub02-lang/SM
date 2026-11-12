@@ -29,13 +29,16 @@ try{
  for(const state of ['preview','accepted','unknown','sending']){
   db.prepare('INSERT INTO settings VALUES(?,?)').run('sms-old-'+state,JSON.stringify({orderId:'o-one',actorId:'one',phone:'+79990000001',text:'old '+state,state,at:1,sender:'OLD'}));
  }
- const mock=join(dir,'mock.mjs'),calls=join(dir,'calls.txt');
- writeFileSync(mock,`import {appendFileSync} from 'node:fs';
+ const mock=join(dir,'mock.mjs'),calls=join(dir,'calls.txt'),statusMode=join(dir,'status-mode');writeFileSync(statusMode,'ok');
+ writeFileSync(mock,`import {appendFileSync,readFileSync} from 'node:fs';
 const original=globalThis.fetch;
 globalThis.fetch=async(url,options)=>{
  if(String(url).startsWith('https://mainsms.ru/')){
-  const values=new URLSearchParams(options.body);appendFileSync(${JSON.stringify(calls)},values.get('message')+'\\n');
+  const values=new URLSearchParams(options.body);
+  if(String(url).endsWith('/status')){if(readFileSync(${JSON.stringify(statusMode)},'utf8')==='fail')return new Response('Unavailable',{status:502});return Response.json({status:'success',messages:{'123':'non-delivered'}});}
+  appendFileSync(${JSON.stringify(calls)},values.get('message')+'\\n');
   await new Promise(r=>setTimeout(r,100));
+  if(values.get('message')==='rejected')return Response.json({status:'error',error:7});
   if(values.get('message')==='ambiguous')throw Error('Synthetic transport timeout');
   return Response.json({status:'success',messages_id:[123]});
  }
@@ -72,13 +75,23 @@ globalThis.fetch=async(url,options)=>{
  assert.deepEqual(results.map(r=>r.status).sort(),[200,400]);
  assert.equal(readFileSync(calls,'utf8').trim(),'Hello {literal}');
  let entries=(await call(history,cookies.one)).data.history;
- assert.equal(entries[0].state,'accepted');assert.equal(entries[0].actor,'Test one');assert.equal(entries[0].text,'Hello {literal}');assert.ok(entries[0].at>1);
+ assert.equal(entries[0].state,'accepted');assert.equal(entries[0].delivery.status,'non-delivered');assert.equal(entries[0].reason,null);assert.deepEqual(entries[0].messageIds,[123]);assert.ok(entries[0].deliveryCheckedAt);assert.equal(JSON.parse(db.prepare('SELECT data FROM settings WHERE id=?').get(entries[0].id).data).delivery.statuses['123'],'non-delivered');assert.equal(entries[0].actor,'Test one');assert.equal(entries[0].text,'Hello {literal}');assert.ok(entries[0].at>1);
+ const acceptedId=entries[0].id;
+ db.prepare("UPDATE settings SET data=json_set(data,'$.delivery.statuses.123','accepted','$.delivery.checkedAt',0) WHERE id=?").run(acceptedId);
+ writeFileSync(statusMode,'fail');
+ const unavailable=await call(history,cookies.one);assert.equal(unavailable.status,200);assert.ok(unavailable.data.deliveryWarning);assert.equal(unavailable.data.history[0].delivery.status,'accepted');
+ writeFileSync(statusMode,'ok');
  const unknown=await preview('ambiguous');assert.equal(unknown.status,200);
  const sendUnknown={action:'send',orderId:'o-one',token:unknown.data.token};
  assert.equal((await call(endpoint,cookies.one,sendUnknown)).status,409);
  assert.equal((await call(endpoint,cookies.one,sendUnknown)).status,400);
  entries=(await call(history,cookies.one)).data.history;
  assert.equal(entries[0].state,'unknown');assert.equal(readFileSync(calls,'utf8').trim().split('\n').length,2);
+ const rejected=await preview('rejected');
+ const rejectedBody={action:'send',orderId:'o-one',token:rejected.data.token};
+ assert.equal((await call(endpoint,cookies.one,rejectedBody)).status,409);
+ const rejectedEntry=(await call(history,cookies.one)).data.history[0];assert.equal(rejectedEntry.state,'rejected');assert.match(rejectedEntry.reason,/Недостаточно средств/);
+ assert.equal((await call(endpoint,cookies.one,rejectedBody)).status,400);
  config.templates=[{id:'t',name:'Template',text:'Hi {client}, {order}'}];
  db.prepare("UPDATE settings SET data=? WHERE id='mainsms'").run(JSON.stringify(config));
  const template=await preview(undefined,{templateId:'t'});assert.equal(template.status,200);assert.equal(template.data.text,'Hi Test client, o-one');
