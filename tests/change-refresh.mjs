@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {ChangeRefresh} from '../lib/change-refresh.ts';
+const queue=new ChangeRefresh();let blocked=true,reads=0;
+const read=async()=>{reads++;return true;};
+queue.request();await queue.flush(()=>blocked,read);assert.equal(reads,0);
+blocked=false;await queue.flush(()=>blocked,read);assert.equal(reads,1);
+queue.request();await queue.flush(()=>false,async()=>{reads++;if(reads===2)queue.request();return true;});assert.equal(reads,3);
+queue.request();await queue.flush(()=>false,async()=>false);await queue.flush(()=>false,read);assert.equal(reads,4);
+queue.request();await assert.rejects(queue.flush(()=>false,async()=>{throw Error('offline');}));await queue.flush(()=>false,read);assert.equal(reads,5);
+console.log('Change refresh: writes, concurrent notifications and failed-read recovery passed');

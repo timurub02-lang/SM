@@ -74,6 +74,7 @@ import {SnapshotReader} from "@/lib/snapshot-reader";
 import {NavigationRefresh,preserveRefreshForm} from "@/lib/navigation-refresh";
 import dynamic from "next/dynamic";
 import {useState,useEffect,useRef,useId,useMemo, type FormEvent} from "react";
+import {ChangeRefresh} from '@/lib/change-refresh';
 import {Pencil,History as HistoryIcon,Inbox,Bell,MapPin,Mail,Users,Package,Headphones,ShieldCheck,Truck,BarChart3,Settings,Search,Plus,ArrowUpRight,ChevronRight,Gem,Clock3,ArrowDownToLine,Database,Upload,Phone,RotateCcw,Check,Link2,AlertCircle,ArrowLeft,MessageSquare,Trash2,RefreshCw,FileSpreadsheet} from "lucide-react";
 import {SidebarProvider,Sidebar,SidebarContent,SidebarHeader,SidebarFooter,SidebarMenu,SidebarMenuItem,SidebarMenuButton,SidebarInset,SidebarTrigger} from "@/components/ui/sidebar";
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from "@/components/ui/dialog";
@@ -175,6 +176,22 @@ export default function Page(){
  const refreshFormOpen=useRef(false);
  refreshFormOpen.current=modal!=="order"&&(!!detail||!!modal);
  const navigationRefresh=useRef(new NavigationRefresh());
+ const changeRefresh=useRef(new ChangeRefresh());
+ const readChanged=useRef(()=>load(true));readChanged.current=()=>load(true);
+ const flushChanges=()=>changeRefresh.current.flush(()=>writing.current||document.hidden||!navigator.onLine,()=>readChanged.current());
+ useEffect(()=>{
+  if(!ready||!personalAuth)return;
+  let source:EventSource|undefined;
+  const connect=()=>{
+   source?.close();source=undefined;
+   if(document.hidden||!navigator.onLine)return;
+   source=new EventSource('/api/crm/changes');
+   source.addEventListener('change',()=>{changeRefresh.current.request();void flushChanges();});
+  };
+  connect();window.addEventListener('online',connect);document.addEventListener('visibilitychange',connect);
+  return()=>{source?.close();window.removeEventListener('online',connect);document.removeEventListener('visibilitychange',connect);};
+ },[ready,personalAuth]);
+ useEffect(()=>{if(!busy)void flushChanges();},[busy]);
  async function load(remindersOnly=false){
   if(writing.current)return false;
   try{
