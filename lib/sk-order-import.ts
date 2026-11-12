@@ -39,7 +39,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
   await d.prepare("UPDATE sk_order_transfers SET reason=? WHERE id=? AND state='pending'").bind(reason,input.callId).run();return {state:'pending',reason};
  }
  if(!sender)throw Error('Укажите ФИО Скорозвона в карточке оператора');
- const id=await nextOrderId(d,'sk:'+input.callId),clientId=existing?.id||'C-SK-'+input.callId;
+ const id=await nextOrderId(d,'sk:'+input.callId,'SK'),clientId=existing?.id||'C-SK-'+input.callId;
  const base:Client=existing||{id:clientId,name:input.name.trim().slice(0,150)||'Клиент из Скорозвона',phone:normalizePhone(input.phone),city:input.city.slice(0,250),address:input.address.slice(0,500),source:'Скорозвон',baseType:sender.baseAccess==='J'?'J':'M',sheet:'Т1',owner:'',assignedUntil:'',createdAt:now,version:1};
  const client={...base,owner:sender.id,sheet:'К',returnSheet:base.returnSheet||(clientSheet(base)==='К'?'П':clientSheet(base))||'Т1',assignedUntil:'',assignmentStartedAt:base.owner===sender.id?base.assignmentStartedAt||now:now,trialUntil:undefined,trialReturnSheet:undefined,importRetentionUntil:undefined,address:base.address||input.address.slice(0,500)};
  const policyRow=await d.prepare("SELECT data FROM settings WHERE id='order-policy'").first();const policy=policyRow?orderPolicySchema.parse(JSON.parse(policyRow.data).policy):defaultOrderPolicy;
