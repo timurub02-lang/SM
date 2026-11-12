@@ -41,7 +41,7 @@ export type IncomingRequest={handoff?:{by:string;name:string;at:string;comment:s
 export type State={historyRemote?:boolean;retentionPreview?:Record<string,import("./client-retention-preview").RetentionPreview>;premiumActivePeriod?:string;premiumNextPeriod?:string;redemptionResults?:Record<string,import("./redemption-summary").RedemptionSummary>;redemptionStatuses?:string[];clientWork?:import("./client-work.ts").ClientWork[];clientReminders?:import("./client-reminders.ts").ClientReminder[];incomingOperators?:Pick<Employee,"id"|"name"|"department">[];tasks?:Reminder[];reminders?:Reminder[];incoming?:IncomingRequest[];clients:Client[];orders:Order[];employees:Employee[];events:Event[];settings:{retentionDays:number;orderPolicy?:OrderPolicy};};
 const rubles=new Intl.NumberFormat("ru-RU",{style:"currency",currency:"RUB",minimumFractionDigits:0,maximumFractionDigits:2});
 export const money=(n:number)=>rubles.format(n);
-export const total=(o:Order)=>o.items.reduce((n,i)=>n+i.quantity*Math.round(i.price*100),0)/100;
+export const total=(o:Pick<Order,"items">)=>o.items.reduce((n,i)=>n+i.quantity*Math.round(i.price*100),0)/100;
 export const initials=(s:string)=>s.split(" ").slice(0,2).map(x=>x[0]).join("");
 const dateFormats=new Map<string|undefined,Intl.DateTimeFormat>();
 export const stamp=(s:string,timeZone?:string)=>{
@@ -61,11 +61,13 @@ export const itemsSchema=z.array(z.object({name:z.string().trim().min(1,"Ука�
 });
 export const needsDepartment=(role:string)=>!["admin","logistic","chief_logistic","courier","redemption","purchasing"].includes(role);
 export const employeeSchema=z.object({sz:z.boolean().optional(),baseAccess:z.enum(["M","J","both"]).prefault("both"),name:z.string().trim().min(2).max(150),alias:z.string().trim().max(100),login:z.string().trim().min(1).max(100),skLogin:z.string().trim().max(100),role:z.enum(["operator","logistic","chief_logistic","courier","admin","redemption","department_head","purchasing"]),department:z.enum(departmentIds,{error:"Выберите отдел"}).optional(),salary:z.number().min(0).max(10000000),bonus:z.number().min(0).max(100)}).superRefine((employee,ctx)=>{if(needsDepartment(employee.role)&&!employee.department)ctx.addIssue({code:z.ZodIssueCode.custom,path:["department"],message:"Выберите отдел"});}).transform(employee=>({...employee,department:needsDepartment(employee.role)?employee.department:undefined}));
-export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:Pick<Client,"address">){
+export function orderMissingField(o:Pick<Order,"delivery"|"address"|"items">,c:Pick<Client,"address"|"name">){
  if(!o.delivery||!deliverySchema.safeParse(o.delivery).success)return {field:"delivery",label:"Выберите способ доставки"} as const;
- if(!o.items.length)return {field:"basket",label:"Добавьте товар"} as const;
+ if(!c.name?.trim()||c.name.trim().length<2||/^неизвестный клиент$/i.test(c.name.trim()))return {field:"name",label:"Заполните ФИО в карточке клиента"} as const;
+ if(!o.items.some(item=>!isBasketTotal(item)&&item.name.trim()))return {field:"basket",label:"Добавьте товар"} as const;
+ if(!Number.isFinite(total(o))||total(o)<=0)return {field:"basket",label:"Укажите положительную сумму заказа в «Итого»"} as const;
  if(!itemsSchema.safeParse(o.items).success)return {field:"basket",label:"Заполните данные товара"} as const;
- if(!(o.address??c.address).trim())return {field:"address",label:"Заполните адрес"} as const;
+ if(!(o.address??c.address??"").trim())return {field:"address",label:"Заполните адрес"} as const;
  return null;
 }
 export const deliveryChannel=(delivery:DeliveryMethod|undefined)=>delivery?.startsWith("cdek_")?"cdek":delivery||"";

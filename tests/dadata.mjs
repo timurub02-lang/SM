@@ -12,8 +12,8 @@ assert.equal(parts.city,'г Химки, мкр Подрезково');assert.equ
 await assert.rejects(suggestAddress('bad','Москва',async()=>new Response('',{status:403})),/ключ/);
 await assert.rejects(suggestAddress('bad','Москва',async()=>Response.json({})),/некорректный/);
 const order={createdAt:new Date().toISOString(),status:'draft',delivery:'cdek_pickup',address:'Москва, ул Тверская, д 1',items:[{name:'Тест',quantity:1,price:1}]};
-assert.doesNotThrow(()=>validateTransition(order,'confirm',{address:''},''));
-assert.throws(()=>validateTransition({...order,address:''},'confirm',{address:'Другой адрес'},''),/адрес/);
+assert.doesNotThrow(()=>validateTransition(order,'confirm',{name:'Тестовый Клиент',address:''},''));
+assert.throws(()=>validateTransition({...order,address:''},'confirm',{name:'Тестовый Клиент',address:'Другой адрес'},''),/адрес/);
 console.log('DaData request, errors and order-address checks passed');
 
 const client=clientSchema.parse({name:"Тест",phone:"79000000000",address:formatAddress(parts),city:parts.city,addressParts:parts});
