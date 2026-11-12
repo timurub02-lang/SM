@@ -9,6 +9,7 @@ import {once} from 'node:events';
 import {courierBalance} from '../lib/courier.ts';
 import {moscowDate} from '../lib/base-distribution.ts';
 import {authSchema} from '../lib/auth-schema.ts';
+import {orderMutationActions,mergeOrderEntityPatch} from '../lib/order-entity-patch.ts';
 import {cashSpendPurposes} from '../lib/cash.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-auth-')), db=new DatabaseSync(join(dir,'test.sqlite'));
@@ -32,7 +33,22 @@ try{
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(ready,'Server failed to start');
- async function call(path,{cookie,body,headers={},method}={}){const r=await fetch(base+path,{method:method||(body?'POST':'GET'),redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}return {status:r.status,data,headers:r.headers,text};}
+ async function call(path,{cookie,body,headers={},method}={}){
+  const bounded=process.env.CRM_TEST_ENTITY_PATCH==='1'&&path==='/api/crm'&&cookie&&body&&!body.responseMode&&orderMutationActions.has(body.action);
+  const before=bounded?await call('/api/crm',{cookie}):null;
+  if(bounded)body={...body,responseMode:'entity-patch'};
+  const r=await fetch(base+path,{method:method||(body?'POST':'GET'),redirect:'manual',headers:{...(cookie?{cookie}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let data;try{data=JSON.parse(text);}catch{}
+  if(bounded&&r.ok){
+   assert.ok(data.entityPatch,'successful order mutation must use a bounded response');
+   const patch=data.entityPatch;assert(patch.state.clients.every(c=>c.id===patch.clientId));assert(patch.state.orders.every(o=>o.clientId===patch.clientId));
+   data.state=mergeOrderEntityPatch(before.data,patch);
+   const check=await call('/api/crm',{cookie});
+   const sort=rows=>[...rows].sort((a,b)=>a.id.localeCompare(b.id));
+   assert.deepEqual(sort(data.state.orders.filter(o=>o.clientId===patch.clientId)),sort(check.data.orders.filter(o=>o.clientId===patch.clientId)),'scoped save and full read agree');
+   assert.deepEqual(sort(data.state.clients.filter(c=>c.id===patch.clientId)),sort(check.data.clients.filter(c=>c.id===patch.clientId)));
+  }
+  return {status:r.status,data,headers:r.headers,text};
+ }
  async function login(name,pw=password){return call('/api/auth/login',{body:{login:name,password:pw}});}
  const unauth=await call('/api/crm',{headers:{'oai-authenticated-user-id':'admin','oai-authenticated-user-email':'admin@test.local'}});assert.equal(unauth.status,401);
  assert.equal((await call('/')).status,307);

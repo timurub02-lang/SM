@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {seed} from '../lib/crm.ts';
+import {crmSnapshotResponse} from '../lib/crm-snapshot-response.ts';
+import {decodeCrmSnapshot} from '../lib/crm-state-delta.ts';
+import {SnapshotReader} from '../lib/snapshot-reader.ts';
+const state={...seed(),clients:[{id:'one',name:'Before'},{id:'two',name:'Removed'}],orders:[],events:[],currentEmployeeId:'actor'};
+const url='https://crm.test/api/crm?transport=compact-v1';
+let current=state,reply;
+const reader=new SnapshotReader(url,async(url,options)=>reply=await crmSnapshotResponse(new Request(url,options),current,'actor'),decodeCrmSnapshot);
+assert.deepEqual(await reader.read(),state);const tag=reply.headers.get('etag');
+current={...state,clients:[{id:'three',name:'Added'},{id:'one',name:'After'}],tasks:[]};reader.invalidate(true);
+assert.deepEqual(await reader.read(),current,'delta must match a full state including deletion and order');
+assert.equal((await reader.read()).clients[0].id,'three');assert.equal(reply.status,304);
+const other=await crmSnapshotResponse(new Request(url,{headers:{'If-None-Match':tag}}),current,'another-actor');
+assert.equal((await other.json()).kind,undefined,'never use another user cache as a delta base');
+reader.invalidate();assert.deepEqual(await reader.read(),current,'missing cursor recovers with full state');
+assert.throws(()=>decodeCrmSnapshot({kind:'crm-delta'},undefined));
+console.log('Snapshot deltas: update/add/delete/order, unchanged response, user isolation and recovery passed');

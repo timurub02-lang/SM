@@ -1,4 +1,7 @@
+import {crmSnapshotResponse} from '@/lib/crm-snapshot-response';
+import {compactCrmState} from '@/lib/compact-crm-state';
 import {clientRetentionPreview} from '@/lib/client-retention-preview';
+import {readOrderState,orderMutationActions,readRetentionSales} from '@/lib/order-state';
 import {orderPatchActions,orderSavePatch} from '@/lib/order-save-patch';
 import {editLeaderRates} from '@/lib/leader-premium-edit';
 import {requestOrderCancellation,resolveOrderCancellation} from '@/lib/order-cancellation';
@@ -48,7 +51,8 @@ import {z} from "zod";
 export const dynamic="force-dynamic";
 const json=JSON.stringify;
 async function identity(){const u=await getChatGPTUser();if(!u)throw new Error("Требуется вход в CRM");return u;}
-async function readState(reconcile=true,extraClientId='',includeFree=false):Promise<State>{
+async function readState(reconcile=true,extraClientId='',includeFree=false,orderId=''):Promise<State>{
+ if(orderId){await initInventory();return readOrderState(db(),orderId,reconcile);}
  await initInventory();const d=db();await initBaseStorage(d);const tables=await Promise.all([(includeFree?d.prepare("SELECT data,version FROM clients ORDER BY id"):d.prepare(workingClientsQuery).bind(extraClientId)).all(),d.prepare("SELECT o.data,o.version,(SELECT json_extract(s.data,'$.number') FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting')) AS cdek_tracking_number,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state') IN ('ready','deleting') AND json_extract(s.data,'$.number') IS NOT NULL) AS cdek_exported,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.state')='deleting') AS cdek_deleting,EXISTS(SELECT 1 FROM settings s WHERE s.id='cdek-shipment-' || o.id AND json_extract(s.data,'$.downloadedAt') IS NOT NULL) AS cdek_waybill_received FROM orders o ORDER BY o.id DESC").all(),d.prepare("SELECT data,version FROM employees ORDER BY id").all(),d.prepare("SELECT data FROM events ORDER BY at DESC").all(),d.prepare("SELECT data FROM settings WHERE id='main'").first<{data:string}>()]);
  const state:State={clients:tables[0].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),orders:tables[1].results.map((r:any)=>({...JSON.parse(r.data),version:r.version,cdekTrackingNumber:r.cdek_tracking_number?String(r.cdek_tracking_number):undefined,cdekExported:!!r.cdek_exported||(JSON.parse(r.data).testOnly===true&&JSON.parse(r.data).cdekExported===true),cdekDeleting:!!r.cdek_deleting,cdekWaybillReceived:!!r.cdek_waybill_received})),employees:tables[2].results.map((r:any)=>({...JSON.parse(r.data),version:r.version})),events:tables[3].results.map((r:any)=>JSON.parse(r.data)),settings:tables[4]?JSON.parse(tables[4].data):{retentionDays:30}};
  state.settings.orderPolicy=(await orderSettings()).policy;
@@ -73,10 +77,10 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  ...s.events.map(e=>d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e))),
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
-async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false){
- const state=await readState();await saveReminders(state,fanout?undefined:user.employee?.id);if(!user.employee)return state;
+async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId=''){
+ const state=await readState(true,'',false,orderId);await saveReminders(state,fanout?undefined:user.employee?.id,orderId?state.clients[0]?.id:undefined);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
- if(['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config);}
+ if(['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),orderId?await readRetentionSales(db(),state.clients,config):state.orders);}
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
  if(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee)){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
@@ -94,14 +98,14 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department})=>({id,name,department})):[];
  return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
 }
-async function handleGET(request:Request){const timing=new RequestTiming();try{const user=await identity();await initialize();const state=await timing.measure('snapshot',()=>responseState(user));return timing.finish(conditionalJson(request,state));}catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503}));}}
+async function handleGET(request:Request){const timing=new RequestTiming();try{const user=await identity();await initialize();const state=await timing.measure('snapshot',()=>responseState(user));return timing.finish(new URL(request.url).searchParams.get('transport')==='compact-v1'?await crmSnapshotResponse(request,compactCrmState(state),user.userId):await conditionalJson(request,state));}catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==="Требуется вход в CRM"?e.message:"Не удалось подключиться к базе CRM"},{status:503}));}}
 async function handlePOST(request:Request){
  const timing=new RequestTiming();
  try{
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
  const raw=await readLimitedText(request,6000000);if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
- const p=JSON.parse(raw);const d=db();const s=await timing.measure('read',()=>readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action)));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
+ const p=JSON.parse(raw);const d=db();const scopedOrder=user.employee&&p.responseMode==='entity-patch'&&orderMutationActions.has(p.action)?z.string().min(1).max(100).parse(p.id):'';const s=await timing.measure('read',()=>readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action),scopedOrder));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
@@ -596,7 +600,9 @@ async function handlePOST(request:Request){
   // ponytail: bounded imports; background chunked jobs when files exceed 1000 clients.
   let actual=0;for(let i=0;i<statements.length;i+=50){const results=await d.batch(statements.slice(i,i+50));actual+=results.filter((_,j)=>j%2===0).reduce((n,r)=>n+r.meta.changes,0);}message=`Добавлено: ${actual}. Дубли: ${duplicates+added-actual}. Адресов требуют проверки: ${review}. Ошибки ДаДата: ${errors}`;
  }else throw new Error("Неизвестное действие");
- const state=await timing.measure('snapshot',()=>responseState(user,true));
+ const response=await timing.measure('snapshot',()=>responseState(user,true,scopedOrder));
+ const state=p.transport==='compact-v1'?compactCrmState(response):response;
+ if(scopedOrder)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state},message}));
  if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return timing.finish(Response.json({statePatch:orderSavePatch(s,state,p.id),message}));
  return timing.finish(Response.json({state,message}));
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return timing.finish(Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400}));}

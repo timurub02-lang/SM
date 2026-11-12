@@ -42,13 +42,13 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
   }
  return orderChanged;
 }
-export async function reconcileClients(d:Db,clients:Client[],orders:Order[]){
+export async function reconcileClients(d:Db,clients:Client[],orders:Order[],salesOrders:Parameters<typeof repeatSales>[0]=orders){
 
   let changed=false;
   const ledgerRow=await d.prepare("SELECT data FROM settings WHERE id=?").bind(ledgerKey).first() as {data:string}|null;
   const ledger=ledgerRow?JSON.parse(ledgerRow.data) as PremiumLedger:null;
   const paidKeys=new Set(Object.values(ledger?.periods||{}).filter(p=>p.status==='paid').flatMap(p=>(p.orders||[]).map(o=>o.externalId)));
-  const baseConfigRow=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first();const baseConfig=baseSettingsSchema.parse(baseConfigRow?JSON.parse(baseConfigRow.data).config:initialBaseSettings());const period=baseConfig.retention.from&&baseConfig.retention.to?baseConfig.retention:previousThreeMonths();const sales=repeatSales(orders,period.from,period.to);
+  const baseConfigRow=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first();const baseConfig=baseSettingsSchema.parse(baseConfigRow?JSON.parse(baseConfigRow.data).config:initialBaseSettings());const period=baseConfig.retention.from&&baseConfig.retention.to?baseConfig.retention:previousThreeMonths();const sales=repeatSales(salesOrders,period.from,period.to);
   const byClient=new Map<string,Order[]>();for(const order of orders){const group=byClient.get(order.clientId)||[];group.push(order);byClient.set(order.clientId,group);}
   for(const c of clients){
    const related=byClient.get(c.id)||[];

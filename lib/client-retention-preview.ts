@@ -4,9 +4,9 @@ import type {BaseSettings} from './base-policy.ts';
 export type RetentionPreview={until?:string;expiresAfterPremium?:boolean};
 
 // Preview only: reuse the release rules without applying the returned client changes.
-export function clientRetentionPreview(clients:Client[],orders:Order[],config:BaseSettings,now=Date.now()){
+export function clientRetentionPreview(clients:Client[],orders:Order[],config:BaseSettings,now=Date.now(),salesOrders:Parameters<typeof repeatSales>[0]=orders){
  const period=config.retention.from&&config.retention.to?config.retention:previousThreeMonths(new Date(now));
- const sales=repeatSales(orders,period.from,period.to),byClient=new Map<string,Order[]>();
+ const sales=repeatSales(salesOrders,period.from,period.to),byClient=new Map<string,Order[]>();
  for(const o of orders){const list=byClient.get(o.clientId)||[];list.push(o);byClient.set(o.clientId,list);}
  const result:Record<string,RetentionPreview>={};
  for(const c of clients){
