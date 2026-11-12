@@ -1,4 +1,5 @@
 'use client';
+import {OperatorSelect} from './operator-select';
 import {useState} from 'react';
 import {initials,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
 import {PhoneIncoming,ChevronRight} from 'lucide-react';
@@ -24,7 +25,7 @@ export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item
  if(!['admin','department_head'].includes(employee.role)||item.closedAt||item.spam)return null;
  return <form className="notice stack incoming-transfer" onSubmit={async e=>{e.preventDefault();if(operator&&comment.trim()&&await onTransfer(item.id,operator,comment.trim()))setComment('');}}>
   <strong>Передать входящее оператору</strong>
-  <label className="field"><span>Оператор *</span><select aria-label="Оператор для передачи входящего" required disabled={busy} value={operator} onChange={e=>setOperator(e.target.value)}><option value="">Выберите оператора</option>{operators.map(e=><option key={e.id} value={e.id}>{e.login} · {e.name}</option>)}</select></label>
+  <OperatorSelect label="Оператор для передачи входящего" required disabled={busy} operators={operators} value={operator} onChange={setOperator}/>
   <label className="field"><span>Комментарий оператору *</span><textarea required maxLength={1900} rows={3} disabled={busy} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Что выяснили в разговоре и что нужно сделать оператору"/></label>
   <button type="submit" className="primary" disabled={busy||!operator||!comment.trim()}>Передать входящее с комментарием</button>
  </form>;
