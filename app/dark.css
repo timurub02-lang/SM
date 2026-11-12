@@ -51,7 +51,7 @@ html.dark:not(:has(.courier-app)) {
 .dark:not(:has(.courier-app)) .tabs-line { background:#192230; border-color:var(--border); box-shadow:none; }
 .dark:not(:has(.courier-app)) .tabs-line button { color:var(--dark-muted); }
 .dark:not(:has(.courier-app)) .tabs-line [data-state=active] { background:#364a66; color:#fff; box-shadow:0 0 0 1px #53749c; }
-.dark:not(:has(.courier-app)) .order-status-tabs .order-payment-group { background:#243348; border-color:#405875; box-shadow:none; }
+.dark:not(:has(.courier-app)) .order-payment-group { background:#243348; border-color:#405875; box-shadow:none; }
 .dark:not(:has(.courier-app)) :is([data-slot=dialog-content],[data-slot=sheet-content],[data-slot=select-content],[data-slot=popover-content],[data-slot=dropdown-menu-content],.client-detail-dialog,.form-dialog,.detail-sheet,.address-search .address-options) { background:var(--dark-panel); color:var(--foreground); border-color:var(--border); box-shadow:0 24px 80px #0006; }
 .dark:not(:has(.courier-app)) :is(.client-detail-dialog [data-slot=dialog-header],.detail-sheet [data-slot=sheet-header]) { background:#263246; border-color:var(--border); }
 .dark:not(:has(.courier-app)) :is([data-slot=dialog-title],[data-slot=sheet-title],.client-detail-dialog [data-slot=dialog-title],.form-dialog [data-slot=dialog-title],.detail-sheet [data-slot=sheet-title]) { color:var(--foreground); }
