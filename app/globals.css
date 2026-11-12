@@ -156,7 +156,7 @@ body.has-call-dock .workspace-content{padding-bottom:150px}
 
 .redemption-card-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 
-.incoming-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:20px;align-items:start}
+.incoming-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:20px;align-items:stretch}
 .incoming-card{min-width:0;overflow:hidden;border:1px solid #b9ccf6;border-radius:20px;background:linear-gradient(135deg,#f8f9fc,#e9ecf2);box-shadow:inset 0 1px 0 #fff,0 8px 24px #34476708}
 .incoming-card-summary{display:block;list-style:none;cursor:pointer;color:#334155}
 .incoming-card-summary::-webkit-details-marker{display:none}
@@ -348,3 +348,6 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .incoming-contact-actions:empty{display:none}.incoming-card-body .incoming-contact-actions{align-items:center}.incoming-contact-actions .call-route-buttons{display:contents}.incoming-contact-actions .call-client-time{flex-basis:100%}
 
 .order-row-zvd td{background:var(--muted,#edf0f4);color:var(--muted-foreground,#78858e)}
+
+/* Closed cards fill their grid row without truncating names or assignees. */
+.incoming-card:not([open]){display:flex;flex-direction:column}.incoming-card:not([open])>.incoming-card-summary{display:flex;flex-direction:column;flex:1}.incoming-card:not([open]) .incoming-card-person{min-height:54px}.incoming-card:not([open]) .incoming-card-stats{margin-top:auto}.incoming-card:not([open]) .incoming-card-footer{min-height:70px}.incoming-card:not([open]) .incoming-card-footer>span{flex-shrink:0}
