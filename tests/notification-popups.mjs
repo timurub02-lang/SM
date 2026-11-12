@@ -14,3 +14,5 @@ assert.deepEqual(popupNotifications([],[{...fresh,readAt:'now'},{...old,resolved
 assert.deepEqual(popupNotifications([{...old,kind:'call'},{...fresh,kind:'courier-door'}],[]),[]);
 assert.equal(fresh.readAt,undefined);assert.equal(fresh.resolved,undefined);
 console.log('Popups: baseline, refresh, role isolation, repeat tasks, duplicates and existing urgent alerts verified');
+const paid={...fresh,id:'paid',kind:'order-paid',orderId:'order'};
+assert.deepEqual(popupNotifications([task],[paid]),[task,paid],'a buyout celebration is not suppressed by another task on the order');
