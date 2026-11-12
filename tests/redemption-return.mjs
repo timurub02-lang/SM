@@ -52,6 +52,7 @@ try{
  await d.prepare('UPDATE redemption_entries SET data=?').bind(JSON.stringify({...legacy,operatorReturn:{...legacy.operatorReturn,resolvedAt:'2026-10-16T10:30:00.000Z'}})).run();
  await syncRedemption(d,new Date('2026-10-16T11:00:00Z'));assert.equal((await row()).operatorReturn.deadline,legacy.operatorReturn.deadline);
  await d.prepare("UPDATE redemption_entries SET data='{}'").run();
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-25') WHERE id='o'").run();
  await edit(buyer,send,new Date('2026-10-16T16:00:00Z'));
  assert.equal((await row()).operatorReturn.deadline,'2026-10-17T02:00:00.000Z');
  await syncRedemption(d,new Date('2026-10-17T00:00:00Z'));assert(awaitingOperator(await row()));
