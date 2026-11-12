@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve,sep} from 'node:path';
+import {openDatabase} from '../server/sqlite.ts';
+import {queueExport,claimExport,finishExport,authorizedExport,exportLifetime} from '../lib/export-jobs.ts';
+const dir=mkdtempSync(join(tmpdir(),'crm-export-test-')),a=openDatabase(join(dir,'test.sqlite')),b=openDatabase(join(dir,'test.sqlite'));
+const admin={id:'admin',role:'admin'},head={id:'head',role:'department_head',department:'1'},now=1000000;
+try{
+ const first=await queueExport(a,admin,'base','M','retry',now);
+ assert.equal((await queueExport(a,admin,'base','M','retry',now)).id,first.id);
+ await assert.rejects(queueExport(a,admin,'base','J','retry',now));
+ await assert.rejects(queueExport(a,head,'base','M','key',now));
+ assert.equal(await authorizedExport(a,head,first.id,now),null);
+ assert.equal(await authorizedExport(a,{...admin,role:'operator'},first.id,now),null);
+ const premium=await queueExport(a,head,'premium','2026-11-1','premium',now+1);
+ assert.equal(await authorizedExport(a,{...head,department:'2'},premium.id,now),null);
+ const claims=await Promise.all([claimExport(a,now+2),claimExport(b,now+2)]);
+ assert.equal(claims.filter(Boolean).length,1,'one consumer across connections');
+ const old=claims.find(Boolean);assert.equal(await claimExport(b,now+100),null);
+ const recovered=await claimExport(b,now+180003);assert.equal(recovered.id,old.id);assert.equal(recovered.attempts,2);
+ assert.equal(await finishExport(a,old,true,now+180004),false,'expired writer cannot finish a newer claim');
+ assert.equal(await finishExport(b,recovered,true,now+180004),true);
+ assert.equal((await authorizedExport(a,admin,first.id,now+180005)).state,'ready');
+ assert.equal(await authorizedExport(a,admin,first.id,now+exportLifetime),null);
+ const last=await claimExport(a,now+180005);assert.equal(last.id,premium.id);
+ await claimExport(a,now+360006);await claimExport(a,now+540007);
+ assert.equal(await claimExport(a,now+720008),null,'three crashes terminate retries');
+ assert.equal((await authorizedExport(a,head,premium.id,now+720009)).state,'failed');
+ for(let i=0;i<5;i++)await queueExport(a,admin,'base','M','bounded-'+i,now+720010);
+ await assert.rejects(queueExport(a,admin,'base','M','overflow',now+720010),/Очередь/);
+ console.log('Export queue: atomic claim, idempotency, role/scope isolation, expiry, stale completion and bounded crash recovery passed');
+}finally{a.close();b.close();assert.ok(resolve(dir).startsWith(resolve(tmpdir())+sep+'crm-export-test-'));rmSync(dir,{recursive:true,force:true});}

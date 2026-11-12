@@ -1,4 +1,5 @@
 import {authenticated} from '@/lib/api-auth';
+import {legacyBackgroundExport} from '@/lib/legacy-background-export';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {readPremiumState} from '@/lib/premium-store';
 import {ledgerRows,periodOrders} from '@/lib/premium-ledger';
@@ -10,6 +11,7 @@ export const GET=authenticated(async(req:Request)=>{
  try{
   const q=new URL(req.url).searchParams,period=q.get('period')||'',calendar=premiumPeriods.find(p=>p.id===period);
   if(!calendar)return Response.json({error:'Выберите расчётный период'},{status:400});
+  const background=await legacyBackgroundExport(req,'premium',period);if(background)return background;
   const s=await readPremiumState(period),actor=s.employees.find(e=>e.id===q.get('actorId'));
   if(!actor||!['admin','department_head'].includes(actor.role))return Response.json({error:'Недостаточно прав'},{status:403});
   if(!s.ledger)return Response.json({error:'Ведомость ещё не загружена'},{status:400});
