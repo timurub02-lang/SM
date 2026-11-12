@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {smsDelivery} from '../lib/sms-delivery.ts';
 import {smsText,smsSign,smsConfig,mainSmsCall} from '../lib/mainsms.ts';
 assert.equal(smsText('Здравствуйте, {client}! Заказ {order}.','Анна','42'),'Здравствуйте, Анна! Заказ 42.');
 assert.throws(()=>smsText('{unknown}','a','b'));
@@ -7,5 +8,16 @@ assert.throws(()=>smsConfig.parse({project:'p',sender:'',apiKey:'k',templates:[{
 let calls=0;
 globalThis.fetch=async(url,options)=>{calls++;assert.equal(url,'https://mainsms.ru/api/mainsms/message/send');assert.equal(options.body.get('apikey'),null);assert.equal(options.body.get('recipients'),'+70000000000');return Response.json({status:'success',messages_id:[1]})};
 assert.deepEqual((await mainSmsCall({project:'p',apiKey:'k'},'send',{recipients:'+70000000000',message:'test'})).messages_id,[1]);assert.equal(calls,1);
-globalThis.fetch=async()=>Response.json({status:'error',error:7});await assert.rejects(mainSmsCall({project:'p',apiKey:'k'},'send',{}),/код 7/);
+globalThis.fetch=async()=>Response.json({status:'error',error:7});await assert.rejects(mainSmsCall({project:'p',apiKey:'k'},'send',{}),/Недостаточно средств/);
 console.log('MainSMS templates, signing and mocked transport passed. No real SMS sent.');
+
+assert.equal(smsDelivery([1,2],{'1':'delivered','2':'accepted'}).status,'pending');
+assert.equal(smsDelivery([1,2],{'1':'delivered','2':'delivered'}).status,'delivered');
+assert.equal(smsDelivery([1,2],{'1':'delivered'}).status,'pending');
+assert.equal(smsDelivery([1],{'1':'non-delivered'}).failed,true);
+assert.equal(smsDelivery([],{}).status,'pending');
+globalThis.fetch=async(url,options)=>{assert.ok(url.endsWith('/status'));assert.equal(options.body.get('messages_id'),'1');return Response.json({status:'success',messages:{'1':'delivered'}})};
+assert.equal((await mainSmsCall({project:'p',apiKey:'k'},'status',{messages_id:'1'})).messages['1'],'delivered');
+
+assert.equal(smsDelivery([1],{'1':'overdue'}).reason,'Истёк срок ожидания доставки');
+assert.equal(smsDelivery([1],{'1':'canceled'}).reason,'Отправка отменена');
