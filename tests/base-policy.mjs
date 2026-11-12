@@ -68,7 +68,7 @@ const blocked=applyRetention(cross,[{...settled,pv:true,status:'returned',return
 assert.equal(blocked.sheet,'ЧС');assert.equal(blocked.baseType,'J');
 console.log('Release base routing and active/unpaid/ambiguous/blacklist protections passed');
 
-assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M'},[],releaseNow).sheet,'Т1');
+assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M'},[],releaseNow).sheet,'ж1');
 assert.equal(applyRetention({...assigned,name:'Иванова Анна Ивановна',baseType:'M',legacyOrderHistory:[{status:'paid'}]},[],releaseNow).sheet,'П');
 
 // A one-off client extension survives fixed operator policies without moving purchase dates.

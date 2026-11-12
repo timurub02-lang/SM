@@ -3,7 +3,7 @@ export const baseTypes=['M','J'] as const;
 export const mandatorySheets=['К','П','ЧС','ПВ'] as const;
 export const blockedSheets=['К','ЧС','ПВ'] as const;
 export const baseLabel=(base:string)=>base==='J'?'Ж':'М';
-export const sheetName=z.string().trim().min(1).max(31).regex(/^[^\[\]:*?\/\\]+$/,'Название должно подходить для листа Excel').refine(s=>!s.startsWith("'")&&!s.endsWith("'")&&!['ТК','ТКП','Все клиенты','Связанные номера'].includes(s),'Это название зарезервировано или больше не используется');
+export const sheetName=z.string().trim().min(1).max(31).regex(/^[^\[\]:*?\/\\]+$/,'Название должно подходить для листа Excel').refine(s=>!s.startsWith("'")&&!s.endsWith("'")&&!['ТК','ТКП','Все клиенты','Связанные номера','Открепились'].includes(s),'Это название зарезервировано или больше не используется');
 export const baseSheetSchema=z.object({name:sheetName,automatic:z.boolean().prefault(false),projectId:z.string().trim().max(100).regex(/^\d*$/,'ID проекта должен содержать только цифры').prefault(''),cycleDays:z.number().int().min(1).max(366).prefault(20),sendTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).prefault('21:00')});
 export const baseConfigSchema=z.object({importSheet:sheetName,sheets:z.array(baseSheetSchema).min(4).max(100)}).superRefine((c,ctx)=>{
  if(c.sheets.some(s=>s.automatic&&!s.projectId))ctx.addIssue({code:'custom',message:'Для автоматической отправки укажите проект СК'});
