@@ -32,7 +32,7 @@ try{
  for(const id of ['admin','head']){
   const response=await call(path,cookies[id]);assert.equal(response.status,200,response.text);
   const row=JSON.parse(response.text).rows.find(r=>r.id==='other');assert.equal(row.created,1);assert.equal(row.inWork,1);assert.equal(row.awaitingShipment,0);assert.equal(row.amount,12345);assert.equal(row.department,'2');
-  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','awaitingShipment','sent','buyoutCdek','buyoutPost','buyoutMoscow'].sort());
+  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','awaitingShipment','sent','buyoutCount','buyoutAmount','buyoutCdek','buyoutPost','buyoutMoscow'].sort());
   assert.equal(row.buyoutCdek,1);assert.equal(row.buyoutPost,0);assert.equal(row.buyoutMoscow,0);
   for(const privateValue of ['PRIVATE-PAID','PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001'])assert.ok(!response.text.includes(privateValue));
  }

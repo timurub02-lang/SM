@@ -26,11 +26,11 @@ export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Emplo
   const awaitingShipment=confirmed.filter(o=>!sent.includes(o)&&!cancelled.includes(o));
   const inWork=created.filter(o=>!confirmed.includes(o)&&!cancelled.includes(o));
   const amount=created.reduce((sum,o)=>sum+Math.round(total(o)*100),0)/100;
-  return {buyoutCdek,buyoutPost,buyoutMoscow,id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,awaitingShipment:awaitingShipment.length,sent:sent.length,orderLists:{created,inWork,cancelled,confirmed,awaitingShipment,sent}};
+  return {buyoutCount:redeemed.length,buyoutAmount:redeemed.reduce((n,o)=>n+Math.round(total(o)*100),0)/100,buyoutCdek,buyoutPost,buyoutMoscow,id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,awaitingShipment:awaitingShipment.length,sent:sent.length,orderLists:{redeemed,created,inWork,cancelled,confirmed,awaitingShipment,sent}};
  });
 }
 
-export type StatsSortKey='login'|'created'|'inWork'|'average'|'amount'|'cancelled'|'confirmed'|'awaitingShipment'|'sent';
+export type StatsSortKey='login'|'created'|'inWork'|'average'|'amount'|'cancelled'|'confirmed'|'awaitingShipment'|'sent'|'buyoutCount'|'buyoutAmount'|'buyoutCdek'|'buyoutPost'|'buyoutMoscow';
 export function sortOperatorStats(rows:ReturnType<typeof operatorStats>,key:StatsSortKey,ascending:boolean){
  return [...rows].sort((a,b)=>{
   const comparison=key==='login'?a.login.localeCompare(b.login,'ru',{numeric:true}):a[key]-b[key];
