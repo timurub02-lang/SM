@@ -30,7 +30,7 @@ async function request(url,options){
  if(mode==='outage')return Response.json({errors:[{message:'Outage'}]},{status:503});
  if(mode==='throttle')return Response.json({errors:[{message:'Limit'}]},{status:429});
  if(race){const fn=race;race=undefined;await fn();}
- return Response.json({entity:{uuid,keep_free_until:rec.storage,number:mode==='identity'?'OTHER':rec.id,cdek_number:'S-'+rec.id,...(mode==='return-label'?{is_return:true}:{}),statuses:[{code:rec.status,date_time:at}]},requests:[{type:'CREATE',state:'SUCCESSFUL'}]});
+ return Response.json({entity:{uuid,to_location:{address:'Synthetic delivery address'},delivery_point:'TEST',keep_free_until:rec.storage,number:mode==='identity'?'OTHER':rec.id,cdek_number:'S-'+rec.id,...(mode==='return-label'?{is_return:true}:{}),statuses:[{code:rec.status,date_time:at}]},requests:[{type:'CREATE',state:'SUCCESSFUL'}]});
 }
 try{
  for(const sql of readFileSync('drizzle/0000_cynical_monster_badoon.sql','utf8').split('--> statement-breakpoint'))await db.prepare(sql).run();
@@ -42,6 +42,7 @@ try{
  await db.prepare('INSERT INTO settings VALUES(?,?)').bind('cdek-status-mapping',JSON.stringify({mapping:{CREATED:'sent',DELIVERED:'paid'},revision:'1'})).run();
  for(let i=0;i<100;i++)await fixture('SM-'+i,{}, {slot:i%2+1});
  assert.deepEqual(await syncCdekShipments(db,request),{checked:100,changed:100,failed:0});
+ assert.equal((await shipment('SM-0')).deliveryAddress,'Synthetic delivery address');assert.equal((await shipment('SM-0')).deliveryPoint,'TEST');
  assert.equal(calls.filter(x=>x==='/v2/oauth/token').length,2);assert.equal(peak,4);
  assert.equal((await db.prepare("SELECT COUNT(*) n FROM orders WHERE json_extract(data,'$.status')='redeemed'").first()).n,100);
  assert.equal((await db.prepare('SELECT sold FROM product_stock').first()).sold,100);

@@ -62,3 +62,7 @@ assert.equal(importedCdekShipment(imported),false);
 for(const patch of [{legacyLv:{...imported.legacyLv,track:'123'}},{legacyLv:{...imported.legacyLv,cdekOrderNumber:'old'}},{cdekTrackingNumber:'123'},{cdekExported:true},{cdekWaybillReceived:true},{cdekTransferredAt:'2026-11-10'},{cdekStatus:{code:'CREATED'}}])assert.equal(importedCdekShipment({...imported,...patch}),true);
 assert.equal(importedCdekShipment({}),false);
 console.log('Imported unshipped orders permit first export; existing imported shipments stay protected.');
+
+assert.equal(shipmentResult({entity:{to_location:{address:'Адрес ПВЗ'},delivery_point:'TEST'}}).deliveryAddress,'Адрес ПВЗ');
+assert.equal(shipmentResult({entity:{to_location:{address:'Адрес курьера'}}}).deliveryAddress,'Адрес курьера');
+assert.equal(shipmentResult({entity:{delivery_point:'TEST'}}).deliveryPoint,'TEST');

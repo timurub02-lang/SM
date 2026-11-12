@@ -1,3 +1,5 @@
+import {cdekToken} from '@/lib/cdek';
+import {shipmentResult} from '@/lib/cdek-shipment';
 import {redemptionDayCounts} from '@/lib/redemption-day-counts';
 import {redemptionStats} from '@/lib/redemption-stats';
 import {initReplacement,confirmReplacementCourier} from '@/lib/phone-replacement';
@@ -21,7 +23,18 @@ export const GET=authenticated(async req=>{try{
  if(q.get('id')&&rows.length){
   const order=await d.prepare('SELECT data FROM orders WHERE id=?').bind(q.get('id')).first<{data:string}>();
   const created=await d.prepare("SELECT data FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Создан заказ%' ORDER BY at LIMIT 1").bind(q.get('id')).first<{data:string}>();
-  const o=JSON.parse(order?.data||'{}');rows[0]={...rows[0],items:o.items||[],orderCreatedAt:o.createdAt,orderCreatedBy:created?JSON.parse(created.data).actor:o.testOnly?'Тестовые данные':'Не указан'};
+  const o=JSON.parse(order?.data||'{}');
+  const savedShipment=await d.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-shipment-'+q.get('id')).first<{data:string}>();
+  let shipment=JSON.parse(savedShipment?.data||'{}');
+  let deliveryAddress=o.delivery==='cdek_pickup'?(shipment.deliveryAddress||o.cdekTariff?.deliveryPoint?.address||''):(shipment.deliveryAddress||o.address||'');
+  if(!deliveryAddress&&shipment.uuid&&[1,2,3,4].includes(shipment.slot))try{
+   const account=await d.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-'+shipment.slot).first<{data:string}>();
+   if(account){const keys=JSON.parse(account.data),token=await cdekToken(keys.clientId,keys.clientSecret);
+    const response=await fetch('https://api.cdek.ru/v2/orders/'+encodeURIComponent(shipment.uuid),{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});
+    if(response.ok){const data=await response.json() as any;if(data.entity?.uuid===shipment.uuid&&data.entity?.number===(o.legacyLv?.cdekOrderNumber||o.id)){shipment={...shipment,...shipmentResult(data)};deliveryAddress=shipment.deliveryAddress||'';}}
+   }
+  }catch{/* The card remains available when CDEK cannot provide the address. */}
+  rows[0]={...rows[0],items:o.items||[],deliveryAddress,deliveryPoint:shipment.deliveryPoint||shipment.form?.deliveryPoint||o.cdekTariff?.deliveryPoint?.code||'',delivery:o.delivery,...(e.role==='redemption'?{clientPhone:all.find((r:any)=>r.order_id===q.get('id'))?.phone||''}:{}),orderCreatedAt:o.createdAt,orderCreatedBy:created?JSON.parse(created.data).actor:o.testOnly?'Тестовые данные':'Не указан'};
  }
  const history=q.get('id')&&rows.length?(await d.prepare('SELECT at,data FROM redemption_history WHERE order_id=? ORDER BY id DESC').bind(q.get('id')).all()).results.map((r:any)=>({at:r.at,...JSON.parse(r.data)})):[];
  const matches=q.get('id')&&rows.length?(await d.prepare('SELECT day,at,data FROM redemption_archives ORDER BY day DESC').all()).results.flatMap((a:any)=>JSON.parse(a.data).filter((r:any)=>r.order_id===q.get('id')&&canSeeRedemption(e,r,cfg.headsAll)).map(({phone,...r}:any)=>({day:a.day,...r}))):[];
