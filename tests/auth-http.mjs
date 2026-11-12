@@ -64,6 +64,12 @@ try{
  for(let i=0;i<3;i++){const r=await call('/api/auth/me',{cookie:cookies.admin});assert.equal(r.data.employee.role,'admin');}
  for(const id of ['one','head']){const r=await call('/api/crm',{cookie:cookies[id]});assert.equal(r.status,200,r.text);assert.equal(r.data.currentEmployeeId,id);assert.deepEqual(r.data.orders.map(o=>o.id),['o-one']);assert.deepEqual(r.data.clients.map(c=>c.id),['c-one']);assert.equal(r.data.clients[0].phone,'');assert.ok(!r.text.includes('password_hash'));assert.ok(!JSON.stringify(r.data.clients).includes('+7999'));}
  const snapshot=await call('/api/crm',{cookie:cookies.one});
+ const compressedSnapshot=await call('/api/crm',{cookie:cookies.one,headers:{'Accept-Encoding':'gzip, deflate, br'}});
+ assert.equal(compressedSnapshot.headers.get('content-encoding'),'br');
+ assert.deepEqual(compressedSnapshot.data,snapshot.data,'Brotli must preserve all authorized snapshot fields');
+ assert.equal((await call('/api/crm',{cookie:cookies.one,headers:{'Accept-Encoding':'br','If-None-Match':compressedSnapshot.headers.get('etag')}})).status,304);
+ assert.equal((await call('/api/crm',{cookie:cookies.two,headers:{'Accept-Encoding':'br','If-None-Match':compressedSnapshot.headers.get('etag')}})).status,200);
+ assert.equal((await call('/api/crm',{headers:{'Accept-Encoding':'br','If-None-Match':compressedSnapshot.headers.get('etag')}})).status,401);
  assert.equal((await call('/api/crm',{cookie:cookies.one,headers:{'If-None-Match':snapshot.headers.get('etag')}})).status,304);
  assert.equal((await call('/api/crm',{headers:{'If-None-Match':snapshot.headers.get('etag')}})).status,401);
  assert.equal((await call('/api/crm',{cookie:cookies.two,headers:{'If-None-Match':snapshot.headers.get('etag')}})).status,200);
