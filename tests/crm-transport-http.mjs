@@ -8,6 +8,8 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {decodeCrmSnapshot} from '../lib/crm-state-delta.ts';
 import {compactCrmState} from '../lib/compact-crm-state.ts';
+import {filteredOrderList} from '../lib/crm-order-list.ts';
+import {filteredClientList} from '../lib/crm-client-list.ts';
 import {authSchema} from '../lib/auth-schema.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-events-')),file=join(dir,'test.sqlite'),database=new DatabaseSync(file);
@@ -79,6 +81,24 @@ try{
  assert.equal((await get('/api/crm/history?clientId=c-111&orderId=o-c-111',headCookie)).data.total,0);
  database.prepare("INSERT INTO incoming_calls(id,client_id,at,phone,called_number,shared_queue) VALUES('shared','c-111',?,'','',1)").run(now);
  const shared=await get('/api/crm/history?clientId=c-111&orderId=o-c-111',headCookie);assert.equal(shared.status,200);assert.equal(shared.data.total,3,'shared incoming history must not be rejected by a different endpoint guard');
+ // The lighter page projection must preserve the full snapshot's business filters and row payloads.
+ const admin={...head,id:'admin',login:'admin',role:'admin'};
+ database.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(admin.id,JSON.stringify(admin));database.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(admin.id,hash);
+ const login=await fetch(base+'/api/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({login:'admin',password})});const adminCookie=login.headers.get('set-cookie').split(';')[0];
+ database.prepare("UPDATE settings SET data=? WHERE id='crm-maintenance-health'").run(JSON.stringify({ok:true,at:new Date().toISOString()}));
+ for(const cookie of [cookies[0],cookies[1],headCookie,adminCookie]){
+  const snapshot=(await get('/api/crm?transport=compact-v1',cookie)).data,employee=snapshot.employees.find(e=>e.id===snapshot.currentEmployeeId);
+  for(const q of [{view:'orders',filter:'all',query:''},{view:'orders',filter:'all',query:'o-c-060'},{view:'orders',filter:'sent',query:''},{view:'confirm',filter:'all',query:''},{view:'rework',filter:'all',query:''}]){
+   const expected=filteredOrderList(snapshot,employee,{...q,showNextPremium:false}),page=(await get('/api/crm?'+new URLSearchParams({list:'orders',...q,page:'0'}),cookie)).data;
+   assert.deepEqual(page.rows,expected.slice(0,50));assert.equal(page.total,expected.length);
+   assert.deepEqual(page.clients,snapshot.clients.filter(c=>page.rows.some(o=>o.clientId===c.id)));
+  }
+  if(employee.role==='admin')continue;
+  for(const filter of ['all','without_orders','expires','today'])for(const clientWorkFilter of ['all','needed','planned','done']){
+   const q={filter,query:'',clientWorkFilter,timeZone:'Europe/Moscow'},expected=filteredClientList(snapshot,employee,q),page=(await get('/api/crm?'+new URLSearchParams({list:'mine',view:'mine',...q,page:'0'}),cookie)).data;
+   assert.deepEqual(page.clients,expected.slice(0,50));assert.equal(page.total,expected.length);
+  }
+ }
  console.log('HTTP transport: compact/full parity, role scopes, server pages/search, remote history, deltas, bounded save, reminders, version conflicts and worker fallback passed');
 }catch(error){console.error(logs);throw error;}finally{
  if(server){server.kill();await once(server,'exit');}database.close();rmSync(dir,{recursive:true,force:true});
