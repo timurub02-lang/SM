@@ -63,3 +63,22 @@ assert.equal(mayCallEndpoint({role:'department_head'},statsUrl,'GET',{}),true);
 assert.equal(mayCallEndpoint({role:'department_head'},statsUrl,'POST',{}),false);
 assert.equal(mayCallEndpoint({role:'operator'},statsUrl,'GET',{}),false);
 console.log('In-work, aggregate-only cross-department summaries and endpoint roles passed');
+
+state.orders=[
+ order('lv-buyout',1,{legacyLv:{orderId:'x'},delivery:'cdek_pickup',status:'redeemed',redeemedAt:'2026-11-11T21:00:00Z'}),
+ order('post-buyout',1,{delivery:'russian_post',status:'redeemed',redeemedAt:'2026-11-12'}),
+ order('moscow-buyout',1,{manager:'b',delivery:'moscow_courier',status:'redeemed',redeemedAt:'2026-11-12T20:59:59Z'}),
+ order('unknown-date',1,{delivery:'cdek_pickup',status:'redeemed',paymentReceivedAt:'2026-11-12'}),
+ order('old-buyout',1,{delivery:'cdek_pickup',status:'redeemed',redeemedAt:'2026-11-11T20:59:59Z'}),
+ order('tomorrow',1,{delivery:'cdek_pickup',status:'redeemed',redeemedAt:'2026-11-12T21:00:00Z'}),
+ order('returned',1,{delivery:'cdek_pickup',status:'returned',redeemedAt:'2026-11-12'}),
+ order('test',1,{testOnly:true,delivery:'cdek_pickup',status:'redeemed',redeemedAt:'2026-11-12'})
+];
+state.orders.push({...state.orders[0]});
+const buyouts=operatorStats(state,{role:'admin'},'2026-11-12','2026-11-12');
+assert.deepEqual(buyouts.map(r=>[r.buyoutCdek,r.buyoutPost,r.buyoutMoscow]),[[1,1,0],[0,0,1]]);
+assert.equal(operatorStats(state,{role:'department_head',department:'1'},'2026-11-12','2026-11-12').length,1);
+const buyoutSummary=operatorStatsSummary(state,{role:'department_head',department:'1'},'2026-11-12','2026-11-12');
+assert.equal(buyoutSummary[1].buyoutMoscow,1);
+assert.ok(!JSON.stringify(buyoutSummary).includes('moscow-buyout'));
+console.log('Buyouts: actual redemption date, Moscow day, imports, duplicates, test/returned exclusions and department isolation passed');

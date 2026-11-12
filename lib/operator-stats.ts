@@ -8,7 +8,16 @@ export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Emplo
   const date=new Date(o.createdAt);if(Number.isNaN(date.getTime()))return false;
   const day=moscowDate.format(date);return (!from||day>=from)&&(!to||day<=to);
  });
+ const buyouts=[...new Map(state.orders.map(o=>[o.id,o])).values()].filter(o=>{
+  if(o.testOnly||o.status!=='redeemed'||!o.redeemedAt)return false;
+  const date=new Date(o.redeemedAt);if(Number.isNaN(date.getTime()))return false;
+  const day=moscowDate.format(date);return (!from||day>=from)&&(!to||day<=to);
+ });
  return operators.map(employee=>{
+  const redeemed=buyouts.filter(o=>o.manager===employee.id);
+  const buyoutCdek=redeemed.filter(o=>o.delivery==='cdek_pickup'||o.delivery==='cdek_courier').length;
+  const buyoutPost=redeemed.filter(o=>o.delivery==='russian_post').length;
+  const buyoutMoscow=redeemed.filter(o=>o.delivery==='moscow_courier').length;
   const created=cohort.filter(o=>o.manager===employee.id);
   // First-occurrence dates keep completed stages counted after the order moves on.
   const confirmed=created.filter(o=>!!o.confirmedAt);
@@ -17,7 +26,7 @@ export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Emplo
   const awaitingShipment=confirmed.filter(o=>!sent.includes(o)&&!cancelled.includes(o));
   const inWork=created.filter(o=>!confirmed.includes(o)&&!cancelled.includes(o));
   const amount=created.reduce((sum,o)=>sum+Math.round(total(o)*100),0)/100;
-  return {id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,awaitingShipment:awaitingShipment.length,sent:sent.length,orderLists:{created,inWork,cancelled,confirmed,awaitingShipment,sent}};
+  return {buyoutCdek,buyoutPost,buyoutMoscow,id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,awaitingShipment:awaitingShipment.length,sent:sent.length,orderLists:{created,inWork,cancelled,confirmed,awaitingShipment,sent}};
  });
 }
 
