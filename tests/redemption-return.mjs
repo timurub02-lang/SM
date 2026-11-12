@@ -37,10 +37,8 @@ try{
  await d.prepare("UPDATE orders SET data=json_remove(data,'$.cdekStatus') WHERE id='o'").run();
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-15')").run();
  await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.result','','$.manualStorage','2026-10-15') WHERE order_id='o'").run();
- await edit(buyer,send);assert(inRedemptionTab(await row(),'work','2026-10-16'));assert(!inWorkday(await row(),'2026-10-16'));
- await assert.rejects(edit(op,{action:'date',result:'date',date:'2026-10-20'}));
- await assert.rejects(edit(op,{action:'po',result:'date',date:'2026-10-20'}),/Подтвердите/);
- await edit(op,{action:'po',result:'date',date:'2026-10-20',responsibilityConfirmed:true});assert(awaitingDateConfirmation(await row()));assert.equal((await row()).authorId,op.id);assert.equal((await row()).action,'po');
+ await assert.rejects(edit(buyer,send),/Срок хранения истёк/);
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-25')").run();
  const legacy={action:'date',result:'date',operatorReturn:{at:'2026-10-16T10:00:00.000Z',deadline:'2026-10-16T12:00:00.000Z'}};
  await d.prepare('UPDATE redemption_entries SET data=?').bind(JSON.stringify(legacy)).run();
  await syncRedemption(d,new Date('2026-10-16T11:00:00Z'));
@@ -59,5 +57,18 @@ try{
  assert.equal((await row()).operatorReturn.deadline,'2026-10-18T16:00:00.000Z');
  await syncRedemption(d,new Date('2026-10-17T00:00:00Z'));assert(awaitingOperator(await row()));
  await edit(op,{action:'date',result:'date',date:'2026-10-20'},new Date('2026-10-17T00:00:00Z'));assert(awaitingDateConfirmation(await row()));
+ await d.prepare("UPDATE redemption_entries SET data='{}'").run();
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-16')").run();
+ await edit(buyer,send);assert.equal((await row()).operatorReturn.deadline,'2026-10-16T20:59:59.999Z');
+ const cappedVersion=(await row()).version;await syncRedemption(d,now);assert.equal((await row()).version,cappedVersion);
+ await edit(op,{operation:'comment',text:'Last moment'},new Date('2026-10-16T20:59:59.998Z'));
+ await syncRedemption(d,new Date('2026-10-16T21:00:00Z'));assert(!awaitingOperator(await row()));
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-18')").run();
+ await d.prepare("UPDATE redemption_entries SET data='{}'").run();await edit(buyer,send);
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-16')").run();
+ await syncRedemption(d,now);assert.equal((await row()).operatorReturn.deadline,'2026-10-16T20:59:59.999Z');
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-15')").run();
+ await assert.rejects(edit(op,{operation:'comment',text:'Storage expired'}),/Срок обработки/);
+ await syncRedemption(d,now);assert(!awaitingOperator(await row()));
  console.log('Return queue passed: scope, reasons, final results, exact 48-hour deadline, no extension, timeout and SK exclusion');
 }finally{d.close();}

@@ -279,6 +279,20 @@ try{
  const redemptionLead=await fixture('redemption-lead',undefined,'redemption');
  db.prepare("UPDATE employees SET data=json_set(data,'$.canCreateRedemptionStaff',json('true')) WHERE id=?").run(redemptionLead.e.id);
  const redemptionOrdinary=await fixture('redemption-ordinary',undefined,'redemption');
+ // Card details expose the client phone only to redemption staff, not operators or list responses.
+ assert.equal((await call('/api/redemption',{cookie:redemptionOrdinary.cookie})).status,200);
+ const detailOperator=await fixture('redemption-detail-operator');
+ const detailOrder={id:'redemption-details',clientId:'c-one',manager:detailOperator.e.id,status:'shipping',delivery:'cdek_pickup',items:[],createdAt:new Date().toISOString(),address:'Recipient home',cdekTariff:{deliveryPoint:{code:'TEST',address:'Pickup address'}}};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(detailOrder.id,detailOrder.clientId,JSON.stringify(detailOrder));
+ db.prepare('INSERT INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').run(detailOrder.id,detailOrder.createdAt,'{}');
+ const detailUrl='/api/redemption?id='+detailOrder.id;
+ const buyerDetails=await call(detailUrl,{cookie:redemptionOrdinary.cookie});assert.equal(buyerDetails.status,200,buyerDetails.text);
+ assert.equal(buyerDetails.data.rows[0].deliveryAddress,'Pickup address');assert.equal(buyerDetails.data.rows[0].clientPhone,'+79990000001');
+ const operatorDetails=await call(detailUrl,{cookie:detailOperator.cookie});assert.equal(operatorDetails.status,200,operatorDetails.text);assert.equal(operatorDetails.data.rows[0].clientPhone,undefined);
+ assert(!(await call('/api/redemption',{cookie:redemptionOrdinary.cookie})).data.rows.some(r=>r.clientPhone));
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...detailOrder,delivery:'cdek_courier'}),detailOrder.id);
+ assert.equal((await call(detailUrl,{cookie:redemptionOrdinary.cookie})).data.rows[0].deliveryAddress,'Recipient home');
+ db.prepare('DELETE FROM redemption_history WHERE order_id=?').run(detailOrder.id);db.prepare('DELETE FROM redemption_entries WHERE order_id=?').run(detailOrder.id);db.prepare('DELETE FROM orders WHERE id=?').run(detailOrder.id);
  const redemptionInput={...staff[1],id:undefined,login:'redemption-created',role:'admin',department:undefined,canCreateRedemptionStaff:true,password,accessEnabled:true};
  const redemptionCreated=await call('/api/crm',{cookie:redemptionLead.cookie,body:{action:'saveEmployee',employee:redemptionInput}});
  assert.equal(redemptionCreated.status,200,redemptionCreated.text);

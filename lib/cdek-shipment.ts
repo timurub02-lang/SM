@@ -5,7 +5,7 @@ import type {Product} from './warehouse.ts';
 export const shipmentFormSchema=z.object({shipmentPoint:z.string().trim().max(255).prefault(''),deliveryPoint:z.string().trim().max(255).prefault(''),senderAddress:z.string().trim().max(255).prefault(''),payment:z.enum(['cod','prepaid']),deliveryCost:z.number().min(0).max(1000000)});
 export type ShipmentForm=z.infer<typeof shipmentFormSchema>;
 export type ShipmentDeletion={at:string;reason:string;actor:string;requestId?:string;previousRequests:string[]};
-export type Shipment={replacementAssignmentId?:string;replacementFallback?:boolean;checkedAt?:string;syncError?:string;deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string;printCopyCount?:number};
+export type Shipment={deliveryAddress?:string;deliveryPoint?:string;replacementAssignmentId?:string;replacementFallback?:boolean;checkedAt?:string;syncError?:string;deletion?:ShipmentDeletion;recipientPhone?:string;routingAmountCents?:number;routingRuleId?:string;routingReason?:string;attempt:string;slot:number;account:string;state:'sending'|'pending'|'ready'|'invalid'|'unknown'|'deleting';uuid?:string;number?:string;error?:string;createdAt:string;form:ShipmentForm;downloadedAt?:string;printId?:string;printAt?:string;printCopyCount?:number};
 export function importedCdekShipment(order:Order){
  return !!order.legacyLv&&!!(order.legacyLv.track?.trim()||order.legacyLv.cdekOrderNumber?.trim()||order.cdekTrackingNumber?.trim()||order.cdekExported||order.cdekWaybillReceived||order.cdekTransferredAt||order.cdekStatus);
 }
@@ -32,12 +32,12 @@ export function shipmentPayload(order:Order,client:Client,products:Product[],for
   delivery_recipient_cost:{value:form.deliveryCost},packages:[{number:'1',weight:Math.ceil(p.weight*1000),length:p.length,width:p.width,height:p.height,items}]};
 }
 export function cdekErrors(data:any){return [...(data.errors||[]),...(data.requests||[]).flatMap((r:any)=>r.errors||[])].map((e:any)=>[e.code,e.message].filter(Boolean).join(': ')).join('; ').slice(0,1200);}
-export function shipmentResult(data:any):Pick<Shipment,'state'|'uuid'|'number'|'error'>{
+export function shipmentResult(data:any):Pick<Shipment,'state'|'uuid'|'number'|'error'|'deliveryAddress'|'deliveryPoint'>{
  const request=(data.requests||[]).filter((r:any)=>r.type==='CREATE').sort((a:any,b:any)=>String(b.date_time||'').localeCompare(String(a.date_time||'')))[0]||data.requests?.[0];
  const error=cdekErrors({errors:data.errors,requests:request?[request]:[]});const uuid=typeof data.entity?.uuid==='string'?data.entity.uuid:undefined;
  const number=data.entity?.cdek_number?String(data.entity.cdek_number):undefined;
  if(request?.state==='INVALID'||error)return {state:'invalid',uuid,error:error||'СДЭК отклонил отправление'};
- return {state:request?.state==='SUCCESSFUL'&&number?'ready':'pending',uuid,number};
+ return {state:request?.state==='SUCCESSFUL'&&number?'ready':'pending',uuid,number,...(typeof data.entity?.to_location?.address==='string'?{deliveryAddress:data.entity.to_location.address}:{}),...(typeof data.entity?.delivery_point==='string'?{deliveryPoint:data.entity.delivery_point}:{})};
 }
 export const deletionRequestKey=(r:any)=>String(r.request_uuid||r.date_time||'');
 export function shipmentDeletionResult(data:any,deletion:ShipmentDeletion,direct=false){
