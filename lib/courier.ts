@@ -158,6 +158,7 @@ export function cancelCourierWork(o:Order,at:string){
  if(o.courier)o.courier={...o.courier};pauseCourierOperatorBudget(o,at);stopCourierClock(o);clearCall(o);
 }
 export const canEditRecalledCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'|'department'>,staff:Employee[]=[])=>o.delivery==='moscow_courier'&&!o.courier&&['packing','rework'].includes(o.status)&&!!o.courierRecall?.completedAt&&!o.packingWaybillAt&&(e.role==='admin'||isOrderOperator(e,o,staff));
+export const canEditMoscowOrderDetails=(employee:Pick<Employee,'role'>,order:Pick<Order,'delivery'|'status'>)=>['admin','logistic','chief_logistic'].includes(employee.role)&&order.delivery==='moscow_courier'&&!['redeemed','returned','refused'].includes(order.status);
 export const canEditCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'|'department'>,staff:Employee[]=[])=>o.delivery==='moscow_courier'&&o.courier?.phase==='operator'&&o.status==='rework'&&(e.role==='admin'||isOrderOperator(e,o,staff));
 export type CourierCommand={action:'courierAccept'|'courierWorkflow';operation?:'confirm'|'toOperator'|'resume'|'recall'|'returnRecall'|'receiveRecall'|'requestRepack'|'doorRefusal'|'claimDoor'|'resolveDoor';reason?:string;confirmed?:boolean;result?:'deliver'|'return'};
 // Shared by the API and tests; ordinary shipping cannot bypass this workflow.
