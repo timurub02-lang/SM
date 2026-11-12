@@ -1,10 +1,11 @@
 'use client';
 import {useEffect,useRef} from 'react';
+import {notificationPopupTab,type NotificationTab} from '@/lib/notification-sections';
 import {toast} from 'sonner';
 import type {Reminder} from '@/lib/reminders';
 import {NotificationPopups,popupNotifications} from '@/lib/notification-popups';
 
-export function useNotificationPopups(actor:string,ready:boolean,tasks:Reminder[],events:Reminder[],openBell:(tab:"tasks"|"events")=>void){
+export function useNotificationPopups(actor:string,ready:boolean,tasks:Reminder[],events:Reminder[],openBell:(tab:NotificationTab)=>void){
  const tracker=useRef(new NotificationPopups());
  const popupId=useRef<string|number|undefined>(undefined);
  useEffect(()=>()=>{if(popupId.current!==undefined)toast.dismiss(popupId.current);},[actor]);
@@ -15,7 +16,7 @@ export function useNotificationPopups(actor:string,ready:boolean,tasks:Reminder[
   popupId.current=toast.info(fresh.length===1?fresh[0].title:`Новые уведомления · ${fresh.length}`,{
    description:fresh.length===1?fresh[0].text:'Откройте колокольчик, чтобы посмотреть и обработать их.',
    id:`crm-notifications:${actor}`,duration:5000,closeButton:true,
-   action:{label:'Открыть колокольчик',onClick:()=>openBell(fresh.some(r=>tasks.some(t=>t.id===r.id))?"tasks":"events")},
+   action:{label:'Открыть колокольчик',onClick:()=>openBell(notificationPopupTab(fresh,tasks))},
   });
  },[actor,ready,tasks,events,openBell]);
 }
