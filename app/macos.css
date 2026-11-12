@@ -847,7 +847,7 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .call-client-time small{padding-left:21px;color:var(--muted-foreground);font-size:13px}
 .client-detail-dialog.has-header-call:has(.call-client-time)>[data-slot=dialog-header]{min-height:132px}
 
-.order-sort-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.order-sort-controls label{display:flex;align-items:center;gap:8px}.order-sort-heading{border:0;background:transparent;color:inherit;font:inherit;padding:0;text-align:left;cursor:pointer}.order-sort-heading:hover{text-decoration:underline}
+.order-sort-heading{border:0;background:transparent;color:inherit;font:inherit;padding:0;text-align:left;cursor:pointer}.order-sort-heading:hover{text-decoration:underline}
 
 /* Keep clickable statistics values aligned with zeros and aggregate-only values. */
 .operator-stats-dialog .stats-table th:not(:first-child),.operator-stats-dialog .stats-table td:not(:first-child){text-align:right;padding-right:10px}
