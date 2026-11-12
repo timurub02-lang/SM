@@ -1,4 +1,4 @@
-import {canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
+import {canEditMoscowOrderDetails,canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
 import {canOperatorAmendMissed,canOperatorReachClient,canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
 import {headDraftStage,departmentWorkStage,isDepartmentOrder} from './department-orders.ts';
@@ -52,6 +52,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='requestOrderCancellation')return allow(['operator','department_head'].includes(e.role)&&typeof p.incomingId==='string');
  if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
  if(p.action==='savePostalTracking')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
+ if(p.action==='updateMoscowDetails')return allow(canEditMoscowOrderDetails(e,order));
  if(p.action==='updateLogisticComment')return allow(isLogistic(e.role));
  if(p.action==='updateOrder'&&p.operatorFollowup===true)return allow(canOperatorAmendMissed(e,order,s.employees));
  if(p.action==='clientWaiting')return allow(canOperatorReachClient(e,order,s.employees));
