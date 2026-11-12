@@ -27,6 +27,21 @@ let oldFinish;const oldReader=new SnapshotReader(url,()=>new Promise(resolve=>ol
 const old=oldReader.read();oldReader.invalidate();oldFinish(Response.json({version:0}));assert.equal(await old,null);
 const failed=new SnapshotReader(url,async()=>Response.json({error:'Требуется вход'},{status:401}));
 await assert.rejects(failed.read(),{status:401});
+// Proxy HTML must not leak a parser error or discard the last valid snapshot/ETag.
+for(const status of [200,401,502,503,504]){
+ let attempt=0;
+ const proxy=new SnapshotReader(url,async(_url,{headers})=>{
+  if(++attempt===1)return Response.json({version:1},{headers:{etag:'"cached"'}});
+  assert.equal(headers['If-None-Match'],'"cached"');
+  if(attempt===2)return new Response('<html><h1>Proxy error</h1></html>',{status});
+  return new Response(null,{status:304});
+ });
+ const cached=await proxy.read();
+ await assert.rejects(proxy.read(),error=>error.status===status&&!error.message.includes('Unexpected token')&&/Требуется вход|CRM временно недоступна|некорректный ответ/.test(error.message));
+ assert.equal(await proxy.read(),cached);
+}
+const businessError=new SnapshotReader(url,async()=>Response.json({error:'Этот переход недоступен для текущего этапа'},{status:400}));
+await assert.rejects(businessError.read(),{status:400,message:'Этот переход недоступен для текущего этапа'});
 // A slow body must have the full loading budget; an expired read can be retried.
 const nativeTimeout=AbortSignal.timeout;let timer;
 try{
