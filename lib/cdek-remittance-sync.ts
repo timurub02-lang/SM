@@ -88,10 +88,23 @@ export async function syncCdekRemittances(d:Db,request:typeof fetch=fetch,now=Da
   try{
    const keys=JSON.parse(a.data);const token=await cdekToken(keys.clientId,keys.clientSecret,request);
    for(const date of dates){
-    const response=await request('https://api.cdek.ru/v2/registries?date='+date,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)});
-    if(response.status===429){const header=response.headers.get('Retry-After'),advised=header===null?NaN:/^\d+$/.test(header)?now+Number(header)*1000:Date.parse(header);if(Number.isFinite(advised))retryAt=Math.max(retryAt,advised);}
-    if(!response.ok)throw Error(`СДЭК: реестры недоступны (${response.status})`);
-    const result=await applyCdekRegistries(d,slot,await response.json(),at);
+    let data:unknown;
+    // Retry only the read, before validation or any financial writes.
+    for(let attempt=0;;attempt++){
+     let response:Response;
+     try{
+      response=await request('https://api.cdek.ru/v2/registries?date='+date,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)});
+      if(response.ok){data=await response.json();break;}
+     }catch(e){
+      if(attempt||!(e instanceof TypeError||e instanceof Error&&e.name==='TimeoutError'))throw e;
+      await new Promise(r=>setTimeout(r,500));continue;
+     }
+     if(response.status===429){const header=response.headers.get('Retry-After'),advised=header===null?NaN:/^\d+$/.test(header)?now+Number(header)*1000:Date.parse(header);if(Number.isFinite(advised))retryAt=Math.max(retryAt,advised);}
+     await response.body?.cancel();
+     if(!attempt&&[502,503,504].includes(response.status)){await new Promise(r=>setTimeout(r,500));continue;}
+     throw Error(`СДЭК: реестры недоступны (${response.status})`);
+    }
+    const result=await applyCdekRegistries(d,slot,data,at);
     totals.checked++;totals.added+=result.added;totals.conflicts+=result.conflicts;
     if(result.races)throw Error('Заказы изменились во время сверки, будет повтор');
     if(date===today)state.todayCheckedAt=at;

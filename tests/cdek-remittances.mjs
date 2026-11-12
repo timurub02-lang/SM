@@ -98,5 +98,42 @@ await historyFixture('90002');await db.prepare("INSERT INTO settings(id,data) VA
  await db.prepare("UPDATE settings SET data=? WHERE id='cdek-registry-sync-1'").bind(JSON.stringify({nextDay:'2026-10-29',todayCheckedAt:at})).run();
  calls=[];await syncCdekRemittances(db,request,Date.parse(at)+480000);assert.equal(calls.length,0,'Today is not polled again through the historical cursor');
  await syncCdekRemittances(db,request,Date.parse(at)+3600001);assert.equal(calls.filter(s=>s.includes('date=2026-10-29')).length,1);
+ async function retryCase(label,read,attempts,failed=false,retrySeconds=300){
+  const now=Date.parse(at)+60000,initial={nextDay:'2026-10-03',todayCheckedAt:at},signals=[];let tokenCalls=0;
+  await db.prepare("UPDATE settings SET data=? WHERE id='cdek-registry-sync-1'").bind(JSON.stringify(initial)).run();
+  const result=await syncCdekRemittances(db,async(url,options)=>{
+   if(new URL(url).pathname.endsWith('/token')){tokenCalls++;return Response.json({access_token:'synthetic'});}
+   assert.equal(new URL(url).searchParams.get('date'),'2026-10-03',label);
+   assert.equal(options.method,undefined,'Retry is restricted to GET');
+   signals.push(options.signal);return read(signals.length);
+  },now);
+  assert.equal(signals.length,attempts,label);assert.equal(tokenCalls,1,'Token POST is not retried');
+  if(attempts===2)assert.notEqual(signals[0],signals[1],'Each attempt has a fresh timeout');
+  const state=JSON.parse((await db.prepare("SELECT data FROM settings WHERE id='cdek-registry-sync-1'").first()).data);
+  assert.equal(result.failed,Number(failed),label);
+  assert.equal(state.nextDay,failed?initial.nextDay:'2026-10-04',label);
+  assert.equal(state.todayCheckedAt,initial.todayCheckedAt,'Failed date must not advance the daily watermark');
+  assert.equal(state.retryAt,failed?new Date(now+retrySeconds*1000).toISOString():undefined,label);
+  return result;
+ }
+ await fixture('retry-paid',{legacyLv:{track:'retry-paid'}});
+ const beforeRetryEvents=(await db.prepare('SELECT COUNT(*) n FROM events').first()).n;
+ const retryPaid=await retryCase('Timeout followed by success',attempt=>{
+  if(attempt===1)throw new DOMException('synthetic timeout','TimeoutError');
+  return Response.json(answer(registry('RETRY',90,'2026-10-03','retry-paid')));
+ },2);
+ assert.equal(retryPaid.added,1);assert.equal((await row('retry-paid')).cdekRemittances.length,1);
+ assert.equal((await db.prepare('SELECT COUNT(*) n FROM events').first()).n,beforeRetryEvents+1,'Retry produces one financial audit event');
+ await retryCase('Repeated timeout retains date',()=>{throw new DOMException('synthetic timeout','TimeoutError');},2,true);
+ await retryCase('Transient network failure',attempt=>{if(attempt===1)throw new TypeError('fetch failed');return Response.json(answer());},2);
+ await retryCase('Timeout while reading response body',attempt=>{
+  const response=Response.json(answer());if(attempt===1)response.json=async()=>{throw new DOMException('body timeout','TimeoutError');};return response;
+ },2);
+ for(const status of [502,503,504])await retryCase('Temporary HTTP '+status,attempt=>attempt===1?Response.json({}, {status}):Response.json(answer()),2);
+ await retryCase('Repeated gateway failure',()=>Response.json({}, {status:503}),2,true);
+ await retryCase('Rate limit is deferred without immediate retry',()=>Response.json({}, {status:429,headers:{'Retry-After':'600'}}),1,true,600);
+ for(const status of [401,403])await retryCase('Authentication failure '+status,()=>Response.json({}, {status}),1,true);
+ await retryCase('Invalid registry data is not retried',()=>Response.json({unexpected:'shape'}),1,true);
+ await retryCase('Explicit abort is not retried',()=>{throw new DOMException('cancelled','AbortError');},1,true);
  console.log('CDEK remittances: positive-only, replay, duplicate conflicts, identity, dry run, CAS, atomic audit and polling passed.');
 }finally{db.close();rmSync(folder,{recursive:true,force:true});}

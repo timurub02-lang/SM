@@ -22,9 +22,36 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
  const eventHealth=eventsOnly?await d.prepare('SELECT data FROM sk_order_event_health WHERE id=1').first():null,previous=eventsOnly?(eventHealth?JSON.parse(eventHealth.data):null):old;
  const activity=await read('activity-health');
  if([old?.retryAt,activity?.retryAt].some(value=>Date.parse(value||'')>now))return {deferred:true};
- const started=Date.now();let retryAt='',virtualNow=now;
+ const started=Date.now();let retryAt='',virtualNow=now,lastFailure=previous?.lastFailure;
+ let stage='configuration',failedRequest=false;
+ const review=new Map<string,{callId:string;leadId:string;reason:string}>((previous?.review||[]).map((r:{callId:string;leadId:string;reason:string})=>[r.callId,r]));
  const clock=()=>Math.max(now+Date.now()-started,virtualNow),pause=async(ms:number)=>{virtualNow=clock()+ms;await wait(ms);};
- const paced:typeof fetch=(url,init)=>skProviderRequest(d,request,String(url),init||{},clock,pause);
+ const failure=(category:string,status?:number)=>{lastFailure={at:new Date(clock()).toISOString(),stage,category,...(status===undefined?{}:{status})};failedRequest=true;};
+ const paced:typeof fetch=async(url,init)=>{
+  const path=new URL(String(url)).pathname;
+  stage=path==='/oauth/token'?'oauth':path==='/api/v2/users'?'users':path==='/api/reports/calls_total.json'?'report':path.startsWith('/api/v2/calls/')?'call':'lead';
+  failedRequest=false;
+  for(let attempt=0;;attempt++){
+   try{
+    // These are owned read/token requests: start each timeout after the shared pacing wait.
+    const timed:typeof fetch=async(target,options)=>{
+     const r=await request(target,{...options,signal:AbortSignal.timeout(stage==='oauth'?15000:20000)});
+     return r.ok&&![204,205].includes(r.status)?new Response(await r.arrayBuffer(),{status:r.status,statusText:r.statusText,headers:r.headers}):r;
+    };
+    const response=await skProviderRequest(d,timed,String(url),init||{},clock,pause);
+    if(!response.ok)failure('http',response.status);
+    if(attempt===0&&[502,503,504].includes(response.status)){await response.body?.cancel();await pause(1000);continue;}
+    if(response.ok)failedRequest=false;
+    return response;
+   }catch(error){
+    if(error instanceof SkProviderDeferred)throw error;
+    const transient=error instanceof Error&&(error.name==='TimeoutError'||error instanceof TypeError);
+    failure(error instanceof Error&&error.name==='TimeoutError'?'timeout':transient?'network':'internal');
+    if(!transient||attempt!==0)throw error;
+    await pause(1000);
+   }
+  }
+ };
  try{
   const credentials=await read('skorozvon');if(!credentials)throw Error('Скорозвон не подключён');
   const saved=sessions.get(d),cached=eventsOnly&&saved?.request===request&&saved.credentials===JSON.stringify(credentials)&&now-saved.at>=0&&now-saved.at<30000?saved:null;
@@ -35,13 +62,13 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
     const limitedAt=clock(),header=r.headers.get('Retry-After'),delay=header===null?60000:/^\d+$/.test(header)?Number(header)*1000:Date.parse(header)-limitedAt;
     retryAt=new Date(limitedAt+Math.max(60000,Number.isFinite(delay)?delay:60000)).toISOString();await r.body?.cancel();
    }
-   if(!r.ok)throw Error('Скорозвон: ошибка '+r.status);return await r.json() as any;
+   if(!r.ok){await r.body?.cancel();throw Error('Скорозвон: ошибка '+r.status);}return await r.json() as any;
   }
   const users:any[]=cached?.users||[];if(!cached)for(let page=1;page<=100;page++){const r=await api('/api/v2/users?length=100&page='+page);const list=Array.isArray(r)?r:r.data;if(!Array.isArray(list))throw Error('Не удалось прочитать сотрудников СК');users.push(...list);if(list.length<100||r.total_pages&&page>=r.total_pages)break;if(page===100)throw Error('Список сотрудников СК неполный');}
   if(eventsOnly&&!cached)sessions.set(d,{credentials:JSON.stringify(credentials),request,token,users,at:now});
   const start=Math.max(Date.parse(config.enabledAt), (Date.parse(old?.lastSuccessAt||'')||Date.parse(config.enabledAt))-86400000);
   if(!Number.isFinite(start)||!Array.isArray(config.resultIds)||!config.resultIds.length)throw Error('Настройка приёма СК некорректна');
-  let pages=1,imported=0,pending=0;const review=new Map<string,{callId:string;leadId:string;reason:string}>((previous?.review||[]).map((r:{callId:string;leadId:string;reason:string})=>[r.callId,r]));
+  let pages=1,imported=0,pending=0;
   async function accept(row:{id:string|number;comment?:unknown}){
     const prior=await d.prepare('SELECT state,reason FROM sk_order_transfers WHERE id=?').bind(String(row.id)).first();if(prior&&(!eventsOnly||prior.state!=='pending'||prior.reason)){review.delete(String(row.id));return true;}
     const raw=await api('/api/v2/calls/'+encodeURIComponent(row.id)),call=raw.data||raw;
@@ -60,7 +87,7 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
     if(!phone){review.set(String(call.id),{callId:String(call.id),leadId:String(lead.id),reason:'В карточке СК нет однозначного телефона клиента'});pending++;return false;}
     review.delete(String(call.id));
     const input:SkOrderInput={callId:String(call.id),leadId:String(lead.id),email:user.email||'',userName:user.name||'',userNameUnique:users.filter(u=>String(u.name||'').trim().toLowerCase().replace(/\s+/g,' ')===String(user.name||'').trim().toLowerCase().replace(/\s+/g,' ')).length===1,name:typeof lead.name==='string'?lead.name:'',phone,address:typeof lead.address==='string'?lead.address:'',city:typeof lead.city==='string'?lead.city:'',comment:typeof row.comment==='string'?row.comment:''};
-    const r=await acceptSkOrder(d,input,undefined,at);r.state==='imported'?imported++:pending++;
+    stage='apply';const r=await acceptSkOrder(d,input,undefined,at);r.state==='imported'?imported++:pending++;
     return true;
   }
   if(eventsOnly){
@@ -81,6 +108,12 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
    if(!Array.isArray(report.data)||!Number.isInteger(report.total_pages)||report.total_pages>100)throw Error('Отчёт СК неполный');pages=report.total_pages;
    for(const row of report.data){if(!config.resultIds.includes(row.scenario_result?.id))throw Error('СК вернул неожиданный результат');await accept(row);}
   }
-  await put({ok:review.size===0,at,lastSuccessAt:at,message:review.size?'Есть заказы СК с неоднозначным телефоном клиента: '+review.size:'Приём заказов из Скорозвона работает',imported,pending,review:[...review.values()]});return {imported,pending};
- }catch(e){sessions.delete(d);if(e instanceof SkProviderDeferred)return {deferred:true};await put({ok:false,at,lastSuccessAt:previous?.lastSuccessAt||'',...(retryAt?{retryAt}:{}),message:e instanceof Error&&e.message.startsWith('СК')?e.message:'Ошибка приёма заказов СК'});throw e;}
+  await put({ok:review.size===0,at,lastSuccessAt:at,message:review.size?'Есть заказы СК с неоднозначным телефоном клиента: '+review.size:'Приём заказов из Скорозвона работает',imported,pending,review:[...review.values()],...(lastFailure?{lastFailure}:{})});return {imported,pending};
+ }catch(e){
+  sessions.delete(d);if(e instanceof SkProviderDeferred)return {deferred:true};
+  if(!failedRequest)failure(e instanceof SyntaxError?'invalid-response':'validation');
+  if(lastFailure.category==='http'&&lastFailure.status===429&&!retryAt){const value=await d.prepare('SELECT retry_at FROM sk_api_control WHERE id=1').first('retry_at');if(value)retryAt=new Date(Number(value)).toISOString();}
+  const message=lastFailure.category==='http'?'Скорозвон: ошибка '+lastFailure.status:lastFailure.category==='timeout'?'Скорозвон не ответил вовремя':lastFailure.category==='network'?'Не удалось связаться со Скорозвоном':'Ошибка приёма заказов СК';
+  await put({ok:false,at,lastSuccessAt:previous?.lastSuccessAt||'',...(retryAt?{retryAt}:{}),message,lastFailure,review:[...review.values()]});throw e;
+ }
 }
