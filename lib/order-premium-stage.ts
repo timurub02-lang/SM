@@ -1,7 +1,7 @@
 import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
-export type OrderPremiumStage={status:'accrued'|'paid';periodId:string};
+export type OrderPremiumStage={status:'accrued'|'paid';periodId:string;paidAt?:string};
 const transferred={id:'transferred',label:'Передан'};
 const accrued={id:'accrued',label:'Начислено'};
 const paid={id:'premium_paid',label:'Выплачено'};

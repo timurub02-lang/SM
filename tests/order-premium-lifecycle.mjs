@@ -78,3 +78,4 @@ const duplicateLedger={revision:'dup',activePeriod:'2026-10-2',initialPeriod:'20
 const frozenDuplicate=freezePeriod(duplicateLedger,'2026-10-2',[repeated],staff,{},'admin','now');
 assert.equal(frozenDuplicate.periods['2026-10-2'].orders.length,1);
 assert.equal(frozenDuplicate.periods['2026-10-2'].orders[0].amount,1000);
+assert.equal(applyPremiumStages(ledger,[initial],staff)[0].premiumStage.paidAt,ledger.periods['2026-10-2'].paidAt,'payout timestamp reaches order list');

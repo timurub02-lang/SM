@@ -56,8 +56,8 @@ export function nextPremiumPreview(ledger:PremiumLedger|null,orders:Order[],empl
  return {period:next.id,orderIds:new Set(periodOrders(preview,next.id,orders,employees).map(o=>o.id))};
 }
 export function applyPremiumStages(ledger:PremiumLedger|null,orders:Order[],employees:Employee[]){
- const stages=new Map<string,{status:'accrued'|'paid';periodId:string}>();
- if(ledger)for(const [id,p] of Object.entries(ledger.periods))if(p.status==='paid'||id===ledger.activePeriod)for(const o of periodOrders(ledger,id,orders,employees))stages.set(o.externalId,{status:p.status==='paid'?'paid':'accrued',periodId:id});
+ const stages=new Map<string,{status:'accrued'|'paid';periodId:string;paidAt?:string}>();
+ if(ledger)for(const [id,p] of Object.entries(ledger.periods))if(p.status==='paid'||id===ledger.activePeriod)for(const o of periodOrders(ledger,id,orders,employees))stages.set(o.externalId,{status:p.status==='paid'?'paid':'accrued',periodId:id,...(p.paidAt?{paidAt:p.paidAt}:{})});
  return orders.map(o=>({...o,premiumStage:stages.get(orderKey(o))}));
 }
 export function freezePeriod(ledger:PremiumLedger,period:string,orders:Order[],employees:Employee[],adjustments:Record<string,PremiumSaved>,actor:string,at:string){

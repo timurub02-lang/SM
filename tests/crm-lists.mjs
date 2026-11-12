@@ -25,3 +25,16 @@ state.redemptionStatuses=['READY_FOR_PICKUP'];
 state.orders=[{...order,id:'older-action',status:'shipping',delivery:'cdek_courier',createdAt:'2026-11-01T00:00:00Z',cdekStatus:{code:'READY_FOR_PICKUP'}},{...order,id:'newer-waiting',status:'shipping',delivery:'cdek_courier',cdekStatus:{code:'CREATED'}}];
 assert.equal(filteredOrderList(state,employee,{...query,filter:'sent'},now)[0].id,'older-action','keep sent orders needing work above waiting orders');
 console.log('Order sorting: descending dates, directions, amount, natural IDs, pagination and redemption priority passed');
+
+const {orderStageDate}=await import('../lib/order-stage-date.ts');
+state.orders=[{...order,id:'old-created',status:'redeemed',createdAt:'2020-01-01',redeemedAt:'2026-11-12'},{...order,id:'new-created',status:'redeemed',createdAt:'2026-11-01',redeemedAt:'2026-11-10'},{...order,id:'missing',status:'redeemed'}];
+assert.deepEqual(filteredOrderList(state,employee,{...query,filter:'paid'}).map(o=>o.id),['old-created','new-created','missing']);
+assert.deepEqual(filteredOrderList(state,employee,{...query,filter:'paid',direction:'asc'}).map(o=>o.id),['new-created','old-created','missing']);
+for(const [status,field,label] of [['draft','createdAt','Создан'],['confirm','confirmationStartedAt','Передан'],['packing','confirmedAt','Принят'],['shipping','shippedAt','Отправлен'],['redeemed','redeemedAt','Оплачен'],['refused','cancelledAt','Отменён'],['returned','returnedAt','Возврат']]){
+ assert.deepEqual(orderStageDate({...order,status,[field]:at}),{label,at});
+}
+assert.equal(orderStageDate({...order,status:'redeemed',redeemedAt:'bad'}).at,undefined);
+assert.equal(orderStageDate({...order,status:'redeemed',priorPremiumPaid:{at,source:'import'}}).at,undefined,'import time is not historical payout time');
+assert.equal(orderStageDate({...order,status:'redeemed',premiumStage:{status:'paid',periodId:'2026-11-1',paidAt:at}}).at,at);
+assert.equal(orderStageDate({...order,status:'redeemed',premiumStage:{status:'accrued',periodId:'2026-11-1'},paymentReceivedAt:at}).at,at);
+console.log('Stage dates: lifecycle mapping, unknown dates and ascending/descending order passed');
