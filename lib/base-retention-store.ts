@@ -14,6 +14,7 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
   const saved=await d.prepare("SELECT data FROM settings WHERE id='order-policy'").first();
   const policy=orderPolicySchema.parse(saved?JSON.parse(saved.data).policy:defaultOrderPolicy);
   for(const stored of orders.filter(o=>["draft","rework","confirm","extra"].includes(o.status)||courierDeadline(o)||o.delivery==='moscow_courier'&&o.courier?.phase==='logistic'&&!['redeemed','returned','refused'].includes(o.status))){
+   if(stored.zvd)continue;
    // Retire the old work queue without changing physical custody or resetting the operator budget.
    if(courierDoorRefusal(stored))continue; // A timeout cannot decide the client's refusal while the courier is at the door.
    const migrateCourier=stored.delivery==='moscow_courier'&&stored.courier?.phase==='logistic';

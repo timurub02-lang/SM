@@ -90,6 +90,25 @@ try{
  db.prepare('INSERT INTO settings VALUES(?,?)').run('postal-form',JSON.stringify({sender:{name:'Sender',address:'Москва, дом 2',postalCode:'123456',phone:'+79990000002'},revision:'fixture'}));
  assert.equal((await call('/api/postal-form?orderId=postal&version=5')).status,200);
  assert.equal((await call('/api/postal-form?orderId=postal&version=1')).status,409);
+ // ZVD is an administrator-only pause, persisted through scoped writes and released by packing.
+ db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('zvd-product','synthetic product',JSON.stringify({name:'Synthetic product'}));
+ db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('zvd-stock','zvd-product',10,'Fixture','admin',new Date().toISOString());
+ const zvdOrder={id:'zvd-order',clientId:'c',manager:'one',status:'check',delivery:'russian_post',address:'123456 Москва, дом 1',items:[{name:'Synthetic product',quantity:1,price:100}],contact:'none',due:'',reason:'',comment:'',round:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),version:1};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(zvdOrder.id,'c',JSON.stringify(zvdOrder));
+ let hold=await call('/api/crm',{action:'markZvd',id:zvdOrder.id,version:1,value:true,responseMode:'entity-patch'});
+ assert.equal(hold.status,200,JSON.stringify(hold.data));
+ assert(hold.data.entityPatch.state.orders.find(o=>o.id===zvdOrder.id).zvd);
+ const zvdVersion=()=>db.prepare('SELECT version FROM orders WHERE id=?').get(zvdOrder.id).version;
+ const deniedHold=await fetch(base+'/api/crm',{method:'POST',headers:{cookie:headLogin.headers.get('set-cookie').split(';')[0],Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({action:'markZvd',id:zvdOrder.id,version:zvdVersion(),value:false})});
+ assert.equal(deniedHold.ok,false);
+ const holdList=await call('/api/crm?list=orders&view=check&filter=zvd');
+ assert.equal(holdList.status,200);
+ assert.equal((await call('/api/crm',{action:'transition',id:zvdOrder.id,version:zvdVersion(),to:'extra'})).status,400);
+ const released=await call('/api/crm',{action:'transition',id:zvdOrder.id,version:zvdVersion(),to:'packing',responseMode:'entity-patch'});
+ assert.equal(released.status,200,JSON.stringify(released.data));
+ const releasedOrder=released.data.entityPatch.state.orders.find(o=>o.id===zvdOrder.id);
+ assert.equal(releasedOrder.status,'packing');assert.equal(releasedOrder.zvd,undefined);
+ assert(db.prepare("SELECT data FROM events WHERE order_id=?").all(zvdOrder.id).some(r=>JSON.parse(r.data).text.includes('ЗВД снят')));
  console.log('Review regressions: cash/delete races, no ghost orders/history, assignment rollback passed. No external services used.');
 }catch(e){console.error(logs);throw e;}finally{
  if(server){server.kill();await once(server,'exit');}
