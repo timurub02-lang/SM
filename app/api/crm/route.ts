@@ -1,4 +1,5 @@
 import {preparedModelsEnabled,requestPreparedWorkspace,readPreparedModel,readModelSource} from '@/lib/crm-read-model';
+import {proxyLegacySnapshot} from '@/lib/crm-legacy-proxy';
 import {workspaceVersions} from '@/lib/crm-workspace-clock';
 import {buildClientWorkCounts,type WorkspaceSummary} from '@/lib/crm-workspace-summary';
 import {buildWorkspaceContext} from '@/lib/crm-workspace-context';
@@ -129,6 +130,7 @@ async function handleGET(request:Request){
  const timing=new RequestTiming();
  try{
   const user=await identity(),params=new URL(request.url).searchParams;
+  const proxied=await proxyLegacySnapshot(request,user.employee);if(proxied)return proxied;
   const list=params.has('list')?listSchema.safeParse(Object.fromEntries(params)):null;
   if(list&&!list.success)return Response.json({error:'Некорректная страница заказов'},{status:400});
   await initialize();

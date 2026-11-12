@@ -33,7 +33,7 @@ class SafeRedirect(urllib.request.HTTPRedirectHandler):
         if redirected is not None:redirected.remove_header('Authorization')
         return redirected
 
-def get(url,limit=4*1024*1024,accept='application/vnd.github+json'):
+def get(url,limit=4*1024*1024,accept='application/vnd.github+json',timeout=45):
     headers={'User-Agent':'sm-crm-deploy','Accept':accept}
     # Never read or attach a credential to local CRM health checks or asset CDNs.
     if url.startswith(API+'/'):
@@ -41,7 +41,7 @@ def get(url,limit=4*1024*1024,accept='application/vnd.github+json'):
         if token:headers['Authorization']='Bearer '+token
     request=urllib.request.Request(url,headers=headers)
     try:
-        with urllib.request.build_opener(SafeRedirect()).open(request,timeout=45) as response:
+        with urllib.request.build_opener(SafeRedirect()).open(request,timeout=timeout) as response:
             data=response.read(limit+1)
     except urllib.error.HTTPError as error:
         raise RuntimeError('Download failed (HTTP '+str(error.code)+'); check GitHub access/rate limits or CRM health') from None
@@ -103,6 +103,18 @@ def switch(target):
     for service in ['sm-crm-summaries','sm-crm-sk-events']:
         if subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
             subprocess.run(['systemctl','try-restart',service],check=True)
+    service='sm-crm-legacy-snapshots'
+    if subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
+        if json.loads((target/'release.json').read_text()).get('legacySnapshots')!=1:
+            subprocess.run(['systemctl','stop',service],check=True)
+        else:
+            subprocess.run(['systemctl','try-restart',service],check=True)
+            for _ in range(15):
+                try:
+                    if json.loads(get('http://127.0.0.1:3101/api/crm-worker-health',1024,timeout=2)).get('ok') is True:break
+                except Exception:pass
+                time.sleep(1)
+            else:raise RuntimeError('CRM legacy snapshot worker health check failed')
 
 def retain(history,live):
     if live.parent!=BASE/'releases' or not NAME.fullmatch(live.name):raise ValueError('Unexpected current release')

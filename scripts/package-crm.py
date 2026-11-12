@@ -28,7 +28,7 @@ def package(commit,root=pathlib.Path('.')):
             if any(p.name=='sync-exports.mjs' for p in jobs):
                 probe=subprocess.run(['node','--input-type=module','-e',"import ExcelJS from 'exceljs';const w=new ExcelJS.Workbook();w.addWorksheet('Fixture').addRow(['synthetic',42]);if((await w.xlsx.writeBuffer()).length<100)throw Error('Empty workbook');"],cwd=isolated/'scripts',env=env,capture_output=True,text=True,timeout=15)
                 if probe.returncode!=0:raise RuntimeError('Installed-layout ExcelJS smoke failed\n'+probe.stderr)
-    (standalone/'release.json').write_text(json.dumps({'commit':commit,'format':1,**({'exports':1} if any(p.name=='sync-exports.mjs' for p in jobs) else {}),**({'maintenance':1} if any(p.name=='sync-maintenance.mjs' for p in jobs) else {}),**({'summaries':1} if any(p.name=='sync-summaries.mjs' for p in jobs) else {}),**({'skEvents':1} if any(p.name=='sync-sk-events.mjs' for p in jobs) else {}),**({'lvIncoming':1} if any(p.name=='sync-lv-incoming.mjs' for p in jobs) else {})})+'\n')
+    (standalone/'release.json').write_text(json.dumps({'commit':commit,'format':1,**({'legacySnapshots':1} if (root/'lib/crm-legacy-proxy.ts').is_file() else {}),**({'exports':1} if any(p.name=='sync-exports.mjs' for p in jobs) else {}),**({'maintenance':1} if any(p.name=='sync-maintenance.mjs' for p in jobs) else {}),**({'summaries':1} if any(p.name=='sync-summaries.mjs' for p in jobs) else {}),**({'skEvents':1} if any(p.name=='sync-sk-events.mjs' for p in jobs) else {}),**({'lvIncoming':1} if any(p.name=='sync-lv-incoming.mjs' for p in jobs) else {})})+'\n')
     output=root/'dist';output.mkdir(exist_ok=True)
     def allowed(info):
         parts=pathlib.PurePosixPath(info.name).parts

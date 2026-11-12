@@ -70,15 +70,37 @@ class Deployment(unittest.TestCase):
     def test_switch_restarts_only_an_active_summary_worker(self):
         with tempfile.TemporaryDirectory() as folder:
             deploy.BASE=pathlib.Path(folder);target=deploy.BASE/'new';target.mkdir()
+            (target/'release.json').write_text('{"legacySnapshots":1}')
             for active in [0,3,4]:
-                with self.subTest(active=active),patch.object(deploy,'healthy'),patch.object(deploy.subprocess,'run') as run:
+                with self.subTest(active=active),patch.object(deploy,'healthy'),patch.object(deploy,'get',return_value=b'{"ok":true}') as get,patch.object(pathlib.Path,'symlink_to'),patch.object(deploy.os,'replace'),patch.object(deploy.subprocess,'run') as run:
                     run.return_value.returncode=active
                     deploy.switch(target)
                     expected=[call(['systemctl','restart','sm-crm'],check=True)]
-                    for service in ['sm-crm-summaries','sm-crm-sk-events']:
+                    for service in ['sm-crm-summaries','sm-crm-sk-events','sm-crm-legacy-snapshots']:
                         expected.append(call(['systemctl','is-active','--quiet',service],check=False))
                         if active==0:expected.append(call(['systemctl','try-restart',service],check=True))
                     self.assertEqual(run.call_args_list,expected)
+                    self.assertEqual(get.call_count,1 if active==0 else 0)
+
+    def test_legacy_worker_stops_for_unsupported_rollback_and_fails_closed(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)),patch.object(deploy,'healthy'),patch.object(pathlib.Path,'symlink_to'),patch.object(deploy.os,'replace'),patch.object(deploy.time,'sleep'):
+            target=deploy.BASE/'release';target.mkdir();meta=target/'release.json'
+            with patch.object(deploy.subprocess,'run') as run,patch.object(deploy,'get') as get:
+                run.return_value.returncode=0;meta.write_text('{}');deploy.switch(target)
+                run.assert_any_call(['systemctl','stop','sm-crm-legacy-snapshots'],check=True);get.assert_not_called()
+                meta.write_text('{"legacySnapshots":1}');get.return_value=b'{"ok":false}'
+                with self.assertRaisesRegex(RuntimeError,'snapshot worker health'):deploy.switch(target)
+                self.assertEqual(get.call_count,15)
+
+    def test_legacy_snapshot_manifest_and_loopback_unit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=pathlib.Path(folder);runtime=p/'.next/standalone';runtime.mkdir(parents=True)
+            (runtime/'server.js').write_text('fixture');(p/'public').mkdir();(p/'.next/static').mkdir();(p/'lib').mkdir()
+            (p/'lib/crm-legacy-proxy.ts').write_text('fixture');pack.package('d'*40,p)
+            self.assertEqual(json.loads((runtime/'release.json').read_text())['legacySnapshots'],1)
+        unit=(root/'scripts/systemd/sm-crm-legacy-snapshots.service').read_text()
+        for value in ['HOSTNAME=127.0.0.1','PORT=3101','CRM_LEGACY_SNAPSHOT_WORKER=1','/srv/crm/current/.next/standalone/server.js','IPAddressDeny=any','IPAddressAllow=localhost']:
+            self.assertIn(value,unit)
 
     def test_failed_web_health_does_not_restart_summary_worker(self):
         with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)):
