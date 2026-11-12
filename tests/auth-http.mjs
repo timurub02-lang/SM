@@ -108,6 +108,21 @@ try{
 
  assert.equal((await call('/api/cdek',{cookie:cookies.one,body:{action:'save'}})).status,403);
  assert.equal((await call('/api/mainsms',{cookie:cookies.one,body:{action:'preview',orderId:'o-two'}})).status,403);
+ assert.equal((await call('/api/sk-client-link?orderId=o-one')).status,401);
+ assert.equal((await call('/api/sk-client-link?orderId=o-two',{cookie:cookies.one})).status,403);
+ assert.equal((await call('/api/sk-client-link?orderId=o-one&actorId=admin',{cookie:cookies.one})).status,403);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.skLeadId','51054288060') WHERE id='o-one'").run();
+ for(const id of ['one','head','admin']){const link=await call('/api/sk-client-link?orderId=o-one',{cookie:cookies[id]});assert.equal(link.status,200,link.text);assert.deepEqual(link.data,{url:'https://app1.skorozvon.ru/#/leads/51054288060'});}
+ assert.equal((await call('/api/sk-client-link',{cookie:cookies.one})).status,400);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','refused') WHERE id='o-one'").run();
+ db.prepare("UPDATE clients SET data=json_set(data,'$.owner','two') WHERE id='c-one'").run();
+ assert.equal((await call('/api/sk-client-link?orderId=o-one',{cookie:cookies.one})).status,403,'SK link must not bypass closed-order calling restrictions');
+ assert.equal((await call('/api/sk-client-link?orderId=o-one',{cookie:cookies.admin})).status,200);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','draft') WHERE id='o-one'").run();
+ db.prepare("UPDATE clients SET data=json_set(data,'$.owner','one') WHERE id='c-one'").run();
+
+ db.prepare("UPDATE orders SET data=json_remove(data,'$.skLeadId') WHERE id='o-one'").run();
+
  // Period adjustments and the shared operator rate are atomic and scoped.
  const premiumEmployee={...staff[1],id:'premium-op',login:'premium-op',sentinel:'preserve'};
  db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(premiumEmployee.id,JSON.stringify(premiumEmployee));
