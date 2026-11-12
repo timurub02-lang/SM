@@ -41,3 +41,12 @@ console.log('Stage dates: lifecycle mapping, unknown dates and ascending/descend
 
 const {orderStageDateLabel}=await import('../lib/order-stage-date.ts');
 assert.equal(orderStageDateLabel({...order,status:'redeemed',redeemedAt:'2026-11-12'}),'Оплачен: 12.11.2026');
+
+for(const role of ['operator','department_head']){
+ const viewer={...employee,role};
+ for(const filter of ['expires','in_transit','without_orders']){
+  assert.deepEqual(filteredClientList(state,viewer,{filter,query:' Иван ',clientWorkFilter:'callback'},now).map(c=>c.id),['one']);
+  assert.equal(filteredClientList(state,viewer,{filter,query:'Другой',clientWorkFilter:'all'},now).length,0,'search must not expose other operators/departments');
+ }
+}
+assert.equal(filteredClientList(state,employee,{filter:'expires',query:'   ',clientWorkFilter:'all'},now).length,0,'empty query retains filters');

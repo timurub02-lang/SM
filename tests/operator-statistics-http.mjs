@@ -20,6 +20,8 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run('private-client','+79990000001',JSON.stringify({id:'private-client',phone:'+79990000001',name:'PRIVATE CLIENT',owner:'other'}));
  const order={id:'PRIVATE-ORDER',clientId:'private-client',manager:'other',createdAt:'2026-11-11T10:00:00Z',status:'confirm',items:[{name:'PRIVATE ITEM',price:12345,quantity:1}]};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(order.id,order.clientId,JSON.stringify(order));
+ const paid={...order,id:'PRIVATE-PAID',legacyLv:{orderId:'old'},status:'redeemed',delivery:'cdek_pickup',redeemedAt:'2026-11-11T10:00:00Z'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(paid.id,paid.clientId,JSON.stringify(paid));
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{PATH:process.env.PATH,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:'3398'},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<100;i++){try{if((await fetch(base+'/login')).status===200)break;}catch{}await new Promise(r=>setTimeout(r,100));}
@@ -30,8 +32,9 @@ try{
  for(const id of ['admin','head']){
   const response=await call(path,cookies[id]);assert.equal(response.status,200,response.text);
   const row=JSON.parse(response.text).rows.find(r=>r.id==='other');assert.equal(row.created,1);assert.equal(row.inWork,1);assert.equal(row.awaitingShipment,0);assert.equal(row.amount,12345);assert.equal(row.department,'2');
-  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','awaitingShipment','sent'].sort());
-  for(const privateValue of ['PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001'])assert.ok(!response.text.includes(privateValue));
+  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','awaitingShipment','sent','buyoutCdek','buyoutPost','buyoutMoscow'].sort());
+  assert.equal(row.buyoutCdek,1);assert.equal(row.buyoutPost,0);assert.equal(row.buyoutMoscow,0);
+  for(const privateValue of ['PRIVATE-PAID','PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001'])assert.ok(!response.text.includes(privateValue));
  }
  assert.equal((await call(path+'&actorId=admin',cookies.head)).status,403);
  assert.equal((await call('/api/operator-statistics?from=bad',cookies.head)).status,400);

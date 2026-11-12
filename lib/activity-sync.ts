@@ -42,13 +42,14 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
    if(part.length<100)break;
    if(page===100)throw Error('Скорозвон: список сотрудников неполный');
   }
-  if(ids.some(id=>!users.some((u:any)=>u.id===id)))throw Error('Скорозвон: не все связанные сотрудники доступны');
   const previous=await read('activity-samples')||{},schedules=await read('activity-schedules')||{};
-  const firstSample=ids.some(skId=>previous[reverse.get(skId)!]?.day!==day);
+  if(ids.some(id=>!seenUsers.has(id)&&!(previous[reverse.get(id)!]?.locked&&previous[reverse.get(id)!]?.skId===id)))throw Error('Скорозвон: не все связанные сотрудники доступны');
+  const availableIds=ids.filter(id=>seenUsers.has(id));
+  const firstSample=availableIds.some(skId=>previous[reverse.get(skId)!]?.day!==day);
   const cursor=firstSample?dayStart:Math.max(dayStart,(Date.parse(health?.lastSuccessAt||'')||dayStart)-900000);
   let pages=1;const calls:any[]=[];
-  for(let page=1;page<=pages;page++){
-   const response=await api('/api/reports/calls_total.json',{filter:{users_ids:ids,types:'all'},selected_fields:['id','started_at','user','duration'],start_time:Math.floor(cursor/1000),end_time:Math.floor(now/1000),page,length:100});
+  for(let page=1;page<=pages&&availableIds.length;page++){
+   const response=await api('/api/reports/calls_total.json',{filter:{users_ids:availableIds,types:'all'},selected_fields:['id','started_at','user','duration'],start_time:Math.floor(cursor/1000),end_time:Math.floor(now/1000),page,length:100});
    if(!Array.isArray(response.data)||!Number.isInteger(response.total_pages)||response.total_pages>100)throw Error('Скорозвон: отчёт звонков неполный');
    pages=response.total_pages;
    for(const c of response.data){const employeeId=reverse.get(c.user?.id),start=iso(c.started_at);if(!employeeId||!start||!Number.isFinite(Number(c.duration)))throw Error('Скорозвон: неожиданные данные звонка');if(Date.parse(start)>now||Date.parse(start)<dayStart)continue;calls.push({id:String(c.id),employeeId,start,duration:Math.max(0,Number(c.duration))});}
@@ -72,7 +73,9 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
   for(const [employeeId,skId] of Object.entries(mapping)){
    const employee=staff.find((e:any)=>e.id===employeeId);if(!employee)continue;
    const old:ActivitySample|undefined=previous[employeeId]?.day===day?previous[employeeId]:undefined;
-   const user=users.find((u:any)=>u.id===skId),live=presence.find((r:any)=>r.user_id===user.uuid);
+   const user=users.find((u:any)=>u.id===skId);
+   if(!user){samples[employeeId]=previous[employeeId];continue;}
+   const live=presence.find((r:any)=>r.user_id===user.uuid);
    const statusAt=iso(live?.status_changed_at),serverTime=iso(live?.current_time);
    const freshLive=!!serverTime&&Math.abs(now-Date.parse(serverTime))<180000&&!!statusAt&&Date.parse(statusAt)<=now+60000;
    const status=freshLive?String(live.status).replace(/^custom_(\w+)_\w+$/,'$1'):'unknown';

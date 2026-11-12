@@ -336,3 +336,4 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .paid-order-event .call-reminder {background:transparent;color:#165b35;}
 .dark:not(:has(.courier-app)) .paid-order-event {background:#173d2b;border-color:#48a878;}
 .dark:not(:has(.courier-app)) .paid-order-event .call-reminder {color:#c3f3d5;}
+.stats-buyouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:10px 0}.stats-buyouts>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border:1px solid var(--border);border-radius:12px}.stats-buyouts strong{font-size:24px;font-variant-numeric:tabular-nums}@media(max-width:600px){.stats-buyouts{grid-template-columns:1fr}}

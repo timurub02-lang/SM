@@ -48,6 +48,14 @@ try{
   return notice.id;
  }
  async function assembled(id){await act(id,'operator',{action:'transition',to:'confirm'});await act(id,'logistic',{action:'transition',to:'extra'},400);await act(id,'logistic',{action:'transition',to:'refused',reason:'No'},400);await act(id,'logistic',{action:'transition',to:'packing'});await act(id,'logistic',{action:'transition',to:'shipping',courierId:'courier'},400);await act(id,'logistic',{action:'markPackingWaybill'});await act(id,'logistic',{action:'transition',to:'shipping',courierId:'courier'});assert.equal(order(id).status,'packing');assert.equal(order(id).shippedAt,undefined);}
+ const withoutHouse=await create();const missingAddress={...order(withoutHouse),address:'Москва, ул. 7 Ноября',addressParts:{postalCode:'125009',region:'Москва',city:'Москва',street:'7 Ноября',house:'',flat:'15'}};
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(missingAddress),withoutHouse);
+ const missingEvents=db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(withoutHouse).n;
+ for(const actor of ['operator','admin']){
+  const response=await act(withoutHouse,actor,{action:'transition',to:'confirm',addressConfirmed:true},400);assert.match(response.error,/номер дома/);
+ }
+ assert.equal(order(withoutHouse).status,'draft');assert.equal(db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(withoutHouse).n,missingEvents);
+ console.log('Courier handoff HTTP: no house cannot be bypassed by admin or manual address confirmation; no status/history mutation.');
  const id=await create();await assembled(id);const before=stock();
  await act(id,'courier',{action:'courierWorkflow',operation:'confirm'},400);
  await act(id,'stranger',{action:'courierAccept',confirmed:true},400);

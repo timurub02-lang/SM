@@ -110,4 +110,28 @@ await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(J
 assert.deepEqual((await readActivity(d,now)).blockedEmployeeIds,['e'],'A last confirmed block survives outages and the change of day');
 await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify({e:{...sample,locked:false}})).run();
 assert.deepEqual((await readActivity(d,now)).blockedEmployeeIds,[],'A confirmed unlock restores visibility');
+const cachedLocked={...sample,locked:true,day:'2026-09-30'};
+await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify({e:cachedLocked,m31:{...sample,employeeId:'m31',skId:2}})).run();
+await syncActivity(d,async(url,options)=>{
+ const path=new URL(url).pathname;
+ if(path==='/api/v2/users')return Response.json(users.filter(u=>u.id!==1));
+ if(path==='/api/reports/calls_total.json'){assert.deepEqual(JSON.parse(options.body).filter.users_ids,[2]);return Response.json({data:[],total_pages:0});}
+ return request(url,options);
+},now+900000);
+assert.deepEqual((await saved('activity-samples')).e,cachedLocked,'A missing previously blocked account keeps its last confirmed block');
+assert.equal((await saved('activity-health')).ok,true,'Missing blocked account must not stop the other employees');
+const allBlocked=await saved('activity-samples');allBlocked.m31.locked=true;
+await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify(allBlocked)).run();
+await syncActivity(d,async(url,options)=>{
+ const path=new URL(url).pathname;
+ if(path==='/api/v2/users')return Response.json([]);
+ assert.notEqual(path,'/api/reports/calls_total.json','Never send an empty user filter that could request all account calls');
+ return request(url,options);
+},now+960000);
+assert.equal((await saved('activity-health')).ok,true);
+const changedIdentity=await saved('activity-samples');changedIdentity.e.skId=999;
+await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify(changedIdentity)).run();
+await assert.rejects(syncActivity(d,async(url,options)=>new URL(url).pathname==='/api/v2/users'?Response.json(users.filter(u=>u.id!==1)):request(url,options),now+990000),'A block from another SK identity cannot hide a missing account');
+await syncActivity(d,request,now+1020000);
+assert.equal((await saved('activity-samples')).e.locked,false,'Restoring and unlocking the account resumes normal synchronization');
 d.close();console.log('Activity: schedules, live states, breaks, department isolation, pagination, UTC dates, idempotent alerts, rate-limit pacing, bounded retries, cooldown, recovery and outage checks passed');

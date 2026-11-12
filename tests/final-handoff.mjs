@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {operatorReturnLabel,allowedOrderTransitions,finalNoAnswerDeadline,validateTransition} from '../lib/crm.ts';
 const now='2026-10-01T10:00:00Z';
-const o={status:'confirm',finalHandoffAt:now,address:'Address',items:[{name:'Product',quantity:1,price:1}]};
+const o={status:'confirm',finalHandoffAt:now,address:'Москва, ул. Тестовая, дом 1',items:[{name:'Product',quantity:1,price:1}]};
 assert.deepEqual(allowedOrderTransitions(o),['check','refused']);
 assert.deepEqual(allowedOrderTransitions({...o,status:'extra'}),['packing','refused']);
 assert(allowedOrderTransitions({...o,finalHandoffAt:undefined}).includes('rework'));
