@@ -106,4 +106,8 @@ await assert.rejects(syncActivity(d,async(url,options)=>new URL(url).pathname===
 assert.equal((await saved('activity-health')).lastSuccessAt,new Date(now+722000).toISOString(),'A repeated user page cannot advance the successful checkpoint');
 await assert.rejects(syncActivity(d,async()=>{throw Error('secret token must not be exposed')},now+180000));
 const health=JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='activity-health'").first()).data);assert.equal(health.ok,false);assert.ok(!health.message.includes('secret'));
+await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify({e:{...sample,locked:true,day:'2026-09-30'}})).run();
+assert.deepEqual((await readActivity(d,now)).blockedEmployeeIds,['e'],'A last confirmed block survives outages and the change of day');
+await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify({e:{...sample,locked:false}})).run();
+assert.deepEqual((await readActivity(d,now)).blockedEmployeeIds,[],'A confirmed unlock restores visibility');
 d.close();console.log('Activity: schedules, live states, breaks, department isolation, pagination, UTC dates, idempotent alerts, rate-limit pacing, bounded retries, cooldown, recovery and outage checks passed');
