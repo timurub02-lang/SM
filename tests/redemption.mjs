@@ -75,6 +75,12 @@ try{
  await assert.rejects(edit(op,{action:'refusal',result:'delivered'}),/недоступен/);await assert.rejects(edit(admin,{action:'refusal',result:'returned'}),/недоступен/);
  await assert.rejects(edit(buyer,{action:'refusal',result:'delivered'}),/недоступен/);
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'DELIVERED'}})).run();await syncRedemption(d,now);assert(awaitingReturn(await row()));
+ const pendingReturn=JSON.parse((await d.prepare("SELECT data FROM redemption_entries WHERE order_id='o'").first()).data);
+ await edit(buyer,{action:'courier',result:'courier'});assert.equal((await row()).action,'courier');assert.equal((await row()).result,'courier');assert(!awaitingReturn(await row()));
+ assert((await d.prepare("SELECT id FROM redemption_history WHERE order_id='o' AND json_extract(data,'$.result')='to_return'").first()).id);
+ await d.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').bind(JSON.stringify(pendingReturn),'o').run();
+ await edit(admin,{action:'nd',result:'none'});assert.equal((await row()).result,'none');
+ await d.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').bind(JSON.stringify(pendingReturn),'o').run();
  await assert.rejects(edit(buyer,{action:'refusal',result:'returned'}),/накладной/);await edit(buyer,{action:'refusal',result:'returned',returnWaybill:'TEST-RETURN-123'});assert.equal((await row()).returnWaybill,'TEST-RETURN-123');await syncRedemption(d,now);assert.equal((await row()).result,'returned');
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify(order)).run();assert(!inWorkday(await row(),'2026-10-16'));assert(!inWorkday(await row(),'2026-10-15'));assert(!awaitingReturn(await row()));
  assert.deepEqual(allowedResults('work',{storageUntil:'2026-10-18'},'operator','2026-10-15'),['date']);
