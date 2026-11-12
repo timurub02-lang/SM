@@ -15,6 +15,9 @@ const decode=(row:{data:string;version:number})=>({...JSON.parse(row.data),versi
 const orderProjection="json_remove(o.data,'$.operatorComments','$.comment','$.logisticComment','$.waybillComment')";
 const clientProjection="json_remove(data,'$.legacyOrderHistory','$.importFields')";
 const orderQuery=(where:string,projection=true)=>snapshotOrdersQuery.replace('o.data',projection?orderProjection+' AS data':'o.data').replace(' ORDER BY o.id DESC',` WHERE ${where} ORDER BY o.id DESC`);
+// Evaluate current rights only for the selected page/card. Expanding a whole department
+// again to hydrate 50 already selected rows turns a small page into thousands of lookups.
+const selectedOrderAccess="(json_extract(o.data,'$.manager') IN (SELECT value FROM json_each(?)) OR EXISTS(SELECT 1 FROM clients c WHERE c.id=o.client_id AND json_extract(c.data,'$.owner') IN (SELECT value FROM json_each(?))) OR o.client_id IN (SELECT value FROM json_each(?)))";
 
 export async function workspaceBootstrap(d:ActivityDb,employee:Employee){
  const [main,policy]=await Promise.all([d.prepare("SELECT data FROM settings WHERE id='main'").first(),d.prepare("SELECT data FROM settings WHERE id='order-policy'").first()]);
@@ -51,12 +54,14 @@ async function premiumStages(d:ActivityDb,state:State){
  state.orders=state.orders.map(o=>({...o,premiumStage:stages.get(o.id),premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
 }
 
-export async function readWorkspaceState(d:ActivityDb,e:Employee,withPremium=true):Promise<State>{
+export async function readWorkspaceState(d:ActivityDb,e:Employee,withPremium=true,clientsForOrdersOnly=false):Promise<State>{
  const {staff,args,cte}=await workspaceScope(d,e);
+ const ordersSql=orderQuery('o.id IN (SELECT id FROM allowed_orders)');
+ const orderRead=d.prepare(cte+(clientsForOrdersOnly?ordersSql.replace('SELECT ','SELECT o.client_id AS scope_client_id,'):ordersSql)).bind(...args).all();
  const [base,clients,orders]=await Promise.all([
   workspaceBootstrap(d,e),
-  d.prepare(cte+`SELECT ${clientProjection} AS data,version FROM clients WHERE id IN (SELECT id FROM allowed_clients) ORDER BY id`).bind(...args).all(),
-  d.prepare(cte+orderQuery('o.id IN (SELECT id FROM allowed_orders)')).bind(...args).all(),
+  clientsForOrdersOnly?orderRead.then((rows:{results:{scope_client_id:string}[]})=>d.prepare(`SELECT ${clientProjection} AS data,version FROM clients WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id`).bind(JSON.stringify([...new Set(rows.results.map(row=>row.scope_client_id))])).all()):d.prepare(cte+`SELECT ${clientProjection} AS data,version FROM clients WHERE id IN (SELECT id FROM allowed_clients) ORDER BY id`).bind(...args).all(),
+  orderRead,
  ]);
  const state:State={...base,employees:staff,clients:clients.results.map(decode),orders:orders.results.map(snapshotOrder)};
  if(withPremium)await premiumStages(d,state);
@@ -67,15 +72,15 @@ export async function hydrateWorkspaceOrders(d:ActivityDb,state:State,rows:Order
  if(rows.length>50)throw Error('Слишком большая страница');
  const allowed=new Set(state.orders.map(o=>o.id));
  if(rows.some(o=>!allowed.has(o.id)))throw Error('Заказ недоступен');
- const {cte,args}=await workspaceScope(d,e);
- const full:Order[]=(await d.prepare(cte+orderQuery('o.id IN (SELECT id FROM allowed_orders) AND o.id IN (SELECT value FROM json_each(?))',false)).bind(...args,JSON.stringify(rows.map(o=>o.id))).all()).results.map(snapshotOrder);
+ const {args}=await workspaceScope(d,e);
+ const full:Order[]=(await d.prepare(orderQuery('o.id IN (SELECT value FROM json_each(?)) AND '+selectedOrderAccess,false)).bind(JSON.stringify(rows.map(o=>o.id)),args[0],args[0],args[1]).all()).results.map(snapshotOrder);
  const byId=new Map(full.map(o=>[o.id,o]));
  return rows.flatMap(o=>{const found=byId.get(o.id);if(!found)return [];const {paymentReceipt,...rest}=found;return [{...rest,paymentReceivedAmount:paymentReceipt?.amount,premiumStage:o.premiumStage,premiumNextPeriod:o.premiumNextPeriod}];});
 }
 
 export async function readWorkspaceCard(d:ActivityDb,e:Employee,type:'client'|'order',id:string):Promise<State|null>{
- const {staff,args,cte}=await workspaceScope(d,e);
- const client=await d.prepare(cte+(type==='client'?'SELECT id FROM clients WHERE id=? AND id IN (SELECT id FROM allowed_clients)':'SELECT client_id AS id FROM orders WHERE id=? AND id IN (SELECT id FROM allowed_orders)')).bind(...args,id).first();
+ const {staff,args}=await workspaceScope(d,e);
+ const client=type==='client'?await d.prepare("SELECT c.id FROM clients c WHERE c.id=? AND (json_extract(c.data,'$.owner') IN (SELECT value FROM json_each(?)) OR c.id IN (SELECT value FROM json_each(?)) OR EXISTS(SELECT 1 FROM orders o WHERE o.client_id=c.id AND json_extract(o.data,'$.manager') IN (SELECT value FROM json_each(?))))").bind(id,args[0],args[1],args[0]).first():await d.prepare('SELECT o.client_id AS id FROM orders o WHERE o.id=? AND '+selectedOrderAccess).bind(id,args[0],args[0],args[1]).first();
  if(!client)return null;
  const [base,clients,orders,events]=await Promise.all([
   workspaceBootstrap(d,e),

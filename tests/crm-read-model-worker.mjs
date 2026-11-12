@@ -5,6 +5,11 @@ import {join} from 'node:path';
 import {openDatabase} from '../server/sqlite.ts';
 import {initPreparedModels,readModelSource,publishPreparedModels,readPreparedModel,requestPreparedWorkspace} from '../lib/crm-read-model.ts';
 import {createSummaryWorker,claimSummaryLease,renewSummaryLease,releaseSummaryLease,ContextCache,moscowMonth,moscowDay} from '../lib/crm-summary-worker.ts';
+import {workspaceVersions} from '../lib/crm-workspace-clock.ts';
+import {readWorkspaceState} from '../lib/crm-workspace-read.ts';
+import {buildWorkspaceContext} from '../lib/crm-workspace-context.ts';
+import {buildFinancialProjection,applyFinancialProjection} from '../lib/crm-financial-projection.ts';
+import {initialBaseSettings} from '../lib/base-policy.ts';
 const dir=mkdtempSync(join(tmpdir(),'crm-summary-test-')),path=join(dir,'synthetic.sqlite'),d=openDatabase(path),reader=openDatabase(path);
 const actor={id:'op',login:'op',name:'Synthetic',role:'operator',department:'1',salary:100,bonus:10};
 try{
@@ -21,6 +26,29 @@ try{
  assert.equal((await readPreparedModel(d,'context','op')).status,'ready');assert.equal((await readPreparedModel(d,'summary','op')).status,'ready');
  const count=result.contextBuilds;
  result=await worker.tick(Date.now()+2100);assert.equal(result.contextBuilds,count,'time-only cheap summary reuses enriched context');assert.ok(result.summaryBuilds>1);
+ // A receipt import must rebuild only its local contexts; unrelated contexts reuse filtered source data.
+ const other={...actor,id:'other',department:'2'},third={...actor,id:'third',department:'3'},head={...actor,id:'head',role:'department_head'};
+ for(const employee of [other,third,head]){await d.prepare('INSERT INTO employees(id,data) VALUES(?,?)').bind(employee.id,JSON.stringify(employee)).run();await requestPreparedWorkspace(d,employee.id);}
+ for(const employee of [other,third]){await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind('c-'+employee.id,employee.id,JSON.stringify({id:'c-'+employee.id,owner:employee.id,name:'Test',source:'Fixture',phone:'test',createdAt:order.createdAt})).run();await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind('o-'+employee.id,'c-'+employee.id,JSON.stringify({...order,id:'o-'+employee.id,clientId:'c-'+employee.id,manager:employee.id,status:employee===other?'draft':'redeemed',legacyLv:{orderId:employee===other?'shared':'unrelated'},paymentReceipt:{amount:777}})).run();}
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.legacyLv.orderId','shared') WHERE id='o'").run();
+ await d.prepare("INSERT INTO settings VALUES('premium-ledger',?)").bind(JSON.stringify({revision:'fixture',activePeriod:'2026-11-1',initialPeriod:'2026-11-1',periods:{'2026-11-1':{status:'open',signatures:{}}}})).run();
+ const config=initialBaseSettings();config.retention.operators.third={mode:'statistics',days:35,defaultWeeks:5,bands:[]};await d.prepare("INSERT INTO settings VALUES('base-settings',?)").bind(JSON.stringify({config})).run();
+ const reuseAt=Date.now()+3000;result=await worker.tick(reuseAt);const baseline={...result};
+ const unchangedBefore=await d.prepare("SELECT data FROM crm_read_models WHERE kind='context' AND scope='third'").first('data');
+ assert.equal((await readPreparedModel(d,'context','other')).data.orders[0].premiumStage.status,'accrued');
+ const prepare=reader.prepare,queries=[];reader.prepare=sql=>{queries.push(sql);return prepare(sql);};
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.priorPremiumPaid',json('true')) WHERE id='o'").run();result=await worker.tick(reuseAt+1);reader.prepare=prepare;
+ assert.equal(result.contextBuilds-baseline.contextBuilds,2,'only local operator and head rebuild after a redeemed receipt change');
+ assert.equal(result.financialContextRefreshes-baseline.financialContextRefreshes,2,'foreign scopes refresh only financial stages/retention');
+ assert.equal(result.contextWrites-baseline.contextWrites,3,'unaffected foreign context is not rewritten');
+ assert.equal(await d.prepare("SELECT data FROM crm_read_models WHERE kind='context' AND scope='third'").first('data'),unchangedBefore,'unchanged large context stays byte-for-byte intact');
+ const reused=(await readPreparedModel(d,'context','other',(await workspaceVersions(d,other)).workspace)).data;
+ assert.equal(reused.orders[0].premiumStage,undefined,'cross-department external-ID stage removed by targeted refresh');assert.equal(reused.orders[0].paymentReceivedAmount,777,'filtered receipt amount survives targeted reuse');
+ const freshContext=await readWorkspaceState(reader,other,false);applyFinancialProjection(await buildFinancialProjection(reader),freshContext);const expected=await buildWorkspaceContext(reader,other,freshContext,reuseAt+1);
+ assert.deepEqual(reused.orders,JSON.parse(JSON.stringify(expected.orders)));assert.deepEqual(reused.retentionPreview,expected.retentionPreview);
+ assert.ok(queries.some(sql=>sql.includes("AS redeemedAt FROM orders")&&sql.includes("$.manager")),'retention uses fresh owner-wide sales instead of cached visible orders');
+ const afterRefresh={...result};result=await worker.tick(reuseAt+2);assert.equal(result.financialContextRefreshes,afterRefresh.financialContextRefreshes,'unchanged finance revision does not repeatedly refresh foreign contexts');
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.comment','local edit') WHERE id='o-other'").run();result=await worker.tick(reuseAt+3);assert.equal(result.contextBuilds-afterRefresh.contextBuilds,1,'ordinary local edit still invalidates its full context');
  assert.equal(await claimSummaryLease(d,'competitor'),false,'singleton prevents competing worker');
  await d.prepare('UPDATE crm_model_worker SET lease_until=0').run();assert.equal(await renewSummaryLease(d,'test-worker'),false);assert.equal(await claimSummaryLease(d,'competitor'),true,'expired/crashed lease recoverable');
  const source=await readModelSource(d),now=Date.now();

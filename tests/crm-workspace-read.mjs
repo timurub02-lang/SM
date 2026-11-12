@@ -25,6 +25,7 @@ try{
   await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(id,c.phone,JSON.stringify(c)).run();await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(o.id,id,JSON.stringify(o)).run();
  }
  // Own order on somebody else's client, and somebody else's order on an owned client.
+ for(const owner of ['one','two']){const c={...clients[0],id:'no-order-'+owner,owner,phone:'no-order-'+owner};clients.push(c);await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(c.id,c.phone,JSON.stringify(c)).run();}
  for(const [id,clientId,manager] of [['own-cross','c-062','one'],['other-cross','c-000','two']]){const o={...orders[0],id,clientId,manager};orders.push(o);await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(id,clientId,JSON.stringify(o)).run();}
  const ledger={revision:'test',activePeriod:'2026-11-1',periods:{'2026-10-2':{status:'paid',signatures:{},orders:[{id:'foreign-ledger-id',externalId:'external-9',employeeId:'two',department:'2',amount:1}]},'2026-11-1':{status:'open',signatures:{}}}};
  await d.prepare("INSERT INTO settings VALUES('premium-ledger',?)").bind(JSON.stringify(ledger)).run();
@@ -35,11 +36,12 @@ try{
  const full={...bootstrap,clients,orders:applyPremiumStages(ledger,fullOrders,staff).map(o=>({...o,premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined})),employees:staff,premiumNextPeriod:preview?.period};
  let comparisons=0;
  for(const e of staff){
-  const raw=await readWorkspaceState(d,e),scoped=visibleState(raw,e),legacy=visibleState(full,e);
+  const raw=await readWorkspaceState(d,e),scoped=visibleState(raw,e),legacy=visibleState(full,e),ordersOnly=visibleState(await readWorkspaceState(d,e,true,true),e);
+  assert.ok(ordersOnly.clients.every(c=>ordersOnly.orders.some(o=>o.clientId===c.id)),'order-list projection omits unrelated clients');
   assert.deepEqual(scoped.clients.map(c=>c.id),legacy.clients.map(c=>c.id));assert.deepEqual(scoped.orders.map(o=>o.id),legacy.orders.map(o=>o.id));
   assert.ok(scoped.clients.every(c=>c.phone===''&&!c.importFields));
   for(const view of orderListViews)for(const filter of ['all','new','accepted','sent','accrued','paid','refused','expiring','repeat_expiring'])for(const sort of orderSortKeys)for(const direction of ['asc','desc']){
-   const q={view,filter,sort,direction,query:'',showNextPremium:false};assert.deepEqual(filteredOrderList(scoped,e,q,Date.parse(now)).map(o=>o.id),filteredOrderList(legacy,e,q,Date.parse(now)).map(o=>o.id));comparisons++;
+   const q={view,filter,sort,direction,query:'',showNextPremium:false},expected=filteredOrderList(legacy,e,q,Date.parse(now)).map(o=>o.id);assert.deepEqual(filteredOrderList(scoped,e,q,Date.parse(now)).map(o=>o.id),expected);assert.deepEqual(filteredOrderList(ordersOnly,e,q,Date.parse(now)).map(o=>o.id),expected);comparisons++;
   }
   for(const filter of ['all','without_orders','in_transit','attention','today','new','callback','rework','free','expires'])for(const clientWorkFilter of ['all','needed','planned','done']){
    const q={filter,clientWorkFilter,query:'',timeZone:'Europe/Moscow'};assert.deepEqual(filteredClientList(scoped,e,q,Date.parse(now)).map(c=>c.id),filteredClientList(legacy,e,q,Date.parse(now)).map(c=>c.id));comparisons++;
@@ -49,6 +51,9 @@ try{
   assert.deepEqual(clientListSummaries(scoped,scoped.clients,Date.parse(now)),clientListSummaries(legacy,legacy.clients,Date.parse(now)));
  }
  assert.equal(await readWorkspaceCard(d,staff[0],'client','c-062'),null,'operator cannot open a foreign client even with an own order');
+ for(const [query,index] of [["SELECT id FROM orders WHERE json_extract(data,'$.manager')=?",'idx_orders_manager_id'],['SELECT id FROM orders WHERE client_id=?','idx_orders_client_id']]){
+  const plan=(await d.prepare('EXPLAIN QUERY PLAN '+query).bind('one').all()).results.map(r=>r.detail).join('\n');assert.ok(plan.includes('COVERING INDEX '+index),'scope ID membership uses a covering index: '+plan);
+ }
  assert.equal(await readWorkspaceCard(d,staff[0],'order','o-c-062'),null);
  const card=await readWorkspaceCard(d,staff[0],'order','own-cross');assert.ok(visibleState(card,staff[0]).orders.some(o=>o.id==='own-cross'));assert.ok(!visibleState(card,staff[0]).orders.some(o=>o.id==='o-c-062'));
  assert.equal((await readWorkspaceCard(d,staff[0],'order','o-c-000')).orders[0].comment,'Full comment');
@@ -61,5 +66,14 @@ try{
  const before=clean(await readWorkspaceState(measured,staff[0])),beforeRows=decodedRows;
  for(let i=0;i<400;i++){const c={...clients[70],id:'foreign-'+i},o={...orders[1],id:'foreign-'+i,clientId:c.id,manager:'two',status:'draft'};await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(c.id,'foreign-'+i,JSON.stringify(c)).run();await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(o.id,c.id,JSON.stringify(o)).run();}
  decodedRows=0;assert.deepEqual(clean(await readWorkspaceState(measured,staff[0])),before,'foreign growth must not hydrate more workspace rows');assert.equal(decodedRows,beforeRows,'SQL must return the same number of projected data rows after foreign growth');
+ const selectedBeforeTransfer=before.orders.find(o=>o.id==='o-c-000');
+ await d.prepare("UPDATE clients SET data=json_set(data,'$.owner','two'),version=version+1 WHERE id='c-000'").run();
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.manager','two'),version=version+1 WHERE id='o-c-000'").run();
+ assert.deepEqual(await hydrateWorkspaceOrders(d,before,[selectedBeforeTransfer],staff[0]),[],'page hydration rechecks current rights after the selection snapshot');
+ assert.equal(await readWorkspaceCard(d,staff[0],'order','o-c-000'),null);
+ const sharedBefore=await readWorkspaceState(d,staff[2]);
+ await d.prepare("UPDATE incoming_calls SET closed_at='2026-11-12T11:00:00Z' WHERE id='shared'").run();
+ assert.deepEqual(await hydrateWorkspaceOrders(d,sharedBefore,[sharedBefore.orders.find(o=>o.id==='o-c-071')],staff[2]),[],'closing shared access also fences a previously selected page');
+ assert.equal(await readWorkspaceCard(d,staff[2],'order','o-c-071'),null);
  console.log(`${comparisons} selector parity comparisons; scoped authorization, shared incoming, full cards, premium membership, summaries and foreign-growth isolation passed`);
 }finally{d.close();}

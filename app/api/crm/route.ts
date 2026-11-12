@@ -144,7 +144,7 @@ async function handleGET(request:Request){
     const prepared=await readPreparedModel<State>(db(),'context',user.employee!.id,revision),{data,...readModel}=prepared;
     if(!data)return timing.finish(Response.json({error:prepared.message||'Рабочие данные готовятся',readModel},{status:503}));
     const {data:financialData,...finance}=await readPreparedModel(db(),'finance-meta','global',(await readModelSource(db())).financeRevision);
-    const financialReadModel=finance.status==='ready'&&data.financialReadModel?.sourceRevision!==finance.sourceRevision?{...finance,status:'stale' as const,message:'Этапы выплат в рабочей области обновляются'}:finance;
+    const financialReadModel=finance.status==='ready'&&readModel.status!=='ready'&&data.financialReadModel?.sourceRevision!==finance.sourceRevision?{...finance,status:'stale' as const,message:'Этапы выплат в рабочей области обновляются'}:finance;
     return timing.finish(await conditionalJson(request,{...data,readModel,financialReadModel}));
    }
   }else if(part==='summary')return timing.finish(Response.json({error:'Подготовленные сводки недоступны'},{status:403}));
@@ -156,7 +156,7 @@ async function handleGET(request:Request){
    return timing.finish(Response.json(compactCrmState(await responseState(user,false,'',true,'','',card,false))));
   }
   const read=async()=>{
-  const scoped=split&&(!!list||part==='context'||part==='tasks')?await timing.measure('read',()=>readWorkspaceState(db(),user.employee!,part!=='tasks')):undefined;
+  const scoped=split&&(!!list||part==='context'||part==='tasks')?await timing.measure('read',()=>readWorkspaceState(db(),user.employee!,part!=='tasks',list?.success&&list.data.list==='orders')):undefined;
   const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||part==='bootstrap'||params.get('transport')==='compact-v1','',list?.success?list.data.list:part==='tasks'?'tasks':'',scoped,part!=='context'));
   if(split&&part==='tasks')return timing.finish(Response.json({tasks:state.tasks,reminders:state.reminders,incoming:state.incoming,callOrders:[...scheduledCalls(state.orders,user.employee!,state.employees),...state.orders.filter(o=>courierDoorRefusal(o)&&!scheduledCalls([o],user.employee!,state.employees).length)],maintenanceHealthy:await maintenanceHealthy(db())}));
   if(split&&part==='context')return timing.finish(Response.json(compactCrmState(state)));

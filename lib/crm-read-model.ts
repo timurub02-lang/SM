@@ -59,6 +59,8 @@ export async function readModelSource(d:ActivityDb){
 }
 export async function requestPreparedWorkspace(d:ActivityDb,employeeId:string,now=Date.now()){
  await initPreparedModels(d);
+ // Even a no-op UPSERT takes SQLite's writer lock; active readers must not wait for publication.
+ if(await d.prepare('SELECT 1 FROM crm_model_demand WHERE employee_id=? AND requested_at>=?').bind(employeeId,now-30000).first())return;
  await d.prepare('INSERT INTO crm_model_demand(employee_id,requested_at) VALUES(?,?) ON CONFLICT(employee_id) DO UPDATE SET requested_at=excluded.requested_at WHERE requested_at<?').bind(employeeId,now,now-30000).run();
 }
 export async function readPreparedModel<T>(d:ActivityDb,kind:string,scope:string,sourceRevision?:string,now=Date.now(),jsonPath='$'):Promise<PreparedModel<T>>{

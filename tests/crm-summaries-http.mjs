@@ -31,6 +31,7 @@ try{
   d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
  }
  d.prepare("INSERT INTO settings VALUES('main','{\"retentionDays\":30}')").run();
+ d.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed','$.delivery','russian_post','$.paymentReceivedAt',?,'$.paymentReceipt.amount',1000) WHERE id='o-1'").run(new Date().toISOString());
  await start('0');assert.equal((await json('?part=bootstrap')).body.preparedSummaries,false);assert.equal((await json('?part=context')).status,200);assert.equal((await json('?part=summary')).status,403);await stop(server);
  await start('1');assert.equal((await json('?part=bootstrap')).body.preparedSummaries,true);
  const missing=await json('?part=context');assert.equal(missing.status,503);assert.equal(missing.body.clients,undefined);assert.ok(['pending','error'].includes(missing.body.readModel.status));
@@ -43,6 +44,11 @@ try{
  worker=child(['--experimental-strip-types',resolve('scripts/sync-summaries.mjs')],{CRM_SUMMARIES_WORKER:'1'});
  const summary=await ready();assert.equal(summary.data.mine.all,1);assert.equal(summary.data.work.all,1);assert.equal(typeof summary.data.listRevision,'string');
  const context=await json('?part=context');assert.equal(context.status,200);assert.equal(context.body.readModel.status,'ready');assert.deepEqual(context.body.clients.map(c=>c.id),['c-0']);assert.equal(context.body.financialReadModel.status,'ready');
+ const previousFinance=context.body.financialReadModel.sourceRevision;
+ d.prepare("UPDATE orders SET data=json_set(data,'$.paymentReceipt.amount',1100),version=version+1 WHERE id='o-1'").run();
+ await ready();
+ const refreshed=await json('?part=context');assert.equal(refreshed.status,200);assert.equal(refreshed.body.readModel.status,'ready');assert.equal(refreshed.body.financialReadModel.status,'ready');assert.notEqual(refreshed.body.financialReadModel.sourceRevision,previousFinance);
+ assert.equal(JSON.parse(d.prepare("SELECT data FROM crm_read_models WHERE kind='context' AND scope='operator-0'").get().data).financialReadModel.sourceRevision,previousFinance,'unchanged context need not rewrite its large JSON when unrelated finance changes');
  assert.equal((await json('?part=card&type=client&id=c-1')).status,404);
  await stop(worker);worker=undefined;
  d.prepare("UPDATE orders SET data=json_set(data,'$.comment','saved'),version=version+1 WHERE id='o-0'").run();

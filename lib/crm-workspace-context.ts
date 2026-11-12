@@ -1,7 +1,7 @@
 import type {ActivityDb} from './activity-store.ts';
 import type {Employee,State} from './crm.ts';
 import {canCreateRedemptionStaff} from './crm.ts';
-import {visibleState,hideClientNumbers} from './permissions.ts';
+import {visibleState,hideClientNumbers,ownsClient,seesOrder} from './permissions.ts';
 import {baseSettingsSchema,initialBaseSettings} from './base-policy.ts';
 import {clientRetentionPreview} from './client-retention-preview.ts';
 import {readRetentionSales} from './order-state.ts';
@@ -11,8 +11,23 @@ import {readClientWork,initClientWork} from './client-work-store.ts';
 import {initPhone} from './phone-store.ts';
 import {redemptionConfig,initRedemption} from './redemption.ts';
 import {readRedemptionSummaries} from './redemption-summary.ts';
+import {applyFinancialProjection,type FinancialProjection} from './crm-financial-projection.ts';
 
 export async function initWorkspaceContext(d:ActivityDb){await initIncoming(d);await initClientWork(d);await initPhone(d);await initRedemption(d);}
+
+// Input is already permission-filtered. Repeating visibleState would erase receipt amounts.
+export async function refreshWorkspaceFinancialContext(d:ActivityDb,employee:Employee,state:State,financial:FinancialProjection,now=Date.now()){
+ const signature=()=>JSON.stringify([state.premiumActivePeriod,state.premiumNextPeriod,state.orders.map(o=>[o.premiumStage,o.premiumNextPeriod]),state.retentionPreview]);
+ const before=signature();applyFinancialProjection(financial,state);
+ const saved=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first();
+ const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());
+ // Retention statistics include the owner's sales outside this visible client subset.
+ const owned=new Set(state.clients.filter(c=>ownsClient(employee,c,state.employees)).map(c=>c.id));
+ const visibleOrderClients=new Set(state.orders.filter(o=>seesOrder(employee,o,state.employees)||owned.has(o.clientId)).map(o=>o.clientId));
+ const previewClients=state.clients.filter(c=>owned.has(c.id)||visibleOrderClients.has(c.id));
+ state.retentionPreview=clientRetentionPreview(previewClients,state.orders,config,now,await readRetentionSales(d,state.clients,config));
+ return signature()!==before;
+}
 
 export async function buildWorkspaceContext(d:ActivityDb,employee:Employee,state:State,now=Date.now()):Promise<State&{currentEmployeeId:string;personalAuth:boolean}>{
  const visible=visibleState(state,employee);
