@@ -1,4 +1,5 @@
 "use client";
+import {useNotificationPopups} from "@/hooks/use-notification-popups";
 import {filteredOrderList,orderListViews} from "@/lib/crm-order-list";
 import {useCrmOrderPage} from "@/hooks/use-crm-order-page";
 import {clientRetentionLabel,clientRetentionExpiring} from '@/lib/client-retention-label';
@@ -159,6 +160,7 @@ export default function Page(){
  const allCalls=ready?scheduledCalls(callOrders,employee,state.employees):[];
  const dueCalls=allCalls.filter(o=>Date.parse(o.due)<=reminderNow);
  const reminders=state.reminders||[],tasks=state.tasks||[],notificationEvents=reminders.slice(0,20),shownReminders=reminderTab==="tasks"?tasks:notificationEvents;
+ useNotificationPopups(actor,ready,tasks,reminders,tab=>{setReminderTab(tab);setRemindersOpen(true);});
  function openReminder(id:string,target:{type:"client"|"order";id:string}){if(id.startsWith("task:incoming:")){setRemindersOpen(false);setDetail(null);navigate("incoming");return;}if(!id.startsWith("task:"))void mutate({action:"readReminder",id});setRemindersOpen(false);setDetail(target);}
  async function openDecision(r:Reminder,canCreate:boolean){
   if(!r.id.startsWith("task:")&&!await mutate({action:"readReminder",id:r.id}))return;

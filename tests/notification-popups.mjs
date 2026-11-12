@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {NotificationPopups,popupNotifications} from '../lib/notification-popups.ts';
+const old={id:'old',clientId:'c',title:'Old',text:'',at:'2026-11-12'},fresh={...old,id:'new'};
+const tracker=new NotificationPopups();
+assert.deepEqual(tracker.update('a',[old]),[]);
+assert.deepEqual(tracker.update('a',[old,fresh]),[fresh]);
+assert.deepEqual(tracker.update('a',[{...old,text:'Updated'},fresh]),[]);
+assert.deepEqual(tracker.update('b',[old,fresh]),[]);
+assert.deepEqual(new NotificationPopups().update('a',[old,fresh]),[]);
+tracker.update('b',[]);assert.deepEqual(tracker.update('b',[fresh]),[fresh]);
+const task={...old,id:'task',orderId:'order'};
+assert.deepEqual(popupNotifications([task],[{...fresh,orderId:'order'}]),[task]);
+assert.deepEqual(popupNotifications([],[{...fresh,readAt:'now'},{...old,resolved:true}]),[]);
+assert.deepEqual(popupNotifications([{...old,kind:'call'},{...fresh,kind:'courier-door'}],[]),[]);
+assert.equal(fresh.readAt,undefined);assert.equal(fresh.resolved,undefined);
+console.log('Popups: baseline, refresh, role isolation, repeat tasks, duplicates and existing urgent alerts verified');
