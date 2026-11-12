@@ -55,8 +55,11 @@ try{
  assert.ok(await readWorkspaceCard(d,staff[2],'client','c-071'),'shared incoming remains accessible to head');
  assert.equal(await readWorkspaceCard(d,staff[0],'client','c-071'),null);
  const incoming=await readIncoming(d,staff[2],staff,[],true),oldIncoming=await readIncoming(d,staff[2],staff,fullOrders);assert.deepEqual(incoming,oldIncoming,'incoming active-order flags do not depend on the loaded list');
- const before=clean(await readWorkspaceState(d,staff[0]));
+ let decodedRows=0;
+ const track=statement=>({sql:statement.sql,values:statement.values,execute:()=>statement.execute(),bind:(...args)=>track(statement.bind(...args)),run:()=>statement.run(),first:column=>statement.first(column),all:async()=>{const result=await statement.all();decodedRows+=result.results.filter(r=>typeof r.data==='string').length;return result;}});
+ const measured={prepare:sql=>track(d.prepare(sql)),batch:statements=>d.batch(statements)};
+ const before=clean(await readWorkspaceState(measured,staff[0])),beforeRows=decodedRows;
  for(let i=0;i<400;i++){const c={...clients[70],id:'foreign-'+i},o={...orders[1],id:'foreign-'+i,clientId:c.id,manager:'two',status:'draft'};await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(c.id,'foreign-'+i,JSON.stringify(c)).run();await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(o.id,c.id,JSON.stringify(o)).run();}
- assert.deepEqual(clean(await readWorkspaceState(d,staff[0])),before,'foreign growth must not hydrate more workspace rows');
+ decodedRows=0;assert.deepEqual(clean(await readWorkspaceState(measured,staff[0])),before,'foreign growth must not hydrate more workspace rows');assert.equal(decodedRows,beforeRows,'SQL must return the same number of projected data rows after foreign growth');
  console.log(`${comparisons} selector parity comparisons; scoped authorization, shared incoming, full cards, premium membership, summaries and foreign-growth isolation passed`);
 }finally{d.close();}
