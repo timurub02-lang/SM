@@ -29,7 +29,8 @@ const second={...products[0],name:'Носки',sku:'SOCKS',weight:100,cost:50,pa
 const mixed=shipmentPayload({...order,items:[{name:'Кроссовки',quantity:1,price:4990},{name:'Носки',quantity:3,price:199.99}]},client,[products[0],second],form);
 assert.equal(Math.round(mixed.packages[0].items.reduce((n,i)=>n+i.amount*i.payment.value,0)*100),558997);
 assert.equal(mixed.delivery_recipient_cost.value,410);
-for(const price of [0,-1,NaN])assert.throws(()=>shipmentPayload({...order,items:[{name:'Кроссовки',quantity:1,price}]},client,products,form));
+assert.equal(shipmentPayload({...order,items:[{name:"Кроссовки",quantity:1,price:0}]},client,products,form).packages[0].items[0].payment.value,0);
+for(const price of [-1,NaN])assert.throws(()=>shipmentPayload({...order,items:[{name:'Кроссовки',quantity:1,price}]},client,products,form));
 assert(!('to_location' in payload));assert(!('from_location' in payload));
 assert.equal(shipmentPayload(order,client,products,{...form,payment:'prepaid'}).packages[0].items[0].payment.value,0);
 assert.throws(()=>shipmentPayload(order,client,products,{...form,deliveryPoint:''}),/ПВЗ/);
