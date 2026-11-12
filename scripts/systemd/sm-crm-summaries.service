@@ -1,0 +1,25 @@
+[Unit]
+Description=CRM prepared workspace and financial summaries (no external integrations)
+After=sm-crm.service
+ConditionPathExists=/srv/crm/current/scripts/sync-summaries.mjs
+
+[Service]
+Type=simple
+User=crmadmin
+Group=crmadmin
+EnvironmentFile=/etc/sm-crm.env
+Environment=CRM_SUMMARIES_WORKER=1
+ExecStart=/opt/sm-node/bin/node --max-old-space-size=512 /srv/crm/current/scripts/sync-summaries.mjs
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=20
+KillMode=control-group
+MemoryMax=768M
+CPUQuota=100%
+Nice=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

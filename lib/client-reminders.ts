@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import type {ActivityDb} from './activity-store.ts';
-import type {Employee,State} from './crm.ts';
+import type {Client,Employee,State} from './crm.ts';
 import {canOpenClientCard,visibleState} from './permissions.ts';
 import type {Reminder} from './reminders.ts';
 export type ClientReminder={id:string;clientId:string;due:string;text:string;createdAt:string};
@@ -12,11 +12,14 @@ export async function initClientReminders(d:ActivityDb){
 export async function personalClientReminders(d:ActivityDb,s:State,e:Employee):Promise<ClientReminder[]>{
  await initClientReminders(d);
  const rows=(await d.prepare('SELECT id,client_id AS clientId,due,text,created_at AS createdAt FROM client_reminders WHERE employee_id=? AND completed_at IS NULL ORDER BY due').bind(e.id).all()).results as ClientReminder[];
+ if(!rows.length)return [];
  const accessible=new Set(visibleState(s,e).clients.filter(c=>canOpenClientCard(e,c)).map(c=>c.id));
  return rows.filter(r=>accessible.has(r.clientId));
 }
 export function clientReminderTasks(rows:ClientReminder[],s:State,now=Date.now()):Reminder[]{
- return rows.filter(r=>Date.parse(r.due)<=now).map(r=>({kind:'task',id:'task:client-reminder:'+r.id,clientId:r.clientId,title:'Напоминание на клиента',text:[s.clients.find(c=>c.id===r.clientId)?.name,r.text].filter(Boolean).join(' · '),at:r.createdAt,due:r.due}));
+ const due=rows.filter(r=>Date.parse(r.due)<=now);if(!due.length)return [];
+ const clients=new Map<string,Client>();for(const client of s.clients)if(!clients.has(client.id))clients.set(client.id,client);
+ return due.map(r=>({kind:'task',id:'task:client-reminder:'+r.id,clientId:r.clientId,title:'Напоминание на клиента',text:[clients.get(r.clientId)?.name,r.text].filter(Boolean).join(' · '),at:r.createdAt,due:r.due}));
 }
 export async function changeClientReminder(d:ActivityDb,s:State,e:Employee,p:any,now=new Date().toISOString()){
  if(!canRemindClient(s,e,p.clientId))throw Error('Нет доступа к клиенту');

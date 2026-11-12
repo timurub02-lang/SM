@@ -36,7 +36,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    }
    url.searchParams.set('actorId',employee.id);
    if(body)body.actorId=employee.id;
-   const response=await handler(new Request(url,{method:req.method,headers:req.headers,...(write?{body:JSON.stringify(body)}:{})}));
+   const response=await handler(new Request(url,{method:req.method,headers:req.headers,signal:req.signal,...(write?{body:JSON.stringify(body)}:{})}));
    response.headers.set('Cache-Control','no-store');
    return response;
   }catch(error){return Response.json({error:error instanceof BodyTooLarge?error.message:'Не удалось выполнить запрос'},{status:error instanceof BodyTooLarge?413:400});}

@@ -6,7 +6,9 @@ import {initBaseStorage} from './base-storage.ts';
 import {initPhone} from './phone-store.ts';
 
 type Row={handoff?:string;spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
-export async function initIncoming(d:Db){
+const incomingSchemas=new WeakMap<Db,Promise<void>>();
+export async function initIncoming(d:Db){let schema=incomingSchemas.get(d);if(!schema){schema=initializeIncoming(d);incomingSchemas.set(d,schema);schema.catch(()=>incomingSchemas.delete(d));}await schema;}
+async function initializeIncoming(d:Db){
  await d.prepare(`CREATE TABLE IF NOT EXISTS incoming_calls(id TEXT PRIMARY KEY,client_id TEXT REFERENCES clients(id) ON DELETE CASCADE,assignee_id TEXT,department_id TEXT NOT NULL DEFAULT '',at TEXT NOT NULL,phone TEXT NOT NULL,called_number TEXT NOT NULL,closed_at TEXT,closed_by TEXT,reason TEXT NOT NULL DEFAULT '',order_id TEXT REFERENCES orders(id) ON DELETE SET NULL)`).run();
  const columns=await d.prepare('PRAGMA table_info(incoming_calls)').all();
  if(!columns.results.some((c:{name:string})=>c.name==='shared_queue')){
@@ -52,7 +54,7 @@ export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumbe
  ]);
 
 }
-export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order[]):Promise<IncomingRequest[]>{
+export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order[],scoped=false):Promise<IncomingRequest[]>{
  await initIncoming(d);if(e.role==='courier')return [];
  const scope=e.role==='admin'?'1=1':e.role==='department_head'?"(i.client_id IS NULL OR i.shared_queue=1 OR i.assignee_id=? OR (?<>'' AND (i.department_id=? OR i.assignee_id IN (SELECT id FROM employees WHERE json_extract(data,'$.role')='operator' AND json_extract(data,'$.department')=?))))":'i.assignee_id=?';
  const args=e.role==='admin'?[]:e.role==='department_head'?[e.id,e.department||'',e.department||'',e.department||'']:[e.id];
@@ -60,9 +62,15 @@ export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order
  const open=(await d.prepare(select+' AND i.closed_at IS NULL AND i.spam=0 ORDER BY i.at DESC').bind(...args).all()).results;
  const closed=(await d.prepare(select+' AND i.closed_at IS NOT NULL AND i.spam=0 ORDER BY i.closed_at DESC LIMIT 50').bind(...args).all()).results;
  const spam=e.role==='admin'?(await d.prepare(select+' AND i.spam=1 ORDER BY i.last_at DESC,i.at DESC LIMIT 100').bind(...args).all()).results:[];
- return [...open,...closed,...spam].map((r:Row&{client_name:string|null})=>{
-  const active=orders.filter(o=>o.clientId===r.client_id&&activeIncomingOrder(o));
-  return {handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staff.find(x=>x.id===r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:e.role==='operator'||e.role==='department_head'&&!!r.client_id?'':r.phone,calledNumber:r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staff.find(x=>x.id===r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
+ const rows=[...open,...closed,...spam] as (Row&{client_name:string|null})[];if(!rows.length)return [];
+ const ids=new Set(rows.map(r=>r.client_id));
+ if(scoped)orders=(await d.prepare("SELECT json_object('id',id,'clientId',client_id,'manager',json_extract(data,'$.manager'),'status',json_extract(data,'$.status')) AS data FROM orders WHERE client_id IN (SELECT value FROM json_each(?)) ORDER BY id DESC").bind(JSON.stringify([...ids].filter(Boolean))).all()).results.map((r:{data:string})=>JSON.parse(r.data));
+ const activeByClient=new Map<string|null,Order[]>(),staffById=new Map<string|null,Employee>();
+ for(const person of staff)if(!staffById.has(person.id))staffById.set(person.id,person);
+ for(const order of orders)if(ids.has(order.clientId)&&activeIncomingOrder(order)){const active=activeByClient.get(order.clientId)||[];active.push(order);activeByClient.set(order.clientId,active);}
+ return rows.map(r=>{
+  const active=activeByClient.get(r.client_id)||[];
+  return {handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staffById.get(r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:e.role==='operator'||e.role==='department_head'&&!!r.client_id?'':r.phone,calledNumber:r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staffById.get(r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
  });
 }
 export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee[],clientId?:string){

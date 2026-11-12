@@ -1,0 +1,30 @@
+[Unit]
+Description=CRM legacy snapshot CPU isolation (optional, writable GET semantics)
+After=sm-crm.service
+ConditionPathExists=/srv/crm/current/.next/standalone/server.js
+
+[Service]
+Type=simple
+User=crmadmin
+Group=crmadmin
+EnvironmentFile=/etc/sm-crm.env
+Environment=CRM_RUNTIME=miran
+Environment=CRM_LEGACY_SNAPSHOT_WORKER=1
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3101
+WorkingDirectory=/srv/crm/current/.next/standalone
+ExecStart=/usr/bin/env CRM_RUNTIME=miran CRM_LEGACY_SNAPSHOT_WORKER=1 HOSTNAME=127.0.0.1 PORT=3101 /opt/sm-node/bin/node --max-old-space-size=768 /srv/crm/current/.next/standalone/server.js
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=20
+KillMode=control-group
+MemoryMax=1G
+CPUWeight=50
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

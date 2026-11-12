@@ -1,3 +1,11 @@
+import {preparedModelsEnabled,requestPreparedWorkspace,readPreparedModel,readModelSource} from '@/lib/crm-read-model';
+import {proxyLegacySnapshot} from '@/lib/crm-legacy-proxy';
+import {workspaceVersions} from '@/lib/crm-workspace-clock';
+import {buildClientWorkCounts,type WorkspaceSummary} from '@/lib/crm-workspace-summary';
+import {buildWorkspaceContext} from '@/lib/crm-workspace-context';
+import {cachedWorkspaceResponse,orderListNextChange} from '@/lib/crm-workspace-cache';
+import {clientListSummaries} from '@/lib/crm-client-summary';
+import {splitWorkspaceEnabled,workspaceBootstrap,readWorkspaceState,readWorkspaceCard,hydrateWorkspaceOrders} from '@/lib/crm-workspace-read';
 import {markZvd} from '@/lib/crm';
 import {paidOrderNoticeStatements} from '@/lib/paid-order-notice';
 import {nextOrderId} from '@/lib/order-number';
@@ -39,7 +47,7 @@ import {canEditMoscowOrderDetails,courierDoorRefusal,canHandleCourierDoor,applyC
 import {initReminders,orderDecisionReminder,saveReminders,employeeReminders} from '@/lib/reminders';
 import {initCash} from '@/lib/cash-db';
 import {clearCashGuard} from '@/lib/cash';
-import {normalizePhone,total,canReceivePayment,isLogistic} from '@/lib/crm';
+import {normalizePhone,total,canReceivePayment,isLogistic,scheduledCalls} from '@/lib/crm';
 import {removalPlan,settledPayrollGuard} from '@/lib/employee-removal';
 import {ensureAuth,personalAuth} from '@/lib/auth';
 import {hashPassword} from '@/lib/auth-crypto';
@@ -89,18 +97,19 @@ async function initialize(){const d=db();if(await d.prepare("SELECT id FROM sett
  ...s.events.map(e=>d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e))),
  d.prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('main',?)").bind(json(s.settings))]);
 }
-async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId=''){
+async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=false,orderId='',compact=false,clientId='',list:''|'orders'|'mine'|'tasks'='',provided?:State,includeTasks=true,entityOnly=false){
+ if(provided&&!list&&!includeTasks&&user.employee&&splitWorkspaceEnabled(user.employee))return buildWorkspaceContext(db(),user.employee,provided);
  const worker=process.env.CRM_MAINTENANCE_WORKER==='1'&&await maintenanceHealthy(db());
- const state=worker&&!fanout&&!orderId&&!clientId?await cachedCrmState(db(),()=>readState(false,'',false,'',compact),compact?'compact':'full'):await readState(true,'',false,orderId,false,clientId);
- if(!worker||fanout||orderId||clientId)await saveReminders(state,fanout?undefined:user.employee?.id,(orderId||clientId)?state.clients[0]?.id:undefined);if(!user.employee)return state;
+ const state=provided??(worker&&!fanout&&!orderId&&!clientId?await cachedCrmState(db(),()=>readState(false,'',false,'',compact),compact?'compact':'full'):await readState(true,'',false,orderId,false,clientId));
+ if(!provided&&(!worker||fanout||orderId||clientId))await saveReminders(state,fanout?undefined:user.employee?.id,(orderId||clientId)?state.clients[0]?.id:undefined);if(!user.employee)return state;
  const visible=visibleState(state,user.employee);
- if(['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),(orderId||clientId)?await readRetentionSales(db(),state.clients,config):state.orders);}
+ if(list!=='orders'&&list!=='tasks'&&['admin','operator','department_head'].includes(user.employee.role)){const saved=await db().prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());visible.retentionPreview=clientRetentionPreview(visible.clients,state.orders,config,Date.now(),(provided||orderId||clientId)?await readRetentionSales(db(),state.clients,config):state.orders);}
  if(user.employee.role==='purchasing')return {...visible,tasks:[],reminders:[],incomingOperators:[],currentEmployeeId:user.employee.id,personalAuth:true};
- if(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee)){
+ if(!entityOnly&&!list&&(['admin','department_head','chief_logistic'].includes(user.employee.role)||canCreateRedemptionStaff(user.employee))){
   const accounts=await db().prepare('SELECT employee_id,enabled FROM auth_accounts').all<{employee_id:string;enabled:number}>();
   visible.employees=visible.employees.map(e=>{const account=accounts.results.find(a=>a.employee_id===e.id);return {...e,...(user.employee?.role!=='chief_logistic'||e.role==='logistic'||e.id===user.employee.id?{hasPassword:!!account,accessEnabled:!!account?.enabled}:{})};});
  }
- const incoming=await readIncoming(db(),user.employee,state.employees,state.orders);
+ const incoming=!list||list==='tasks'||user.employee.role==='department_head'?await readIncoming(db(),user.employee,state.employees,state.orders,!!provided):[];
  if(user.employee.role==='department_head'){
   const sharedIds=new Set(incoming.filter(i=>!i.closedAt&&i.clientId&&i.sharedQueue).map(i=>i.clientId));
   visible.clients.push(...state.clients.filter(c=>sharedIds.has(c.id)&&!visible.clients.some(v=>v.id===c.id)).map(hideClientNumbers));
@@ -108,30 +117,74 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
   visible.events.push(...state.events.filter(e=>sharedIds.has(e.clientId)&&!visible.events.some(v=>v.id===e.id)));
  }
 
+ // Paged lists retain their selectors' inputs; full-screen tasks and account metadata are not returned.
+ if(entityOnly||list==='orders')return {...visible,...(entityOnly?{incoming:incoming.filter(i=>state.clients.some(c=>c.id===i.clientId))}:{}),redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses};
  const clientReminders=await personalClientReminders(db(),state,user.employee);
+ if(list==='tasks'){await initReminders();return {...visible,incoming,tasks:[...clientReminderTasks(clientReminders,state),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)};}
+ if(list==='mine')return {...visible,clientReminders,clientWork:await readClientWork(db(),user.employee)};
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department,login})=>({id,name,department,login})):[];
- return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee),currentEmployeeId:user.employee.id,personalAuth:true};
+ return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),...(includeTasks?{tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)}:{}),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 const listSchema=z.object({sort:z.enum(orderSortKeys).default('stageDate'),direction:z.enum(['asc','desc']).default('desc'),list:z.enum(['orders','mine']),view:z.enum(['mine',...orderListViews]),filter:z.string().max(80).default('all'),query:z.string().max(150).default(''),next:z.enum(['0','1']).default('0'),timeZone:z.string().max(100).default('Europe/Moscow').refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}}),clientWorkFilter:z.enum(['all','needed','planned','done']).default('all'),page:z.coerce.number().int().min(0).max(100000).default(0)});
 async function handleGET(request:Request){
  const timing=new RequestTiming();
  try{
   const user=await identity(),params=new URL(request.url).searchParams;
+  const proxied=await proxyLegacySnapshot(request,user.employee);if(proxied)return proxied;
   const list=params.has('list')?listSchema.safeParse(Object.fromEntries(params)):null;
   if(list&&!list.success)return Response.json({error:'Некорректная страница заказов'},{status:400});
-  await initialize();const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||params.get('transport')==='compact-v1'));
+  await initialize();
+  const split=splitWorkspaceEnabled(user.employee),part=params.get('part');
+  if(part&&list)return Response.json({error:'Выберите страницу или часть рабочей области'},{status:400});
+  if(part&&!['bootstrap','context','tasks','card','summary'].includes(part))return Response.json({error:'Неизвестная часть рабочей области'},{status:400});
+  if(split&&part==='bootstrap')return timing.finish(Response.json(await workspaceBootstrap(db(),user.employee!)));
+  if(part&&part!=='bootstrap'&&!split)return Response.json({error:'Раздельная загрузка недоступна'},{status:403});
+  if(split&&preparedModelsEnabled()){
+   await requestPreparedWorkspace(db(),user.employee!.id);
+   if(part==='summary'||part==='context'){
+    const revision=(await workspaceVersions(db(),user.employee!)).workspace;
+    if(part==='summary')return timing.finish(Response.json(await readPreparedModel<WorkspaceSummary>(db(),'summary',user.employee!.id,revision)));
+    const prepared=await readPreparedModel<State>(db(),'context',user.employee!.id,revision),{data,...readModel}=prepared;
+    if(!data)return timing.finish(Response.json({error:prepared.message||'Рабочие данные готовятся',readModel},{status:503}));
+    const {data:financialData,...finance}=await readPreparedModel(db(),'finance-meta','global',(await readModelSource(db())).financeRevision);
+    const financialReadModel=finance.status==='ready'&&readModel.status!=='ready'&&data.financialReadModel?.sourceRevision!==finance.sourceRevision?{...finance,status:'stale' as const,message:'Этапы выплат в рабочей области обновляются'}:finance;
+    return timing.finish(await conditionalJson(request,{...data,readModel,financialReadModel}));
+   }
+  }else if(part==='summary')return timing.finish(Response.json({error:'Подготовленные сводки недоступны'},{status:403}));
+  if(split&&part==='card'){
+   const target=z.object({type:z.enum(['client','order']),id:z.string().min(1).max(100)}).safeParse(Object.fromEntries(params));
+   if(!target.success)return Response.json({error:'Некорректная карточка'},{status:400});
+   const card=await readWorkspaceCard(db(),user.employee!,target.data.type,target.data.id);
+   if(!card)return Response.json({error:'Карточка недоступна'},{status:404});
+   return timing.finish(Response.json(compactCrmState(await responseState(user,false,'',true,'','',card,false))));
+  }
+  const read=async()=>{
+  const responseStartedAt=Date.now();
+  const scoped=split&&(!!list||part==='context'||part==='tasks')?await timing.measure('read',()=>readWorkspaceState(db(),user.employee!,part!=='tasks',list?.success&&list.data.list==='orders')):undefined;
+  const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||part==='bootstrap'||params.get('transport')==='compact-v1','',list?.success?list.data.list:part==='tasks'?'tasks':'',scoped,part!=='context'));
+  if(split&&part==='tasks')return timing.finish(Response.json({tasks:state.tasks,reminders:state.reminders,incoming:state.incoming,callOrders:[...scheduledCalls(state.orders,user.employee!,state.employees),...state.orders.filter(o=>courierDoorRefusal(o)&&!scheduledCalls([o],user.employee!,state.employees).length)],maintenanceHealthy:await maintenanceHealthy(db())}));
+  if(split&&part==='context')return timing.finish(Response.json(compactCrmState(state)));
+  if(part==='bootstrap')return timing.finish(Response.json(compactCrmState(state)));
+
   if(list?.success){
    if(!user.employee||['courier','purchasing','redemption'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
    const q=list.data;
    if(q.list==='mine'){
     if(!['operator','department_head'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
     const all=filteredClientList(compactCrmState(state),user.employee,q),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1));
-    return timing.finish(await conditionalJson(request,{rows:[],clients:all.slice(page*50,(page+1)*50),total:all.length,page}));
+    const clients=all.slice(page*50,(page+1)*50);
+    return timing.finish(await conditionalJson(request,{rows:[],clients,total:all.length,page,...(scoped?{workCounts:buildClientWorkCounts(state,user.employee,q),financialReadModel:state.financialReadModel,summaries:clientListSummaries(state,clients),employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
    }
-   const all=filteredOrderList(state,user.employee,{...q,showNextPremium:q.next==='1'}),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1)),rows=all.slice(page*50,(page+1)*50),ids=new Set(rows.map(o=>o.clientId));
-   return timing.finish(await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page}));
+   if(scoped&&preparedModelsEnabled()&&(['accrued','premium_paid'].includes(q.filter)||q.next==='1')&&(!state.financialReadModel||['pending','error'].includes(state.financialReadModel.status)))return Response.json({error:'Финансовые расчёты готовятся. Повторите загрузку.',readModel:state.financialReadModel},{status:503});
+   const all=filteredOrderList(state,user.employee,{...q,showNextPremium:q.next==='1'},responseStartedAt),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1)),selected=all.slice(page*50,(page+1)*50),rows=scoped?await hydrateWorkspaceOrders(db(),state,selected,user.employee):selected,ids=new Set(rows.map(o=>o.clientId));
+   const response=await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page,...(scoped?{financialReadModel:state.financialReadModel,employees:state.employees.map(({id,name})=>({id,name}))}:{})});
+   if(scoped)response.headers.set('X-CRM-Cache-Until',String(orderListNextChange(state,responseStartedAt)));
+   return timing.finish(response);
   }
   return timing.finish(params.get('transport')==='compact-v1'?await crmSnapshotResponse(request,compactCrmState(state),user.userId):await conditionalJson(request,state));
+  };
+  if(split&&(list?.success||part==='context'||part==='tasks'))return timing.finish(await cachedWorkspaceResponse(db(),user.employee!,request,part==='tasks'?'tasks':'workspace',list?.success?list.data:{part},read));
+  return await read();
  }catch(e){console.error(e);return timing.finish(Response.json({error:e instanceof Error&&e.message==='Требуется вход в CRM'?e.message:'Не удалось подключиться к базе CRM'},{status:503}));}
 }
 async function handlePOST(request:Request){
@@ -140,7 +193,7 @@ async function handlePOST(request:Request){
  const user=await identity();
  if(request.headers.get("sec-fetch-site")==="cross-site")return Response.json({error:"Запрос отклонён"},{status:403});
  const raw=await readLimitedText(request,6000000);if(raw.length>1500000)throw new Error("Файл слишком большой. Разделите импорт на части");
- const p=JSON.parse(raw);const d=db();const scopedOrder=user.employee&&p.responseMode==='entity-patch'&&p.action!=='createOrder'&&orderMutationActions.has(p.action)?z.string().min(1).max(100).parse(p.id):'';const scopedClient=user.employee&&p.responseMode==='entity-patch'&&p.action==='createOrder'?z.string().min(1).max(100).parse(p.clientId):'';const scopedMutation=!!(scopedOrder||scopedClient);const s=await timing.measure('read',()=>readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action),scopedOrder,false,scopedClient));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
+ const p=JSON.parse(raw);const d=db();const deferredWorkspace=p.responseMode==='entity-patch-v2'&&splitWorkspaceEnabled(user.employee);const entityPatch=p.responseMode==='entity-patch'||deferredWorkspace;const scopedOrder=user.employee&&entityPatch&&p.action!=='createOrder'&&orderMutationActions.has(p.action)?z.string().min(1).max(100).parse(p.id):'';const scopedClient=user.employee&&entityPatch&&p.action==='createOrder'?z.string().min(1).max(100).parse(p.clientId):'';const scopedMutation=!!(scopedOrder||scopedClient);const s=await timing.measure('read',()=>readState(true,typeof (p.clientId||p.id)==='string'?(p.clientId||p.id):'',['deleteEmployee','import','normalizeImportedAddresses'].includes(p.action),scopedOrder,false,scopedClient));const now=new Date().toISOString();const id=(prefix:string)=>prefix+crypto.randomUUID().slice(0,12);let message="Сохранено";
  // Production actor is fixed by the authenticated API wrapper.
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
@@ -656,9 +709,9 @@ async function handlePOST(request:Request){
   // ponytail: bounded imports; background chunked jobs when files exceed 1000 clients.
   let actual=0;for(let i=0;i<statements.length;i+=50){const results=await d.batch(statements.slice(i,i+50));actual+=results.filter((_,j)=>j%2===0).reduce((n,r)=>n+r.meta.changes,0);}message=`Добавлено: ${actual}. Дубли: ${duplicates+added-actual}. Адресов требуют проверки: ${review}. Ошибки ДаДата: ${errors}`;
  }else throw new Error("Неизвестное действие");
- const response=await timing.measure('snapshot',()=>responseState(user,true,scopedOrder,false,scopedClient));
+ const response=await timing.measure('snapshot',()=>responseState(user,true,scopedOrder,false,scopedClient,'',undefined,true,deferredWorkspace&&scopedMutation));
  const state=p.transport==='compact-v1'?compactCrmState(response):response;
- if(scopedMutation)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state},message}));
+ if(scopedMutation)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state,...(deferredWorkspace?{deferredWorkspace:true}:{})},message}));
  if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return timing.finish(Response.json({statePatch:orderSavePatch(s,state,p.id),message}));
  return timing.finish(Response.json({state,message}));
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return timing.finish(Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400}));}

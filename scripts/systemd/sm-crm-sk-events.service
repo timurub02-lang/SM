@@ -1,0 +1,26 @@
+[Unit]
+Description=CRM durable Skorozvon result event consumer
+After=sm-crm.service
+ConditionPathExists=/srv/crm/current/scripts/sync-sk-events.mjs
+
+[Service]
+Type=simple
+User=crmadmin
+Group=crmadmin
+EnvironmentFile=/etc/sm-crm.env
+ExecStart=/opt/sm-node/bin/node --max-old-space-size=256 /srv/crm/current/scripts/sync-sk-events.mjs
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=70
+KillMode=control-group
+MemoryMax=384M
+CPUQuota=50%
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sm-crm
+
+[Install]
+WantedBy=multi-user.target

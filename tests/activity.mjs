@@ -68,7 +68,7 @@ await syncActivity(d,request,now+180000);
 assert.equal(callRequests.at(-1).start_time,Date.parse('2026-10-01T00:00:00+03:00')/1000);
 const linked=await readActivity(d,now+180000);assert.equal(linked.rows.find(r=>r.id==='m31').calls,1);assert.equal(linked.rows.find(r=>r.id==='e').calls,2);
 await syncActivity(d,request,now+240000);assert.equal(callRequests.at(-1).start_time,(now+180000-900000)/1000);
-assert.ok(waits.length>0&&waits.every(ms=>ms===200),'API requests must be paced, including report pages and call details');
+assert.ok(waits.length>0&&waits.every(ms=>ms>0&&ms<=250),'API requests share the persisted 250ms start budget: '+JSON.stringify(waits));
 const saved=async id=>JSON.parse((await d.prepare('SELECT data FROM settings WHERE id=?').bind(id).first()).data);
 let retries=0;const repeatedBodies=[];
 await syncActivity(d,async(url,options)=>{
@@ -78,7 +78,7 @@ await syncActivity(d,async(url,options)=>{
 assert.equal(retries,2);assert.equal(repeatedBodies[0],repeatedBodies[1]);assert.ok(waits.includes(2000));assert.equal((await saved('activity-health')).ok,true);
 const beforeFailure=await saved('activity-samples');let failures=0;waits.length=0;
 await assert.rejects(syncActivity(d,async(url,options)=>{if(new URL(url).pathname==='/api/reports/calls_total.json'){failures++;return new Response('busy',{status:429});}return request(url,options);},now+360000));
-assert.equal(failures,3,'Persistent 429 must stop after bounded retries');assert.deepEqual(waits.filter(ms=>ms!==200),[5000,15000]);
+assert.equal(failures,3,'Persistent 429 must stop after bounded retries');assert.deepEqual(waits.filter(ms=>ms>250),[5000,15000]);
 const limited=await saved('activity-health');assert.equal(limited.ok,false);assert.equal(limited.lastSuccessAt,new Date(now+300000).toISOString());assert.ok(Date.parse(limited.retryAt)>=now+420000);
 assert.deepEqual(await saved('activity-samples'),beforeFailure,'Failed refresh must retain the last complete snapshot');
 const stale=await readActivity(d,now+360000);assert.ok(stale.rows.every(row=>row.skStatus==='unknown'&&row.state!=='idle'));

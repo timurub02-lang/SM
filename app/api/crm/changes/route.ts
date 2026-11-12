@@ -1,10 +1,17 @@
+import {workspaceVersions} from '@/lib/crm-workspace-clock';
+import {workspaceSummarySignal} from '@/lib/crm-summary-signal';
+import {preparedModelsEnabled} from '@/lib/crm-read-model';
+import {splitWorkspaceEnabled} from '@/lib/crm-workspace-read';
 import {personalAuth,sessionEmployee} from '@/lib/auth';
 import {db} from '@/lib/db';
 import {initCrmChangeClock,crmChangeRevision} from '@/lib/crm-change-clock';
 export const dynamic='force-dynamic';
 
 export async function GET(request:Request){
- if(!personalAuth()||!await sessionEmployee(request.headers))return Response.json({error:'Требуется вход'},{status:401});
+ const initial=personalAuth()?await sessionEmployee(request.headers):null;
+ if(!initial)return Response.json({error:'Требуется вход'},{status:401});
+ const scoped=new URL(request.url).searchParams.get('scope')==='workspace'&&splitWorkspaceEnabled(initial);
+ const access=(e:typeof initial)=>JSON.stringify([e?.id,e?.role,e?.department,e?.baseAccess]);
  const d=db();await initCrmChangeClock(d);
  const encoder=new TextEncoder();let timer:ReturnType<typeof setTimeout>|undefined;let stopped=false;
  const stop=()=>{stopped=true;if(timer)clearTimeout(timer);request.signal.removeEventListener('abort',abort);};
@@ -19,11 +26,16 @@ export async function GET(request:Request){
      if(stopped)return;
      // Reconnect rechecks the session; the durable clock recovers missed invalidations.
      if(Date.now()-started>=25000){stop();close();return;}
-     const revision=await crmChangeRevision(d);if(stopped)return;
+     const employee=scoped?await sessionEmployee(request.headers):initial;
+     if(!employee){stop();close();return;}
+     if(scoped&&access(employee)!==access(initial)){controller.enqueue(encoder.encode('event: access\ndata: {}\n\n'));stop();close();return;}
+     const workspace=scoped?await workspaceVersions(d,employee):null;
+     const versions=workspace?{...workspace,...(preparedModelsEnabled()?{summary:await workspaceSummarySignal(d,employee.id,workspace.workspace)}:{})}:null;
+     const revision=versions?Object.values(versions).join('.'):await crmChangeRevision(d);if(stopped)return;
      if(revision!==previous){
       if(!await sessionEmployee(request.headers)){stop();close();return;}
       if(stopped)return;
-      previous=revision;controller.enqueue(encoder.encode(`id: ${revision}\nevent: change\ndata: {}\n\n`));
+      previous=revision;controller.enqueue(encoder.encode(`id: ${revision}\nevent: change\ndata: ${JSON.stringify(versions||{})}\n\n`));
      }else controller.enqueue(encoder.encode(': heartbeat\n\n'));
      timer=setTimeout(()=>void tick(),1000);
     }catch{stop();close();}

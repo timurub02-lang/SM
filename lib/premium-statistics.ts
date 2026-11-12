@@ -1,5 +1,5 @@
 import type {Employee} from './crm';
-import {payrollVisible,type PayrollRow} from './premium-ledger';
+import {payrollVisible,type PayrollRow} from './premium-ledger.ts';
 export function premiumStatistics(actor:Employee,periods:{id:string;status:string;rows:PayrollRow[]}[]){
  const result=new Map<string,{id:string;login:string;name:string;department:string;role:string;volume:number;first:number|null;second:number|null;total:number}>();
  for(const p of periods)for(const row of p.rows.filter(r=>payrollVisible(actor,r))){

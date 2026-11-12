@@ -15,3 +15,21 @@ const updated={...initial,clients:[{...client,name:'new'}],orders:order?[{...ord
 const merged=mergeOrderEntityPatch(initial,{clientId:client.id,state:updated});
 assert.equal(merged.clients.find(c=>c.id===client.id).name,'new');assert.equal(merged.tasks.length,2);
 console.log('Entity patches: scoped replacement, revoked access, side data, idempotency and unrelated records passed');
+
+const deferred={...updated,tasks:undefined,incoming:undefined,clientWork:undefined,clientReminders:undefined,reminders:undefined};
+const kept=mergeOrderEntityPatch(initial,{clientId:client.id,state:deferred,deferredWorkspace:true});
+assert.deepEqual(kept.tasks,initial.tasks,'independent task fetch must not flash an empty task list after save');
+assert.equal(kept.orders.find(o=>o.id===order.id).version,2,'authoritative order is applied immediately');
+const reassigned=mergeOrderEntityPatch(initial,{clientId:client.id,state:{...deferred,clients:[{...client,owner:'different'}]},deferredWorkspace:true});
+assert.deepEqual(reassigned.tasks,[initial.tasks[0]],'ownership change clears retained scoped private sections');
+const revoked=mergeOrderEntityPatch(initial,{clientId:client.id,state:{...deferred,clients:[],orders:[]},deferredWorkspace:true});
+assert.deepEqual(revoked.tasks,[initial.tasks[0]],'deferred refresh cannot retain revoked client data');
+const withOrderTasks={...initial,tasks:[...initial.tasks,{id:'order-task',clientId:client.id,orderId:order.id,title:'private',text:'',at:''}]};
+const removed=mergeOrderEntityPatch(withOrderTasks,{clientId:client.id,state:{...deferred,orders:[]},deferredWorkspace:true});
+assert.ok(!removed.tasks.some(t=>t.id==='order-task'),'removed orders lose their retained tasks');
+const managerChanged=mergeOrderEntityPatch(withOrderTasks,{clientId:client.id,state:{...deferred,orders:[{...order,manager:'different'}]},deferredWorkspace:true});
+assert.ok(!managerChanged.tasks.some(t=>t.id==='order-task'),'same visible client does not preserve old manager access');
+const accessChanged=mergeOrderEntityPatch(initial,{clientId:client.id,state:{...deferred,employees:deferred.employees.map(e=>({...e,department:'changed'}))},deferredWorkspace:true});
+assert.deepEqual(accessChanged.tasks,[initial.tasks[0]],'changed staff access cannot retain scoped drafts of auxiliary data');
+const incomingChanged=mergeOrderEntityPatch({...initial,incoming:[{id:'incoming',clientId:client.id,assigneeId:'operator'}]},{clientId:client.id,state:{...deferred,incoming:[]},deferredWorkspace:true});
+assert.deepEqual(incomingChanged.incoming,[],'incoming assignment is always read authoritatively');

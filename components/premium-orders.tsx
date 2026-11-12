@@ -19,18 +19,20 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  const [periodId,setPeriodId]=useState(current?.id||'unassigned'),[query,setQuery]=useState(''),[operator,setOperator]=useState(''),[group,setGroup]=useState('all');
  const [activePeriod,setActivePeriod]=useState('');
  const [ledgerPeriods,setLedgerPeriods]=useState<string[]>([]),[ledgerCounts,setLedgerCounts]=useState<Record<string,number>>({});
+ const [preparedWarning,setPreparedWarning]=useState('');
  const [periodError,setPeriodError]=useState(''),[periodRetry,setPeriodRetry]=useState(0);
  useEffect(()=>{
-  let active=true,pending=false;const controller=new AbortController();
-  async function refresh(){if(pending)return;pending=true;
+  let active=true,pending=false,prepared=false,lastRead=0;const controller=new AbortController();
+  async function refresh(){if(pending||document.hidden||!navigator.onLine||Date.now()-lastRead<(prepared?5000:60000))return;pending=true;lastRead=Date.now();
    try{const response=await fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(current?.id||''),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(20000)])});
-    const r=await response.json() as {periods?:string[];activePeriod?:string;periodCounts?:Record<string,number>;error?:string};
+    const r=await response.json() as {periods?:string[];activePeriod?:string;periodCounts?:Record<string,number>;readModel?:{status:string;message?:string};error?:string};
+    prepared=!!r.readModel;
     if(!response.ok)throw Error(r.error||'Не удалось загрузить премию');
     if(!r.activePeriod)throw Error('Текущий расчётный период не указан');
-    if(active){setLedgerPeriods(r.periods||[]);setLedgerCounts(r.periodCounts||{});setPeriodId(r.activePeriod);setActivePeriod(r.activePeriod);setPeriodError('');}
+    if(active){setLedgerPeriods(r.periods||[]);setLedgerCounts(r.periodCounts||{});setPeriodId(r.activePeriod);setActivePeriod(r.activePeriod);setPeriodError('');setPreparedWarning(r.readModel&&r.readModel.status!=='ready'?r.readModel.message||'Показана последняя сводка выплат. Обновление выполняется.':'');}
    }catch(e){if(active)setPeriodError(e instanceof Error&&e.name!=='TimeoutError'?e.message:'Сервер не ответил вовремя. Повторите загрузку.');}finally{pending=false;}
   }
-  void refresh();const timer=setInterval(()=>void refresh(),60000);
+  void refresh();const timer=setInterval(()=>void refresh(),5000);
   return()=>{active=false;controller.abort();clearInterval(timer);};
  },[employee.id,current?.id,periodRetry]);
 
@@ -48,6 +50,7 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  return <section className="stack table-panel cash-panel premium-panel" aria-label="Премия">
   <div className="premium-heading"><h2>Премия</h2>
   <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники'],['archive','Архив'],['statistics','Статистика']] as const).filter(([id])=>employee.role!=='operator'||!['employees','statistics'].includes(id)).map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs><div className="premium-actions-slot" ref={setActionsTarget}/></div>
+  {preparedWarning&&<p role="status" className="notice">{preparedWarning}</p>}
   {view==='statistics'?<PremiumStatistics employee={employee}/>:view==='archive'?<PremiumArchive employee={employee} employees={employees} orders={orders} onOpen={onOpen} onReload={onReload}/>:<>
   {view==='calculation'&&<>
   <p className="premium-current-period">Текущий расчётный период: <strong>{period?.label||"Загрузка…"}</strong>{period&&` · ${counts.get(period.id)||0} заказов`}</p>

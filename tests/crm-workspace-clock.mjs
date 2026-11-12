@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {openDatabase} from '../server/sqlite.ts';
+import {initIncoming} from '../lib/incoming.ts';
+import {initPhone} from '../lib/phone-store.ts';
+import {workspaceVersions} from '../lib/crm-workspace-clock.ts';
+import {cachedWorkspaceResponse} from '../lib/crm-workspace-cache.ts';
+const d=openDatabase(':memory:');
+const wallClock=Date.now;
+const staff=[{id:'a',role:'operator',department:'1'},{id:'b',role:'operator',department:'2'},{id:'h1',role:'department_head',department:'1'},{id:'h2',role:'department_head',department:'2'}];
+const save=(table,id,data)=>d.prepare(`INSERT INTO ${table}(id,data) VALUES(?,?)`).bind(id,JSON.stringify(data)).run();
+const versions=()=>Promise.all(staff.map(e=>workspaceVersions(d,e)));
+const changed=(before,after,indices,area='workspace')=>staff.forEach((e,i)=>assert.equal(before[i][area]!==after[i][area],indices.includes(i),`${e.id} ${area}`));
+try{
+ for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await d.prepare(sql).run();
+ for(const e of staff)await save('employees',e.id,e);
+ await initIncoming(d);await initPhone(d);
+ await d.prepare('CREATE TABLE reminders(id TEXT PRIMARY KEY,employee_id TEXT,data TEXT)').run();
+ await d.prepare('CREATE TABLE client_work(employee_id TEXT,client_id TEXT,data TEXT)').run();
+ await d.prepare('CREATE TABLE client_reminders(id TEXT PRIMARY KEY,employee_id TEXT,client_id TEXT,data TEXT)').run();
+ await d.prepare('CREATE TABLE redemption_entries(order_id TEXT PRIMARY KEY,data TEXT)').run();
+ for(const [id,owner] of [['ca','a'],['cb','b']])await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(id,id,JSON.stringify({id,owner})).run();
+ for(const [id,clientId,manager] of [['oa','ca','a'],['ob','cb','b']])await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(id,clientId,JSON.stringify({id,clientId,manager,status:'draft'})).run();
+ let before=await versions();
+ assert.deepEqual(await workspaceVersions(d,{...staff[0],testOnly:false,version:1}),await workspaceVersions(d,staff[0]),'HTTP session defaults and worker employee rows share the same revision');
+ await d.prepare("UPDATE orders SET version=version+1 WHERE id='oa'").run();changed(before,await versions(),[0,2]);
+ before=await versions();await d.prepare("UPDATE orders SET data=data").run();assert.deepEqual(await versions(),before);
+ await assert.rejects(d.batch([d.prepare("UPDATE orders SET version=version+1"),d.prepare("INSERT INTO clients(id,phone,data) VALUES('ca','duplicate','{}')")]));assert.deepEqual(await versions(),before,'rollback rolls back counters');
+ // Both previous and new scopes lose their cache on ownership/manager transfers.
+ before=await versions();await d.prepare("UPDATE orders SET data=json_set(data,'$.manager','b') WHERE id='oa'").run();changed(before,await versions(),[0,1,2,3]);
+ before=await versions();await d.prepare("UPDATE clients SET data=json_set(data,'$.owner','b') WHERE id='ca'").run();changed(before,await versions(),[0,1,2,3]);
+ before=await versions();await d.prepare("DELETE FROM orders WHERE id='oa'").run();changed(before,await versions(),[1,3]);
+ // Shared incoming propagates client changes to heads in other departments.
+ await d.prepare("INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue) VALUES('i','cb','b','2','','','',1)").run();
+ before=await versions();await d.prepare("UPDATE clients SET version=version+1 WHERE id='cb'").run();changed(before,await versions(),[1,2,3]);
+ before=await versions();await d.prepare("DELETE FROM incoming_calls WHERE id='i'").run();changed(before,await versions(),[1,2,3]);
+ before=await versions();await d.prepare("INSERT INTO reminders VALUES('r','a','{}')").run();changed(before,await versions(),[]);changed(before,await versions(),[0,2],'tasks');
+ before=await versions();await d.prepare("INSERT INTO client_work VALUES('b','cb','{}')").run();changed(before,await versions(),[1,3]);
+ before=await versions();await d.prepare("INSERT INTO redemption_entries VALUES('ob','{}')").run();changed(before,await versions(),[1,3]);
+ before=await versions();await d.prepare("INSERT INTO phone_calls(id,client_id,actor_id,actor_name,caller_number,started_at,status) VALUES('p','cb','b','','','','completed')").run();changed(before,await versions(),[1,3]);
+ before=await versions();await d.prepare("UPDATE orders SET data=json_set(data,'$.status','redeemed') WHERE id='ob'").run();changed(before,await versions(),[0,1,2,3]);changed(before,await versions(),[1,3],'tasks');
+ before=await versions();await d.prepare("UPDATE orders SET data=json_set(data,'$.comment','note'),version=version+1 WHERE id='ob'").run();changed(before,await versions(),[1,3]);
+ before=await versions();await d.prepare("UPDATE orders SET data=json_set(data,'$.priorPremiumPaid',1) WHERE id='ob'").run();changed(before,await versions(),[0,1,2,3]);
+ await save('settings','cdek-sync-health',{checkedAt:'one',ok:true});before=await versions();
+ await d.prepare("UPDATE settings SET data=json_set(data,'$.checkedAt','two') WHERE id='cdek-sync-health'").run();assert.deepEqual(await versions(),before);
+ await d.prepare("UPDATE settings SET data=json_set(data,'$.ok',0) WHERE id='cdek-sync-health'").run();changed(before,await versions(),[0,1,2,3]);
+ before=await versions();await d.prepare("UPDATE employees SET data=json_set(data,'$.department','2') WHERE id='a'").run();changed(before,await versions(),[0,1,2,3]);
+ before=await versions();await d.prepare("UPDATE crm_change_clock SET epoch='restored'").run();changed(before,await versions(),[0,1,2,3]);
+ const schema=await d.prepare('PRAGMA schema_version').first('schema_version');await versions();assert.equal(await d.prepare('PRAGMA schema_version').first('schema_version'),schema,'no repeated DDL');
+ before=await versions();await d.prepare('DROP TRIGGER crm_workspace_orders_UPDATE').run();changed(before,await versions(),[0,1,2,3],'workspace');
+
+ const fixedNow=Date.now();Date.now=()=>fixedNow;
+ let builds=0;
+ const request=new Request('http://local/api/crm?list=orders');
+ const build=async()=>{builds++;await new Promise(resolve=>setTimeout(resolve,5));return Response.json({builds});};
+ const read=(req=request,params={page:0},e=staff[0])=>cachedWorkspaceResponse(d,e,req,'workspace',params,build);
+ const responses=await Promise.all(Array.from({length:20},()=>read()));assert.equal(builds,1,'single flight');
+ assert.deepEqual(await responses[0].json(),{builds:1});assert.equal(responses[1].headers.get('X-CRM-Schema-Version'),'1');
+ const conditional=new Request(request,{headers:{'If-None-Match':responses[1].headers.get('etag')}});
+ assert.equal((await read(conditional)).status,304);assert.equal(builds,1,'304 before building');
+ await read(request,{page:1});assert.equal(builds,2,'page keys are independent');
+ await read(request,{page:0},staff[1]);assert.equal(builds,3,'actor keys are independent');
+ await read(request,{page:0},{...staff[0],department:'changed'});assert.equal(builds,4,'rights keys are independent');
+ await d.prepare("UPDATE clients SET version=version+1 WHERE id='cb'").run();assert.equal((await read(conditional)).status,304,'foreign non-premium change preserves cached page');
+ await save('settings','new-business-setting',{enabled:true});assert.equal((await read(conditional)).status,200);assert.equal(builds,5);
+ const realNow=Date.now;try{Date.now=()=>realNow()+6000;await read();assert.equal(builds,6,'clock expiration without a DB write');}finally{Date.now=realNow;}
+ let failed=0;await assert.rejects(cachedWorkspaceResponse(d,staff[0],request,'tasks','failure',async()=>{failed++;throw Error('retry');}));
+ await cachedWorkspaceResponse(d,staff[0],request,'tasks','failure',async()=>{failed++;return Response.json({ok:true});});assert.equal(failed,2,'failed computations do not poison the cache');
+ let evictions=0;
+ const bounded=key=>cachedWorkspaceResponse(d,staff[0],request,'workspace',key,async()=>{evictions++;return Response.json({key});});
+ for(let i=0;i<260;i++)await bounded('bounded-'+i);
+ await bounded('bounded-259');assert.equal(evictions,260);await bounded('bounded-0');assert.equal(evictions,261,'oldest entries are evicted at the entry cap');
+ let racing=0;
+ const duringSave=()=>cachedWorkspaceResponse(d,staff[0],request,'workspace','race',async()=>{racing++;if(racing===1)await save('settings','during-read',{});return Response.json({racing});});
+ await duringSave();await duringSave();assert.equal(racing,2,'changed source cannot retain the in-flight result');
+ console.log('Workspace clock/cache: scoped changes, transfers, shared incoming, phone work, premium, rights, rollback, epoch, health, fast 304, single flight, TTL and failure recovery passed');
+}finally{Date.now=wallClock;d.close();}

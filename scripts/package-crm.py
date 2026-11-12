@@ -1,5 +1,5 @@
 """Package only the runtime; production data and secrets stay outside releases."""
-import hashlib,json,os,pathlib,re,shutil,subprocess,sys,tarfile
+import hashlib,json,os,pathlib,re,shutil,subprocess,sys,tarfile,tempfile
 
 def package(commit,root=pathlib.Path('.')):
     if not re.fullmatch(r'[0-9a-f]{40}',commit):raise ValueError('Expected full commit SHA')
@@ -10,14 +10,25 @@ def package(commit,root=pathlib.Path('.')):
     jobs=list((root/'scripts').glob('sync-*.mjs'))
     if jobs:
         subprocess.run([str((root/'node_modules/.bin/esbuild').resolve()),*[str(p) for p in jobs],
-                        '--bundle','--platform=node','--format=esm','--out-extension:.js=.mjs',
+                        '--bundle','--platform=node','--format=esm','--external:exceljs','--out-extension:.js=.mjs',
                         '--outdir='+str(standalone/'jobs')],check=True)
-        env=os.environ.copy();env.pop('CRM_DATABASE_PATH',None)
-        for job in (standalone/'jobs').glob('*.mjs'):
-            probe=subprocess.run(['node',str(job)],env=env,capture_output=True,text=True,timeout=15)
-            if probe.returncode==0 or 'CRM_DATABASE_PATH is required' not in probe.stderr:
-                raise RuntimeError('Background job failed import check: '+job.name+'\n'+probe.stderr)
-    (standalone/'release.json').write_text(json.dumps({'commit':commit,'format':1,**({'maintenance':1} if any(p.name=='sync-maintenance.mjs' for p in jobs) else {})})+'\n')
+        if any(p.name=='sync-exports.mjs' for p in jobs):subprocess.run(['node',str(root/'scripts/trace-job-dependencies.mjs'),str(standalone)],check=True)
+        env=os.environ.copy();env.pop('CRM_DATABASE_PATH',None);env.pop('NODE_PATH',None)
+        # A repo-ancestor node_modules must not hide dependencies missing from the release.
+        with tempfile.TemporaryDirectory(prefix='crm-isolated-jobs-') as folder:
+            isolated=pathlib.Path(folder)
+            shutil.copytree(standalone/'jobs',isolated/'scripts')
+            if (standalone/'node_modules').exists():
+                shutil.copytree(standalone/'node_modules',isolated/'.next/standalone/node_modules')
+                (isolated/'node_modules').symlink_to('.next/standalone/node_modules',target_is_directory=True)
+            for job in (isolated/'scripts').glob('*.mjs'):
+                probe=subprocess.run(['node',str(job)],cwd=isolated,env=env,capture_output=True,text=True,timeout=15)
+                if probe.returncode==0 or 'CRM_DATABASE_PATH is required' not in probe.stderr:
+                    raise RuntimeError('Background job failed isolated import check: '+job.name+'\n'+probe.stderr)
+            if any(p.name=='sync-exports.mjs' for p in jobs):
+                probe=subprocess.run(['node','--input-type=module','-e',"import ExcelJS from 'exceljs';const w=new ExcelJS.Workbook();w.addWorksheet('Fixture').addRow(['synthetic',42]);if((await w.xlsx.writeBuffer()).length<100)throw Error('Empty workbook');"],cwd=isolated/'scripts',env=env,capture_output=True,text=True,timeout=15)
+                if probe.returncode!=0:raise RuntimeError('Installed-layout ExcelJS smoke failed\n'+probe.stderr)
+    (standalone/'release.json').write_text(json.dumps({'commit':commit,'format':1,**({'legacySnapshots':1} if (root/'lib/crm-legacy-proxy.ts').is_file() else {}),**({'exports':1} if any(p.name=='sync-exports.mjs' for p in jobs) else {}),**({'maintenance':1} if any(p.name=='sync-maintenance.mjs' for p in jobs) else {}),**({'summaries':1} if any(p.name=='sync-summaries.mjs' for p in jobs) else {}),**({'skEvents':1} if any(p.name=='sync-sk-events.mjs' for p in jobs) else {}),**({'lvIncoming':1} if any(p.name=='sync-lv-incoming.mjs' for p in jobs) else {})})+'\n')
     output=root/'dist';output.mkdir(exist_ok=True)
     def allowed(info):
         parts=pathlib.PurePosixPath(info.name).parts

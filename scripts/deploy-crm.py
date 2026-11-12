@@ -33,7 +33,7 @@ class SafeRedirect(urllib.request.HTTPRedirectHandler):
         if redirected is not None:redirected.remove_header('Authorization')
         return redirected
 
-def get(url,limit=4*1024*1024,accept='application/vnd.github+json'):
+def get(url,limit=4*1024*1024,accept='application/vnd.github+json',timeout=45):
     headers={'User-Agent':'sm-crm-deploy','Accept':accept}
     # Never read or attach a credential to local CRM health checks or asset CDNs.
     if url.startswith(API+'/'):
@@ -41,7 +41,7 @@ def get(url,limit=4*1024*1024,accept='application/vnd.github+json'):
         if token:headers['Authorization']='Bearer '+token
     request=urllib.request.Request(url,headers=headers)
     try:
-        with urllib.request.build_opener(SafeRedirect()).open(request,timeout=45) as response:
+        with urllib.request.build_opener(SafeRedirect()).open(request,timeout=timeout) as response:
             data=response.read(limit+1)
     except urllib.error.HTTPError as error:
         raise RuntimeError('Download failed (HTTP '+str(error.code)+'); check GitHub access/rate limits or CRM health') from None
@@ -96,9 +96,25 @@ def healthy():
         except Exception:time.sleep(1)
     raise RuntimeError('CRM health check failed')
 
-def switch(target):
+def switch(target,restore_legacy=False):
     link=BASE/'current.next';link.unlink(missing_ok=True);link.symlink_to(target);os.replace(link,BASE/'current')
     subprocess.run(['systemctl','restart','sm-crm'],check=True);healthy()
+    # Long-lived derived-data code must follow current; deliberately stopped workers stay stopped.
+    for service in ['sm-crm-summaries','sm-crm-sk-events']:
+        if subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
+            subprocess.run(['systemctl','try-restart',service],check=True)
+    service='sm-crm-legacy-snapshots'
+    if restore_legacy or subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
+        if json.loads((target/'release.json').read_text()).get('legacySnapshots')!=1:
+            subprocess.run(['systemctl','stop',service],check=True)
+        else:
+            subprocess.run(['systemctl','restart' if restore_legacy else 'try-restart',service],check=True)
+            for _ in range(15):
+                try:
+                    if json.loads(get('http://127.0.0.1:3101/api/crm-worker-health',1024,timeout=2)).get('ok') is True:break
+                except Exception:pass
+                time.sleep(1)
+            else:raise RuntimeError('CRM legacy snapshot worker health check failed')
 
 def retain(history,live):
     if live.parent!=BASE/'releases' or not NAME.fullmatch(live.name):raise ValueError('Unexpected current release')
@@ -116,9 +132,11 @@ def activate(target,previous,state):
     backup=BASE/'backups/deploy-latest.sqlite';backup.parent.mkdir(exist_ok=True)
     with sqlite3.connect('file:/var/lib/sm-crm/crm.sqlite?mode=ro',uri=True) as src,sqlite3.connect(str(backup)+'.tmp') as dst:src.backup(dst)
     os.chmod(str(backup)+'.tmp',0o600);os.replace(str(backup)+'.tmp',backup)
+    # A failed new worker may already be inactive when automatic rollback begins.
+    legacy_was_active=subprocess.run(['systemctl','is-active','--quiet','sm-crm-legacy-snapshots'],check=False).returncode==0
     try:switch(target)
     except Exception:
-        switch(previous)
+        switch(previous,restore_legacy=legacy_was_active)
         raise
     state['history']=retain([previous.name]+state.get('history',[]),target)
     state['current']=target.name;state['updatedAt']=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
@@ -163,6 +181,7 @@ def run(rollback=None):
             staged=tmp/'release';(staged/'.next').mkdir(parents=True)
             validate_jobs(runtime/'jobs',meta)
             (runtime/'jobs').rename(staged/'scripts');runtime.rename(staged/'.next/standalone')
+            link_job_dependencies(staged)
             static=staged/'.next/standalone/.next/static'
             meta['staticFiles']=[p.relative_to(static).as_posix() for p in static.rglob('*') if p.is_file()]
             # Serve immutable chunks from the two preceding builds for already open browser tabs.
@@ -177,9 +196,19 @@ def run(rollback=None):
     if json.loads(get(API+'/commits/main'))['sha']!=sha:print('A newer commit arrived; update deferred');return
     print('Deployed '+sha if activate(target,previous,state) else 'Active call; update deferred')
 
+def link_job_dependencies(staged):
+    # Jobs live at release/scripts; the web bundle keeps its traced dependencies inside standalone.
+    dependencies=staged/'.next/standalone/node_modules'
+    if dependencies.is_symlink() or not dependencies.is_dir():raise ValueError('Missing trusted runtime dependencies')
+    (staged/'node_modules').symlink_to('.next/standalone/node_modules',target_is_directory=True)
+
 def validate_jobs(path,meta):
     expected={'sync-activity.mjs','sync-base.mjs','sync-cdek-deletions.mjs','sync-cdek-shipments.mjs','sync-lv-warehouse.mjs','sync-redemption.mjs','sync-sk-orders.mjs'}
     if meta.get('maintenance')==1:expected.add('sync-maintenance.mjs')
+    if meta.get('exports')==1:expected.add('sync-exports.mjs')
+    if meta.get('summaries')==1:expected.add('sync-summaries.mjs')
+    if meta.get('skEvents')==1:expected.add('sync-sk-events.mjs')
+    if meta.get('lvIncoming')==1:expected.add('sync-lv-incoming.mjs')
     if {p.name for p in path.glob('sync-*.mjs')}!=expected:raise ValueError('Background jobs are missing or unexpected')
 
 if __name__=='__main__':

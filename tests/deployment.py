@@ -41,8 +41,131 @@ class Deployment(unittest.TestCase):
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1})
             (path/'sync-maintenance.mjs').write_text('fixture')
             deploy.validate_jobs(path,{'maintenance':1})
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1})
+            (path/'sync-exports.mjs').write_text('fixture')
+            deploy.validate_jobs(path,{'maintenance':1,'exports':1})
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1})
+            (path/'sync-summaries.mjs').write_text('fixture')
+            deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1})
+            for marker,job in [('skEvents','sk-events'),('lvIncoming','lv-incoming')]:
+                meta={'maintenance':1,'exports':1,'summaries':1,marker:1}
+                with self.assertRaises(ValueError):deploy.validate_jobs(path,meta)
+                (path/('sync-'+job+'.mjs')).write_text('fixture');deploy.validate_jobs(path,meta)
+                (path/('sync-'+job+'.mjs')).unlink()
+            for job in ['sk-events','lv-incoming']:(path/('sync-'+job+'.mjs')).write_text('fixture')
+            deploy.validate_jobs(path,{'maintenance':1,'exports':1,'summaries':1,'skEvents':1,'lvIncoming':1})
+            for job in ['sk-events','lv-incoming']:(path/('sync-'+job+'.mjs')).unlink()
+            with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1,'exports':1})
+            (path/'sync-summaries.mjs').unlink()
+            (path/'sync-exports.mjs').unlink()
             (path/'sync-base.mjs').unlink()
             with self.assertRaises(ValueError):deploy.validate_jobs(path,{'maintenance':1})
+
+    def test_summary_service_is_bounded_and_opt_in(self):
+        unit=(root/'scripts/systemd/sm-crm-summaries.service').read_text()
+        for value in ['Type=simple','ConditionPathExists=/srv/crm/current/scripts/sync-summaries.mjs','ExecStart=/opt/sm-node/bin/node --max-old-space-size=512 /srv/crm/current/scripts/sync-summaries.mjs','MemoryMax=768M','CPUQuota=100%','Restart=on-failure','Environment=CRM_SUMMARIES_WORKER=1']:
+            self.assertIn(value,unit)
+        self.assertFalse((root/'scripts/systemd/sm-crm-summaries.timer').exists(),'the daemon owns its cadence; no second timer')
+
+    def test_switch_restarts_only_an_active_summary_worker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            deploy.BASE=pathlib.Path(folder);target=deploy.BASE/'new';target.mkdir()
+            (target/'release.json').write_text('{"legacySnapshots":1}')
+            for active in [0,3,4]:
+                with self.subTest(active=active),patch.object(deploy,'healthy'),patch.object(deploy,'get',return_value=b'{"ok":true}') as get,patch.object(pathlib.Path,'symlink_to'),patch.object(deploy.os,'replace'),patch.object(deploy.subprocess,'run') as run:
+                    run.return_value.returncode=active
+                    deploy.switch(target)
+                    expected=[call(['systemctl','restart','sm-crm'],check=True)]
+                    for service in ['sm-crm-summaries','sm-crm-sk-events','sm-crm-legacy-snapshots']:
+                        expected.append(call(['systemctl','is-active','--quiet',service],check=False))
+                        if active==0:expected.append(call(['systemctl','try-restart',service],check=True))
+                    self.assertEqual(run.call_args_list,expected)
+                    self.assertEqual(get.call_count,1 if active==0 else 0)
+
+    def test_legacy_worker_stops_for_unsupported_rollback_and_fails_closed(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)),patch.object(deploy,'healthy'),patch.object(pathlib.Path,'symlink_to'),patch.object(deploy.os,'replace'),patch.object(deploy.time,'sleep'):
+            target=deploy.BASE/'release';target.mkdir();meta=target/'release.json'
+            with patch.object(deploy.subprocess,'run') as run,patch.object(deploy,'get') as get:
+                run.return_value.returncode=0;meta.write_text('{}');deploy.switch(target)
+                run.assert_any_call(['systemctl','stop','sm-crm-legacy-snapshots'],check=True);get.assert_not_called()
+                run.reset_mock();run.return_value.returncode=3;deploy.switch(target,restore_legacy=True)
+                run.assert_any_call(['systemctl','stop','sm-crm-legacy-snapshots'],check=True);get.assert_not_called()
+                self.assertNotIn(call(['systemctl','restart','sm-crm-legacy-snapshots'],check=True),run.call_args_list)
+                run.return_value.returncode=0
+                meta.write_text('{"legacySnapshots":1}');get.return_value=b'{"ok":false}'
+                with self.assertRaisesRegex(RuntimeError,'snapshot worker health'):deploy.switch(target)
+                self.assertEqual(get.call_count,15)
+
+    def test_legacy_snapshot_manifest_and_loopback_unit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=pathlib.Path(folder);runtime=p/'.next/standalone';runtime.mkdir(parents=True)
+            (runtime/'server.js').write_text('fixture');(p/'public').mkdir();(p/'.next/static').mkdir();(p/'lib').mkdir()
+            (p/'lib/crm-legacy-proxy.ts').write_text('fixture');pack.package('d'*40,p)
+            self.assertEqual(json.loads((runtime/'release.json').read_text())['legacySnapshots'],1)
+        unit=(root/'scripts/systemd/sm-crm-legacy-snapshots.service').read_text()
+        for value in ['HOSTNAME=127.0.0.1','PORT=3101','CRM_LEGACY_SNAPSHOT_WORKER=1','/srv/crm/current/.next/standalone/server.js','IPAddressDeny=any','IPAddressAllow=localhost']:
+            self.assertIn(value,unit)
+
+    def test_failed_web_health_does_not_restart_summary_worker(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)):
+            target=deploy.BASE/'new';target.mkdir()
+            with patch.object(deploy,'healthy',side_effect=RuntimeError('unhealthy')),patch.object(deploy.subprocess,'run') as run:
+                with self.assertRaisesRegex(RuntimeError,'unhealthy'):deploy.switch(target)
+                run.assert_called_once_with(['systemctl','restart','sm-crm'],check=True)
+
+    def test_summary_manifest_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=pathlib.Path(folder);runtime=p/'.next/standalone';runtime.mkdir(parents=True)
+            (runtime/'server.js').write_text('fixture');(p/'public').mkdir();(p/'.next/static').mkdir();(p/'scripts').mkdir();(runtime/'jobs').mkdir()
+            (p/'scripts/sync-summaries.mjs').write_text('fixture');(runtime/'jobs/sync-summaries.mjs').write_text('fixture')
+            with patch.object(pack.subprocess,'run',return_value=type('Probe',(),{'returncode':1,'stderr':'CRM_DATABASE_PATH is required'})()):pack.package('b'*40,p)
+            self.assertEqual(json.loads((runtime/'release.json').read_text())['summaries'],1)
+
+    def test_ingress_workers_remain_independent(self):
+        sync=(root/'scripts/sync-sk-orders.mjs').read_text()
+        self.assertNotIn('syncLvIncoming',sync)
+        self.assertIn('syncLvIncoming',(root/'scripts/sync-lv-incoming.mjs').read_text())
+        unit=(root/'scripts/systemd/sm-crm-sk-events.service').read_text()
+        for value in ['Type=simple','ConditionPathExists=/srv/crm/current/scripts/sync-sk-events.mjs','MemoryMax=384M','Restart=on-failure']:
+            self.assertIn(value,unit)
+        self.assertIn('OnUnitActiveSec=60s',(root/'scripts/systemd/sm-crm-sk-orders.timer').read_text())
+        self.assertIn('OnUnitActiveSec=60s',(root/'scripts/systemd/sm-crm-lv-incoming.timer').read_text())
+
+    def test_ingress_manifest_and_isolated_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=pathlib.Path(folder);runtime=p/'.next/standalone';runtime.mkdir(parents=True)
+            (runtime/'server.js').write_text('fixture');(p/'public').mkdir();(p/'.next/static').mkdir();(p/'scripts').mkdir();(runtime/'jobs').mkdir()
+            for job in ['exports','sk-events','lv-incoming']:
+                (p/('scripts/sync-'+job+'.mjs')).write_text('fixture');(runtime/('jobs/sync-'+job+'.mjs')).write_text('fixture')
+            def probe(args,**kwargs):return type('Probe',(),{'returncode':0 if '--input-type=module' in args else 1,'stderr':'CRM_DATABASE_PATH is required'})()
+            with patch.object(pack.subprocess,'run',side_effect=probe) as run:
+                pack.package('c'*40,p)
+            meta=json.loads((runtime/'release.json').read_text());self.assertEqual((meta['exports'],meta['skEvents'],meta['lvIncoming']),(1,1,1))
+            self.assertTrue(any('trace-job-dependencies.mjs' in str(c.args[0]) for c in run.call_args_list))
+            probes=[c for c in run.call_args_list if 'cwd' in c.kwargs];self.assertEqual(len(probes),4)
+            for probe in probes:
+                self.assertFalse(probe.kwargs['cwd'].is_relative_to(p));self.assertNotIn('CRM_DATABASE_PATH',probe.kwargs['env']);self.assertNotIn('NODE_PATH',probe.kwargs['env'])
+                if '--input-type=module' not in probe.args[0]:self.assertEqual(pathlib.Path(probe.args[0][1]).parent.name,'scripts')
+
+    def test_installer_creates_only_internal_dependency_alias(self):
+        with tempfile.TemporaryDirectory() as folder:
+            staged=pathlib.Path(folder);dependencies=staged/'.next/standalone/node_modules';dependencies.mkdir(parents=True)
+            with patch.object(pathlib.Path,'symlink_to',autospec=True) as link:
+                deploy.link_job_dependencies(staged)
+                link.assert_called_once_with(staged/'node_modules','.next/standalone/node_modules',target_is_directory=True)
+            dependencies.rmdir()
+            with self.assertRaises(ValueError):deploy.link_job_dependencies(staged)
+
+    @unittest.skipIf(__import__('os').name=='nt','Windows account cannot create symlinks; Linux CI exercises the real alias')
+    def test_installed_scripts_resolve_internal_dependencies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            staged=pathlib.Path(folder);package=staged/'.next/standalone/node_modules/fixture-dependency';package.mkdir(parents=True)
+            (package/'package.json').write_text('{"name":"fixture-dependency","main":"index.js"}');(package/'index.js').write_text('module.exports=42')
+            (staged/'scripts').mkdir();script=staged/'scripts/probe.mjs';script.write_text("import value from 'fixture-dependency';if(value!==42)throw Error('Wrong dependency');")
+            deploy.link_job_dependencies(staged)
+            self.assertEqual((staged/'node_modules').readlink(),pathlib.Path('.next/standalone/node_modules'))
+            self.assertEqual((staged/'node_modules').resolve(),(staged/'.next/standalone/node_modules').resolve())
+            deploy.subprocess.run(['node',str(script)],cwd=staged,check=True,capture_output=True)
 
     def test_reject_traversal_and_links(self):
         for name,kind in [('runtime/../../escape',tarfile.REGTYPE),('/escape',tarfile.REGTYPE),('runtime/link',tarfile.SYMTYPE),('runtime/.env',tarfile.REGTYPE)]:
@@ -62,9 +185,30 @@ class Deployment(unittest.TestCase):
     def test_failed_health_restores_previous_release(self):
         with tempfile.TemporaryDirectory() as d:
             deploy.BASE=pathlib.Path(d);previous=deploy.BASE/'saved';target=deploy.BASE/'new';state={'history':['saved']}
-            with patch.object(deploy,'current',return_value=previous),patch.object(deploy,'idle',return_value=True),patch.object(deploy.sqlite3,'connect',return_value=MagicMock()),patch.object(deploy.os,'chmod'),patch.object(deploy.os,'replace'),patch.object(deploy,'switch',side_effect=[RuntimeError('health failure'),None]) as switch:
-                with self.assertRaisesRegex(RuntimeError,'health failure'):deploy.activate(target,previous,state)
-                self.assertEqual(switch.call_args_list,[call(target),call(previous)])
+            for active in [0,3,4]:
+                with self.subTest(active=active),patch.object(deploy,'current',return_value=previous),patch.object(deploy,'idle',return_value=True),patch.object(deploy.sqlite3,'connect',return_value=MagicMock()),patch.object(deploy.os,'chmod'),patch.object(deploy.os,'replace'),patch.object(deploy.subprocess,'run',return_value=type('Status',(),{'returncode':active})()),patch.object(deploy,'switch',side_effect=[RuntimeError('health failure'),None]) as switch:
+                    with self.assertRaisesRegex(RuntimeError,'health failure'):deploy.activate(target,previous,state)
+                    self.assertEqual(switch.call_args_list,[call(target),call(previous,restore_legacy=active==0)])
+                    self.assertEqual(state,{'history':['saved']})
+
+    def test_automatic_rollback_recovers_previously_active_snapshot_worker(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)):
+            previous=deploy.BASE/'saved';target=deploy.BASE/'new';state={'history':['saved']}
+            for release in [previous,target]:release.mkdir();(release/'release.json').write_text('{"legacySnapshots":1}')
+            active=True
+            def systemctl(args,**kwargs):
+                nonlocal active
+                if args[1]=='is-active':return type('Status',(),{'returncode':0 if args[-1]=='sm-crm-legacy-snapshots' and active else 3})()
+                if args[-1]=='sm-crm-legacy-snapshots':
+                    if args[1]=='try-restart':active=False # The candidate worker exits before health succeeds.
+                    elif args[1]=='restart':active=True # The retained compatible release starts correctly.
+                return type('Status',(),{'returncode':0})()
+            with patch.object(deploy,'current',return_value=previous),patch.object(deploy,'idle',return_value=True),patch.object(deploy.sqlite3,'connect',return_value=MagicMock()),patch.object(deploy.os,'chmod'),patch.object(deploy.os,'replace'),patch.object(pathlib.Path,'symlink_to'),patch.object(deploy,'healthy'),patch.object(deploy.time,'sleep'),patch.object(deploy.subprocess,'run',side_effect=systemctl) as run,patch.object(deploy,'get',side_effect=lambda *a,**kw:b'{"ok":true}' if active else b'{"ok":false}') as get:
+                with self.assertRaisesRegex(RuntimeError,'snapshot worker health'):deploy.activate(target,previous,state)
+                self.assertTrue(active,'rollback must restore the service that was active before deployment')
+                run.assert_any_call(['systemctl','try-restart','sm-crm-legacy-snapshots'],check=True)
+                run.assert_any_call(['systemctl','restart','sm-crm-legacy-snapshots'],check=True)
+                self.assertEqual(get.call_count,16)
                 self.assertEqual(state,{'history':['saved']})
 
     def test_github_auth_is_scoped_and_asset_api_used(self):

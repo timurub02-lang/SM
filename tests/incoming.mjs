@@ -27,5 +27,18 @@ try{
   await assert.rejects(incomingForAction(d,'unknown',e,staff),/уже закрыто/);
  }
  assert.equal(activeIncomingOrder({status:'draft'}),true);assert.equal(activeIncomingOrder({status:'redeemed'}),false);
+ const orders=[{id:'a-own',clientId:'known',manager:'one',status:'draft'},{id:'z-foreign',clientId:'known',manager:'two',status:'confirm'},{id:'m-own',clientId:'known',manager:'one',status:'shipping'},{id:'closed',clientId:'known',manager:'one',status:'redeemed'},{id:'unrelated',clientId:'elsewhere',manager:'one',status:'draft'}];
+ const namedStaff=staff.map(e=>({...e,name:'Name '+e.id}));
+ for(const order of orders)await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind(order.id,order.clientId,JSON.stringify(order)).run();
+ const full=await readIncoming(d,namedStaff[4],namedStaff,orders),scoped=await readIncoming(d,namedStaff[4],namedStaff,[],true);
+ assert.deepEqual(full.find(i=>i.id==='known').orderIds,['a-own','m-own'],'global order input order is retained');
+ assert.deepEqual(scoped.find(i=>i.id==='known').orderIds,['m-own','a-own'],'scoped SQL order is retained');
+ assert.equal(full.find(i=>i.id==='known').phone,'');assert.equal(full.find(i=>i.id==='known').assigneeName,'Name one');
+ const hidden=(await readIncoming(d,namedStaff[4],namedStaff,[orders[1]])).find(i=>i.id==='known');
+ assert.equal(hidden.hasActiveOrder,true,'a hidden active order still prevents treating the incoming client as idle');assert.deepEqual(hidden.orderIds,[],'hidden order identifiers remain private');
+ const firstRead=await readIncoming(d,namedStaff[0],namedStaff,orders);firstRead.find(i=>i.id==='known').orderIds.push('mutated');
+ assert.ok(!(await readIncoming(d,namedStaff[0],namedStaff,orders)).find(i=>i.id==='known').orderIds.includes('mutated'),'each response owns its order ID array');
+ let statusReads=0;await readIncoming(d,namedStaff[0],namedStaff,orders.map(order=>({...order,get status(){statusReads++;return order.status;}})));
+ assert.equal(statusReads,4,'active status is evaluated once per relevant order, not once per incoming row');
  console.log('Incoming: unknown callers visible to all heads, including no department; known clients scoped; read/action parity; shared atomic closure passed.');
 }finally{d.close();}

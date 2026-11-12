@@ -1,3 +1,4 @@
+import {readPreparedFinancialPeriod} from '@/lib/crm-financial-projection';
 import {readPremiumState} from '@/lib/premium-store';
 import {ledgerRows,periodOrders,payrollVisible,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
 import {authenticated} from '@/lib/api-auth';
@@ -17,6 +18,11 @@ async function handle(req:Request){
   if(!actor||!['admin','operator','department_head'].includes(actor.role))return Response.json({error:'Расчёт недоступен'},{status:403});
   const period=q.get('period')||'';
   if(!premiumPeriods.some(p=>p.id===period))throw Error('Выберите расчётный период');
+  if(req.method==='GET'&&process.env.CRM_SUMMARIES_WORKER==='1'){
+   const {response,readModel}=await readPreparedFinancialPeriod(d,actor,period);
+   if(!response)return Response.json({error:readModel.message||'Финансовая сводка ещё не подготовлена',readModel},{status:503,headers:{'Cache-Control':'no-store','Retry-After':'2'}});
+   return Response.json({...response,readModel},{headers:{'Cache-Control':'no-store'}});
+  }
   const prefix='premium-draft:'+period+':';
   const stored=await d.prepare('SELECT data FROM settings WHERE id=?').bind(ledgerKey).first<{data:string}>();
   const ledger=stored?JSON.parse(stored.data) as PremiumLedger:null;

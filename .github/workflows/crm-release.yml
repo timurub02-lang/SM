@@ -50,8 +50,13 @@ jobs:
       - name: Verify authentication and both calling routes without real calls
         run: |
           node tests/run-units.mjs
+          node tests/exports-http.mjs
           node --experimental-strip-types tests/crm-events-http.mjs
+            node --experimental-strip-types tests/crm-workspace-http.mjs
+            node --experimental-strip-types tests/crm-summaries-http.mjs
+          node --experimental-strip-types tests/crm-legacy-http.mjs
           node --experimental-strip-types tests/crm-transport-http.mjs
+          CRM_SPLIT_READS=1 node --experimental-strip-types tests/crm-transport-http.mjs
           node --experimental-strip-types tests/review-http.mjs
           node --experimental-strip-types tests/postal-form-http.mjs
           node --experimental-strip-types tests/cdek-delete-http.mjs
