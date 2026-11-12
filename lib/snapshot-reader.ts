@@ -1,3 +1,4 @@
+import {readJsonResponse} from './read-json-response.ts';
 // Keep one read in flight; a completed write must never be replaced by an older read.
 export class SnapshotReader<T> {
  private pending:Promise<T|null>|undefined;
@@ -20,9 +21,8 @@ export class SnapshotReader<T> {
     const response=await this.request(this.url,{cache:'no-store',headers:this.etag?{'If-None-Match':this.etag}:{},signal:AbortSignal.any([controller.signal,timeout])});
     if(generation!==this.generation)return null;
     if(response.status===304&&this.value!==undefined)return this.value;
-    const data=await response.json() as T&{error?:string};
+    const data=await readJsonResponse<T>(response);
     if(generation!==this.generation)return null;
-    if(!response.ok)throw Object.assign(Error(data.error||'Не удалось загрузить данные'),{status:response.status});
     this.value=this.decode(data,this.value);this.etag=response.headers.get('etag')||'';return this.value;
    }catch(error){if(controller.signal.aborted)return null;if(timeout.aborted)throw Error("CRM не успела загрузить данные. Проверьте соединение и повторите загрузку.");throw error;}
    finally{if(generation===this.generation){this.pending=undefined;this.controller=undefined;}}
