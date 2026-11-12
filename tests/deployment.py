@@ -88,6 +88,10 @@ class Deployment(unittest.TestCase):
             with patch.object(deploy.subprocess,'run') as run,patch.object(deploy,'get') as get:
                 run.return_value.returncode=0;meta.write_text('{}');deploy.switch(target)
                 run.assert_any_call(['systemctl','stop','sm-crm-legacy-snapshots'],check=True);get.assert_not_called()
+                run.reset_mock();run.return_value.returncode=3;deploy.switch(target,restore_legacy=True)
+                run.assert_any_call(['systemctl','stop','sm-crm-legacy-snapshots'],check=True);get.assert_not_called()
+                self.assertNotIn(call(['systemctl','restart','sm-crm-legacy-snapshots'],check=True),run.call_args_list)
+                run.return_value.returncode=0
                 meta.write_text('{"legacySnapshots":1}');get.return_value=b'{"ok":false}'
                 with self.assertRaisesRegex(RuntimeError,'snapshot worker health'):deploy.switch(target)
                 self.assertEqual(get.call_count,15)
@@ -181,9 +185,30 @@ class Deployment(unittest.TestCase):
     def test_failed_health_restores_previous_release(self):
         with tempfile.TemporaryDirectory() as d:
             deploy.BASE=pathlib.Path(d);previous=deploy.BASE/'saved';target=deploy.BASE/'new';state={'history':['saved']}
-            with patch.object(deploy,'current',return_value=previous),patch.object(deploy,'idle',return_value=True),patch.object(deploy.sqlite3,'connect',return_value=MagicMock()),patch.object(deploy.os,'chmod'),patch.object(deploy.os,'replace'),patch.object(deploy,'switch',side_effect=[RuntimeError('health failure'),None]) as switch:
-                with self.assertRaisesRegex(RuntimeError,'health failure'):deploy.activate(target,previous,state)
-                self.assertEqual(switch.call_args_list,[call(target),call(previous)])
+            for active in [0,3,4]:
+                with self.subTest(active=active),patch.object(deploy,'current',return_value=previous),patch.object(deploy,'idle',return_value=True),patch.object(deploy.sqlite3,'connect',return_value=MagicMock()),patch.object(deploy.os,'chmod'),patch.object(deploy.os,'replace'),patch.object(deploy.subprocess,'run',return_value=type('Status',(),{'returncode':active})()),patch.object(deploy,'switch',side_effect=[RuntimeError('health failure'),None]) as switch:
+                    with self.assertRaisesRegex(RuntimeError,'health failure'):deploy.activate(target,previous,state)
+                    self.assertEqual(switch.call_args_list,[call(target),call(previous,restore_legacy=active==0)])
+                    self.assertEqual(state,{'history':['saved']})
+
+    def test_automatic_rollback_recovers_previously_active_snapshot_worker(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(deploy,'BASE',pathlib.Path(folder)):
+            previous=deploy.BASE/'saved';target=deploy.BASE/'new';state={'history':['saved']}
+            for release in [previous,target]:release.mkdir();(release/'release.json').write_text('{"legacySnapshots":1}')
+            active=True
+            def systemctl(args,**kwargs):
+                nonlocal active
+                if args[1]=='is-active':return type('Status',(),{'returncode':0 if args[-1]=='sm-crm-legacy-snapshots' and active else 3})()
+                if args[-1]=='sm-crm-legacy-snapshots':
+                    if args[1]=='try-restart':active=False # The candidate worker exits before health succeeds.
+                    elif args[1]=='restart':active=True # The retained compatible release starts correctly.
+                return type('Status',(),{'returncode':0})()
+            with patch.object(deploy,'current',return_value=previous),patch.object(deploy,'idle',return_value=True),patch.object(deploy.sqlite3,'connect',return_value=MagicMock()),patch.object(deploy.os,'chmod'),patch.object(deploy.os,'replace'),patch.object(pathlib.Path,'symlink_to'),patch.object(deploy,'healthy'),patch.object(deploy.time,'sleep'),patch.object(deploy.subprocess,'run',side_effect=systemctl) as run,patch.object(deploy,'get',side_effect=lambda *a,**kw:b'{"ok":true}' if active else b'{"ok":false}') as get:
+                with self.assertRaisesRegex(RuntimeError,'snapshot worker health'):deploy.activate(target,previous,state)
+                self.assertTrue(active,'rollback must restore the service that was active before deployment')
+                run.assert_any_call(['systemctl','try-restart','sm-crm-legacy-snapshots'],check=True)
+                run.assert_any_call(['systemctl','restart','sm-crm-legacy-snapshots'],check=True)
+                self.assertEqual(get.call_count,16)
                 self.assertEqual(state,{'history':['saved']})
 
     def test_github_auth_is_scoped_and_asset_api_used(self):

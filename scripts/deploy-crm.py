@@ -96,7 +96,7 @@ def healthy():
         except Exception:time.sleep(1)
     raise RuntimeError('CRM health check failed')
 
-def switch(target):
+def switch(target,restore_legacy=False):
     link=BASE/'current.next';link.unlink(missing_ok=True);link.symlink_to(target);os.replace(link,BASE/'current')
     subprocess.run(['systemctl','restart','sm-crm'],check=True);healthy()
     # Long-lived derived-data code must follow current; deliberately stopped workers stay stopped.
@@ -104,11 +104,11 @@ def switch(target):
         if subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
             subprocess.run(['systemctl','try-restart',service],check=True)
     service='sm-crm-legacy-snapshots'
-    if subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
+    if restore_legacy or subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
         if json.loads((target/'release.json').read_text()).get('legacySnapshots')!=1:
             subprocess.run(['systemctl','stop',service],check=True)
         else:
-            subprocess.run(['systemctl','try-restart',service],check=True)
+            subprocess.run(['systemctl','restart' if restore_legacy else 'try-restart',service],check=True)
             for _ in range(15):
                 try:
                     if json.loads(get('http://127.0.0.1:3101/api/crm-worker-health',1024,timeout=2)).get('ok') is True:break
@@ -132,9 +132,11 @@ def activate(target,previous,state):
     backup=BASE/'backups/deploy-latest.sqlite';backup.parent.mkdir(exist_ok=True)
     with sqlite3.connect('file:/var/lib/sm-crm/crm.sqlite?mode=ro',uri=True) as src,sqlite3.connect(str(backup)+'.tmp') as dst:src.backup(dst)
     os.chmod(str(backup)+'.tmp',0o600);os.replace(str(backup)+'.tmp',backup)
+    # A failed new worker may already be inactive when automatic rollback begins.
+    legacy_was_active=subprocess.run(['systemctl','is-active','--quiet','sm-crm-legacy-snapshots'],check=False).returncode==0
     try:switch(target)
     except Exception:
-        switch(previous)
+        switch(previous,restore_legacy=legacy_was_active)
         raise
     state['history']=retain([previous.name]+state.get('history',[]),target)
     state['current']=target.name;state['updatedAt']=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())

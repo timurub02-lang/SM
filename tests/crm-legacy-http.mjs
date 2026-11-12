@@ -10,6 +10,8 @@ import {join,resolve,dirname,sep} from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {authSchema} from '../lib/auth-schema.ts';
+import {initReminderStore} from '../lib/reminder-store.ts';
+import {openDatabase} from '../server/sqlite.ts';
 import {decodeCrmSnapshot} from '../lib/crm-state-delta.ts';
 
 const output=process.env.LEGACY_TEST_OUTPUT;if(output)mkdirSync(output,{recursive:true});
@@ -40,6 +42,7 @@ async function call(id,path='?transport=compact-v1',options={},origin=base){
 function heartbeat(){d.prepare("INSERT INTO settings(id,data) VALUES('crm-maintenance-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify({ok:true,at:new Date().toISOString()}));}
 try{
  d.exec('PRAGMA journal_mode=WAL');d.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of authSchema)d.exec(sql);
+ const setup=openDatabase(file);try{await initReminderStore(setup);}finally{setup.close();}
  const now=new Date().toISOString(),roles=['admin','logistic','chief_logistic','redemption','courier','operator','department_head'];
  for(const role of roles){
   const e={id:role,login:role,name:'Synthetic '+role,role,department:'one',salary:700,bonus:31},token=randomBytes(32).toString('hex');
