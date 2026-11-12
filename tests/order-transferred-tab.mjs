@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {orderDisplayGroup,orderDisplayGroups} from '../lib/order-premium-stage.ts';
+import {filteredOrderList} from '../lib/crm-order-list.ts';
+const ids=orderDisplayGroups.map(g=>g.id);
+assert.deepEqual(ids.slice(0,3),['new','transferred','accepted']);
+const orders=['draft','confirm','rework','check','extra','packing'].map(status=>({id:status,clientId:'c',manager:'op',status,items:[],delivery:'cdek_courier',round:1}));
+assert.deepEqual(orders.map(o=>orderDisplayGroup(o).id),['new','transferred','new','accepted','accepted','accepted']);
+const employee={id:'op',role:'operator'},state={orders,clients:[{id:'c',name:'Test',owner:'op'}],employees:[employee],settings:{}};
+const query={view:'orders',query:'',showNextPremium:false};
+assert.deepEqual(filteredOrderList(state,employee,{...query,filter:'new'}).map(o=>o.id),['draft','rework']);
+assert.deepEqual(filteredOrderList(state,employee,{...query,filter:'transferred'}).map(o=>o.id),['confirm']);
+assert.equal(filteredOrderList(state,employee,{...query,filter:'new',query:'confirm'})[0].id,'confirm');
+assert.equal(filteredOrderList({...state,orders:[...orders,{...orders[0],id:'other',manager:'other'}]},employee,{...query,filter:'new'}).length,2);
+console.log('New/transferred groups, operator rework, unchanged accepted stages, cross-status search and ownership passed');

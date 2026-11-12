@@ -2,11 +2,13 @@ import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
 export type OrderPremiumStage={status:'accrued'|'paid';periodId:string};
+const transferred={id:'transferred',label:'Передан'};
 const accrued={id:'accrued',label:'Начислено'};
 const paid={id:'premium_paid',label:'Выплачено'};
-export const orderDisplayGroups=orderGroups.flatMap(group=>group.id==='paid'?[group,accrued,paid]:[group]);
+export const orderDisplayGroups=orderGroups.flatMap(group=>group.id==='new'?[group,transferred]:group.id==='paid'?[group,accrued,paid]:[group]);
 // Financial stages only affect the order list, never fulfilment or retention.
 export function orderDisplayGroup(order:Order){
+ if(order.status==='confirm')return transferred;
  if(order.status==='redeemed'&&order.premiumStage?.periodId){
   if(order.premiumStage.status==='accrued')return accrued;
   if(order.premiumStage.status==='paid')return paid;
