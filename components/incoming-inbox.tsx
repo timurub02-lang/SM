@@ -72,9 +72,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    </summary>
    <div className="incoming-card-body stack"><IncomingHandoffNote item={item}/>
    <div className="incoming-client-heading">{!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
-   <span>Входящий: {stamp(item.at,'Europe/Moscow')} МСК{item.calledNumber?' · На номер '+item.calledNumber:''}</span>
-   <span>{item.assigneeName}</span>
-   <span>Звонков: {item.callCount||1}{(item.callCount||1)>1&&' · Последний: '+stamp(item.lastAt||item.at,'Europe/Moscow')+' МСК'}</span>
+   {item.calledNumber&&<small className="muted">На номер {item.calledNumber}</small>}
    {item.spam&&<p>{item.spamReason}{item.blocked?' · Номер заблокирован':''}</p>}
    {employee.role==='admin'&&<div className="action-buttons">
     {item.spam&&!item.closedAt&&<button className="primary" disabled={protecting||busy||!item.phone} onClick={()=>void protection({id:item.id,operation:'restore'})}>Вернуть в работу</button>}
@@ -88,7 +86,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
     <button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!,item.closedAt?undefined:item.id)}>Карточка клиента</button>
     {!item.hasActiveOrder&&!delegated(item)&&!sharedCallback(item)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    </div>}
-   <IncomingTransfer item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/>
+   {!item.closedAt&&!item.spam&&['admin','department_head'].includes(employee.role)&&<details className="incoming-transfer-fold"><summary>Передать оператору</summary><IncomingTransfer item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/></details>}
    {!item.spam&&(item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>
     {item.hasActiveOrder&&!delegated(item)?<><span>Действующие заказы</span><div className="action-buttons">{item.orderIds?.map(id=><button className="primary" key={id} onClick={()=>onOpen(id,item.id)}>Открыть {id}</button>)}</div>{!item.orderIds?.length&&<p>Заказ недоступен вашей роли. Обратитесь к администратору.</p>}</>:<><span>{item.hasActiveOrder?'Переданное входящее обращение':'Действующего заказа нет'}</span><IncomingResult item={item} busy={busy} onSave={reason=>onClose(item.id,reason)}/></>}
    </>)}
