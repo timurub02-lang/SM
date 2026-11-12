@@ -12,12 +12,13 @@ export async function conditionalJson(request:Request,value:unknown){
  });
  const br=encodings.find(e=>e.name==='br')?.q||0;
  const brotli=process.env.CRM_RUNTIME==='miran'&&body.length>=1024&&br>0&&!encodings.some(e=>e.q>br);
- const etag='"'+createHash('sha256').update(body).digest('base64url')+(brotli?'.br':'')+'"';
+ const etag='"'+createHash('sha256').update(body).digest('base64url')+(brotli?'.br1':'')+'"';
  const headers=new Headers({'ETag':etag,'Cache-Control':'private, no-store','Vary':'Cookie, Accept-Encoding','Content-Type':'application/json; charset=utf-8'});
  if(brotli)headers.set('Content-Encoding','br');
  // Unchanged snapshots avoid compression entirely; auth and visibility run before this helper.
  if(request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers});
  if(!brotli)return new Response(body,{headers});
- const encoded=await compress(body,{params:{[constants.BROTLI_PARAM_QUALITY]:4}});
+ // Favor low compression cost for full snapshots, rather than maximum compression ratio.
+ const encoded=await compress(body,{params:{[constants.BROTLI_PARAM_QUALITY]:1}});
  return new Response(new Uint8Array(encoded),{headers});
 }
