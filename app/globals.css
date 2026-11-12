@@ -322,3 +322,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .sk-request-client-link{font-weight:700;text-align:left;text-decoration:underline;text-underline-offset:3px}.sk-request-client-link:hover{color:#075dc8}.sk-request-client-link:focus-visible{outline:2px solid #075dc8;outline-offset:3px}
 
 .order-cancel-request-marker{display:flex;width:fit-content;gap:6px;margin-bottom:8px;font-weight:700;white-space:normal}.order-cancel-request-marker svg{flex-shrink:0}
+
+.sidebar-global-search{padding:0 16px 12px}.sidebar-global-search .search{width:100%;min-width:0;gap:4px}.sidebar-global-search input{min-width:0;width:100%}.sidebar-global-search .icon-button{flex-shrink:0}.admin-search-dialog{width:min(940px,96vw)!important;max-width:940px!important}.admin-search-order{margin-left:12px;width:calc(100% - 12px);text-align:left}.admin-search-dialog .order-mini>div{min-width:0}.admin-search-dialog .order-mini small{display:block;white-space:normal;overflow-wrap:anywhere}
