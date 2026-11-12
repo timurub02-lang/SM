@@ -6,6 +6,7 @@ export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'o
 export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
 export function seesOrder(e:Employee,o:Order,staff:Employee[]){
  if(e.role==='admin')return true;
+ if(o.zvd&&!['operator','department_head'].includes(e.role))return false;
  if(e.role==='courier')return o.delivery==='moscow_courier'&&o.courier?.id===e.id;
  if(e.role==='operator')return o.manager===e.id;
  if(e.role==='department_head')return !!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&x.department===e.department);
@@ -24,7 +25,7 @@ export function visibleState(s:State,e:Employee):State{
   return {orders,clients:s.clients.filter(c=>orders.some(o=>o.clientId===c.id)).map(c=>({id:c.id,name:c.name,phone:c.phone,city:c.city,address:c.address,source:'',owner:'',assignedUntil:'',createdAt:c.createdAt,version:c.version})),employees:[e],events:[],incoming:[],settings:{retentionDays:0,orderPolicy:s.settings?.orderPolicy}};
  }
  const ownedClientIds=new Set(s.clients.filter(c=>ownsClient(e,c,s.employees)).map(c=>c.id));
- const orders=s.orders.filter(o=>seesOrder(e,o,s.employees)||ownedClientIds.has(o.clientId));const orderIds=new Set(orders.map(o=>o.id));
+ const orders=s.orders.filter(o=>(!o.zvd||['operator','department_head'].includes(e.role))&&(seesOrder(e,o,s.employees)||ownedClientIds.has(o.clientId)));const orderIds=new Set(orders.map(o=>o.id));
  const orderClientIds=new Set(orders.map(o=>o.clientId));
  const clients=s.clients.filter(c=>ownedClientIds.has(c.id)||orderClientIds.has(c.id));const ids=new Set(clients.map(c=>c.id));
  const staffIds=new Set([e.id,...orders.flatMap(o=>[o.manager,o.logistic]),...clients.map(c=>c.owner)]);
@@ -35,6 +36,7 @@ export function visibleState(s:State,e:Employee):State{
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
+ if(p.action==='markZvd')return allow(false);
  if(e.role==='purchasing')return allow(false);
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
  if(['readReminder','closeIncoming','transferIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
