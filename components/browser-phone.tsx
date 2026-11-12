@@ -1,6 +1,8 @@
 'use client';
 import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
-import {Phone,PhoneOff,Mic,MicOff} from 'lucide-react';
+import {Clock3,Phone,PhoneOff,Mic,MicOff} from 'lucide-react';
+import {clientLocalTime} from '@/lib/client-local-time';
+import type {Client} from '@/lib/crm';
 import {createPortal} from 'react-dom';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
 import {toast} from 'sonner';
@@ -81,4 +83,4 @@ export function TelephonySettings(){
 }
 
 export function BrowserPhone(props:{admin:boolean;actorId:string;oktellEnabled?:boolean;children:ReactNode}){return props.oktellEnabled?<OktellPhone><LegacyBrowserPhone {...props}/></OktellPhone>:<LegacyBrowserPhone {...props}/>;}
-export function CallButton(props:Parameters<typeof LegacyCallButton>[0]){if(props.target.mode==='client'||props.target.mode==='order'||props.target.mode==='incoming')return <div className={`call-route-buttons ${props.className||''}`} role="group" aria-label="Выбор линии для звонка"><LegacyCallButton {...props} route="mts" className="call-route-mts" icon={null}>МТС</LegacyCallButton><LegacyCallButton {...props} route="beeline" className="call-route-beeline" icon={<Phone size={17}/>}>Позвонить</LegacyCallButton></div>;return <LegacyCallButton {...props}/>;}
+export function CallButton(props:Parameters<typeof LegacyCallButton>[0]&{client?:Partial<Pick<Client,'city'|'address'|'addressParts'>>}){const [now,setNow]=useState(()=>Date.now());useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(timer);},[]);const time=clientLocalTime({city:'',address:'',...props.client},now).split(' · ');if(props.target.mode==='client'||props.target.mode==='order'||props.target.mode==='incoming')return <div className={`call-route-buttons ${props.className||''}`} role="group" aria-label="Выбор линии для звонка"><LegacyCallButton {...props} route="mts" className="call-route-mts" icon={null}>МТС</LegacyCallButton><LegacyCallButton {...props} route="beeline" className="call-route-beeline" icon={<Phone size={17}/>}>Позвонить</LegacyCallButton><div className="call-client-time"><span><Clock3 size={15}/>{time[0]}</span>{time[1]&&<small>{time[1]}</small>}</div></div>;return <LegacyCallButton {...props}/>;}

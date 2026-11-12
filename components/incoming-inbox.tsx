@@ -82,10 +82,10 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
     {confirmBlock===item.id&&<div role="alert"><p>Звонки с этого номера будут завершаться без соединения и сохраняться в спаме. Заблокировать?</p><button className="primary" disabled={protecting} onClick={()=>void protection({id:item.id,operation:'block'})}>Подтвердить блокировку</button><button className="secondary" onClick={()=>setConfirmBlock('')}>Отмена</button></div>}
    </div>}
 
-   {!item.spam&&!item.closedAt&&(!item.clientId||delegated(item)||sharedCallback(item))&&(['admin','department_head'].includes(employee.role)||employee.role==='operator'&&item.assigneeId===employee.id)&&<CallButton target={{mode:'incoming',incomingId:item.id}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
+   {!item.spam&&!item.closedAt&&(!item.clientId||delegated(item)||sharedCallback(item))&&(['admin','department_head'].includes(employee.role)||employee.role==='operator'&&item.assigneeId===employee.id)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'incoming',incomingId:item.id}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    {!item.spam&&item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&<div className="action-buttons">
     <button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!,item.closedAt?undefined:item.id)}>Карточка клиента</button>
-    {!item.hasActiveOrder&&!delegated(item)&&!sharedCallback(item)&&<CallButton target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
+    {!item.hasActiveOrder&&!delegated(item)&&!sharedCallback(item)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    </div>}
    <IncomingTransfer item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/>
    {!item.spam&&(item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>
