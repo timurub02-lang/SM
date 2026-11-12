@@ -82,3 +82,10 @@ const buyoutSummary=operatorStatsSummary(state,{role:'department_head',departmen
 assert.equal(buyoutSummary[1].buyoutMoscow,1);
 assert.ok(!JSON.stringify(buyoutSummary).includes('moscow-buyout'));
 console.log('Buyouts: actual redemption date, Moscow day, imports, duplicates, test/returned exclusions and department isolation passed');
+assert.deepEqual(buyouts.map(r=>[r.created,r.buyoutCount,r.buyoutAmount]),[[0,2,2],[0,1,1]],'Operators with only old orders bought today remain in buyout statistics');
+assert.deepEqual(buyouts[0].orderLists.redeemed.map(o=>o.id),['lv-buyout','post-buyout']);
+assert.equal(buyoutSummary[1].buyoutCount,1);
+assert.equal(buyoutSummary[1].buyoutAmount,1);
+for(const key of ['buyoutCount','buyoutAmount','buyoutCdek','buyoutPost','buyoutMoscow']){
+ const sorted=sortOperatorStats(buyouts,key,false);assert.ok(sorted[0][key]>=sorted[1][key]);
+}
