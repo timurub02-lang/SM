@@ -43,7 +43,6 @@ export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=a
   if(statuses.some((s:any)=>!cdekStatuses.some(v=>v.code===s)))throw Error('Неизвестный статус');
   if(p.projectId&&!/^\d+$/.test(p.projectId))throw Error('Выберите проект СК');
   if(p.automatic&&!p.projectId)throw Error('Выберите проект СК');
-  if(p.automatic&&String(p.projectId)==='50000192327')throw Error('Этот проект используется прежней Таблицей Выкуп. Выберите отдельный проект');
   const cfg={...previous,statuses:[...new Set(statuses)],projectId:p.projectId||'',automatic:!!p.automatic};
   await d.prepare("INSERT INTO settings(id,data) VALUES('redemption-config',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify(cfg)).run();await syncRedemption(d);
  }else if(p.operation==='heads'){
