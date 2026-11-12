@@ -39,6 +39,9 @@ try{
  await initSkOrderEvents(d);assert.equal((await d.prepare('SELECT COUNT(*) n FROM sk_order_events').first()).n,0);
  assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,202);assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,202);
  assert.equal((await d.prepare('SELECT COUNT(*) n FROM sk_order_events').first()).n,1);
+ assert.equal((await receiveSkOrderEvent(d,request({...event(9999),call_result:{result_id:123,comment:'x'.repeat(4000)}}),secret)).status,202);
+ assert.equal((await d.prepare("SELECT length(comment) n FROM sk_order_events WHERE call_id='9999'").first()).n,3000,'long comments use the same truncation as the original importer');
+ await d.prepare("DELETE FROM sk_order_events WHERE call_id='9999'").run();
  assert.equal((await receiveSkOrderEvent(d,request(event(2),{'idempotency-key':'fixture-1'}),secret)).status,409);
  // A stalled LV HTTP call has no ownership of the SK consumer or its report path.
  await put('lv-incoming-import',{enabled:true,statusId:58});await put('lv-warehouse',{host:'fixture.leadvertex.ru',token:'fixture'});

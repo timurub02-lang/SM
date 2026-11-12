@@ -3,7 +3,7 @@ import {z} from 'zod';
 import type {ActivityDb} from './activity-store.ts';
 
 const id=z.union([z.number().int().positive().safe(),z.string().regex(/^[1-9]\d{0,19}$/)]).transform(String);
-const schema=z.object({type:z.literal('call_result'),call:z.object({id,result_id:id}),call_result:z.object({result_id:id,comment:z.string().max(3000).nullish()})});
+const schema=z.object({type:z.literal('call_result'),call:z.object({id,result_id:id}),call_result:z.object({result_id:id,comment:z.string().max(65536).transform(value=>value.slice(0,3000)).nullish()})});
 export async function initSkOrderEvents(d:ActivityDb){
  await d.prepare("CREATE TABLE IF NOT EXISTS sk_order_events(call_id TEXT PRIMARY KEY,event_key TEXT NOT NULL,result_id TEXT NOT NULL,comment TEXT NOT NULL,received_at INTEGER NOT NULL,done_at INTEGER,attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,lease_token TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '')").run();
  await d.prepare('CREATE INDEX IF NOT EXISTS sk_order_events_ready ON sk_order_events(done_at,next_at,received_at)').run();
