@@ -19,7 +19,7 @@ assert.equal(skSender([sender,{...other,skLogin:sender.skLogin}],sender.skLogin)
 const input={callId:'1',leadId:'10',email:'op@test.invalid',userName:'СКП_Оператор',userNameUnique:true,name:'Test Client',phone:'89990000001',city:'',address:'New address',comment:'SK comment'};
 const r=await acceptSkOrder(d,input);assert.equal(r.state,'imported');assert.equal(r.orderId,'SM-1');
 const client=JSON.parse((await d.prepare('SELECT data FROM clients').first()).data);assert.equal(client.owner,'op');assert.equal(client.sheet,'К');assert.equal(client.address,'New address');assert.equal(client.phone,'+79990000001');
-const o=JSON.parse((await d.prepare('SELECT data FROM orders').first()).data);assert.equal(o.status,'draft');assert.equal(o.manager,'op');assert.equal(o.items.length,0);
+const o=JSON.parse((await d.prepare('SELECT data FROM orders').first()).data);assert.equal(o.skLeadId,input.leadId);assert.equal(o.status,'draft');assert.equal(o.manager,'op');assert.equal(o.items.length,0);
 assert.equal((await acceptSkOrder(d,input)).orderId,r.orderId);assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,1);
 await d.prepare('UPDATE clients SET data=json_set(data,\'$.owner\',\'other\'),version=version+1').run();
 const conflict={...input,callId:'2',address:'Different address'};assert.equal((await acceptSkOrder(d,conflict)).state,'pending');assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,1);
