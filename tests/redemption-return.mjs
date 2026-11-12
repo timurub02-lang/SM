@@ -22,8 +22,9 @@ try{
  const beforeNd=await row();
  await edit(op,{operation:'operator_nd',comment:''});
  const afterNd=await row();assert(awaitingOperator(afterNd));assert.equal(afterNd.operatorReturn.deadline,beforeNd.operatorReturn.deadline);assert.equal(afterNd.action,beforeNd.action);assert.equal(afterNd.result,beforeNd.result);assert.equal(afterNd.resultDate,beforeNd.resultDate);assert.deepEqual(afterNd.days,beforeNd.days);assert.equal(afterNd.operatorReturn.attempts.length,1);
- await edit(head,{operation:'operator_nd',comment:'Повторная попытка'});assert.equal((await row()).operatorReturn.attempts.length,2);assert.equal((await row()).operatorReturn.deadline,beforeNd.operatorReturn.deadline);
+ await edit(head,{operation:'operator_nd',comment:'Повторная попытка'});assert.equal((await row()).operatorReturn.attempts.length,2);assert.equal((await row()).operatorReturn.attempts.at(-1).authorId,head.id);assert.equal((await row()).operatorReturn.deadline,beforeNd.operatorReturn.deadline);
  await assert.rejects(edit({...op,id:'stranger'},{operation:'operator_nd'}));
+ await assert.rejects(edit({...head,department:'2'},{operation:'operator_nd',comment:''}),/недоступен/);
  await assert.rejects(edit(buyer,{operation:'operator_nd',comment:''}),/у оператора/);
 
  await edit(head,{action:'date',result:'date',date:'2026-10-20'});assert(!awaitingOperator(await row()));await assert.rejects(edit(op,{operation:'operator_nd',comment:''}),/возвращённом/);assert(awaitingDateConfirmation(await row()));
