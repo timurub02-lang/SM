@@ -53,6 +53,8 @@ const request=async(url,options)=>{
 await syncActivity(d,request,now);await syncActivity(d,request,now+60000);
 assert.equal(callsRequested,4);const result=await readActivity(d,now+60000);assert.equal(result.rows[0].calls,2);assert.equal(result.rows[0].state,'idle');
 assert.equal((await d.prepare('SELECT count(*) AS n FROM activity_incidents').first()).n,1,'Repeated poll must not duplicate alerts');
+const stopped=await readActivity(d,now+240000);assert.equal(stopped.health.ok,false);assert.match(stopped.health.message,/устарели/);assert.equal(stopped.rows[0].skStatus,'unknown');assert.notEqual(stopped.rows[0].state,'idle');
+assert.equal((await readActivity(d,now+60000)).health.ok,true,'Reading stale health must not change the saved checkpoint');
 await d.prepare('INSERT INTO events VALUES(?,?,?)').bind('EV-work',new Date(now+120000).toISOString(),JSON.stringify({actorId:'e',actor:'Operator',text:'Сохранён заказ'})).run();
 await syncActivity(d,request,now+120000);assert.ok((await d.prepare('SELECT ended_at FROM activity_incidents').first()).ended_at);
 // Linking another department midday must include its earlier calls, without duplicating existing totals.

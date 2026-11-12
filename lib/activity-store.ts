@@ -11,8 +11,10 @@ export async function readActivity(d:ActivityDb,now=Date.now()){
  const events=(await d.prepare("SELECT json_extract(data,'$.actorId') AS employee_id,MAX(at) AS at,COUNT(*) AS count FROM events WHERE at>=? AND id NOT LIKE 'IMPORT-%' AND json_extract(data,'$.actorId') IS NOT NULL AND json_extract(data,'$.actor')<>'Система' GROUP BY json_extract(data,'$.actorId')").bind(new Date(start).toISOString()).all()).results;
  const schedules=values['activity-schedules']||{} as Record<string,WorkSchedule>;
  const samples=values['activity-samples']||{} as Record<string,ActivitySample>;
- const rows=staff.map((e:Employee)=>{const s=samples[e.id];return activityRow(e,schedules[e.department||''],s?.day===day?(values['activity-health']?.ok?s:{...s,observedAt:''}):undefined,events.find((r:any)=>r.employee_id===e.id)||{at:'',count:0},now);});
- return {staff,schedules,rows,health:values['activity-health']||{ok:false,message:'Первое подключение ещё не выполнено',checkedAt:''}};
+ const health=values['activity-health']||{ok:false,message:'Первое подключение ещё не выполнено',checkedAt:''};
+ if(health.ok&&!(now-Date.parse(health.lastSuccessAt)>=0&&now-Date.parse(health.lastSuccessAt)<180000)){health.ok=false;health.message='Данные Скорозвона устарели. Автоматическое обновление не подтверждено.';}
+ const rows=staff.map((e:Employee)=>{const s=samples[e.id];return activityRow(e,schedules[e.department||''],s?.day===day?(health.ok?s:{...s,observedAt:''}):undefined,events.find((r:any)=>r.employee_id===e.id)||{at:'',count:0},now);});
+ return {staff,schedules,rows,health};
 }
 export async function recordActivityIncidents(d:ActivityDb,now=Date.now()){
  await initActivity(d);const {rows}=await readActivity(d,now),at=new Date(now).toISOString();
