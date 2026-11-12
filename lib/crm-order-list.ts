@@ -1,5 +1,5 @@
 import {orderStageDate} from './order-stage-date.ts';
-import {cdekStatuses} from './cdek-statuses.ts';
+import {orderNextAction} from './order-next-action.ts';
 import {packingDisplayStage} from './packing-display-stage.ts';
 import {departmentOrders,deliveryQueue,reworkStage,confirmationStage,orderLocation,statuses,total,type Order,type State,type Employee} from './crm.ts';
 import {showOrderInList,orderDisplayGroup} from './order-premium-stage.ts';
@@ -20,7 +20,7 @@ export function filteredOrderList(state:State,employee:Employee,{view,filter,que
   case 'client':return clientsById.get(o.clientId)?.name||'';
   case 'status':return orderDisplayGroup(o).label+' '+statuses[o.status];
   case 'location':return orderLocation(o);
-  case 'action':return (o.cdekStatus?(cdekStatuses.find(s=>s.code===o.cdekStatus!.code)?.label||o.cdekStatus.code):'')|| (o.contact==='missed'?'Недозвон':o.contact==='callback'?'Перезвонить '+(o.due||''):statuses[o.status]);
+  case 'action':return orderNextAction(o);
   case 'total':return total(o);
   case 'manager':return employeesById.get(o.manager)?.name||'';
  }};
