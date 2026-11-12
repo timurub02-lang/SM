@@ -65,3 +65,19 @@ for(let i=0;i<101;i++)await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('
 const sizes=[];
 assert.equal(await orderSkClientLink(d,{id:'native-bulk',clientId:'bulk'},async url=>{const ids=url.searchParams.get('ids').split(',');sizes.push(ids.length);return Response.json(Object.fromEntries(ids.map(id=>[id,{phone:'+79990000003',additional9:link}])));}),link);
 assert.deepEqual(sizes.sort((a,b)=>a-b),[1,100],'LV history requests respect the provider batch size');
+
+// Audited unavailable references cannot reopen an empty or unrelated SK card.
+await d.prepare('INSERT INTO clients VALUES(?,?)').bind('audited',JSON.stringify({phone:'+79990000004',skLeadId:'999',skUnavailableLeadIds:['999']})).run();
+const audited={id:'audited-order',clientId:'audited',skLeadId:'999'};
+assert.equal(await orderSkClientLink(d,audited),null);
+await d.prepare("UPDATE clients SET data=? WHERE id='audited'").bind(JSON.stringify({phone:'+79990000004',skLeadId:'888',skUnavailableLeadIds:['999']})).run();
+assert.equal(await orderSkClientLink(d,audited),skLeadUrl('888'),'A newly confirmed client link remains available');
+await d.prepare('INSERT INTO sk_order_transfers VALUES(?,?,?)').bind('audited-transfer','imported',JSON.stringify({leadId:'999'})).run();
+assert.equal(await orderSkClientLink(d,{id:'audited-transfer',clientId:'audited'}),skLeadUrl('888'),'Unavailable imported references fall back to the same client');
+assert.equal(await orderSkClientLink(d,{id:'other-client-order',clientId:'c',skLeadId:'999'}),skLeadUrl('999'),'Audit exclusions never leak to another client');
+assert.equal(await orderSkClientLink(d,{...audited,skLeadId:undefined,legacyLv:{orderId:'42'}},async()=>Response.json({'42':{additional9:skLeadUrl('999')}})),skLeadUrl('888'),'An unavailable LV reference falls back to the same client');
+await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind('audited-old','audited',JSON.stringify({id:'audited-old',clientId:'audited',legacyLv:{orderId:'46'}})).run();
+await d.prepare("UPDATE clients SET data=? WHERE id='audited'").bind(JSON.stringify({phone:'+79990000004',skUnavailableLeadIds:['999']})).run();
+assert.equal(await orderSkClientLink(d,{id:'audited-new',clientId:'audited'},async()=>Response.json({'46':{phone:'+79990000004',additional9:skLeadUrl('999')}})),null,'Unavailable links are excluded from inherited LV history');
+assert.equal(await orderSkClientLink(d,{id:'audited-new',clientId:'audited'},async()=>Response.json({'46':{phone:'+79990000004',additional9:skLeadUrl('888')}})),skLeadUrl('888'));
+console.log('Audited unavailable references: direct, LV, same-client fallback and new links passed.');
