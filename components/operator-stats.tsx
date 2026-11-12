@@ -19,10 +19,10 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
   return ()=>controller.abort();
  },[visible,summaryMode,from,to,actor.id]);
  if(!['admin','department_head','operator'].includes(actor.role))return null;
- const sourceRows=!visible?[]:summaryMode?summary.map(row=>({...row,orderLists:{created:[],inWork:[],cancelled:[],confirmed:[],sent:[]}})):operatorStats(state,actor,from,to);
+ const sourceRows=!visible?[]:summaryMode?summary.map(row=>({...row,orderLists:{created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}})):operatorStats(state,actor,from,to);
  const invalid=!!from&&!!to&&from>to,rows=invalid||!visible?[]:sortOperatorStats(sourceRows.filter(r=>r.created>0&&(!department||r.department===department)),sort.key,sort.ascending);
- const columns: [StatsSortKey,string][]=[["login","Оператор"],["created","Создано"],["inWork","В работе"],["average","Средний чек"],["amount","Сумма"],["cancelled","Отменено"],["confirmed","Подтверждено"],["sent","Отправлено"]];
- const colgroup=<colgroup><col style={{width:"28%"}}/>{Array.from({length:7},(_,i)=><col key={i}/>)}</colgroup>;
+ const columns: [StatsSortKey,string][]=[["login","Оператор"],["created","Создано"],["inWork","В работе"],["average","Средний чек"],["amount","Сумма"],["cancelled","Отменено"],["confirmed","Подтверждено"],["awaitingShipment","Ожидают отправки"],["sent","Отправлено"]];
+ const colgroup=<colgroup><col style={{width:"28%"}}/>{Array.from({length:8},(_,i)=><col key={i}/>)}</colgroup>;
  const headers=<thead><tr>{columns.map(([key,label])=><th key={key} aria-sort={sort.key===key?(sort.ascending?"ascending":"descending"):"none"}><button className="stats-sort" onClick={()=>setSort({key,ascending:sort.key===key?!sort.ascending:key==="login"})}>{label} <span aria-hidden="true">{sort.key===key?(sort.ascending?"↑":"↓"):"↕"}</span></button></th>)}</tr></thead>;
  function openOrder(id:string){onOpenOrder(id);}
  function metric(value:string|number,orders:Order[],label:string){
@@ -31,7 +31,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
   if(orders.length===1)return <button className="stats-metric" aria-label={`${label}: открыть заказ ${orders[0].id}`} onClick={()=>openOrder(orders[0].id)}>{value}</button>;
   return <select className="stats-metric stats-order-select" aria-label={`${label}: выбрать заказ`} value="" onChange={e=>{if(e.target.value)openOrder(e.target.value);}}><option value="" disabled>{value} ▾</option>{orders.map(o=><option key={o.id} value={o.id}>{o.id} · {state.clients.find(c=>c.id===o.clientId)?.name||'Клиент'} · {statuses[o.status]} · {money(o.items.reduce((n,i)=>n+i.price*i.quantity,0))}</option>)}</select>;
  }
- const allOrders=(key:'created'|'inWork'|'cancelled'|'confirmed'|'sent')=>rows.flatMap(r=>r.orderLists[key]);
+ const allOrders=(key:'created'|'inWork'|'cancelled'|'confirmed'|'awaitingShipment'|'sent')=>rows.flatMap(r=>r.orderLists[key]);
  const count=rows.reduce((n,r)=>n+r.created,0),amount=rows.reduce((n,r)=>n+Math.round(r.amount*100),0)/100;
  return <>
   <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today);setTo(today);setOpen(true);}} title="Статистика операторов"><BarChart3 size={18}/>Статистика</button>
@@ -51,17 +51,18 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
       <td title={r.login}>{r.login}</td><td>{metric(r.created,r.orderLists.created,"Создано заказов")}</td>
       <td>{metric(r.inWork,r.orderLists.inWork,"В работе")}</td>
       <td>{metric(money(r.average),r.orderLists.created,"Средний чек")}</td><td>{metric(money(r.amount),r.orderLists.created,"Сумма заказов")}</td>
-      <td>{metric(r.cancelled,r.orderLists.cancelled,"Отменено")}</td><td>{metric(r.confirmed,r.orderLists.confirmed,"Подтверждено логистом")}</td><td>{metric(r.sent,r.orderLists.sent,"Отправлено")}</td>
+      <td>{metric(r.cancelled,r.orderLists.cancelled,"Отменено")}</td><td>{metric(r.confirmed,r.orderLists.confirmed,"Подтверждено логистом")}</td><td>{metric(r.awaitingShipment,r.orderLists.awaitingShipment,"Ожидают отправки")}</td><td>{metric(r.sent,r.orderLists.sent,"Отправлено")}</td>
      </tr>)}</tbody>
      <tfoot><tr><th>Итого</th><td>{metric(count,allOrders("created"),"Создано — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.inWork,0),allOrders("inWork"),"В работе — итого")}</td>
       <td>{metric(money(count?amount/count:0),allOrders("created"),"Средний чек — итого")}</td><td>{metric(money(amount),allOrders("created"),"Сумма — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.cancelled,0),allOrders("cancelled"),"Отменено — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.confirmed,0),allOrders("confirmed"),"Подтверждено — итого")}</td>
+      <td>{metric(rows.reduce((n,r)=>n+r.awaitingShipment,0),allOrders("awaitingShipment"),"Ожидают отправки — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.sent,0),allOrders("sent"),"Отправлено — итого")}</td>
      </tr></tfoot>
     </table></div>{!rows.length&&<p>За выбранный период нет созданных заказов.</p>}</div>}
-    <p className="muted">В работе — ещё не подтверждены и не отменены. Сортировка — нажатием на заголовок. Подтверждено — логистом. Средний чек и сумма включают все созданные заказы, в том числе отменённые. Подтверждение и отправка учитываются независимо: отправленный заказ остаётся в подтверждённых. Доставка — СДЭК, Почта России и курьер. {!summaryMode&&'Нажмите на показатель, чтобы открыть входящие в него заказы.'}</p>
+    <p className="muted">В работе — ещё не подтверждены и не отменены. Сортировка — нажатием на заголовок. Подтверждено — логистом. Ожидают отправки — подтверждены, ещё не отправлены и не отменены. Средний чек и сумма включают все созданные заказы, в том числе отменённые. Подтверждение и отправка учитываются независимо: отправленный заказ остаётся в подтверждённых. Доставка — СДЭК, Почта России и курьер. {!summaryMode&&'Нажмите на показатель, чтобы открыть входящие в него заказы.'}</p>
    </div>
   </DialogContent>}</Dialog>
  </>;

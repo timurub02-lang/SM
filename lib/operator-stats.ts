@@ -14,13 +14,14 @@ export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Emplo
   const confirmed=created.filter(o=>!!o.confirmedAt);
   const sent=created.filter(o=>!!o.shippedAt||!!o.cdekAcceptedAt||['shipping','pickup','redeemed','returned'].includes(o.status));
   const cancelled=created.filter(o=>!!o.cancelledAt||o.status==='refused');
+  const awaitingShipment=confirmed.filter(o=>!sent.includes(o)&&!cancelled.includes(o));
   const inWork=created.filter(o=>!confirmed.includes(o)&&!cancelled.includes(o));
   const amount=created.reduce((sum,o)=>sum+Math.round(total(o)*100),0)/100;
-  return {id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,sent:sent.length,orderLists:{created,inWork,cancelled,confirmed,sent}};
+  return {id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,awaitingShipment:awaitingShipment.length,sent:sent.length,orderLists:{created,inWork,cancelled,confirmed,awaitingShipment,sent}};
  });
 }
 
-export type StatsSortKey='login'|'created'|'inWork'|'average'|'amount'|'cancelled'|'confirmed'|'sent';
+export type StatsSortKey='login'|'created'|'inWork'|'average'|'amount'|'cancelled'|'confirmed'|'awaitingShipment'|'sent';
 export function sortOperatorStats(rows:ReturnType<typeof operatorStats>,key:StatsSortKey,ascending:boolean){
  return [...rows].sort((a,b)=>{
   const comparison=key==='login'?a.login.localeCompare(b.login,'ru',{numeric:true}):a[key]-b[key];
