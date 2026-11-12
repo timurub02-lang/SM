@@ -84,6 +84,27 @@ try {
  } finally {clearTimeout(release);if(!timerRan)writer.exec('ROLLBACK');}
  assert.equal(timerRan,true,'database lock must yield to HTTP/event-loop work');
  assert.equal((await shared.prepare('SELECT * FROM items').all()).results.length,3);
+ const firstRow=shared.prepare('SELECT * FROM items ORDER BY id');
+ const writeFirst=shared.prepare('UPDATE items SET value=? WHERE id=1');
+ for(let i=0;i<10;i++){
+  assert.equal((await firstRow.first()).id,1);
+  writer.prepare('UPDATE items SET value=? WHERE id=1').run(`external-${i}`);
+  assert.equal(writer.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get().busy,0,'cached first() must release its read cursor after ROW');
+  await writeFirst.bind(`local-${i}`).run();
+  assert.equal((await firstRow.first()).value,`local-${i}`);
+  writer.prepare('UPDATE items SET value=? WHERE id=1').run(`external-batch-${i}`);
+  await shared.batch([writeFirst.bind(`batch-${i}`)]);
+  assert.equal((await firstRow.first()).value,`batch-${i}`);
+  await shared.readSnapshot(async()=>{
+   assert.equal((await firstRow.first()).value,`batch-${i}`);
+   writer.prepare('UPDATE items SET value=? WHERE id=1').run(`during-snapshot-${i}`);
+   assert.equal((await firstRow.first()).value,`batch-${i}`,'an explicit read snapshot must remain consistent');
+  });
+  assert.equal((await firstRow.first()).value,`during-snapshot-${i}`,'ending a snapshot must release the old view');
+  await writeFirst.bind(`after-snapshot-${i}`).run();
+  await shared.batch([writeFirst.bind(`after-snapshot-batch-${i}`)]);
+ }
+ console.log('SQLite cached cursor: external commits, WAL checkpoints and read-snapshot release passed');
  writer.exec('BEGIN IMMEDIATE');
  let ticks=0;const pulse=setInterval(()=>ticks++,25);const start=performance.now();
  try {await assert.rejects(shared.prepare("INSERT INTO items VALUES(4,'timeout')").run(),e=>(e.errcode&255)===5);}
