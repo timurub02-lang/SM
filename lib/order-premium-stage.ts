@@ -8,6 +8,7 @@ const paid={id:'premium_paid',label:'Выплачено'};
 export const orderDisplayGroups=orderGroups.flatMap(group=>group.id==='new'?[group,transferred]:group.id==='paid'?[group,accrued,paid]:[group]);
 // Financial stages only affect the order list, never fulfilment or retention.
 export function orderDisplayGroup(order:Order){
+ if(order.zvd)return transferred;
  if(order.status==='confirm')return transferred;
  if(order.status==='redeemed'&&order.premiumStage?.periodId){
   if(order.premiumStage.status==='accrued')return accrued;
