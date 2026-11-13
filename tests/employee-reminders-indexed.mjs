@@ -23,6 +23,8 @@ try{
  assert.deepEqual(resolveEmployeeReminders(state,head,rows).map(r=>r.id),result.map(r=>r.id));
  assert.ok(resolveEmployeeReminders(state,admin,rows).some(r=>r.id==='deletion'));assert.ok(resolveEmployeeReminders(state,courier,rows).some(r=>r.id==='receipt'));
  assert.ok(!resolveEmployeeReminders(state,other,rows).some(r=>r.id==='client-only'));
+ const lifecycle=[{data:JSON.stringify({id:'client-released:e',kind:'client-released',clientId:'missing',title:'Откреплён',text:'Истёк срок',at:own.createdAt}),read_at:null}];
+ assert.equal(resolveEmployeeReminders(state,op,lifecycle).length,1);assert.equal(resolveEmployeeReminders(state,head,lifecycle).length,1);assert.equal(resolveEmployeeReminders(state,courier,lifecycle).length,0);
  globalThis.__employeeReminderDb={prepare:()=>({bind:()=>({all:async()=>({results:rows})})})};assert.deepEqual(await employeeReminders(state,op),result);
  console.log('Employee reminders: indexed lookups preserve ownership, department rights, receipts, cancellation/calls/drafts/courier resolution, order and read state');
 }finally{Date.now=wallClock;delete globalThis.__employeeReminderDb;}

@@ -124,7 +124,7 @@ try{
  assert.equal(get('operator-expired').courier.operatorBudgetMs,0);assert.equal(courierStage(get('operator-expired')),'return');
  assert.equal(courierDeadline(get('pending')),undefined);assert.equal(get('pending').status,'packing');assert.equal(get('disabled').status,'packing');assert.equal(get('approved').status,'shipping');
  assert.equal((await d.prepare('SELECT reserved FROM product_stock').first()).reserved,records.length-2);
- assert.equal((await d.prepare("SELECT COUNT(*) AS n FROM reminders WHERE employee_id='operator'").first()).n,4);
+ assert.equal((await d.prepare("SELECT COUNT(*) AS n FROM reminders WHERE employee_id='operator' AND json_extract(data,'$.kind')='courier'").first()).n,4);
  assert.equal(await reconcileOrderTimers(d,await read(),[]),false);
  // Old writes cannot win over a new decision, and accepting the physical return releases exactly once.
  const stale=get('courier-expired');await d.prepare("UPDATE orders SET data=json_set(data,'$.status','shipping'),version=version+1 WHERE id=?").bind(stale.id).run();

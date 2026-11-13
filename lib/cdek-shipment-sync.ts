@@ -1,3 +1,4 @@
+import {cancelledOrderNotices} from './client-lifecycle-notice.ts';
 import {paidOrderNoticeStatements} from './paid-order-notice.ts';
 import {initReplacement} from './phone-replacement.ts';
 import {z} from 'zod';
@@ -23,6 +24,7 @@ export async function applyCdekShipment(d:Db,order:Order,stored:Shipment,previou
  if(patch){
   const event={id:mutation,clientId:order.clientId,orderId:order.id,at,actor:'СДЭК',text:patch.status?`СДЭК: ${patch.cdekStatus?.code} → ${statuses[patch.status]}`:patch.cdekStatus?`Обновлён статус СДЭК: ${patch.cdekStatus.code}`:patch.cdekAcceptedAt?'СДЭК принял посылку на склад отправителя':patch.cdekStorageUntil?'Обновлён срок бесплатного хранения СДЭК: '+patch.cdekStorageUntil:'Уточнена дата регистрации отправления в СДЭК'};
   statements.push(d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,event.clientId,event.orderId,at,JSON.stringify(event),order.id,mutation));
+  statements.push(...await cancelledOrderNotices(d,order,{...order,...patch},event));
  }
  if(patch)statements.push(...await paidOrderNoticeStatements(d,order,{...order,...patch},mutation,at));
  const result=await d.batch(statements);

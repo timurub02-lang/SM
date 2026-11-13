@@ -133,7 +133,7 @@ try{
  assert.equal((await call('/api/crm',{...blackCommand,id:zvdOrder.id,version:zvdVersion()})).status,400,'Packing cannot be blacklisted by the review action');
  const operatorState=await fetch(base+'/api/crm',{headers:{cookie:opCookie}});const opState=await operatorState.json();
  assert.equal(operatorState.status,200);assert.ok(opState.orders.some(o=>o.id===blackOrder.id&&o.status==='refused'));
- assert.ok(opState.reminders.some(r=>r.kind==='order-blacklist'&&r.orderId===blackOrder.id&&r.title.includes('ЧС')));
+ assert.ok(opState.reminders.some(r=>r.kind==='order-cancelled'&&r.orderId===blackOrder.id&&r.text.includes('ЧС')));
  assert.equal(JSON.parse(db.prepare("SELECT data FROM clients WHERE id='black-client'").get().data).sheet,'ЧС');
  console.log('Review regressions: cash/delete races, no ghost orders/history, assignment rollback passed. No external services used.');
 }catch(e){console.error(logs);throw e;}finally{
