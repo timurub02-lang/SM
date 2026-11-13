@@ -28,6 +28,9 @@ try{
  assert.equal(await d.prepare("SELECT result_id FROM sk_order_events WHERE call_id='4'").first('result_id'),'47');
  assert.equal((await receive({...event(5),custom_fields:{unused:'x'.repeat(70000)},call_result:{result_id:'47',comment:'a'.repeat(70000)}},'large-fields')).status,200);
  assert.equal(await d.prepare("SELECT length(comment) n FROM sk_order_events WHERE call_id='5'").first('n'),3000);
+ const fifty=Array.from({length:50},(_,n)=>({...event(5000+n),lead:{comment:'x'.repeat(2000)}}));
+ assert.equal((await receive(fifty,'provider-fifty')).status,200,'ordinary fifty-event provider batch exceeds the former 64 KiB limit');
+ assert.equal((await receive(fifty,'provider-fifty')).status,200);assert.equal(await count(),55);
  const before=await count();
  assert.equal((await receive([event(6),{...event(7),call:{id:null}}],'invalid-batch')).status,400);assert.equal(await count(),before);
  assert.equal((await receive({type:'unknown'},'unknown')).status,400);
