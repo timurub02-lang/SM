@@ -338,8 +338,9 @@ export default function Page(){
  const clientsById=useMemo(()=>new Map(state.clients.map(c=>[c.id,c])),[state.clients]);
  const ordersByClient=useMemo(()=>{const groups=new Map<string,Order[]>();for(const order of state.orders){const group=groups.get(order.clientId)||[];group.push(order);groups.set(order.clientId,group);}return groups;},[state.orders]);
  const [listPage,setListPage]=useState(0);
+ const [manualOrderSort,setManualOrderSort]=useState(false);
  const [orderSort,setOrderSort]=useState<OrderSortKey>('stageDate'),[orderDirection,setOrderDirection]=useState<'asc'|'desc'>('desc');
- function changeOrderSort(key:OrderSortKey){if(key===orderSort)setOrderDirection(d=>d==='asc'?'desc':'asc');else{setOrderSort(key);setOrderDirection(key==='stageDate'||key==='createdAt'||key==='total'?'desc':'asc');}}
+ function changeOrderSort(key:OrderSortKey){setManualOrderSort(true);if(key===orderSort)setOrderDirection(d=>d==='asc'?'desc':'asc');else{setOrderSort(key);setOrderDirection(key==='stageDate'||key==='createdAt'||key==='total'?'desc':'asc');}}
  function sortHeading(key:OrderSortKey,label:string){return <TableHead aria-sort={view==='orders'&&orderSort===key?(orderDirection==='asc'?'ascending':'descending'):undefined}>{view==='orders'?<button className="order-sort-heading" onClick={()=>changeOrderSort(key)}>{label}{orderSort===key?(orderDirection==='asc'?' ↑':' ↓'):' ↕'}</button>:label}</TableHead>;}
 
  const {mine,clientsWithActiveOrders,clientsInTransit,withoutOrders,inTransit,returnedOrders,clientCalls}=useMemo(()=>{
@@ -374,11 +375,11 @@ export default function Page(){
  const redemptionStatuses=state.redemptionStatuses||[];
  const awaitingBuyoutOperator=useMemo(()=>new Set(Object.entries(state.redemptionResults||{}).filter(([,r])=>r.awaitingOperator).map(([id])=>id)),[state.redemptionResults]);
  const workedBuyoutToday=useMemo(()=>new Set(Object.entries(state.redemptionResults||{}).filter(([,r])=>r.workedToday).map(([id])=>id)),[state.redemptionResults]);
- const orderList=useMemo(()=>filteredOrderList(state,employee,{view,filter,query,showNextPremium,sort:orderSort,direction:orderDirection},reminderNow),[state,employee,view,filter,query,showNextPremium,orderSort,orderDirection,reminderNow]);
+ const orderList=useMemo(()=>filteredOrderList(state,employee,{view,filter,query,showNextPremium,manualSort:manualOrderSort,sort:orderSort,direction:orderDirection},reminderNow),[state,employee,view,filter,query,showNextPremium,manualOrderSort,orderSort,orderDirection,reminderNow]);
  const searchedStatus=view==="orders"&&query.trim()&&orderList.length===1?orderDisplayGroup(orderList[0]).id:null;
  useEffect(()=>{if(view!=="orders"||!query.trim())return;setShowNextPremium(false);const next=searchedStatus||"all";if(filter!==next)setFilter(next);},[view,query,searchedStatus,filter,setFilter]);
 
- const remotePage=useCrmOrderPage(ready&&personalAuth&&(view==="mine"||orderListViews.includes(view as typeof orderListViews[number]))&&!permissionView?{view,filter,query,showNextPremium,sort:orderSort,direction:view==='mine'?clientDirection:orderDirection,page:listPage,clientWorkFilter,clientSort}:null,state,actor,shippingView?moscowDate(new Date(reminderNow)):'',splitReads?workspaceRevision:undefined);
+ const remotePage=useCrmOrderPage(ready&&personalAuth&&(view==="mine"||orderListViews.includes(view as typeof orderListViews[number]))&&!permissionView?{view,filter,query,showNextPremium,manualSort:manualOrderSort,sort:orderSort,direction:view==='mine'?clientDirection:orderDirection,page:listPage,clientWorkFilter,clientSort}:null,state,actor,shippingView?moscowDate(new Date(reminderNow)):'',splitReads?workspaceRevision:undefined);
  const pageFinancialReadModel=remotePage.enabled?remotePage.data?.financialReadModel:undefined;
  const financialReadModel=[state.financialReadModel,pageFinancialReadModel].find(model=>model&&model.status!=='ready')||pageFinancialReadModel||state.financialReadModel;
  const dataStatusMessages=Array.from(new Set([
