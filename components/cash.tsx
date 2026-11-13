@@ -4,7 +4,7 @@ import {cashSpendPurposes} from '@/lib/cash';
 import {money,stamp} from '@/lib/crm';
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from '@/components/ui/table';
 export type Operation={id:string;kind:string;sender:string|null;recipient:string|null;amount:number;purpose:string;date:string;created_at:string;accepted_at:string|null;sender_name:string;recipient_name:string};
-type CashData={balance:number;operations:Operation[];recipients:{id:string;name:string;login:string}[]};
+type CashData={cashDisabled?:boolean;balance:number;operations:Operation[];recipients:{id:string;name:string;login:string}[]};
 export function Cash({actorId}:{actorId:string}){
  const [data,setData]=useState<CashData|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const [kind,setKind]=useState('');const [amount,setAmount]=useState('');const [purpose,setPurpose]=useState('');const [customPurpose,setCustomPurpose]=useState('');const [recipient,setRecipient]=useState('');
@@ -22,6 +22,7 @@ export function Cash({actorId}:{actorId:string}){
   if(id){setData(await request({action:'accept',id}));setSuccess('Получение подтверждено. Деньги добавлены в вашу кассу.');}
   else {const operation={kind,amount:Number(amount),date,purpose:operationPurpose,...(kind==='transfer'?{recipient}:{})};const key=JSON.stringify(operation);if(retry.current?.key!==key)retry.current={key,id:crypto.randomUUID()};setData(await request({action:'create',operation:{...operation,id:retry.current.id}}));retry.current=null;setAmount('');setPurpose('');setCustomPurpose('');setSuccess(kind==='transfer'?'Перевод создан. Деньги списаны из вашей кассы и ожидают подтверждения получателя.':kind==='spend'?'Деньги списаны. Операция сохранена в истории.':'Касса пополнена. Операция сохранена в истории.');setKind('');}
  window.dispatchEvent(new Event('cash-refresh'));}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}}
+ if(data?.cashDisabled)return <section className="card"><h2>Моя касса</h2><strong>Х</strong><p className="muted">Касса отключена</p></section>;
  return <section className="stack table-panel cash-panel personal-cash-panel"><div className="cash-overview"><div><h2>Моя касса</h2><p className="muted">Ваши деньги и переводы сотрудникам</p></div>
  <div className="cash-summary"><div className="cash-balance"><span>Остаток в кассе</span><strong>{data?money(data.balance/100):'Загрузка…'}</strong><small>После списания или перевода остаток может стать отрицательным.</small></div><div><span>Вам передают</span><strong>{money(pending.reduce((n,o)=>n+o.amount,0)/100)}</strong><small>Добавится в кассу после получения денег.</small></div><div><span>Вы передали</span><strong>{money(outgoing.reduce((n,o)=>n+o.amount,0)/100)}</strong><small>Уже списано. Получатели ещё не подтвердили.</small></div></div>
  <button className="secondary" disabled={busy} onClick={()=>{setError('');request().then(setData).catch(e=>setError(e.message));}}>Обновить</button></div>

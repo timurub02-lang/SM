@@ -199,6 +199,19 @@ try{
  assert.equal((await call('/api/cash',{cookie:cookies.head,body:{action:'create',operation:transfer}})).data.balance,-22000);
  assert.equal((await call('/api/cash',{cookie:cookies.head2})).data.balance,-10000,'Unaccepted transfer is not credited');
  assert.equal((await call('/api/cash',{cookie:cookies.head2,body:{action:'accept',id:transfer.id}})).data.balance,-9000);
+ // Disabled cash remains excluded from operations and survives an ordinary employee edit.
+ db.prepare("UPDATE employees SET data=json_set(data,'$.cashDisabled',json('true')),version=version+1 WHERE id='head2'").run();
+ const disabledBefore=db.prepare('SELECT count(*) AS n FROM cash_operations').get().n;
+ const disabled=await call('/api/cash',{cookie:cookies.head2});assert.equal(disabled.data.cashDisabled,true);assert.equal(disabled.data.balance,0);
+ assert.equal((await call('/api/cash',{cookie:cookies.head2,body:{action:'create',operation:expense}})).status,403);
+ assert.equal((await call('/api/cash',{cookie:cookies.head,body:{action:'create',operation:{...transfer,id:'10000000-0000-4000-8000-000000000003'}}})).status,400);
+ assert.equal((await call('/api/cash',{cookie:cookies.head2,body:{action:'accept',id:transfer.id}})).status,403);
+ assert(!(await call('/api/cash',{cookie:cookies.head})).data.recipients.some(e=>e.id==='head2'));
+ const account=(await call('/api/cash?scope=all',{cookie:cookies.admin})).data.accounts.find(e=>e.id==='head2');assert(account.cashDisabled);assert.equal(account.balance,0);
+ const employeeRow=db.prepare("SELECT data,version FROM employees WHERE id='head2'").get();
+ const employeeEdit=await call('/api/crm',{cookie:cookies.admin,body:{action:'saveEmployee',id:'head2',version:employeeRow.version,employee:{...JSON.parse(employeeRow.data),cashDisabled:false}}});assert.equal(employeeEdit.status,200,employeeEdit.text);
+ assert.equal(JSON.parse(db.prepare("SELECT data FROM employees WHERE id='head2'").get().data).cashDisabled,true);
+ assert.equal(db.prepare('SELECT count(*) AS n FROM cash_operations').get().n,disabledBefore);
  console.log('Payroll HTTP: roles, signatures, reopen audit, cash rollback, exact debt carry, repeat protection, scoped statistics, official part and order rollover passed. Synthetic data only.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

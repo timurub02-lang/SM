@@ -15,18 +15,20 @@ async function handle(req:Request){
   const p:any=req.method==='GET'?null:await req.json();
   const actor=await employee(p?.actorId||new URL(req.url).searchParams.get('actorId')||'');
   if(!actor||!hasCash(actor.role)||actor.accessEnabled===false)return Response.json({error:'Касса недоступна'},{status:403});
+  if(actor.cashDisabled){if(req.method!=='GET')return Response.json({error:'Касса отключена'},{status:403});return Response.json({cashDisabled:true,balance:0,operations:[],recipients:[]},{headers:{'Cache-Control':'no-store'}});}
   await initCash();const d=db();
   const query=new URL(req.url).searchParams;
   if(query.has('employeeId')||query.get('scope')==='all'){
    if(actor.role!=='admin'||req.method!=='GET')return Response.json({error:'Просмотр касс сотрудников доступен только администратору'},{status:403});
    if(query.get('scope')==='all'){
-    const rows=await d.prepare("SELECT e.id,json_extract(e.data,'$.name') AS name,json_extract(e.data,'$.login') AS login,json_extract(e.data,'$.role') AS role,COALESCE(b.balance,0) AS balance,COALESCE((SELECT SUM(amount) FROM cash_operations WHERE recipient=e.id AND kind='transfer' AND accepted_at IS NULL),0) AS pending FROM employees e LEFT JOIN cash_balances b ON b.employee=e.id WHERE json_extract(e.data,'$.role') IN ('admin','department_head','chief_logistic','courier','purchasing') ORDER BY name,e.id").all<{id:string;role:string;[key:string]:unknown}>();
+    const rows=await d.prepare("SELECT e.id,json_extract(e.data,'$.name') AS name,json_extract(e.data,'$.login') AS login,json_extract(e.data,'$.role') AS role,COALESCE(json_extract(e.data,'$.cashDisabled'),0) AS cashDisabled,COALESCE(b.balance,0) AS balance,COALESCE((SELECT SUM(amount) FROM cash_operations WHERE recipient=e.id AND kind='transfer' AND accepted_at IS NULL),0) AS pending FROM employees e LEFT JOIN cash_balances b ON b.employee=e.id WHERE json_extract(e.data,'$.role') IN ('admin','department_head','chief_logistic','courier','purchasing') ORDER BY name,e.id").all<{id:string;role:string;[key:string]:unknown}>();
     const orders=(await d.prepare("SELECT data FROM orders WHERE json_extract(data,'$.courier.id') IS NOT NULL").all<{data:string}>()).results.map(r=>JSON.parse(r.data) as Order);
-    const accounts=rows.results.map(a=>{if(a.role!=='courier')return a;const b=courierBalance(orders,a.id);return {...a,balance:Math.round(b.cash*100),pending:Math.round(b.pending*100),parcels:Math.round(b.parcels*100),accountable:Math.round(b.total*100)};});
+    const accounts=rows.results.map(a=>{if(a.cashDisabled)return {...a,balance:0,pending:0};if(a.role!=='courier')return a;const b=courierBalance(orders,a.id);return {...a,balance:Math.round(b.cash*100),pending:Math.round(b.pending*100),parcels:Math.round(b.parcels*100),accountable:Math.round(b.total*100)};});
     return Response.json({accounts},{headers:{'Cache-Control':'no-store'}});
    }
    const target=await employee(query.get('employeeId')||'');
    if(!target)return Response.json({error:'Сотрудник не найден'},{status:404});
+   if(target.cashDisabled)return Response.json({cashDisabled:true,operations:[]},{headers:{'Cache-Control':'no-store'}});
    if(target.role==='courier'){
     const rows=await d.prepare("SELECT data FROM orders WHERE json_extract(data,'$.courier.id')=? ORDER BY json_extract(data,'$.updatedAt') DESC").bind(target.id).all<{data:string}>();
     return Response.json({operations:[],courierOrders:rows.results.map(r=>{const o=JSON.parse(r.data) as Order;return {id:o.id,status:o.status,courier:o.courier,redeemedAt:o.redeemedAt,returnedAt:o.returnedAt,warehouseReturnedAt:o.warehouseReturnedAt,paymentReceivedAt:o.paymentReceivedAt,reason:o.reason};})},{headers:{'Cache-Control':'no-store'}});
@@ -47,7 +49,7 @@ async function handle(req:Request){
     if(input.date>today)throw Error('Дата операции не может быть в будущем');
     if(input.kind==='transfer'&&input.purpose!=='Перевод другому сотруднику')throw Error('Выберите назначение платежа');
     const recipient=input.kind==='transfer'?await employee(input.recipient||''):input.kind==='add'?actor:null;
-    if(input.kind==='transfer'&&(!recipient||!hasCash(recipient.role)||recipient.id===actor.id||recipient.accessEnabled===false))throw Error('Выберите другого сотрудника с кассой');
+    if(input.kind==='transfer'&&(!recipient||!hasCash(recipient.role)||recipient.id===actor.id||recipient.accessEnabled===false||recipient.cashDisabled))throw Error('Выберите другого сотрудника с кассой');
     const sender=input.kind==='add'?null:actor;const now=new Date().toISOString();
     const old=await d.prepare('SELECT * FROM cash_operations WHERE id=?').bind(input.id).first<any>();
     if(old){if(old.actor!==actor.id||old.kind!==input.kind||old.amount!==input.amount||old.purpose!==input.purpose||old.date!==input.date||old.recipient!==(recipient?.id||null))throw Error('Операция уже сохранена с другими данными');}
@@ -60,7 +62,7 @@ async function handle(req:Request){
   const balance=await d.prepare('SELECT balance FROM cash_balances WHERE employee=?').bind(actor.id).first<{balance:number}>();
   const rows=await d.prepare('SELECT * FROM cash_operations WHERE sender=? OR recipient=? ORDER BY created_at DESC,id DESC').bind(actor.id,actor.id).all();
   const staff=await d.prepare("SELECT id,data FROM employees WHERE json_extract(data,'$.role') IN ('admin','department_head','chief_logistic','purchasing')"+(personalAuth()?" AND EXISTS(SELECT 1 FROM auth_accounts a WHERE a.employee_id=employees.id AND a.enabled=1)":"")+" ORDER BY id").all<{id:string;data:string}>();
-  return Response.json({balance:balance?.balance||0,operations:rows.results,recipients:staff.results.map(r=>JSON.parse(r.data) as Employee).filter(e=>e.id!==actor.id&&e.accessEnabled!==false).map(e=>({id:e.id,name:e.name,login:e.login}))},{headers:{'Cache-Control':'no-store'}});
+  return Response.json({balance:balance?.balance||0,operations:rows.results,recipients:staff.results.map(r=>JSON.parse(r.data) as Employee).filter(e=>e.id!==actor.id&&e.accessEnabled!==false&&!e.cashDisabled).map(e=>({id:e.id,name:e.name,login:e.login}))},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(i=>i.message).join('; '):e instanceof Error?e.message:'Не удалось сохранить операцию'},{status:400});}
 }
 export const GET=authenticated(handle);
