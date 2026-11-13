@@ -83,3 +83,10 @@ for(const delivery of ['cdek_pickup','cdek_courier']){
  assert.equal(packingStage({...imported,status:'shipping',legacyLv:{trial:true}}),'new');
 }
 console.log('Imported LV CDEK shipments use dispatched with or without a track');
+
+for(const delivery of ['russian_post','moscow_courier']){
+ const historic={status:'redeemed',delivery,priorPremiumPaid:{at:'2026-11-13T10:00:00Z',source:'User confirmation',paymentAccepted:true}};
+ assert.equal(packingStage(historic),'payment_received');
+ assert.equal(canReceivePayment(historic,'logistic'),false);assert.equal(canReceivePayment(historic,'chief_logistic'),false);
+ assert.equal(packingStage({...historic,priorPremiumPaid:{...historic.priorPremiumPaid,paymentAccepted:false}}),'paid');
+}

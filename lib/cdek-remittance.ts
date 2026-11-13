@@ -9,7 +9,7 @@ export function premiumRemittance(o:Pick<Order,'cdekRemittances'>){
 export const hasRemittanceConflict=(o:Pick<Order,'cdekRemittances'>)=>(o.cdekRemittances?.length||0)>1&&!premiumRemittance(o);
 export function cdekMoneyLabel(o:Order){
  if(o.status!=='redeemed')return '';
- if(!isCdekOrder(o))return o.importedPayment?'Деньги получены · '+o.importedPayment.source:'';
+ if(!isCdekOrder(o))return o.importedPayment?'Деньги получены · '+o.importedPayment.source:o.priorPremiumPaid?.paymentAccepted?'Историческая оплата принята · '+o.priorPremiumPaid.source:'';
  const r=premiumRemittance(o);
  if(r)return `Деньги получены · реестр №${r.registry} · ${r.paymentDate.split('-').reverse().join('.')}${o.cdekRemittances!.length>1?' · дубль не начисляется':''}${o.cdekHistoryRecovery?' · заказ создан из истории по реестру СДЭК':''}`;
  if((o.cdekRemittances?.length||0)>1)return 'Несколько перечислений · требуется проверка администратора';
