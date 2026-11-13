@@ -860,3 +860,12 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .order-pagination-slot{margin-bottom:16px}
 
 .data-status-button{width:36px;height:36px;flex:0 0 36px}.data-status-dot{display:block;width:10px;height:10px;border-radius:50%;background:#36865d}.data-status-dot.pending{background:#c47b24}.data-status-details{width:min(360px,calc(100vw - 32px));max-height:70dvh;overflow:auto}.data-status-details p{margin:10px 0;overflow-wrap:anywhere}
+
+/* Actions sit below toast text so either font size has a readable column. */
+.toaster[data-sonner-toaster]{width:min(440px,calc(100vw - 48px))}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled=true]{width:100%;display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:8px 10px;padding:16px;font-size:15px;line-height:1.5}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled=true] [data-icon]{grid-column:1;grid-row:1;margin:3px 0 0}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled=true] [data-content]{grid-column:2;min-width:0;gap:4px}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled=true] :is([data-title],[data-description]){font-size:inherit;line-height:1.5;white-space:normal;word-break:normal;overflow-wrap:anywhere}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled=true] [data-button]{grid-column:2;justify-self:start;margin:4px 0 0;height:auto;min-height:36px;max-width:100%;padding:8px 12px;white-space:normal;overflow-wrap:anywhere;font-size:inherit;line-height:1.4}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled=true] [data-close-button]{width:24px;height:24px;min-height:24px;padding:0;display:grid;place-items:center;border-radius:50%}
