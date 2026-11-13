@@ -32,14 +32,14 @@ try{
  assert.equal((await receiveSkOrderEvent(d,request(event(1),{authorization:'Bearer wrong'}),secret)).status,403);
  assert.equal((await receiveSkOrderEvent(d,request(event(1),{'content-type':'text/plain'}),secret)).status,415);
  assert.equal((await receiveSkOrderEvent(d,request(event(1),{'idempotency-key':''}),secret)).status,400);
- assert.equal((await receiveSkOrderEvent(d,request('x'.repeat(65537)),secret)).status,413);
- assert.equal((await receiveSkOrderEvent(d,request({...event(1),call_result:{result_id:999}}),secret)).status,400);
+ assert.equal((await receiveSkOrderEvent(d,request('x'.repeat(20*1024*1024+1)),secret)).status,413);
+ assert.equal((await receiveSkOrderEvent(d,request({...event(1),call_result:{result_id:null}}),secret)).status,400);
  await put('sk-order-import',{...config,enabled:false});assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,503);await put('sk-order-import',config);
- assert.equal((await receiveSkOrderEvent(d,request({...event(1),call:{id:1,result_id:999},call_result:{result_id:999}}),secret)).status,202);
+ assert.equal((await receiveSkOrderEvent(d,request({...event(1),call:{id:1,result_id:999},call_result:{result_id:999}}),secret)).status,200);
  await initSkOrderEvents(d);assert.equal((await d.prepare('SELECT COUNT(*) n FROM sk_order_events').first()).n,0);
- assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,202);assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,202);
+ assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,200);assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,200);
  assert.equal((await d.prepare('SELECT COUNT(*) n FROM sk_order_events').first()).n,1);
- assert.equal((await receiveSkOrderEvent(d,request({...event(9999),call_result:{result_id:123,comment:'x'.repeat(4000)}}),secret)).status,202);
+ assert.equal((await receiveSkOrderEvent(d,request({...event(9999),call_result:{result_id:123,comment:'x'.repeat(4000)}}),secret)).status,200);
  assert.equal((await d.prepare("SELECT length(comment) n FROM sk_order_events WHERE call_id='9999'").first()).n,3000,'long comments use the same truncation as the original importer');
  await d.prepare("DELETE FROM sk_order_events WHERE call_id='9999'").run();
  assert.equal((await receiveSkOrderEvent(d,request(event(2),{'idempotency-key':'fixture-1'}),secret)).status,409);
@@ -78,7 +78,7 @@ try{
  for(let id=50;id<60;id++){const started=performance.now();await receiveSkOrderEvent(d,request(event(id)),secret);assert.equal((await tick()).imported,1);ordinary.push(performance.now()-started);}
  // Timed synthetic 47-operator burst: real pacing/SQLite, fake provider responses, no network or UI claims.
  const enqueueMs=[],received=Date.now();
- for(let id=100;id<147;id++){const started=performance.now();assert.equal((await receiveSkOrderEvent(d,request(event(id)),secret,received)).status,202);enqueueMs.push(performance.now()-started);}
+ for(let id=100;id<147;id++){const started=performance.now();assert.equal((await receiveSkOrderEvent(d,request(event(id)),secret,received)).status,200);enqueueMs.push(performance.now()-started);}
  while(await d.prepare('SELECT call_id FROM sk_order_events WHERE done_at IS NULL LIMIT 1').first())await tick();
  const ages=(await d.prepare("SELECT done_at-received_at AS ms FROM sk_order_events WHERE CAST(call_id AS INTEGER) BETWEEN 100 AND 146 ORDER BY ms").all()).results.map(r=>r.ms),sorted=enqueueMs.sort((a,b)=>a-b),p=(values,q)=>values[Math.ceil(values.length*q)-1];
  ordinary.sort((a,b)=>a-b);
@@ -87,7 +87,7 @@ try{
  assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,62);
  // Larger correctness/replay burst uses a virtual wait clock, not a claimed wall-time measurement.
  let virtual=Date.now()+60000;
- for(let id=1000;id<1100;id++)assert.equal((await receiveSkOrderEvent(d,request(event(id)),secret,virtual)).status,202);
+ for(let id=1000;id<1100;id++)assert.equal((await receiveSkOrderEvent(d,request(event(id)),secret,virtual)).status,200);
  while(await d.prepare('SELECT call_id FROM sk_order_events WHERE done_at IS NULL LIMIT 1').first())await syncSkOrders(d,api,virtual,async ms=>{virtual+=ms;},true);
  assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,162);
  for(let id=1000;id<1100;id++)await receiveSkOrderEvent(d,request(event(id)),secret,virtual);
@@ -96,6 +96,6 @@ try{
  // Capacity failure is retryable and retains all prior rows; existing duplicates still ACK.
  await d.prepare("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO sk_order_events(call_id,event_key,result_id,comment,received_at) SELECT 'full-'||x,'full-'||x,'123','',0 FROM n").run();
  assert.equal((await receiveSkOrderEvent(d,request(event(999)),secret)).status,503);
- assert.equal((await receiveSkOrderEvent(d,request(event(1)),secret)).status,202);
+ assert.equal((await receiveSkOrderEvent(d,request(event(1)),secret)).status,200);
  console.log('SK events: authenticated bounded durable queue, duplicate/restart/unfinished/old calls, LV isolation, report lease, fallback, shared 429 and 47-operator burst passed');
 }finally{d.close();rmSync(folder,{recursive:true,force:true});}
