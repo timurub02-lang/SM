@@ -6,3 +6,9 @@ export function withBasketTotal(items:Item[],amount:number):Item[]{
  const name=items.find(isBasketTotal)?.name||'ИТОГО';
  return [...items.filter(item=>!isBasketTotal(item)).map(item=>({...item,price:0})),{name,quantity:1,price:Math.round(amount*100)/100}];
 }
+
+export function validateManualOrderAmount(items:Item[],previous?:Item[]){
+ const amount=basketAmount(items);
+ if(previous&&amount===basketAmount(previous))return; // Preserve untouched historical/imported amounts.
+ if(!Number.isInteger(amount))throw Error('Укажите сумму заказа целыми рублями, без копеек');
+}
