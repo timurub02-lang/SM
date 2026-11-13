@@ -5,7 +5,7 @@ export type PreparedModel<T>={status:'ready'|'stale'|'pending'|'error';data?:T;s
 export type PreparedWrite={kind:string;scope:string;data:unknown;sourceRevision:string;accessRevision:string;computedAt:number;validUntil:number};
 export const preparedModelsEnabled=()=>process.env.CRM_SUMMARIES_WORKER==='1';
 const initialized=new WeakMap<ActivityDb,{schema:number;pending?:Promise<void>}>();
-const scopeRevisionSql=(scope:string)=>`(SELECT c.epoch||':'||m.epoch||':'||COALESCE((SELECT revision FROM crm_workspace_clock WHERE scope='*' AND area='workspace'),0)||':'||COALESCE((SELECT revision FROM crm_workspace_clock WHERE scope=${scope} AND area='workspace'),0) FROM crm_change_clock c CROSS JOIN crm_model_source m WHERE c.id=1 AND m.id=1)`;
+export const scopeRevisionSql=(scope:string)=>`(SELECT c.epoch||':'||m.epoch||':'||COALESCE((SELECT revision FROM crm_workspace_clock WHERE scope='*' AND area='workspace'),0)||':'||COALESCE((SELECT revision FROM crm_workspace_clock WHERE scope=${scope} AND area='workspace'),0) FROM crm_change_clock c CROSS JOIN crm_model_source m WHERE c.id=1 AND m.id=1)`;
 export async function initPreparedModels(d:ActivityDb){
  await initWorkspaceClock(d);
  const schema=Number(await d.prepare('PRAGMA schema_version').first('schema_version')),saved=initialized.get(d);
