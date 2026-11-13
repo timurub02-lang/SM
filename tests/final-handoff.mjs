@@ -73,6 +73,7 @@ for(const delivery of ['cdek_pickup','cdek_courier','russian_post','moscow_couri
  const packing={...o,status:'packing',delivery,extra:true,packingWaybillAt:now,shippedAt:undefined,cdekExported:false};
  assert(allowedOrderTransitions(packing,'logistic').includes('rework'));
  assert(!allowedOrderTransitions({...packing,cdekExported:true},'logistic').includes('rework'));
+ if(delivery==='moscow_courier')assert(!allowedOrderTransitions({...packing,courierRecall:{completedAt:now}},'logistic').includes('rework'));
  const reconfirm={...packing,status:'confirm',packingReworkDelivery:delivery,finalHandoffAt:undefined,extra:false,returnKind:'refusal'};
  assert.deepEqual(allowedOrderTransitions(reconfirm,'logistic'),['packing','rework']);
  assert.deepEqual(allowedOrderTransitions({...reconfirm,finalHandoffAt:now},'logistic'),['packing','refused']);

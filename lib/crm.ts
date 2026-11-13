@@ -82,7 +82,7 @@ export function markZvd(o:Order,actor:Employee,value:boolean,now:string):Order{
  if(actor.role!=='admin'||o.status!=='check'||o.courier||o.cdekExported||o.shippedAt)throw Error('ЗВД доступен только администратору на проверке до отправки');
  return {...o,zvd:value?{at:now,by:actor.id}:undefined};
 }
-export const canReturnFromPacking=(o:Order,role?:string)=>['admin','logistic','chief_logistic'].includes(role||'')&&['packing','phone'].includes(o.status)&&!!o.delivery&&!o.cdekExported&&!o.cdekDeleting&&!o.shippedAt&&!o.courier&&!courierRecalledAtWarehouse(o)&&!o.legacyLv?.track;
+export const canReturnFromPacking=(o:Order,role?:string)=>['admin','logistic','chief_logistic'].includes(role||'')&&['packing','phone'].includes(o.status)&&!!o.delivery&&!o.cdekExported&&!o.cdekDeleting&&!o.shippedAt&&!o.courier&&!o.courierRecall&&!o.legacyLv?.track;
 export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  if(o.zvd)return role==='admin'&&o.status==='check'?['packing']:[];
  if(role==='department_head'&&!departmentWorkStage(o)&&!headDraftStage(o))return [];
