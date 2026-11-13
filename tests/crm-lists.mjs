@@ -69,3 +69,21 @@ for(const role of ['operator','department_head']){
  assert.equal(filteredClientList(state,viewer,{...q,query:'Клиент 05',clientSort:'amount',direction:'desc'},now)[0].id,'client-5');
 }
 console.log('Client sorting: both roles, name/paid amount/directions, search and pagination passed');
+
+// Manual column sorting must not be partitioned by worked/pending flags inside the 15 eligible orders.
+state.clients=[{id:'one',name:'Иван',phone:'',city:'',owner:'operator',createdAt:at}];
+state.redemptionStatuses=['NOT_DELIVERED','ACCEPTED_AT_PICK_UP_POINT'];
+state.orders=Array.from({length:25},(_,i)=>({...order,id:'SENT-'+i,contact:'none',status:'shipping',delivery:'cdek_courier',shippedAt:new Date(now+i*60000).toISOString(),items:[{name:'Товар',quantity:1,price:25-i}],cdekStatus:{code:i<15?(i%2?'NOT_DELIVERED':'ACCEPTED_AT_PICK_UP_POINT'):'CREATED'}}));
+state.redemptionResults=Object.fromEntries(state.orders.map((o,i)=>[o.id,{workedToday:i%3===0,awaitingOperator:i===7,result:'',date:'',author:'',at:''}]));
+for(const role of ['operator','department_head'])for(const sort of ['stageDate','createdAt','id','client','status','location','action','total','manager'])for(const direction of ['asc','desc']){
+ const q={...query,filter:'sent',sort,direction,manualSort:true},viewer={...employee,role};
+ const actual=filteredOrderList(state,viewer,q,now);
+ const expected=filteredOrderList({...state,redemptionResults:{}},viewer,q,now);
+ assert.deepEqual(actual.map(o=>o.id),expected.map(o=>o.id),`${role}/${sort}/${direction}: hidden worked/pending flags must not override selected column`);
+ assert.equal(actual.length,25);
+ assert.ok(actual.slice(0,15).every(o=>o.cdekStatus.code!=='CREATED'));
+ if(sort==='total')assert.equal(actual[0].id,direction==='asc'?'SENT-14':'SENT-0');
+ if(sort==='stageDate')assert.equal(actual[0].id,direction==='asc'?'SENT-0':'SENT-14');
+}
+assert.equal(filteredOrderList(state,employee,{...query,filter:'sent'},now)[0].id,'SENT-7','default view keeps pending-operator priority');
+console.log('Sent 15/25: all column directions, both roles, eligibility priority and default pending priority passed');

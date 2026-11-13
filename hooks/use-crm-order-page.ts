@@ -7,7 +7,7 @@ import type {State,Order,Client,Employee} from '@/lib/crm';
 import type {OrderListQuery} from '@/lib/crm-order-list';
 type Page={financialReadModel?:State['financialReadModel'];workCounts?:ClientWorkCounts;rows:Order[];clients:Client[];total:number;page:number;employees?:Pick<Employee,'id'|'name'>[];summaries?:Record<string,ClientListSummary>};
 export function useCrmOrderPage(query:(OrderListQuery&{page:number;clientWorkFilter:string;clientSort?:'default'|'name'|'amount'})|null,state:State,actor:string,refreshKey='',revision?:number){
- const key=query?new URLSearchParams({list:query.view==='mine'?'mine':'orders',clientWorkFilter:query.clientWorkFilter,clientSort:query.clientSort||'default',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,view:query.view,filter:query.filter,query:query.query,next:query.showNextPremium?'1':'0',sort:query.sort||'createdAt',direction:query.direction||'desc',page:String(query.page)}).toString():'';
+ const key=query?new URLSearchParams({list:query.view==='mine'?'mine':'orders',clientWorkFilter:query.clientWorkFilter,clientSort:query.clientSort||'default',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,view:query.view,filter:query.filter,query:query.query,next:query.showNextPremium?'1':'0',manualSort:query.manualSort?'1':'0',sort:query.sort||'createdAt',direction:query.direction||'desc',page:String(query.page)}).toString():'';
  const [result,setResult]=useState<{key:string;data?:Page;error?:string}>({key:''});
  const [attempt,retry]=useState(0),[loading,setLoading]=useState(false);
  const refresh=useRef(()=>{}),currentRevision=useRef(revision),generation=useRef(0);currentRevision.current=revision;

@@ -54,6 +54,11 @@ try{
  assert.equal(d.prepare("SELECT data FROM crm_read_models WHERE kind='context' AND scope='operator-0'").get().data,previousContextJson,'unchanged context need not rewrite its large JSON when unrelated finance changes');
  assert.equal((await json('?part=card&type=client&id=c-1')).status,404);
  await stop(worker);worker=undefined;
+ d.prepare("INSERT INTO clients(id,phone,data) SELECT 'foreign-new','synthetic-new',json_set(data,'$.id','foreign-new','$.phone','synthetic-new') FROM clients WHERE id='c-1'").run();
+ const foreignWrite=await json('?part=context');assert.equal(foreignWrite.status,200);assert.equal(foreignWrite.body.readModel.status,'stale');assert.deepEqual(foreignWrite.body.clients.map(c=>c.id),['c-0']);
+ assert.equal((await json('?part=summary')).body.data.mine.all,1,'foreign access writes cannot clear an unchanged workspace');
+ worker=child(['--experimental-strip-types',resolve('scripts/sync-summaries.mjs')],{CRM_SUMMARIES_WORKER:'1'});
+ await ready(Date.parse(foreignWrite.body.readModel.computedAt));await stop(worker);worker=undefined;
  d.prepare("UPDATE orders SET data=json_set(data,'$.comment','saved'),version=version+1 WHERE id='o-0'").run();
  const stale=await json('?part=summary');assert.equal(stale.body.status,'stale');assert.equal(stale.body.data.mine.all,1);
  // Deliberately invalid calculation input proves HTTP never falls back to enrichment.

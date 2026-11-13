@@ -1,6 +1,6 @@
 import type {ActivityDb} from './activity-store.ts';
 import type {Employee,State} from './crm.ts';
-import {initPreparedModels,readModelSource,publishPreparedModels,type PreparedWrite} from './crm-read-model.ts';
+import {initPreparedModels,readModelSource,publishPreparedModels,scopeRevisionSql,type PreparedWrite} from './crm-read-model.ts';
 import {initFinancialProjection,buildFinancialProjection,financialStageStatements,applyFinancialProjection,type FinancialProjection} from './crm-financial-projection.ts';
 import {initCrmReadIndexes} from './crm-read-indexes.ts';
 import {readWorkspaceState} from './crm-workspace-read.ts';
@@ -85,7 +85,7 @@ export async function createSummaryWorker(writer:ActivityDb,reader:Reader,token=
    });
    if(!snapshot){published=false;stats.rejected++;financial=undefined;break;}
    if(!snapshot.rows.length)continue;
-   const extra=snapshot.built?[]:[writer.prepare("UPDATE crm_read_models SET source_revision=?,valid_until=? WHERE kind='context' AND scope=? AND access_revision=?").bind(snapshot.revision,snapshot.computedAt+3000,snapshot.actor.id,snapshot.source.accessRevision)];
+   const extra=snapshot.built?[]:[writer.prepare(`UPDATE crm_read_models SET source_revision=?,valid_until=?,scope_revision=${scopeRevisionSql('?')} WHERE kind='context' AND scope=? AND access_revision=?`).bind(snapshot.revision,snapshot.computedAt+3000,snapshot.actor.id,snapshot.actor.id,snapshot.source.accessRevision)];
    // Fence the financial generation used by this scope even though finance itself
    // was already published in a separate atomic transaction.
    extra.unshift(writer.prepare("UPDATE crm_model_publish_guard SET allowed=CASE WHEN EXISTS(SELECT 1 FROM crm_model_source m CROSS JOIN crm_change_clock c WHERE m.id=1 AND c.id=1 AND c.epoch||':'||m.epoch||':'||m.finance=?) THEN 1 ELSE 0 END WHERE id=1").bind(snapshot.source.financeRevision));
