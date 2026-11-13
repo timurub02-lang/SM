@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import {addWeekdayMilliseconds,internalDeadline} from '../lib/internal-timers.ts';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
 import {reconcileOrderTimers,reconcileClients} from '../lib/base-retention-store.ts';
 import {draftDeadline,applyRetention,validateTransition} from '../lib/crm.ts';
 import {inventorySQL} from '../lib/inventory-sql.ts';
-const db=openDatabase(':memory:'),now=Date.now(),at=new Date(now-25*3600000).toISOString();
+const db=openDatabase(':memory:'),now=Date.now(),at=addWeekdayMilliseconds(now,-25*3600000);
 try{
  for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await db.prepare(sql).run();
  await db.batch(inventorySQL.map(sql=>db.prepare(sql)));
@@ -13,10 +14,11 @@ try{
  await db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').bind('product','test',JSON.stringify({name:'Test'})).run();
  await db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').bind('stock','product',100,'Test','operator',at).run();
  const base={id:'expired',clientId:client.id,manager:'operator',status:'draft',items:[{name:'Test',quantity:1,price:100}],createdAt:at,updatedAt:new Date(now).toISOString(),contact:'callback',due:new Date(now+3600000).toISOString(),round:1,extra:false,version:1};
- const orders=[base,{...base,id:'recent',createdAt:new Date(now-23*3600000).toISOString()},{...base,id:'disabled',draftHours:null},{...base,id:'custom',draftHours:48},{...base,id:'passed',status:'confirm',confirmationStartedAt:new Date(now).toISOString(),confirmationHours:48}];
+ const orders=[base,{...base,id:'recent',createdAt:addWeekdayMilliseconds(now,-23*3600000)},{...base,id:'disabled',draftHours:null},{...base,id:'custom',draftHours:48},{...base,id:'passed',status:'confirm',confirmationStartedAt:new Date(now).toISOString(),confirmationHours:48}];
  for(const o of orders)await db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(o.id,o.clientId,JSON.stringify(o)).run();
  const read=async()=> (await db.prepare('SELECT data,version FROM orders').all()).results.map(r=>({...JSON.parse(r.data),version:r.version}));
- assert.equal(draftDeadline(base),new Date(Date.parse(at)+86400000).toISOString());
+ assert.equal(draftDeadline(base),internalDeadline(at,24));
+ assert.ok(Date.parse(draftDeadline(base))<now);assert.ok(Date.parse(draftDeadline(orders[1]))>now);
  assert.equal(draftDeadline(orders[2]),undefined);assert.equal(draftDeadline(orders[4]),undefined);
  assert.throws(()=>validateTransition(base,'confirm',client,''),/Срок оформления истёк/);
  assert.equal((await db.prepare('SELECT reserved FROM product_stock').first()).reserved,5);

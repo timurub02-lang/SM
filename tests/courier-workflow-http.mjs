@@ -239,7 +239,7 @@ try{
  await act(legacyId,'operator',{action:'courierWorkflow',operation:'confirm'});await act(legacyId,'courier',{action:'courierWorkflow',operation:'resume'});
  // Expired confirmation returns work, expired shared budget cancels sale but keeps the parcel reserved.
  const returnedId=await create();await assembled(returnedId);await act(returnedId,'courier',{action:'courierAccept',confirmed:true});
- const accepted=order(returnedId);accepted.courier.workStartedAt=hours(-49);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(accepted),returnedId);await call('operator');assert.equal(order(returnedId).status,'rework');
+ const accepted=order(returnedId);accepted.courier.workStartedAt=addWeekdayMilliseconds(Date.now(),-49*3600000);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(accepted),returnedId);await call('operator');assert.equal(order(returnedId).status,'rework');
  const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-169);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
  await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
  await receipt(returnedId,'Возврат принят на склад',10000);
