@@ -6,7 +6,7 @@ import {searchBaseClients} from '@/lib/base-client-search';
 export const dynamic='force-dynamic';
 export const GET=authenticated(async req=>{
  const employee=(await getChatGPTUser())?.employee;
- if(!employee||!['admin','department_head'].includes(employee.role))return Response.json({error:'Поиск доступен администратору и руководителю'},{status:403});
+ if(!employee||!['admin','department_head','logistic','chief_logistic'].includes(employee.role))return Response.json({error:'Поиск доступен администратору, руководителю и логистам'},{status:403});
  try{
   await initBaseStorage(db());
   return Response.json(await searchBaseClients(db(),new URL(req.url).searchParams.get('q')||'',employee),{headers:{'Cache-Control':'no-store'}});
