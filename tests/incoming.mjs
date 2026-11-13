@@ -14,6 +14,11 @@ try{
  for(const r of [unknown,known,unassigned])await d.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number) VALUES(?,?,?,?,?,?,?)').bind(r.id,r.client_id,r.assignee_id,r.department_id,'2026-10-13T10:00:00Z','+79990000001','+79990000002').run();
  for(const e of staff){
   const items=await readIncoming(d,e,staff,[]);
+  for(const item of items){
+   const hidden=['operator','department_head'].includes(e.role);
+   assert.equal(item.phone,hidden?'':'+79990000001',e.id+' caller phone privacy');
+   assert.equal(item.calledNumber,hidden?'':'+79990000002',e.id+' receiving phone privacy');
+  }
   assert.equal(items.some(i=>i.id==='unknown'),['admin','department_head'].includes(e.role),e.id+' unknown caller visibility');
   for(const r of [unknown,known,unassigned])assert.equal(items.some(i=>i.id===r.id),seesIncoming(r,e,staff),e.id+' read/action consistency');
  }

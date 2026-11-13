@@ -291,7 +291,7 @@ try{
  db.prepare("UPDATE clients SET data=json_set(data,'$.name','Ёлкин Тимур Сергеевич') WHERE id='c-two'").run();
  const search='/api/incoming-clients?'+new URLSearchParams({incomingId:lookup,q:'ёлкин тимур'});
  assert.equal((await api(search,undefined,cookies.one)).status,403,'Operator cannot search global clients');
- const names=await api(search,undefined,cookies.head0);assert.equal(names.status,200,names.text);assert.equal(names.data.matches[0].id,'c-two');assert.equal(names.data.matches[0].ownerId,'two');
+ const names=await api(search,undefined,cookies.head0);assert.equal(names.status,200,names.text);assert.equal(names.data.matches[0].id,'c-two');assert.equal(names.data.matches[0].ownerId,'two');assert.equal(names.data.matches[0].phone,'Номер скрыт');
  const number=await api('/api/incoming-clients?'+new URLSearchParams({incomingId:lookup,q:'8 (999) 000-00-02'}),undefined,cookies.head);assert.equal(number.data.matches[0].id,'c-two');
  const originalPhone=JSON.parse(db.prepare("SELECT data FROM clients WHERE id='c-two'").get().data).phone;
  assert.equal((await api('/api/crm',{action:'linkIncomingClient',incomingId:lookup,clientId:'c-two'},cookies.one)).status,400);

@@ -1,6 +1,6 @@
 import {initProtection,incomingGate} from './incoming-protection.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
-import {normalizePhone,orderGroup,type Employee,type Order,type IncomingRequest} from './crm.ts';
+import {normalizePhone,orderGroup,hideClientPhone,type Employee,type Order,type IncomingRequest} from './crm.ts';
 import {seesOrder} from './permissions.ts';
 import {initBaseStorage} from './base-storage.ts';
 import {initPhone} from './phone-store.ts';
@@ -70,7 +70,7 @@ export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order
  for(const order of orders)if(ids.has(order.clientId)&&activeIncomingOrder(order)){const active=activeByClient.get(order.clientId)||[];active.push(order);activeByClient.set(order.clientId,active);}
  return rows.map(r=>{
   const active=activeByClient.get(r.client_id)||[];
-  return {handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staffById.get(r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:e.role==='operator'||e.role==='department_head'&&!!r.client_id?'':r.phone,calledNumber:r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staffById.get(r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
+  return {handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staffById.get(r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:hideClientPhone(e.role)?'':r.phone,calledNumber:hideClientPhone(e.role)?'':r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staffById.get(r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
  });
 }
 export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee[],clientId?:string){
