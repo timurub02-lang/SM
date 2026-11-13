@@ -92,7 +92,7 @@ export function allowedOrderTransitions(o:Order,role?:string):Status[]{
   if(o.status==='rework')return ['admin','operator','department_head'].includes(role||'')?['packing','refused']:[];
   if(o.status==='packing'&&['admin','logistic','chief_logistic'].includes(role||''))return [...(o.packingWaybillAt?['shipping' as const]:[]),'rework'];
  }
- if(canReturnFromPacking(o,role))return [...(o.delivery?.startsWith('cdek_')?transitions[o.status]:o.packingWaybillAt?['shipping' as const]:[]),'rework'];
+ if(canReturnFromPacking(o,role))return [...(o.delivery?.startsWith('cdek_')?transitions[o.status]:o.packingWaybillAt?['shipping' as const]:[]),'rework',...(o.finalHandoffAt?['refused' as const]:[])];
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
  if(o.status==="confirm"&&o.delivery==="moscow_courier")allowed=allowed.map(to=>to==="check"?"packing":to);
  if(o.packingReworkDelivery&&o.status==="confirm"&&(o.delivery===o.packingReworkDelivery||["russian_post","moscow_courier"].includes(o.delivery||"")))allowed=["packing","rework"];
@@ -109,6 +109,7 @@ export function allowedOrderTransitions(o:Order,role?:string):Status[]{
 // Older unclassified returns keep their existing workflow; new returns require an explicit kind.
 export function isRefusalRework(o:Pick<Order,"returnKind">){return o.returnKind!=="clarification"&&o.returnKind!=="delivery";}
 export function reworkHandoff(o:Order,at:string,policy:OrderPolicy):Partial<Order>{
+ if(o.packingReworkDelivery&&o.finalHandoffAt&&!isRefusalRework(o))return {finalHandoffAt:at,finalConfirmHours:policy.finalHours};
  if(isRefusalRework(o))return {round:o.round+1,finalHandoffAt:at,finalConfirmHours:policy.finalHours};
  return {confirmationStartedAt:at,confirmationHours:o.extra?policy.extraConfirmationHours:policy.confirmationHours};
 }

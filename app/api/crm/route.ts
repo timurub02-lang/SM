@@ -509,11 +509,14 @@ async function handlePOST(request:Request){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
    const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);
    const returnKind=to==="rework"?z.enum(["clarification","refusal","delivery"],{error:"Выберите тип возврата: уточнение данных, отказ клиента или смена доставки. Обновите страницу, если выбора нет."}).parse(p.returnKind):undefined;
-   if(to==='rework'&&(returnKind==='delivery'||canReturnFromPacking(o,employee.role))){
+   if((to==='rework'||to==='refused')&&(returnKind==='delivery'||canReturnFromPacking(o,employee.role))){
     if(!canReturnFromPacking(o,employee.role))throw Error('Смена доставки доступна логисту до отправки заказа');
     const row=await d.prepare('SELECT data FROM settings WHERE id=?').bind(`cdek-shipment-${o.id}`).first<{data:string}>();
     if(row&&JSON.parse(row.data).state!=='invalid')throw Error('Сначала проверьте результат отправки СДЭК. Выгруженный заказ или отправление с неизвестным результатом нельзя вернуть для смены доставки');
-    next.packingReworkDelivery=o.delivery;next.extra=false;delete next.finalHandoffAt;delete next.packingWaybillAt;delete next.confirmationStartedAt;delete next.confirmationHours;
+    if(to==='rework'){
+     if(returnKind==='refusal'&&o.finalHandoffAt)throw Error('Отказ клиента уже отрабатывался. Повторный отказ завершает заказ; выберите отмену, а не возврат оператору');
+     next.packingReworkDelivery=o.delivery;next.extra=false;delete next.packingWaybillAt;delete next.confirmationStartedAt;delete next.confirmationHours;
+    }
    }
    if(to==='shipping'&&o.delivery==='moscow_courier'){
     if(!['admin','logistic','chief_logistic'].includes(employee.role)||o.courier)throw Error('Передача курьеру недоступна');

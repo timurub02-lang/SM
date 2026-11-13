@@ -72,6 +72,7 @@ console.log('Five clarification cycles do not consume refusal handoff; refusal a
 for(const delivery of ['cdek_pickup','cdek_courier','russian_post','moscow_courier']){
  const packing={...o,status:'packing',delivery,extra:true,packingWaybillAt:now,shippedAt:undefined,cdekExported:false};
  assert(allowedOrderTransitions(packing,'logistic').includes('rework'));
+ assert(allowedOrderTransitions({...packing,finalHandoffAt:now},'logistic').includes('refused'));
  assert(!allowedOrderTransitions({...packing,cdekExported:true},'logistic').includes('rework'));
  if(delivery==='moscow_courier')assert(!allowedOrderTransitions({...packing,courierRecall:{completedAt:now}},'logistic').includes('rework'));
  const reconfirm={...packing,status:'confirm',packingReworkDelivery:delivery,finalHandoffAt:undefined,extra:false,returnKind:'refusal'};
@@ -89,3 +90,5 @@ for(const status of ['packing','phone']){
  for(const guard of [{cdekExported:true},{cdekDeleting:true},{shippedAt:now},{courier:{id:'courier'}}])assert(!canLogisticEditBasket({...editable,...guard}));
 }
 for(const status of ['draft','confirm','extra','check','shipping','redeemed','returned'])assert(!canLogisticEditBasket({status,delivery:'cdek_courier'}));
+
+assert.equal(reworkHandoff({...clarification,packingReworkDelivery:"cdek_courier",finalHandoffAt:now},now,defaultOrderPolicy).finalHandoffAt,now);
