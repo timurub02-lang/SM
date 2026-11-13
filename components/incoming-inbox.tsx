@@ -21,7 +21,7 @@ export function IncomingHandoffNote({item}:{item:IncomingRequest}){
  return <div className="notice stack incoming-handoff-note"><strong>Комментарий при передаче · {item.handoff.name}</strong><small>{stamp(item.handoff.at,'Europe/Moscow')} МСК</small><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{item.handoff.comment}</p></div>;
 }
 export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item:IncomingRequest;employee:Employee;operators:Pick<Employee,'id'|'name'|'department'|'login'>[];busy:boolean;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>}){
- const [operator,setOperator]=useState(operators.some(e=>e.id===item.assigneeId)?item.assigneeId||'':''),[comment,setComment]=useState('');
+ const [operator,setOperator]=useState(operators.some(e=>e.id===item.clientOwnerId)?item.clientOwnerId||'':operators.some(e=>e.id===item.assigneeId)?item.assigneeId||'':''),[comment,setComment]=useState('');
  if(!['admin','department_head'].includes(employee.role)||item.closedAt||item.spam)return null;
  return <form className="notice stack incoming-transfer" onSubmit={async e=>{e.preventDefault();if(operator&&comment.trim()&&await onTransfer(item.id,operator,comment.trim()))setComment('');}}>
   <strong>Передать входящее оператору</strong>
@@ -30,8 +30,8 @@ export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item
   <button type="submit" className="primary" disabled={busy||!operator||!comment.trim()}>Передать входящее с комментарием</button>
  </form>;
 }
-export function IncomingInbox({items,clients,employees,employee,busy,onReload,onCreate,onLink,onTransfer,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];onReload:()=>Promise<unknown>;clients:Client[];employees:Pick<Employee,"id"|"name"|"department"|"login">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string)=>Promise<boolean>;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string,incomingId?:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string,orderId?:string)=>Promise<boolean>}){
- const [resultId,setResultId]=useState(''),[resultOrder,setResultOrder]=useState('');
+export function IncomingInbox({items,clients,employees,employee,busy,onReload,onCreate,onLink,onTransfer,onOpenClient,onOpen,onClose}:{items:IncomingRequest[];onReload:()=>Promise<unknown>;clients:Client[];employees:Pick<Employee,"id"|"name"|"department"|"login">[];onCreate:(incomingId:string,name:string,operatorId:string,baseType:string)=>Promise<boolean>;onLink:(incomingId:string,clientId:string,lookupPhone:string)=>Promise<boolean>;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>;employee:Employee;busy:boolean;onOpenClient:(clientId:string,incomingId?:string)=>void;onOpen:(orderId:string,incomingId:string)=>void;onClose:(id:string,reason:string,orderId?:string)=>Promise<boolean>}){
+ const [resultId,setResultId]=useState(''),[resultOrder,setResultOrder]=useState(''),[linkedIncoming,setLinkedIncoming]=useState('');
  const resultItem=items.find(i=>i.id===resultId&&!i.closedAt);
  function afterCall(item:IncomingRequest){setResultId(item.id);setResultOrder(item.orderIds?.length===1?item.orderIds[0]:'');void onReload();}
  const [tab,setTab]=useState('known');
@@ -62,7 +62,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    <button className="secondary" type="button" onClick={()=>setSettings(null)}>Закрыть</button>
   </div>}
   {tab==='spam'&&<p className="muted">Последние 100 обращений, отмеченных как спам. «Вернуть в работу» восстановит обращение, но неизвестному номеру при следующем звонке всё равно нужно нажать 1.</p>}
-  <div className="incoming-card-grid">{shown.map(item=><details className={'incoming-card'+(item.hasActiveOrder?' incoming-card-has-order':'')} key={item.id}>
+  <div className="incoming-card-grid">{shown.map(item=><details className={'incoming-card'+(item.hasActiveOrder?' incoming-card-has-order':'')} key={item.id} open={linkedIncoming===item.id?true:undefined} onToggle={e=>{if(!e.currentTarget.open&&linkedIncoming===item.id)setLinkedIncoming('');}}>
    <summary className="incoming-card-summary">
     <div className="incoming-card-top"><span>Входящий · {new Date(item.at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}</span><PhoneIncoming size={20}/></div>
     <div className="incoming-card-person"><span className="avatar">{item.clientId?initials(item.clientName||'Клиент'):'?'}</span><strong>{item.clientName||'Неизвестный клиент'}</strong></div>
@@ -84,12 +84,12 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    </div>}
 
    <div className="action-buttons incoming-contact-actions">
-   {!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={employee.role==='admin'?clientId=>onLink(item.id,clientId):undefined}/>}
+   {!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} phoneOnly={employee.role==='department_head'} onLink={async(clientId,lookupPhone)=>{const ok=await onLink(item.id,clientId,lookupPhone);if(ok){setTab('known');setLinkedIncoming(item.id);}return ok;}}/>}
    {!item.spam&&item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&<button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!,item.closedAt?undefined:item.id)}>Карточка клиента</button>}
    {!item.spam&&!item.closedAt&&(!item.clientId||assignedCallback(item)||sharedCallback(item))&&(['admin','department_head'].includes(employee.role)||employee.role==='operator'&&item.assigneeId===employee.id)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'incoming',incomingId:item.id}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    {!item.spam&&item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&!item.hasActiveOrder&&!assignedCallback(item)&&!sharedCallback(item)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    </div>
-   {!item.closedAt&&!item.spam&&['admin','department_head'].includes(employee.role)&&<details className="incoming-transfer-fold"><summary>Передать оператору</summary><IncomingTransfer item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/></details>}
+   {!item.closedAt&&!item.spam&&['admin','department_head'].includes(employee.role)&&<details className="incoming-transfer-fold" open={linkedIncoming===item.id?true:undefined}><summary>Передать оператору</summary><IncomingTransfer key={item.id+':'+(item.clientOwnerId||'')} item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/></details>}
    {!item.spam&&(item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p></>:<>
     {item.hasActiveOrder&&!delegated(item)?<><span>Действующие заказы</span><div className="action-buttons">{item.orderIds?.map(id=><button className="primary" key={id} onClick={()=>onOpen(id,item.id)}>Открыть {id}</button>)}</div>{!item.orderIds?.length&&<p>Заказ недоступен вашей роли. Обратитесь к администратору.</p>}</>:<details className="incoming-result-fold"><summary>Итог обращения / закрыть</summary><IncomingResult item={item} busy={busy} onSave={reason=>onClose(item.id,reason)}/></details>}
    </>)}
