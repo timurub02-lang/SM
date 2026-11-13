@@ -51,3 +51,20 @@ for(const delivery of ['moscow_courier','russian_post']){
 }
 assert.deepEqual(allowedOrderTransitions({...o,delivery:'cdek_pickup',finalHandoffAt:undefined},'logistic'),['check','rework']);
 console.log('Manual delivery bypasses admin review; CDEK retains review.');
+
+const {reworkHandoff}=await import('../lib/crm.ts');
+const {defaultOrderPolicy}=await import('../lib/order-policy.ts');
+let clarification={...o,status:'rework',round:1,returnKind:'clarification',finalHandoffAt:undefined};
+for(let i=0;i<5;i++){
+ clarification={...clarification,...reworkHandoff(clarification,now,defaultOrderPolicy)};
+ assert.equal(clarification.round,1);assert.equal(clarification.finalHandoffAt,undefined);
+ assert.equal(clarification.confirmationHours,defaultOrderPolicy.confirmationHours);
+ assert(allowedOrderTransitions({...clarification,status:'confirm'},'logistic').includes('rework'));
+}
+const final={...clarification,...reworkHandoff({...clarification,returnKind:'refusal'},now,defaultOrderPolicy),status:'confirm'};
+assert.equal(final.round,2);assert.equal(final.finalHandoffAt,now);
+assert(!allowedOrderTransitions(final,'logistic').includes('rework'));
+assert(allowedOrderTransitions(final,'logistic').includes('refused'));
+assert.equal(reworkHandoff({...clarification,extra:true},now,defaultOrderPolicy).confirmationHours,defaultOrderPolicy.extraConfirmationHours);
+assert.equal(reworkHandoff({...clarification,returnKind:undefined},now,defaultOrderPolicy).finalHandoffAt,now,'Legacy returns preserve their existing final handoff policy');
+console.log('Five clarification cycles do not consume refusal handoff; refusal and legacy restrictions preserved.');

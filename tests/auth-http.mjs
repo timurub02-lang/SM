@@ -283,10 +283,22 @@ try{
  db.prepare("DELETE FROM lv_stock_operations WHERE id='catalog-unknown'").run();
  db.prepare("DELETE FROM products WHERE id='catalog-zero'").run();
  console.log('Product picker catalog: zero stock, reserved stock and reconciliation block passed.');
- async function step(cookie,to,expected=200){
+ async function step(cookie,to,expected=200,kind="refusal"){
   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version;
-  const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,reason:'Test reason',finalHandoffConfirmed:true}});
+  const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,returnKind:to==='rework'?kind:undefined,reason:'Test reason',finalHandoffConfirmed:true}});
   assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
+ }
+ await step(editor.cookie,'rework',400,null);
+ await step(editor.cookie,'rework',400,'unknown');
+ for(let i=0;i<5;i++){
+  const returned=await step(editor.cookie,'rework',200,'clarification');
+  assert.equal(returned.returnKind,'clarification');
+  const version=db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version;
+  const response=await call('/api/crm',{cookie:returnOperator.cookie,body:{action:'transition',id:flowId,version,to:'confirm'}});
+  assert.equal(response.status,200,response.text);
+  const updated=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
+  assert.equal(updated.round,1);assert.equal(updated.finalHandoffAt,undefined);assert.ok(updated.confirmationStartedAt);
+  await step(editor.cookie,'refused',400);
  }
  await step(editor.cookie,'refused',400);
  await step(editor.cookie,'rework');let flowOrder=await step(returnOperator.cookie,'confirm');assert.equal(flowOrder.round,2);assert.ok(flowOrder.finalHandoffAt);
@@ -645,9 +657,9 @@ try{
  await policyAction(editor.cookie,{action:'updateOrder',address:'Changed'},400);
  await policyAction(editor.cookie,{action:'updateDelivery',delivery:'moscow_courier'},400);
  await policyAction(policyOperator.cookie,{action:'updateOrder',id:'policy-operator-o-draft',items:[]},400);
- await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'  '},400);
+ await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'refusal',reason:'  '},400);
  const selectedReturnReason='Клиент отказывается — дорого · Просит обсудить меньшую корзину';
- policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:selectedReturnReason});
+ policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'refusal',reason:selectedReturnReason});
  assert.equal(policyOrder.returnReason,selectedReturnReason);
  const operatorReturnView=(await call('/api/crm',{cookie:policyOperator.cookie})).data;
  assert.equal(operatorReturnView.orders.find(o=>o.id===policyId).returnReason,selectedReturnReason);
@@ -660,10 +672,10 @@ try{
  assert.equal(policyState.orders.find(o=>o.id===policyId).reworkDeadline,frozenDeadline);
  policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'confirm',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,null);assert.equal(policyOrder.noAnswerDeadline,undefined);
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,undefined);
- await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Test'},400);
+ await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'refusal',reason:'Test'},400);
  await policyAction(editor.cookie,{action:'transition',to:'check',reason:'Test'});
  await policyAction(cookies.admin,{action:'transition',to:'extra',reason:'Test'});
- policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',reason:'Своя причина возврата'});assert.equal(policyOrder.returnReason,'Своя причина возврата');assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
+ policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'refusal',reason:'Своя причина возврата'});assert.equal(policyOrder.returnReason,'Своя причина возврата');assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
  await setPolicy({...originalPolicy,finalHours:3});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).reworkDeadline,undefined);
  policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',addressConfirmed:true,items:policyOrder.items,address:'Updated address, дом 1'});assert.equal(policyOrder.address,'Updated address, дом 1');
@@ -711,7 +723,7 @@ try{
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===noticeOrder.id).noAnswerDeadline,firstDeadline);
  confirmed=await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'extra'});assert.equal(confirmed.confirmationHours,2);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.confirmationStartedAt)+2*3600000).toISOString());
  for(const contact of ['missed','callback'])await policyAction(editor.cookie,{action:'contact',id:noticeOrder.id,contact,reason:'Test',due:new Date(Date.parse(confirmed.noAnswerDeadline)+1).toISOString()},400);
- await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'rework',reason:'Test'});
+ await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'rework',returnKind:'refusal',reason:'Test'});
  confirmed=await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'extra',finalHandoffConfirmed:true});assert.equal(confirmed.finalConfirmHours,24);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.finalHandoffAt)+86400000).toISOString());
  // Client-requested first confirmation: validate on handoff, preserve timers and the original request.
  await setPolicy({confirmationHours:48});
@@ -738,7 +750,7 @@ try{
  assert.equal(scheduled.confirmationRequest.handledAt,undefined);assert.equal(scheduled.noAnswerDeadline,scheduledDeadline);
  scheduled=await policyAction(editor.cookie,{action:'contact',id:scheduled.id,contact:'missed',reason:'No answer'});
  assert.ok(scheduled.confirmationRequest.handledAt);assert.equal(scheduled.confirmationRequest.at,requestedAt);assert.equal(scheduled.noAnswerDeadline,scheduledDeadline);
- await policyAction(editor.cookie,{action:'transition',id:scheduled.id,to:'rework',reason:'Correct order'});
+ await policyAction(editor.cookie,{action:'transition',id:scheduled.id,to:'rework',returnKind:'refusal',reason:'Correct order'});
  await policyAction(policyOperator.cookie,{...handoff,confirmationAt:requestedAt,finalHandoffConfirmed:true},400);
  scheduled=await policyAction(policyOperator.cookie,{...handoff,finalHandoffConfirmed:true});
  assert.ok(scheduled.confirmationRequest.handledAt);assert.equal(scheduled.finalConfirmHours,24);

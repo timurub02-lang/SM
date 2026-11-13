@@ -1,3 +1,4 @@
+import {isRefusalRework,reworkHandoff} from "@/lib/crm";
 import {preparedModelsEnabled,requestPreparedWorkspace,readPreparedModel,readModelSource} from '@/lib/crm-read-model';
 import {proxyLegacySnapshot} from '@/lib/crm-legacy-proxy';
 import {workspaceVersions} from '@/lib/crm-workspace-clock';
@@ -502,6 +503,7 @@ async function handlePOST(request:Request){
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
    const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);
+   const returnKind=to==="rework"?z.enum(["clarification","refusal"],{error:"Выберите тип возврата: уточнение данных или отказ клиента. Обновите страницу, если выбора нет."}).parse(p.returnKind):undefined;
    if(to==='shipping'&&o.delivery==='moscow_courier'){
     if(!['admin','logistic','chief_logistic'].includes(employee.role)||o.courier)throw Error('Передача курьеру недоступна');
     const couriers=s.employees.filter(e=>e.role==='courier');
@@ -513,8 +515,8 @@ async function handlePOST(request:Request){
     if(!o.items.length)throw Error('В заказе нет товаров');
     next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o),phase:"pending",operatorBudgetMs:o.courierRecall?.operatorBudgetMs};
    }
-   if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с заказом");next.finalHandoffAt=now;next.finalConfirmHours=s.settings.orderPolicy!.finalHours;}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
-   delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;if(o.status==="rework"&&["confirm","extra"].includes(to))next.round++;
+   if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(isRefusalRework(o)&&p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с отказом клиента");Object.assign(next,reworkHandoff(o,now,s.settings.orderPolicy!));}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
+   delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnKind=returnKind;next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;
    if(to==='shipping'&&o.delivery==='moscow_courier'){next.status='packing';delete next.shippedAt;delete next.finalHandoffAt;delete next.reworkDeadline;}
    if(courierRecalledAtWarehouse(o)){
     if(to==='rework'){
@@ -539,7 +541,7 @@ async function handlePOST(request:Request){
     next.confirmationRequest={at,by:employee.id};
    }
    if(isLogistic(employee?.role))next.logistic=employee.id;
-   const labels=await import("@/lib/crm");text=`${o.zvd?"ЗВД снят · ":""}${labels.statuses[o.status]} → ${labels.statuses[to]}${reason?" · "+reason:""}`;
+   const labels=await import("@/lib/crm");text=`${o.zvd?"ЗВД снят · ":""}${labels.statuses[o.status]} → ${labels.statuses[to]}${returnKind?" · "+(returnKind==="refusal"?"Отработать отказ клиента":"Уточнить данные / связаться с клиентом"):""}${reason?" · "+reason:""}`;
    if(courierRecalledAtWarehouse(o)&&['rework','packing'].includes(to))text+=' · После пересборки · посылка на складе';
    if(to==='shipping'&&o.delivery==='moscow_courier')text="Передан курьеру · ожидает приёма посылки · заказ остаётся Принят";
    if(p.confirmationAt)text+=" · Просил подтверждения ко времени: "+new Date(next.confirmationRequest!.at).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК · по просьбе клиента";

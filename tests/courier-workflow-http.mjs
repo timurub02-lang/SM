@@ -126,7 +126,7 @@ try{
  await act(editId,'courier',{action:'courierWorkflow',operation:'returnRecall'},400);
  await act(editId,'courier',{action:'courierWorkflow',operation:'returnRecall',confirmed:true});
  assert.equal(order(editId).courier.phase,'recall_returned');assert.equal(courierBalance([order(editId)],'courier').parcels,9000);assert.equal(stock(),editStock);
- await act(editId,'logistic',{action:'transition',to:'rework',reason:'Client refuses'},400);
+ await act(editId,'logistic',{action:'transition',to:'rework',returnKind:'refusal',reason:'Client refuses'},400);
  await act(editId,'logistic',{action:'markPackingWaybill'},400);
  await act(editId,'chief',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true});
  assert.equal(order(editId).courier,undefined);assert.equal(order(editId).status,'packing');assert.equal(order(editId).packingWaybillAt,undefined);assert.equal(stock(),editStock);assert.equal(courierBalance([order(editId)],'courier').parcels,0);
@@ -135,7 +135,7 @@ try{
  await receipt(editId,'Посылка принята на пересборку',9000,{visible:false});
  await act(editId,'courier',{action:'courierAccept',confirmed:true},400);
  await act(editId,'logistic',{action:'transition',to:'rework'},400);
- await act(editId,'logistic',{action:'transition',to:'rework',reason:'Клиент отказывается'});
+ await act(editId,'logistic',{action:'transition',to:'rework',returnKind:'refusal',reason:'Клиент отказывается'});
  assert.equal(order(editId).status,'rework');assert.equal(stock(),editStock);assert.equal(order(editId).courierRecall.operatorBudgetMs,recallBudget);
  assert.ok((await call('operator')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('После пересборки')));
  await act(editId,'logistic',{action:'transition',to:'packing'},400);
@@ -159,12 +159,12 @@ try{
  const pendingId=await create();await assembled(pendingId);const pendingVersion=order(pendingId).version;
  await act(pendingId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Wrong handoff'});assert.equal(order(pendingId).courier,undefined);assert.equal(order(pendingId).packingWaybillAt,undefined);
  await act(pendingId,'courier',{action:'courierAccept',confirmed:true,version:pendingVersion},400);
- await act(pendingId,'logistic',{action:'transition',to:'rework',reason:'Not physically recalled'},400);
+ await act(pendingId,'logistic',{action:'transition',to:'rework',returnKind:'refusal',reason:'Not physically recalled'},400);
  // At the warehouse, cancellation and expiry release stock once without another courier receipt.
  for(const expire of [false,true]){
   const cancelledId=await create();await assembled(cancelledId);await act(cancelledId,'courier',{action:'courierAccept',confirmed:true});
   await act(cancelledId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Repack'});await act(cancelledId,'courier',{action:'courierWorkflow',operation:'returnRecall',confirmed:true});await act(cancelledId,'logistic',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true});
-  await act(cancelledId,'chief',{action:'transition',to:'rework',reason:'Client refuses'});const reservedStock=stock();
+  await act(cancelledId,'chief',{action:'transition',to:'rework',returnKind:'refusal',reason:'Client refuses'});const reservedStock=stock();
   if(expire){const expired=order(cancelledId);expired.reworkDeadline=hours(-1);expired.courierRecall.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(expired),cancelledId);await call('operator');}
   else await act(cancelledId,'operator',{action:'transition',to:'refused',reason:'Client confirmed refusal'});
   assert.equal(order(cancelledId).status,'refused');assert.equal(stock(),reservedStock+1);assert.equal(courierBalance([order(cancelledId)],'courier').total,0);
@@ -204,7 +204,7 @@ try{
  const cancelId=await create();await act(cancelId,'operator',{action:'transition',to:'confirm'});const cancelStock=stock();
  await act(cancelId,'head',{action:'transition',to:'refused',reason:' '},400);
  await act(cancelId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(cancelId).cancellationAuthor.role,'department_head');assert.equal(stock(),cancelStock+1);
- const reworkId=await create();await act(reworkId,'operator',{action:'transition',to:'confirm'});await act(reworkId,'logistic',{action:'transition',to:'rework',reason:'Question'});
+ const reworkId=await create();await act(reworkId,'operator',{action:'transition',to:'confirm'});await act(reworkId,'logistic',{action:'transition',to:'rework',returnKind:'refusal',reason:'Question'});
  const lease=crypto.randomUUID();await call('operator','/api/order-access',{orderId:reworkId,token:lease,action:'acquire'});
  await act(reworkId,'head',{action:'contact',contact:'missed',reason:'No answer'},409);await call('head','/api/mainsms',{action:'send',orderId:reworkId},409);await call('operator','/api/order-access',{orderId:reworkId,token:lease,action:'release'});
  const deadline=order(reworkId).reworkDeadline;await act(reworkId,'head',{action:'contact',contact:'callback',reason:'Discuss',due:hours(1)});assert.equal(order(reworkId).reworkDeadline,deadline);
