@@ -357,6 +357,32 @@ try{
  console.log('Base destination HTTP: administrator-only, CSRF, saved target, stale settings and blocked manual dispatch passed.');
  console.log('Incoming protection HTTP: admin scope, spam hidden from tasks, restore and PBX preflight passed.');
  console.log('Primary and additional phone selection, client/order targets, masked labels, authorization and stale selection passed.');
+ // An assigned open incoming is a narrow callback grant, even while logistics owns the stage.
+ const callbackIncoming='a7'.repeat(16),callbackOrderBefore=db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data;
+ const callbackOrder={...JSON.parse(callbackOrderBefore),status:'extra',contact:'callback',due:new Date(Date.now()+3600000).toISOString()};
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(callbackOrder),'o-one');
+ db.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number) VALUES(?,?,?,?,?,?,?)').run(callbackIncoming,'c-one','one','1',new Date().toISOString(),'+79990000001','+79990000000');
+ const callbackTarget={mode:'incoming',incomingId:callbackIncoming};
+ assert.equal((await api('/api/telephony?mode=order&orderId=o-one',undefined,cookies.one)).status,400,'Ordinary order phone lookup remains blocked');
+ assert.equal((await api('/api/telephony',{mode:'order',orderId:'o-one'},cookies.one)).status,400,'Ordinary order call remains blocked');
+ assert.equal((await api('/api/telephony',{mode:'client',clientId:'c-one'},cookies.one)).status,400,'Ordinary client call remains blocked');
+ assert.equal((await api('/api/telephony',callbackTarget,cookies.two)).status,400,'Another operator cannot use the incoming');
+ assert.equal((await api('/api/telephony',{...callbackTarget,actorId:'admin'},cookies.one)).status,403,'Actor spoofing is rejected');
+ const callbackGrant=await api('/api/telephony',callbackTarget,cookies.one);assert.equal(callbackGrant.status,200,callbackGrant.text);
+ assert(!callbackGrant.text.includes('79990000001'),'No phone exposure');
+ assert.equal(db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data,JSON.stringify(callbackOrder),'Callback does not modify the order');
+ db.prepare('UPDATE incoming_calls SET assignee_id=? WHERE id=?').run('two',callbackIncoming);
+ assert.equal((await call('/api/telephony/pbx?callId='+callbackGrant.data.callId+'&endpoint='+callbackGrant.data.username,{headers:{'X-CRM-PBX-Key':pbxKey}})).status,403,'PBX rechecks reassignment before dialing');
+ db.prepare('UPDATE incoming_calls SET assignee_id=?,closed_at=? WHERE id=?').run('one',new Date().toISOString(),callbackIncoming);
+ assert.equal((await api('/api/telephony',callbackTarget,cookies.one)).status,400,'Closed incoming cannot grant a call');
+ db.prepare("UPDATE incoming_calls SET closed_at=NULL,spam=1 WHERE id=?").run(callbackIncoming);
+ assert.equal((await api('/api/telephony',callbackTarget,cookies.one)).status,400,'Spam cannot grant a call');
+ db.prepare('UPDATE incoming_calls SET spam=0 WHERE id=?').run(callbackIncoming);
+ const liveCallback=await api('/api/telephony',callbackTarget,cookies.one);assert.equal(liveCallback.status,200,liveCallback.text);
+ assert.equal((await call('/api/telephony/pbx?callId='+liveCallback.data.callId+'&endpoint='+liveCallback.data.username,{headers:{'X-CRM-PBX-Key':pbxKey}})).status,200,'Assigned callback can be claimed without an actual call');
+ db.prepare('UPDATE incoming_calls SET closed_at=? WHERE id=?').run(new Date().toISOString(),callbackIncoming);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(callbackOrderBefore,'o-one');
+ console.log('Assigned incoming callbacks: logistics stage exception, ordinary call denial, wrong operator, closed/spam and PBX recheck passed.');
  // Unknown requests can be assigned and called without materializing a CRM client.
  const requestOnly='ad'.repeat(16);await incoming(requestOnly,'79995554433');
  const counts=()=>[db.prepare('SELECT COUNT(*) n FROM clients').get().n,db.prepare('SELECT COUNT(*) n FROM orders').get().n];

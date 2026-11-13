@@ -77,7 +77,7 @@ export async function incomingCallTarget(d:ActivityDb,e:Employee,id:string){
  if(!['admin','department_head','operator'].includes(e.role))throw Error('Звонок из обращения недоступен');
  const row=await incomingForAction(d,id,e,[]);
  const shared=row.client_id&&row.shared_queue===1&&['admin','department_head'].includes(e.role)&&!!await d.prepare("SELECT id FROM clients WHERE id=? AND COALESCE(json_extract(data,'$.owner'),'')='' AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=clients.id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))").bind(row.client_id).first();
- if(row.client_id&&!shared&&!(row.handoff&&row.assignee_id===e.id))throw Error('Обращение уже связано с клиентом. Обновите данные и звоните из карточки клиента');
+ if(row.client_id&&!shared&&!(row.assignee_id===e.id&&(e.role==='operator'||row.handoff)))throw Error('Обращение уже связано с клиентом. Обновите данные и звоните из карточки клиента');
  const phone=normalizeOutgoingNumber(row.phone);
  if(!phone)throw Error('В обращении нет корректного номера телефона');
  const matched=await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(phone).first() as {client_id:string}|null;
