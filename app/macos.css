@@ -875,3 +875,8 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .base-stats-leader{display:flex;flex-direction:column;gap:2px;min-width:0}
 .base-stats-leader .muted{font-size:11px}
 .base-stats-leader strong{font-size:14px;overflow-wrap:anywhere}
+
+.base-stats-averages{display:flex;flex-direction:column;gap:3px}
+.base-stats-averages>div{display:flex;flex-wrap:wrap;gap:6px}
+.base-stats-average{display:inline-flex;gap:8px;align-items:baseline;padding:3px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-variant-numeric:tabular-nums}
+.base-stats-averages>.muted{font-size:11px}

@@ -13,3 +13,8 @@ export function filterBaseStats(rows:ReturnType<typeof baseStats>,department:str
  const operators=selected.filter(r=>r.role==='operator');
  return {rows:selected,total:operators.reduce((sum,r)=>sum+r.clients,0),leader:operators.reduce<typeof operators[number]|undefined>((best,row)=>!best||row.clients>best.clients?row:best,undefined)};
 }
+
+export function averageBaseClients(rows:ReturnType<typeof baseStats>,department:string){
+ const operators=rows.filter(r=>r.role==='operator'&&r.department===department&&r.clients>10);
+ return operators.length?operators.reduce((sum,r)=>sum+r.clients,0)/operators.length:null;
+}
