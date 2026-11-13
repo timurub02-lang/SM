@@ -73,7 +73,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
     <div className="incoming-card-footer"><span>Ответственный</span><strong>{item.assigneeName||'Не назначен'}</strong></div>
    </summary>
    <div className="incoming-card-body stack"><IncomingHandoffNote item={item}/>
-   <div className="incoming-client-heading">{!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={employee.role==='admin'?clientId=>onLink(item.id,clientId):undefined}/>}</div>
+
    {!hideClientPhone(employee.role)&&item.calledNumber&&<small className="muted">На номер {item.calledNumber}</small>}
    {item.spam&&<p>{item.spamReason}{item.blocked?' · Номер заблокирован':''}</p>}
    {employee.role==='admin'&&<div className="action-buttons">
@@ -84,6 +84,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    </div>}
 
    <div className="action-buttons incoming-contact-actions">
+   {!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={employee.role==='admin'?clientId=>onLink(item.id,clientId):undefined}/>}
    {!item.spam&&item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&<button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!,item.closedAt?undefined:item.id)}>Карточка клиента</button>}
    {!item.spam&&!item.closedAt&&(!item.clientId||assignedCallback(item)||sharedCallback(item))&&(['admin','department_head'].includes(employee.role)||employee.role==='operator'&&item.assigneeId===employee.id)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'incoming',incomingId:item.id}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    {!item.spam&&item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&!item.hasActiveOrder&&!assignedCallback(item)&&!sharedCallback(item)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
