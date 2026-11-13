@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {internalDeadline,internalElapsed,upgradeOrderTimers} from '../lib/internal-timers.ts';
+import {internalDeadline,internalElapsed,internalWarningAt,upgradeOrderTimers} from '../lib/internal-timers.ts';
 import {draftDeadline,confirmationDeadline,reworkDeadlineFrom,reworkTimeLeft} from '../lib/crm.ts';
 import {courierToOperator,pauseCourierOperatorBudget} from '../lib/courier.ts';
 import {defaultOrderPolicy} from '../lib/order-policy.ts';
@@ -8,6 +8,7 @@ import {operatorReturnDeadline,syncRedemption,initRedemption} from '../lib/redem
 import {openDatabase} from '../server/sqlite.ts';
 import {reconcileOrderTimers} from '../lib/base-retention-store.ts';
 const fri='2026-11-13T15:00:00.000Z',mon='2026-11-16T14:00:00.000Z';
+assert.equal(internalWarningAt('2026-11-15T23:00:00.000Z',6),'2026-11-13T17:00:00.000Z');
 assert.equal(internalDeadline(fri,23),mon); // Friday 18:00 Moscow -> Monday 17:00.
 assert.equal(internalDeadline('2026-11-14T12:00:00Z',1),'2026-11-15T22:00:00.000Z');
 assert.equal(internalDeadline(fri,24*10),'2026-11-27T15:00:00.000Z');

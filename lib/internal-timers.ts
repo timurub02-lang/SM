@@ -10,8 +10,13 @@ export function weekdayMilliseconds(from:number,to:number){
  return amount;
 }
 export function addWeekdayMilliseconds(from:number,amount:number){
- if(!Number.isFinite(from)||!Number.isFinite(amount)||amount<0)throw Error('Некорректный срок обработки');
- while(amount>0){const next=midnight(from)+day;if(weekend(from)){from=next;continue;}const used=Math.min(amount,next-from);from+=used;amount-=used;}
+ if(!Number.isFinite(from)||!Number.isFinite(amount))throw Error('Некорректный срок обработки');
+ const direction=amount<0?-1:1;amount=Math.abs(amount);
+ while(amount>0){
+  const edge=direction>0?midnight(from)+day:midnight(from-1);
+  if(weekend(direction>0?from:from-1)){from=edge;continue;}
+  const used=Math.min(amount,Math.abs(edge-from));from+=direction*used;amount-=used;
+ }
  return new Date(from).toISOString();
 }
 export function internalDeadline(at:string,hours:number){
@@ -37,4 +42,11 @@ export function upgradeOrderTimers<T extends {status:string;timerCalendar?:strin
   next.courier={...order.courier,doorRefusal:{...door,claimDueAt:upgradeInternalDeadline(door.claimDueAt),decisionDueAt:upgradeInternalDeadline(door.decisionDueAt)}};
  }
  return next as T;
+}
+
+export function internalWarningAt(deadline:string,hours:number){
+ const end=Date.parse(deadline),amount=hours*3600000;
+ if(end<=weekdayTimersSince)return new Date(end-amount).toISOString();
+ const elapsed=weekdayMilliseconds(weekdayTimersSince,end);
+ return amount<=elapsed?addWeekdayMilliseconds(end,-amount):new Date(weekdayTimersSince-(amount-elapsed)).toISOString();
 }
