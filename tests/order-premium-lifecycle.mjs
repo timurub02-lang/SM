@@ -79,3 +79,8 @@ const frozenDuplicate=freezePeriod(duplicateLedger,'2026-10-2',[repeated],staff,
 assert.equal(frozenDuplicate.periods['2026-10-2'].orders.length,1);
 assert.equal(frozenDuplicate.periods['2026-10-2'].orders[0].amount,1000);
 assert.equal(applyPremiumStages(ledger,[initial],staff)[0].premiumStage.paidAt,ledger.periods['2026-10-2'].paidAt,'payout timestamp reaches order list');
+
+const {premiumCashSpends}=await import('../lib/premium-cash.ts');
+const paidCash={status:'paid',paidAt:'2026-11-13T12:00:00Z',paidBy:'admin',signers:[{id:'head',name:'Head',department:'a'},{id:'head2',name:'Other',department:'b'}],rows:[{department:'a',login:'one',input:{sz:false},payout:100},{department:'b',login:'two',input:{sz:false},payout:200}]};
+assert.deepEqual(premiumCashSpends('2026-11-1',paidCash,[{id:'head',cashDisabled:true}]).map(x=>[x.sender,x.amount]),[['head2',20000]]);
+assert.equal(paidCash.rows[0].payout,100,'Disabling cash does not change payroll');

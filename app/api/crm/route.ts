@@ -698,7 +698,7 @@ async function handlePOST(request:Request){
   const rateLedger=p.employee.leaderRates!==undefined?await d.prepare("SELECT data FROM settings WHERE id='premium-ledger'").first<{data:string}>():null;
   const rateEdit=p.employee.leaderRates!==undefined?editLeaderRates(employee,existing,s.employees,p.employee.leaderRates,rateLedger?JSON.parse(rateLedger.data):null):null;
   if(rateEdit&&data.role!=='department_head')throw Error('Проценты доступны только руководителю');
-  const saved=json({...data,...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:rateEdit?.terms??existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
+  const saved=json({...data,...(existing?.cashDisabled?{cashDisabled:true}:{}),...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:rateEdit?.terms??existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
   const rateGuard=rateEdit?.changed?(rateLedger?" AND EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger' AND data=?)":" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger')"):'';
   const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?"+rateGuard).bind(saved,eid,p.version,...(rateEdit?.changed&&rateLedger?[rateLedger.data]:[])):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
   const guard="EXISTS(SELECT 1 FROM employees WHERE id=? AND data=? AND version=?)";

@@ -8,7 +8,7 @@ import {defaultPremiumAdjustment,type PremiumSaved} from './premium-calculation'
 export async function readPremiumState(period:string){return readPremiumStateFrom(db(),period);}
 export async function savePremiumLedger(state:Awaited<ReturnType<typeof readPremiumState>>,next:PremiumLedger,period:string){
  const d=db(),paid=state.ledger?.periods[period]?.status!=='paid'&&next.periods[period]?.status==='paid';
- const spends=paid?premiumCashSpends(period,next.periods[period]):[];
+ const spends=paid?premiumCashSpends(period,next.periods[period],state.employees):[];
  if(paid)await initCash();
  const serialized=JSON.stringify(next);
  const update=d.prepare("UPDATE settings SET data=? WHERE id=? AND data=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=? AND (SELECT json_group_array(json_array(id,data)) FROM (SELECT id,data FROM settings WHERE id LIKE ? ORDER BY id))=?").bind(serialized,ledgerKey,state.raw,state.staffVersions,state.orderVersions,'premium-draft:'+period+':%',state.draftVersions);
