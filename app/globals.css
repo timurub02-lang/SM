@@ -355,3 +355,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .cash-forecast-track{position:relative;display:block;height:7px;background:#e7eaf0;border-radius:5px;overflow:hidden}
 .cash-forecast-track::after{content:"";position:absolute;left:50%;top:0;height:100%;width:1px;background:#8995a5}
 .cash-forecast-track>span{position:absolute;top:0;height:100%;border-radius:4px}
+
+.incoming-card-grid:has(>.incoming-card[open]){align-items:start}
