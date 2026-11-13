@@ -245,3 +245,20 @@ Provisional worker containment is768MiB V8 heap,1GiB MemoryMax and CPUWeight50. 
 ### Provider-compatible SK delivery
 
 The receiver accepts both single call_result objects and batches, with HTTP200 after durable intake of the complete selected batch. The existing nginx20MiB body limit is also enforced in the authenticated handler. No new service, schema, installer or timer is required. Keep the exact webhook location forwarding Authorization; do not remove authentication from other routes. Final result_id is read from call_result; unused documented event types are acknowledged without importing. Test batch retries, atomic capacity failure and write rollback before publishing. Provider credentials still need configuration; deploying this change does not enable the subscription.
+
+## Order processing timers: Monday–Friday
+
+From 13 November 2026 (Moscow calendar), order processing budgets exclude Saturdays
+and Sundays, counting all 24 hours on each weekday. Draft, first/repeated/final
+confirmation, operator rework, courier confirmation/operator budgets and redemption
+operator-return timers use the shared calendar. Customer retention/trial periods,
+explicit appointments, financial periods, transport/network timeouts and CDEK
+storage dates are unchanged. Redemption deadlines remain capped by CDEK storage.
+
+Existing active saved deadlines are upgraded once with optimistic version checks
+before expiry processing. Only the portion on/after the policy date is converted;
+earlier elapsed time is not refunded, and completed/cancelled orders are untouched.
+The additive `timerCalendar` marker prevents a second extension. The installer’s
+normal consistent database backup precedes activation. Verify maintenance, a Friday
+budget ending on Monday, and storage-capped redemption work without changing a real
+order merely for a test. Application rollback does not revert stored deadlines.

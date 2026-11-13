@@ -1,4 +1,5 @@
 'use client';
+import {internalDeadline} from '@/lib/internal-timers';
 import {useState} from 'react';
 import {stamp,money,type Order,type Employee} from '@/lib/crm';
 import {courierDoorRefusal,courierLabel,courierParcelLocation,courierPhase,courierDeadline,courierTimeLeft,courierWaitingSince,courierStage,canEditRecalledCourierOrder} from '@/lib/courier';
@@ -18,7 +19,7 @@ export function CourierWork({order:o,employee,staff,busy,mutate}:{order:Order;em
  {!c.acceptedAt?<p>Ожидает приёма: {courierWaitingSince(o)}. {c.phase==='pending'?'Таймер подтверждения начнётся после фактического приёма посылки.':'Заказ уже подтверждён; после приёма курьер продолжит доставку.'}</p>:<p>Посылка принята: {stamp(c.acceptedAt,'Europe/Moscow')} МСК. {stage==='settled'?'Расчёт завершён.':'Посылка остаётся под отчётом курьера до сдачи денег или подтверждения физического приёма логистом.'}</p>}
  {deadline&&<p>До возврата оператору: <b>{courierTimeLeft(deadline)}</b> · {stamp(deadline,'Europe/Moscow')} МСК. Недозвон и перезвон срок не продлевают.</p>}
  {c.workReason&&phase==='operator'&&<p><b>Причина передачи:</b> {c.workReason}</p>}
- {c.operatorBudgetMs!==undefined&&<p>Общий запас доработки у оператора: <b>{c.operatorBudgetMs===null?'без ограничения':courierTimeLeft(o.reworkDeadline||new Date(Date.now()+c.operatorBudgetMs).toISOString())}</b>. {phase==='operator'?'Сейчас расходуется.':'Сейчас приостановлен.'} Повторная передача не восстанавливает запас.</p>}
+ {c.operatorBudgetMs!==undefined&&<p>Общий запас доработки у оператора: <b>{c.operatorBudgetMs===null?'без ограничения':courierTimeLeft(o.reworkDeadline||internalDeadline(new Date().toISOString(),c.operatorBudgetMs/3600000))}</b>. {phase==='operator'?'Сейчас расходуется.':'Сейчас приостановлен.'} Повторная передача не восстанавливает запас.</p>}
  {c.postponement&&<p><b>{c.postponement.state==='pending'?'Запрошен перенос доставки':c.postponement.state==='approved'?'Доставка согласована':'Перенос отклонён'}:</b> {stamp(c.postponement.at,'Europe/Moscow')} МСК<br/>{c.postponement.reason}</p>}
  {needsRepack&&<p><b>Запрос на пересборку:</b> {request.reason}<br/>{request.name} · {stamp(request.at,'Europe/Moscow')} МСК. До отзыва логистом общий срок работы оператора продолжает идти.</p>}
  {c.recall&&<p><b>Отзыв на сборку:</b> {c.recall.reason}<br/>{c.recall.name} · {stamp(c.recall.requestedAt,'Europe/Moscow')} МСК</p>}

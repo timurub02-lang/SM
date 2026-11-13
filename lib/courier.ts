@@ -1,3 +1,4 @@
+import {internalDeadline,internalElapsed} from './internal-timers.ts';
 import type {Order,Employee} from './crm.ts';
 import type {Reminder} from './reminders.ts';
 import {defaultOrderPolicy,type OrderPolicy} from './order-policy.ts';
@@ -79,17 +80,17 @@ export function courierMissedCallTime(time:string,now=Date.now()){
 export function courierDeadline(o:Order){
  const c=o.courier;
  if(o.delivery!=='moscow_courier'||!c||c.phase!=='confirmation'||['redeemed','returned','refused'].includes(o.status)||!c.workStartedAt||c.workHours===null)return undefined;
- return new Date(Date.parse(c.workStartedAt)+(c.workHours??48)*3600000).toISOString();
+ return internalDeadline(c.workStartedAt,c.workHours??48);
 }
 export function courierConfirmationStage(o:Order,now=Date.now(),policy:OrderPolicy=defaultOrderPolicy){
  if(o.contact!=='none'&&o.due&&Date.parse(o.due)>now)return o.contact;
  if(o.due&&Date.parse(o.due)<=now)return 'new';
  const deadline=courierDeadline(o);
- if(deadline&&Date.parse(deadline)-now<=policy.courierWarningHours*3600000)return 'expiring';
+ if(deadline&&internalElapsed(now,Date.parse(deadline))<=policy.courierWarningHours*3600000)return 'expiring';
  return o.contact==='none'?'new':o.contact;
 }
 export function courierTimeLeft(deadline:string,now=Date.now()){
- const minutes=Math.max(0,Math.ceil((Date.parse(deadline)-now)/60000));
+ const minutes=Math.max(0,Math.ceil(internalElapsed(now,Date.parse(deadline))/60000));
  return `${Math.floor(minutes/60)} ч ${minutes%60} мин`;
 }
 export function courierWaitingSince(o:Order,now=Date.now()){
@@ -138,19 +139,19 @@ export function courierParcelLocation(o:Order){
 function clearCall(o:Order){o.contact='none';o.due='';delete o.contactAuthor;delete o.noAnswerDeadline;}
 function stopCourierClock(o:Order){if(o.courier){delete o.courier.workStartedAt;delete o.courier.workHours;}}
 export function courierToOperator(order:Order,reason:string,policy:OrderPolicy,at:string):Order{
- const o={...order,courier:{...order.courier!},status:'rework' as const,reason,returnReason:reason,updatedAt:at,extra:false};
+ const o={...order,timerCalendar:"weekdays-v1" as const,courier:{...order.courier!},status:'rework' as const,reason,returnReason:reason,updatedAt:at,extra:false};
  const c=o.courier;
  if(c.operatorBudgetMs===undefined){c.operatorBudgetMs=policy.reworkHours===null?null:policy.reworkHours*3600000;o.reworkHours=policy.reworkHours;}
  c.phase='operator';c.workReason=reason;c.operatorStartedAt=at;
  if(c.postponement&&c.postponement.state!=='rejected')c.postponement={...c.postponement,state:'rejected',decidedAt:at};
- o.reworkDeadline=c.operatorBudgetMs===null?undefined:new Date(Date.parse(at)+c.operatorBudgetMs).toISOString();
+ o.reworkDeadline=c.operatorBudgetMs===null?undefined:internalDeadline(at,c.operatorBudgetMs/3600000);
  stopCourierClock(o);clearCall(o);delete o.finalHandoffAt;
  return o;
 }
 export function pauseCourierOperatorBudget(o:Order,at:string){
  const c=o.courier||(courierRecalledAtWarehouse(o)?o.courierRecall={...o.courierRecall!}:undefined);
  if(!c)return;
- if(c.operatorStartedAt&&c.operatorBudgetMs!==null&&c.operatorBudgetMs!==undefined)c.operatorBudgetMs=Math.max(0,c.operatorBudgetMs-(Date.parse(at)-Date.parse(c.operatorStartedAt)));
+ if(c.operatorStartedAt&&c.operatorBudgetMs!==null&&c.operatorBudgetMs!==undefined)c.operatorBudgetMs=Math.max(0,c.operatorBudgetMs-internalElapsed(Date.parse(c.operatorStartedAt),Date.parse(at)));
  delete c.operatorStartedAt;delete o.reworkDeadline;
 }
 export function cancelCourierWork(o:Order,at:string){
@@ -235,7 +236,7 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
  }else if(p.operation==='toOperator'||p.operation==='doorRefusal'){
   require(courier&&['confirmation','delivery'].includes(phase||''));
   c.atDoor=p.operation==='doorRefusal';
-  if(c.atDoor){require(phase==='delivery','Отказ у двери доступен только на этапе доставки');require(p.confirmed===true,'Подтвердите, что вы у клиента и ждёте решения');c.doorRefusal={at,claimDueAt:new Date(Date.parse(at)+(policy.courierDoorClaimMinutes??2)*60000).toISOString(),decisionDueAt:new Date(Date.parse(at)+(policy.courierDoorDecisionMinutes??10)*60000).toISOString()};}
+  if(c.atDoor){require(phase==='delivery','Отказ у двери доступен только на этапе доставки');require(p.confirmed===true,'Подтвердите, что вы у клиента и ждёте решения');o.timerCalendar="weekdays-v1";c.doorRefusal={at,claimDueAt:internalDeadline(at,(policy.courierDoorClaimMinutes??2)/60),decisionDueAt:internalDeadline(at,(policy.courierDoorDecisionMinutes??10)/60)};}
   const r=reason();o=courierToOperator(o,r,policy,at);
   text=(c.atDoor?'СРОЧНО: отказ у двери · курьер ждёт решения · ':phase==='delivery'?'Возврат с доставки · ':'Возврат с подтверждения курьером · ')+'Заказ передан в работу оператору · '+r+' · посылка остаётся у курьера';
  }else throw Error('Неизвестное действие курьера');
