@@ -5,6 +5,7 @@ export type PreparedModel<T>={status:'ready'|'stale'|'pending'|'error';data?:T;s
 export type PreparedWrite={kind:string;scope:string;data:unknown;sourceRevision:string;accessRevision:string;computedAt:number;validUntil:number};
 export const preparedModelsEnabled=()=>process.env.CRM_SUMMARIES_WORKER==='1';
 const initialized=new WeakMap<ActivityDb,{schema:number;pending?:Promise<void>}>();
+const scopeRevisionSql=(scope:string)=>`(SELECT c.epoch||':'||m.epoch||':'||COALESCE((SELECT revision FROM crm_workspace_clock WHERE scope='*' AND area='workspace'),0)||':'||COALESCE((SELECT revision FROM crm_workspace_clock WHERE scope=${scope} AND area='workspace'),0) FROM crm_change_clock c CROSS JOIN crm_model_source m WHERE c.id=1 AND m.id=1)`;
 export async function initPreparedModels(d:ActivityDb){
  await initWorkspaceClock(d);
  const schema=Number(await d.prepare('PRAGMA schema_version').first('schema_version')),saved=initialized.get(d);
@@ -21,6 +22,10 @@ export async function initPreparedModels(d:ActivityDb){
    d.prepare('CREATE TABLE IF NOT EXISTS crm_model_publish_guard(id INTEGER PRIMARY KEY CHECK(id=1),allowed INTEGER NOT NULL CONSTRAINT crm_model_fence CHECK(allowed=1))'),
    d.prepare('INSERT OR IGNORE INTO crm_model_publish_guard VALUES(1,1)'),
   ]);
+  if(!(await d.prepare('PRAGMA table_info(crm_read_models)').all()).results.some((r:{name:string})=>r.name==='scope_revision')){
+   try{await d.prepare("ALTER TABLE crm_read_models ADD COLUMN scope_revision TEXT NOT NULL DEFAULT ''").run();}
+   catch(error){if(!String(error).includes('duplicate column name: scope_revision'))throw error;}
+  }
   const tables=new Set((await d.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).results.map((r:{name:string})=>r.name));
   const triggers=new Map((await d.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger'").all()).results.map((r:{name:string;sql:string})=>[r.name,r.sql]));
   const statements=[];
@@ -65,9 +70,11 @@ export async function requestPreparedWorkspace(d:ActivityDb,employeeId:string,no
 }
 export async function readPreparedModel<T>(d:ActivityDb,kind:string,scope:string,sourceRevision?:string,now=Date.now(),jsonPath='$'):Promise<PreparedModel<T>>{
  await initPreparedModels(d);
- const row=await d.prepare("SELECT c.epoch||':'||m.epoch||':'||m.access AS current_access_revision,r.schema_version,r.source_revision,r.access_revision,r.computed_at,r.valid_until,CASE WHEN json_valid(r.data) THEN json_extract(r.data,?) ELSE NULL END AS data,w.ok AS worker_ok,w.heartbeat AS worker_heartbeat FROM crm_model_source m JOIN crm_change_clock c ON c.id=1 LEFT JOIN crm_read_models r ON r.kind=? AND r.scope=? LEFT JOIN crm_model_worker w ON w.id=1 WHERE m.id=1").bind(jsonPath,kind,scope).first();
+ const row=await d.prepare(`SELECT c.epoch||':'||m.epoch||':'||m.access AS current_access_revision,${scopeRevisionSql('r.scope')} AS current_scope_revision,r.scope_revision,r.schema_version,r.source_revision,r.access_revision,r.computed_at,r.valid_until,CASE WHEN json_valid(r.data) THEN json_extract(r.data,?) ELSE NULL END AS data,w.ok AS worker_ok,w.heartbeat AS worker_heartbeat FROM crm_model_source m JOIN crm_change_clock c ON c.id=1 LEFT JOIN crm_read_models r ON r.kind=? AND r.scope=? LEFT JOIN crm_model_worker w ON w.id=1 WHERE m.id=1`).bind(jsonPath,kind,scope).first();
  const healthy=row?.worker_ok===1&&now-row.worker_heartbeat>=0&&now-row.worker_heartbeat<10000;
- if(!row||row.schema_version!==1||row.access_revision!==row.current_access_revision)return {status:healthy?'pending':'error',schemaVersion:1,message:healthy?'Сводка готовится':'Обработчик сводок недоступен. Ожидаем готовые данные.'};
+ // Only an unchanged scope observed in this same SQL snapshot can survive a foreign access change.
+ const unchangedScope=(kind==='context'||kind==='summary')&&row?.scope_revision&&row.scope_revision===row.current_scope_revision;
+ if(!row||row.schema_version!==1||(row.access_revision!==row.current_access_revision&&!unchangedScope))return {status:healthy?'pending':'error',schemaVersion:1,message:healthy?'Сводка готовится':'Обработчик сводок недоступен. Ожидаем готовые данные.'};
  try{
   if(row.data===null)throw Error('Missing or damaged prepared value');
   const data=JSON.parse(row.data) as T;
@@ -88,6 +95,6 @@ export async function publishPreparedModels(d:ActivityDb,rows:PreparedWrite[],ex
  // A failed fence aborts the entire SQLite transaction, including stage deltas.
  // Filtering individual INSERTs would still allow unguarded stage changes to commit.
  try{
-  await d.batch([d.prepare(`UPDATE crm_model_publish_guard SET allowed=CASE WHEN ${guards.join(' AND ')} THEN 1 ELSE 0 END WHERE id=1`).bind(...args),...rows.map(r=>d.prepare('INSERT INTO crm_read_models(kind,scope,schema_version,source_revision,access_revision,computed_at,valid_until,data) VALUES(?,?,1,?,?,?,?,?) ON CONFLICT(kind,scope) DO UPDATE SET schema_version=1,source_revision=excluded.source_revision,access_revision=excluded.access_revision,computed_at=excluded.computed_at,valid_until=excluded.valid_until,data=excluded.data').bind(r.kind,r.scope,r.sourceRevision,r.accessRevision,r.computedAt,r.validUntil,JSON.stringify(r.data))),...extraStatements]);return true;
+  await d.batch([d.prepare(`UPDATE crm_model_publish_guard SET allowed=CASE WHEN ${guards.join(' AND ')} THEN 1 ELSE 0 END WHERE id=1`).bind(...args),...rows.map(r=>d.prepare(`INSERT INTO crm_read_models(kind,scope,schema_version,source_revision,access_revision,computed_at,valid_until,data,scope_revision) VALUES(?,?,1,?,?,?,?,?,${scopeRevisionSql('?')}) ON CONFLICT(kind,scope) DO UPDATE SET schema_version=1,source_revision=excluded.source_revision,access_revision=excluded.access_revision,computed_at=excluded.computed_at,valid_until=excluded.valid_until,data=excluded.data,scope_revision=excluded.scope_revision`).bind(r.kind,r.scope,r.sourceRevision,r.accessRevision,r.computedAt,r.validUntil,JSON.stringify(r.data),r.scope)),...extraStatements]);return true;
  }catch(error){if(String(error).includes('crm_model_fence'))return false;throw error;}
 }
