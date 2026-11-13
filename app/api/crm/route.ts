@@ -240,7 +240,7 @@ async function handlePOST(request:Request){
   if(!result[0].meta.changes)throw Error('Обращение уже изменилось. Обновите данные');
   message='Клиент создан, обращение передано оператору';
  }else if(p.action==="linkIncomingClient"){
-  if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Связать номер могут администратор и руководители');
+  if(employee?.role!=='admin')throw Error('Связать номер может только администратор');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
   if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные');
   const c=s.clients.find(c=>c.id===z.string().min(1).max(100).parse(p.clientId));if(!c)throw Error('Клиент не найден');
