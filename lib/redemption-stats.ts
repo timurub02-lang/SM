@@ -10,7 +10,8 @@ export async function redemptionStats(d:Db,actor:Employee,day:string,archive=fal
  const staff=(await d.prepare('SELECT id,data FROM employees').all()).results.map((r:any)=>({id:r.id,...JSON.parse(r.data)}));
  const byId=new Map<string,any>(staff.map((e:any)=>[e.id,e]));
  const counts=new Map<string,{id:string;name:string;orders:Set<string>}>();
- const visible=(id:string)=>actor.role!=='department_head'||id===actor.id;
+ // Эмиль исключён только из этого блока статистики по поручению администратора.
+ const visible=(id:string)=>id!=='E-e9adef48-6ff'&&(actor.role!=='department_head'||id===actor.id);
  for(const e of staff)if(e.role==='department_head'&&visible(e.id))counts.set(e.id,{id:e.id,name:e.name,orders:new Set()});
  const events=(await d.prepare("SELECT order_id,data FROM redemption_history WHERE at>=? AND at<? AND at<=? AND json_extract(data,'$.changeKind')='action' ORDER BY id").bind(start,end,saved?.at||end).all()).results;
  const acted=new Set<string>();
