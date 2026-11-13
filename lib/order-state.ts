@@ -1,3 +1,4 @@
+import {readPaidHistory} from './premium-paid-history.ts';
 import type {ActivityDb} from './activity-store.ts';
 import {initCrmReadIndexes} from './crm-read-indexes.ts';
 import type {State,Order,Client} from './crm.ts';
@@ -43,6 +44,6 @@ export async function readClientState(d:ActivityDb,clientId:string,reconcile=tru
  const ledger:PremiumLedger|null=ledgerRow?JSON.parse(ledgerRow.data):null;
  const preview=nextPremiumPreview(ledger,state.orders,state.employees);
  state.premiumActivePeriod=ledger?.activePeriod;state.premiumNextPeriod=preview?.period;
- state.orders=applyPremiumStages(ledger,state.orders,state.employees).map(o=>({...o,premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
+ state.orders=applyPremiumStages(ledger,state.orders,state.employees,await readPaidHistory(d)).map(o=>({...o,premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
  return state;
 }

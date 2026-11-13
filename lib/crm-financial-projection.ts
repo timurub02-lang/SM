@@ -1,3 +1,4 @@
+import {readPaidHistory} from './premium-paid-history.ts';
 import type {ActivityDb} from './activity-store.ts';
 import type {Employee,Order,State} from './crm.ts';
 import {ledgerKey,ledgerRows,periodOrders,payrollVisible,premiumStagesByKey,nextPremiumPreview,orderKey,rowFromCalculation,type PremiumLedger,type PayrollRow,type PayrollOrder} from './premium-ledger.ts';
@@ -51,7 +52,7 @@ export async function buildFinancialProjection(d:ActivityDb,_now=Date.now()):Pro
  }
  const next=nextPremiumPreview(ledger,orders,employees);
  const overview={activePeriod:ledger?.activePeriod,periods:Object.keys(ledger?.periods||{}),staff:employees,periodCounts};
- return {...overview,overview,byPeriod,stageProjection:{activePeriod:ledger?.activePeriod,stages:Object.fromEntries(premiumStagesByKey(ledger,orders,employees)),nextPeriod:next?.period,nextOrderIds:[...(next?.orderIds||[])].filter((id):id is string=>!!id)}};
+ return {...overview,overview,byPeriod,stageProjection:{activePeriod:ledger?.activePeriod,stages:Object.fromEntries(premiumStagesByKey(ledger,orders,employees,await readPaidHistory(d))),nextPeriod:next?.period,nextOrderIds:[...(next?.orderIds||[])].filter((id):id is string=>!!id)}};
 }
 
 export function financialPeriodResponse(projection:FinancialOverview&{byPeriod:Record<string,FinancialPeriod>},actor:Employee,period:string){

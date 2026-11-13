@@ -1,3 +1,4 @@
+import {paidHistoryKey,type PaidHistory} from './premium-paid-history.ts';
 import {upgradeOrderTimers} from './internal-timers.ts';
 import {cancelledOrderNotices,releasedClientNotices} from './client-lifecycle-notice.ts';
 import {ledgerKey,orderKey,type PremiumLedger} from './premium-ledger.ts';
@@ -58,18 +59,21 @@ export async function reconcileClients(d:Db,clients:Client[],orders:Order[],sale
 
   let changed=false;
   const ledgerRow=await d.prepare("SELECT data FROM settings WHERE id=?").bind(ledgerKey).first() as {data:string}|null;
+  const historyRow=await d.prepare('SELECT data FROM settings WHERE id=?').bind(paidHistoryKey).first() as {data:string}|null;
+  const history:PaidHistory|null=historyRow?JSON.parse(historyRow.data):null;
+  const historicalKeys=new Set((history?.orders||[]).map(o=>o.externalId));
   const ledger=ledgerRow?JSON.parse(ledgerRow.data) as PremiumLedger:null;
   const paidKeys=new Set(Object.values(ledger?.periods||{}).filter(p=>p.status==='paid').flatMap(p=>(p.orders||[]).map(o=>o.externalId)));
   const baseConfigRow=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first();const baseConfig=baseSettingsSchema.parse(baseConfigRow?JSON.parse(baseConfigRow.data).config:initialBaseSettings());const period=baseConfig.retention.from&&baseConfig.retention.to?baseConfig.retention:previousThreeMonths();const sales=repeatSales(salesOrders,period.from,period.to);
   const byClient=new Map<string,Order[]>();for(const order of orders){const group=byClient.get(order.clientId)||[];group.push(order);byClient.set(order.clientId,group);}
   for(const c of clients){
    const related=byClient.get(c.id)||[];
-   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent),!!baseConfig.retention.operators[c.owner],related.some(o=>o.manager===c.owner&&o.status==='redeemed'&&!paidKeys.has(orderKey(o))));
+   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent),!!baseConfig.retention.operators[c.owner],related.some(o=>o.manager===c.owner&&o.status==='redeemed'&&!paidKeys.has(orderKey(o))&&!(historicalKeys.has(orderKey(o))&&!o.importedPayment)));
    if(JSON.stringify(next)===JSON.stringify(c))continue;
    const at=new Date().toISOString();const eid="EV-"+crypto.randomUUID();
    const event:Event={id:eid,clientId:c.id,orderId:"",at,actor:"Система",text:next.owner?"Правило К · закрепление обновлено":"Правило К · откреплён, возвращён в "+(next.baseType==='J'?'Ж':'М')+" / "+(clientSheet(next)||"исходный лист")+(next.releaseBaseReview?" · Требуется проверка ФИО для выбора базы М/Ж":"")};
-   const guard=" AND COALESCE((SELECT data FROM settings WHERE id='premium-ledger'),'')=? AND (SELECT COUNT(*) FROM orders WHERE client_id=?)=?"+related.map(()=>" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)").join("");
-   const args=[ledgerRow?.data||'',c.id,related.length,...related.flatMap(o=>[o.id,o.version])];
+   const guard=" AND COALESCE((SELECT data FROM settings WHERE id='premium-ledger'),'')=? AND COALESCE((SELECT data FROM settings WHERE id='premium-paid-history'),'')=? AND (SELECT COUNT(*) FROM orders WHERE client_id=?)=?"+related.map(()=>" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)").join("");
+   const args=[ledgerRow?.data||'',historyRow?.data||'',c.id,related.length,...related.flatMap(o=>[o.id,o.version])];
    const releaseReason=c.trialUntil&&!related.some(o=>o.manager===c.owner)?'Истёк срок первичного закрепления без заказа':related.some(o=>o.manager===c.owner&&o.status==='redeemed')?'Истёк срок закрепления после выкупа':'Нет действующих заказов и действующего срока закрепления';
    const releaseNotices=await releasedClientNotices(d,c,next,event,related,releaseReason);
    const result=await d.batch([

@@ -1,3 +1,4 @@
+import type {ActivityDb} from './activity-store.ts';
 import type {Employee} from './crm.ts';
 import {payrollVisible,type PayrollOrder} from './premium-ledger.ts';
 
@@ -15,4 +16,9 @@ export function paidHistoryResults(history:PaidHistory|null,actor:Employee,order
   const label=new Intl.DateTimeFormat('ru-RU',{month:'long',timeZone:'UTC'}).format(new Date(Date.UTC(Number(year),Number(month)-1,1)));
   return [{...scope,id:order?.id,externalId:row.externalId,login:employee?.login||'',amount:0,amountUnknown:true,historyOnly:true,period:label[0].toUpperCase()+label.slice(1)+' '+year+' · '+half+'-й период',source:history!.source}];
  });
+}
+
+export async function readPaidHistory(d:ActivityDb):Promise<PaidHistory|null>{
+ const row=await d.prepare('SELECT data FROM settings WHERE id=?').bind(paidHistoryKey).first();
+ return row?JSON.parse(row.data):null;
 }
