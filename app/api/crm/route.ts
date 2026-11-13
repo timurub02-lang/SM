@@ -256,7 +256,7 @@ async function handlePOST(request:Request){
   const linkedPhones=[...new Set([...(c.linkedPhones||[]),...(normalizedPhone(c.phone)===normalizedPhone(phone)?[]:[phone])])];
   const marker=crypto.randomUUID(),routing=employee.role==='department_head'?{assignee:employee,department:employee.department||'',shared:false}:await incomingRouting(d,c.id,c,row.at);
   const gate="EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._incomingLink')=?)";
-  const event=ev(c.id,'','Номер '+phone+' добавлен из входящего обращения · '+row.id);
+  const event=ev(c.id,'','Дополнительный номер добавлен из входящего обращения · '+row.id);
   const result=await d.batch([
    d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND client_id IS NULL AND closed_at IS NULL)").bind(json({linkedPhones,_incomingLink:marker}),c.id,c.version,row.id),
    d.prepare("UPDATE incoming_calls SET client_id=?,assignee_id=?,department_id=?,shared_queue=? WHERE id=? AND client_id IS NULL AND closed_at IS NULL AND "+gate).bind(c.id,routing.assignee?.id||null,routing.department,routing.shared?1:0,row.id,c.id,marker),

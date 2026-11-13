@@ -516,6 +516,7 @@ try{
  assert.equal(db.prepare("SELECT data FROM clients WHERE id='c-two'").get().data,clientBeforeMatch);
  const linkedByHead=await api('/api/crm',linkAsHead,cookies.head);assert.equal(linkedByHead.status,200,linkedByHead.text);
  let matchedRow=(await state('head')).incoming.find(i=>i.id===matchedIncoming);assert.ok(matchedRow,'Linking head keeps access across departments until transfer');assert.equal(matchedRow.assigneeId,'head');assert.equal(matchedRow.clientOwnerId,'two');assert.equal(matchedRow.phone,'');
+ assert.ok(db.prepare("SELECT data FROM events WHERE client_id='c-two'").all().filter(r=>JSON.parse(r.data).text.includes(matchedIncoming)).every(r=>!JSON.parse(r.data).text.includes('79997773311')),'Link history must not expose the incoming phone');
  const afterMatch=JSON.parse(db.prepare("SELECT data FROM clients WHERE id='c-two'").get().data);assert.equal(afterMatch.phone,JSON.parse(clientBeforeMatch).phone);assert.equal(afterMatch.owner,'two');assert.ok(afterMatch.linkedPhones.includes('+79997773311'));
  const handedMatch=await api('/api/crm',{action:'transferIncoming',incomingId:matchedIncoming,operatorId:matchedRow.clientOwnerId,comment:'Previous phone and address confirmed'},cookies.head);assert.equal(handedMatch.status,200,handedMatch.text);
  matchedRow=(await state('two')).incoming.find(i=>i.id===matchedIncoming);assert.equal(matchedRow.assigneeId,'two');assert.equal(matchedRow.handoff.comment,'Previous phone and address confirmed');
