@@ -22,6 +22,8 @@ export function orderDisplayGroup(order:Order){
 // Only the operational list is pruned; payroll history retains its original membership.
 export function showOrderInList(order:Order,client:Client|undefined,role:Employee["role"]){
  const group=orderDisplayGroup(order).id;
+ // A rejected review remains visible so the operator can find its cancellation reason after release.
+ if(group==='cancelled'&&order.blacklistedAt)return true;
  const hideUnassigned=group==="cancelled"&&["admin","operator","department_head"].includes(role)||group==="premium_paid"&&["operator","department_head"].includes(role);
  return !hideUnassigned||!!client?.owner&&client.owner===order.manager;
 }
