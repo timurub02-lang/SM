@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState} from 'react';
 import {Tabs,TabsList,TabsTrigger} from './ui/tabs';
+import {BaseStats} from './base-stats';
 import {Switch} from './ui/switch';
 import {BarChart3} from 'lucide-react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
@@ -39,9 +40,10 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  return <>
   <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today);setTo(today);setOpen(true);}} title="Статистика операторов"><BarChart3 size={18}/>Статистика</button>
   <Dialog open={visible} onOpenChange={setOpen}>{visible&&<DialogContent className="form-dialog operator-stats-dialog">
-   <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>{section==='buyouts'?'По дате выкупа, включая перенесённые заказы ЛВ. Даты — по Москве.':'Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.'}</DialogDescription></DialogHeader>
+   <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>{section==='base'?'Закреплённые клиенты операторов и отделов.':section==='buyouts'?'По дате выкупа, включая перенесённые заказы ЛВ. Даты — по Москве.':'Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.'}</DialogDescription></DialogHeader>
    <div className="stack">
-    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики"><TabsTrigger value="created">Созданные заказы</TabsTrigger><TabsTrigger value="buyouts">Выкупы</TabsTrigger></TabsList></Tabs>
+    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики"><TabsTrigger value="created">Созданные заказы</TabsTrigger><TabsTrigger value="buyouts">Выкупы</TabsTrigger>{actor.role==='admin'&&<TabsTrigger value="base">База</TabsTrigger>}</TabsList></Tabs>
+    {section==='base'?actor.role==='admin'&&<BaseStats actorId={actor.id}/>:<>
     <div className="stats-period">
      <label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
      <label>По дату<input aria-label="Конец периода" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
@@ -67,6 +69,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
      </tr></tfoot></>}
     </table></div>{!rows.length&&<p>{section==='buyouts'?'За выбранный период нет выкупленных заказов.':'За выбранный период нет созданных заказов.'}</p>}</div>}
     {section==='buyouts'?<p className="muted">Учитываются выкупы за выбранные даты независимо от даты создания заказа. Без известной даты выкупа заказ в статистику не входит. Нажмите на показатель, чтобы посмотреть доступные вам заказы.</p>:<p className="muted">В работе — ещё не подтверждены и не отменены. Сортировка — нажатием на заголовок. Подтверждено — логистом. Ожидают отправки — подтверждены, ещё не отправлены и не отменены. Средний чек и сумма включают все созданные заказы, в том числе отменённые. Подтверждение и отправка учитываются независимо: отправленный заказ остаётся в подтверждённых. Доставка — СДЭК, Почта России и курьер. {!summaryMode&&'Нажмите на показатель, чтобы открыть входящие в него заказы.'}</p>}
+    </>}
    </div>
   </DialogContent>}</Dialog>
  </>;
