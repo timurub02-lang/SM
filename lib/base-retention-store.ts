@@ -1,3 +1,4 @@
+import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {paidHistoryKey,type PaidHistory} from './premium-paid-history.ts';
 import {upgradeOrderTimers} from './internal-timers.ts';
 import {cancelledOrderNotices,releasedClientNotices} from './client-lifecycle-notice.ts';
@@ -68,7 +69,7 @@ export async function reconcileClients(d:Db,clients:Client[],orders:Order[],sale
   const byClient=new Map<string,Order[]>();for(const order of orders){const group=byClient.get(order.clientId)||[];group.push(order);byClient.set(order.clientId,group);}
   for(const c of clients){
    const related=byClient.get(c.id)||[];
-   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent),!!baseConfig.retention.operators[c.owner],related.some(o=>o.manager===c.owner&&o.status==='redeemed'&&!paidKeys.has(orderKey(o))&&!(historicalKeys.has(orderKey(o))&&!o.importedPayment)));
+   const next=applyRetention(c,related,Date.now(),retentionDays(baseConfig.retention.operators[c.owner],sales[c.owner]?.percent),!!baseConfig.retention.operators[c.owner],related.some(o=>o.manager===c.owner&&o.status==='redeemed'&&!legacyPremiumPaid(o)&&!paidKeys.has(orderKey(o))&&!(historicalKeys.has(orderKey(o))&&!o.importedPayment)));
    if(JSON.stringify(next)===JSON.stringify(c))continue;
    const at=new Date().toISOString();const eid="EV-"+crypto.randomUUID();
    const event:Event={id:eid,clientId:c.id,orderId:"",at,actor:"Система",text:next.owner?"Правило К · закрепление обновлено":"Правило К · откреплён, возвращён в "+(next.baseType==='J'?'Ж':'М')+" / "+(clientSheet(next)||"исходный лист")+(next.releaseBaseReview?" · Требуется проверка ФИО для выбора базы М/Ж":"")};
