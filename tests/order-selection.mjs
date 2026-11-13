@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {updateOrderSelection} from '../lib/order-selection.ts';
+const pages=Array.from({length:4},(_,p)=>Array.from({length:50},(_,i)=>'ORDER-'+(p*50+i)));
+let selected=[];
+for(const page of pages)selected=updateOrderSelection(selected,page,true);
+assert.equal(selected.length,200);
+selected=updateOrderSelection(selected,pages[2],false);
+assert.equal(selected.length,150);assert(pages[0].every(id=>selected.includes(id)));assert(pages[3].every(id=>selected.includes(id)));
+selected=updateOrderSelection(selected,pages[0],true);assert.equal(selected.length,150);
+selected=updateOrderSelection(selected,['ORDER-199'],false);assert(!selected.includes('ORDER-199'));
+selected=updateOrderSelection(selected,['ORDER-199'],true);assert.equal(selected.length,150);
+console.log('Cross-page selection: 200 orders, page-local deselection, individual rows and no duplicates passed.');
