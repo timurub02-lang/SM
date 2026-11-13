@@ -10,5 +10,6 @@ export function baseStats(employees:Employee[],counts:{owner:string;total:number
 
 export function filterBaseStats(rows:ReturnType<typeof baseStats>,department:string){
  const selected=rows.filter(r=>!department||r.department===department).sort((a,b)=>Number(!a.department)-Number(!b.department)||(a.department||'').localeCompare(b.department||'','ru',{numeric:true})||Number(a.role==='department_head')-Number(b.role==='department_head')||b.clients-a.clients||a.login.localeCompare(b.login,'ru'));
- return {rows:selected,total:selected.filter(r=>r.role==='operator').reduce((sum,r)=>sum+r.clients,0)};
+ const operators=selected.filter(r=>r.role==='operator');
+ return {rows:selected,total:operators.reduce((sum,r)=>sum+r.clients,0),leader:operators.reduce<typeof operators[number]|undefined>((best,row)=>!best||row.clients>best.clients?row:best,undefined)};
 }
