@@ -21,5 +21,9 @@ try{
  await event('late','maria','work','2026-10-16T17:00:00Z');assert.deepEqual(await get(true),{ivan:3,maria:2});assert.deepEqual(await get(),{ivan:3,maria:3});
  assert.deepEqual(await redemptionStats(d,{id:'ivan',role:'department_head'},'2026-10-16'),[{id:'ivan',name:'Иван',count:3}]);
  assert.deepEqual(await redemptionStats(d,{id:'op',role:'operator'},'2026-10-16'),[]);
+ await d.prepare('INSERT INTO employees VALUES(?,?)').bind('E-e9adef48-6ff',JSON.stringify({name:'Эмиль',role:'department_head'})).run();
+ await event('emil-order','E-e9adef48-6ff','work');
+ assert.deepEqual(await get(),{ivan:3,maria:3});assert.deepEqual(await get(true),{ivan:3,maria:2});
+ assert.deepEqual(await redemptionStats(d,{id:'E-e9adef48-6ff',role:'department_head'},'2026-10-16'),[]);
  console.log('Stats passed: independent authors, unique orders, first ND, overwrites, Moscow day, archive cutoff, role visibility');
 }finally{d.close();}
