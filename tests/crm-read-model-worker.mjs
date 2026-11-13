@@ -49,6 +49,8 @@ try{
  assert.ok(queries.some(sql=>sql.includes("AS redeemedAt FROM orders")&&sql.includes("$.manager")),'retention uses fresh owner-wide sales instead of cached visible orders');
  const afterRefresh={...result};result=await worker.tick(reuseAt+2);assert.equal(result.financialContextRefreshes,afterRefresh.financialContextRefreshes,'unchanged finance revision does not repeatedly refresh foreign contexts');
  await d.prepare("UPDATE orders SET data=json_set(data,'$.comment','local edit') WHERE id='o-other'").run();result=await worker.tick(reuseAt+3);assert.equal(result.contextBuilds-afterRefresh.contextBuilds,1,'ordinary local edit still invalidates its full context');
+ await d.prepare("INSERT INTO clients(id,phone,data) VALUES('foreign-new','synthetic-new','{\"owner\":\"other\"}')").run();
+ assert.ok((await readPreparedModel(d,'context','third')).data,'metadata-only context refresh advances its scope proof before a later foreign access change');
  assert.equal(await claimSummaryLease(d,'competitor'),false,'singleton prevents competing worker');
  await d.prepare('UPDATE crm_model_worker SET lease_until=0').run();assert.equal(await renewSummaryLease(d,'test-worker'),false);assert.equal(await claimSummaryLease(d,'competitor'),true,'expired/crashed lease recoverable');
  const source=await readModelSource(d),now=Date.now();

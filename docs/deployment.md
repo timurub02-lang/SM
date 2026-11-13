@@ -242,6 +242,21 @@ The proxy streams bytes without building another snapshot. It requests identity 
 
 Provisional worker containment is768MiB V8 heap,1GiB MemoryMax and CPUWeight50. This adds to existing service limits: web4GiB + export1.5GiB + summaries0.75GiB + SK-events0.375GiB + snapshots1GiB =7.625GiB, leaving insufficient worst-case headroom on the observed7.76GiB VM for OS/bridge/maintenance. Do not enable it based on nominal free RAM alone. Measure simultaneous peaks and Linux throttling first; if retaining all these limits, plan at least12GiB guest RAM in the approved window, after checking host headroom and the guest's supported memory-change procedure. No VM memory change or server-side capacity validation has been performed by this change.
 
+### Prepared context access checks
+
+Prepared context and summary rows retain their scope's durable workspace revision
+when published inside the existing global access fence. Reads compare this revision
+in the same SQL snapshot as the payload and current rights. Unrelated access changes
+can therefore keep an unchanged workspace available; ownership, staff/account,
+shared-incoming and global clock changes still invalidate affected scopes. Finance
+keeps its global access fence. Missing or affected contexts still return503 until
+the worker publishes; this change does not hide worker failures or bypass access.
+
+The additive `crm_read_models.scope_revision` column defaults to an empty value;
+existing rows keep the old strict behavior until republished. Previous runtimes
+ignore the column, so a code rollback requires no database rollback. No new job,
+environment variable or root installer update is needed.
+
 ### PBX recording upload limit
 
 The Next.js proxy request buffer is capped at 45 MiB to match the existing PBX
