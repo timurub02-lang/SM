@@ -50,3 +50,22 @@ for(const role of ['operator','department_head']){
  }
 }
 assert.equal(filteredClientList(state,employee,{filter:'expires',query:'   ',clientWorkFilter:'all'},now).length,0,'empty query retains filters');
+
+// Explicit blacklist review keeps the cancelled order in its operator's list after release.
+state.clients=[{id:'one',name:'Иван',phone:'',city:'',owner:'',createdAt:at}];
+state.orders=[{...order,status:'refused',blacklistedAt:at}];
+for(const role of ['operator','department_head'])assert.equal(filteredOrderList(state,{...employee,role},{...query,filter:'cancelled'},now).length,1);
+
+state.clients=Array.from({length:65},(_,i)=>({id:'client-'+i,name:'Клиент '+String(i).padStart(2,'0'),phone:'',city:'',owner:'operator',createdAt:at}));
+state.clients.push({id:'foreign',name:'А чужой',owner:'other',phone:'',city:'',createdAt:at});
+state.orders=state.clients.flatMap((c,i)=>[{...order,id:'paid-'+i,clientId:c.id,status:'redeemed',items:[{name:'Товар',price:i,quantity:2}]},{...order,id:'return-'+i,clientId:c.id,status:'returned',items:[{name:'Товар',price:9999-i,quantity:1}]}]);
+for(const role of ['operator','department_head']){
+ const viewer={...employee,role},q={filter:'all',query:'',clientWorkFilter:'all'};
+ for(const clientSort of ['name','amount'])for(const direction of ['asc','desc']){
+  const rows=filteredClientList(state,viewer,{...q,clientSort,direction},now);
+  assert.equal(rows.length,65);assert.equal(rows[0].id,direction==='asc'?'client-0':'client-64');
+  assert.equal(rows.slice(50)[0].id,direction==='asc'?'client-50':'client-14','sort complete results before pagination');
+ }
+ assert.equal(filteredClientList(state,viewer,{...q,query:'Клиент 05',clientSort:'amount',direction:'desc'},now)[0].id,'client-5');
+}
+console.log('Client sorting: both roles, name/paid amount/directions, search and pagination passed');

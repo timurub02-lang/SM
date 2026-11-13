@@ -104,6 +104,13 @@ try{
    assert.deepEqual(page.clients,snapshot.clients.filter(c=>page.rows.some(o=>o.clientId===c.id)));
   }
   if(employee.role==='admin')continue;
+  for(const clientSort of ['name','amount'])for(const direction of ['asc','desc']){
+   const q={filter:'all',query:'',clientWorkFilter:'all',clientSort,direction,timeZone:'Europe/Moscow'},expected=filteredClientList(snapshot,employee,q);
+   for(const pageNumber of [0,1]){
+    const result=await get('/api/crm?'+new URLSearchParams({list:'mine',view:'mine',...q,page:String(pageNumber)}),cookie);
+    assert.equal(result.status,200);assert.deepEqual(result.data.clients,expected.slice(result.data.page*50,(result.data.page+1)*50));
+   }
+  }
   for(const filter of ['all','without_orders','expires','today'])for(const clientWorkFilter of ['all','needed','planned','done']){
    const q={filter,query:'',clientWorkFilter,timeZone:'Europe/Moscow'},expected=filteredClientList(snapshot,employee,q),page=(await get('/api/crm?'+new URLSearchParams({list:'mine',view:'mine',...q,page:'0'}),cookie)).data;
    assert.deepEqual(page.clients,expected.slice(0,50));assert.equal(page.total,expected.length);
