@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {internalDeadline,internalElapsed} from '../lib/internal-timers.ts';
+import {internalDeadline} from '../lib/internal-timers.ts';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
 import {applyCourierCommand,courierLabel,courierParcelLocation,courierToOperator,courierDeadline,courierStage,courierBalance,courierConfirmationStage,courierMissedCallTime,courierReminderNeedsAction} from '../lib/courier.ts';
@@ -121,7 +121,7 @@ try{
  assert.equal(migrated.courier.phase,'operator');assert.equal(migrated.courier.operatorBudgetMs,4*hour);
  assert.equal(migrated.courier.acceptedAt,logWork.courier.acceptedAt);assert.equal(migrated.contact,'none');assert.equal(migrated.due,'');
  assert.equal(migrated.courier.workStartedAt,undefined);assert.equal(migrated.courier.postponement.state,'rejected');
- assert.ok(Math.abs(internalElapsed(Date.now(),Date.parse(migrated.reworkDeadline))-4*hour)<10000);
+ assert.equal(migrated.reworkDeadline,internalDeadline(migrated.courier.operatorStartedAt,4));
  assert.equal(get('operator-expired').courier.operatorBudgetMs,0);assert.equal(courierStage(get('operator-expired')),'return');
  assert.equal(courierDeadline(get('pending')),undefined);assert.equal(get('pending').status,'packing');assert.equal(get('disabled').status,'packing');assert.equal(get('approved').status,'shipping');
  assert.equal((await d.prepare('SELECT reserved FROM product_stock').first()).reserved,records.length-2);

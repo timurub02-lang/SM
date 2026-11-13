@@ -26,6 +26,14 @@ try{
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<100;i++){try{if((await fetch(base+'/login')).status===200)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  const cookies={};for(const id of ['admin','head','operator']){const r=await call('/api/auth/login',null,{login:id,password:'synthetic-statistics-2026'});assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
+ const basePath='/api/operator-statistics?section=base';
+ assert.equal((await call(basePath)).status,401);
+ assert.equal((await call(basePath,cookies.head)).status,403);
+ assert.equal((await call(basePath,cookies.operator)).status,403);
+ assert.equal((await call(basePath+'&actorId=admin',cookies.head)).status,403);
+ const baseResponse=await call(basePath,cookies.admin);assert.equal(baseResponse.status,200,baseResponse.text);
+ assert.equal(JSON.parse(baseResponse.text).rows.find(r=>r.id==='other').clients,1);
+ assert.ok(!baseResponse.text.includes('private-client'));
  const path='/api/operator-statistics?from=2026-11-11&to=2026-11-11';
  assert.equal((await call(path)).status,401);
  assert.equal((await call(path,cookies.operator)).status,403);

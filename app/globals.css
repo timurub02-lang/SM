@@ -357,3 +357,10 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .cash-forecast-track>span{position:absolute;top:0;height:100%;border-radius:4px}
 
 .incoming-card-grid:has(>.incoming-card[open]){align-items:start}
+/* Fit payroll columns to the panel, including long employee logins. */
+.premium-payroll .premium-fit-table{width:100%;table-layout:fixed}
+.premium-payroll .premium-fit-table th,.premium-payroll .premium-fit-table td{min-width:0;max-width:none;padding:10px 6px;font-size:12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;text-align:right;font-variant-numeric:tabular-nums}
+.premium-payroll .premium-fit-table th:first-child,.premium-payroll .premium-fit-table td:first-child{text-align:left;width:18%}
+.premium-payroll .premium-fit-table .text-button{max-width:100%;padding:4px 0;font-size:inherit;white-space:normal;overflow-wrap:anywhere}
+.premium-payroll .premium-fit-table small{display:block;font-size:11px}
+.premium-payroll .premium-leader-row{background:var(--muted,#edf0f4);border-top:2px solid var(--border)}
