@@ -1,5 +1,5 @@
 import regions from '../data/phone-timezones/regions.json' with {type:'json'};
-import type {Client} from './crm.ts';
+import type {Client,Order} from './crm.ts';
 const words=(s:string)=>s.toLowerCase().replace(/ё/g,'е').replace(/(^|[^а-я])обл\.?($|[^а-я])/g,'$1область$2').replace(/(^|[^а-я])респ\.?($|[^а-я])/g,'$1республика$2').replace(/(^|[^а-я])г\.?($|[^а-я])/g,'$1город$2').split(/[^а-я]+/).filter(Boolean);
 const entries=Object.entries(regions).map(([name,zones])=>({tokens:words(name),zones}));
 const formats=new Map<string,Intl.DateTimeFormat>();
@@ -16,4 +16,8 @@ export function clientLocalTime(client:Pick<Client,'city'|'address'|'addressPart
  const minutes=(s:string)=>Number(s.slice(0,2))*60+Number(s.slice(3));
  let difference=(minutes(local)-minutes(moscow))/60;if(difference< -1)difference+=24;if(difference>9)difference-=24;
  return `У клиента ${local} · МСК${difference===0?'':difference>0?' +'+difference:' '+difference}`;
+}
+
+export function orderTimeAddress(order:Pick<Order,'address'|'addressParts'>,client?:Pick<Client,'city'|'address'|'addressParts'>){
+ return order.address?.trim()||order.addressParts?.region?.trim()?{city:'',address:order.address,addressParts:order.addressParts}:client;
 }
