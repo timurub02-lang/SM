@@ -185,7 +185,7 @@ try{
  // Department heads share the existing confirmation flow, never the courier's own stage.
  for(const [delivery,to] of [['cdek_pickup','check'],['russian_post','extra'],['moscow_courier','packing']]){
   const headId=await create();await act(headId,'operator',{action:'updateOrder',delivery,items:order(headId).items,addressConfirmed:true});await act(headId,'operator',{action:'transition',to:'confirm'});
-  assert.ok((await call('head')).data.tasks.some(t=>t.orderId===headId));assert.ok(!(await call('foreign-head')).data.tasks.some(t=>t.orderId===headId));
+  assert.ok(!(await call('head')).data.tasks.some(t=>t.orderId===headId));assert.ok(!(await call('foreign-head')).data.tasks.some(t=>t.orderId===headId));
   await act(headId,'foreign-head',{action:'transition',to},403);
   const token=crypto.randomUUID();assert.equal((await call('head','/api/order-access',{orderId:headId,token,action:'acquire'})).data.editable,true);
   assert.equal((await call('logistic','/api/order-access',{orderId:headId,token:crypto.randomUUID(),action:'acquire'})).data.editable,false);
@@ -196,9 +196,10 @@ try{
   await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(-1)},400);
   await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});assert.equal(order(headId).confirmationStartedAt,started);assert.equal(order(headId).noAnswerDeadline,deadline);
   await act(headId,'head',{action:'updateOrder',items:order(headId).items,comment:'Forbidden edit',addressConfirmed:true},400);
-  await act(headId,'head',{action:'transition',to});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');
+  if(to==='packing'){await act(headId,'head',{action:'transition',to},400);assert.equal(order(headId).status,'confirm');}
+  await act(headId,'head',{action:'transition',to,clientConfirmedByHead:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');
   await call('head','/api/order-access',{orderId:headId,token,action:'release'});
-  if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'});assert.equal(order(headId).status,'packing');}
+  if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'transition',to:'packing',clientConfirmedByHead:true});assert.equal(order(headId).status,'packing');}
   else if(to==='check')await act(headId,'head',{action:'transition',to:'packing'},400);
   else await act(headId,'head',{action:'markPackingWaybill'},400);
  }

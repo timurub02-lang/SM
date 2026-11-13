@@ -22,11 +22,11 @@ for(const status of ['confirm','extra','rework']){
  const o={...base,status};assert.equal(orderEditingLocked(head,o),false);assert.equal(usesOrderLease(head,o),true);
  if(status==='rework')assert.doesNotThrow(()=>authorizeCrm(head,{action:'updateOrder',id:o.id},state(o)));else assert.throws(()=>authorizeCrm(head,{action:'updateOrder',id:o.id},state(o)),/Недостаточно/);
  for(const action of ['contact','comment','transition'])assert.doesNotThrow(()=>authorizeCrm(head,{action,id:o.id},state(o)));
- assert.equal(employeeTasks(state(o),head).length,1);
+ assert.equal(employeeTasks(state(o),head).length,status==='rework'?1:0);
 }
 const call={...base,contact:'callback',due,contactAuthor:{...head,at}};
-assert.equal(scheduledCalls([call],head,employees).length,1);assert.equal(scheduledCalls([call],foreign,employees).length,0);
-assert.equal(employeeTasks(state(call),head)[0].kind,'call');assert.match(callAuthor(call,employees),/Руководитель/);
+assert.equal(scheduledCalls([call],head,employees).length,0);assert.equal(scheduledCalls([call],foreign,employees).length,0);
+assert.equal(employeeTasks(state(call),head).length,0);assert.match(callAuthor(call,employees),/Руководитель/);
 assert.equal(headOrderMarks(call)[0].text,'Перезвон руководителем');
 assert.equal(headOrderMarks({...call,contact:'missed'})[0].text,'Недозвон руководителем');
 assert.equal(headOrderMarks({...base,confirmationAuthor:{...head,at}})[0].text,'Подтверждено руководителем');

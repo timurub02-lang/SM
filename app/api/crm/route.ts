@@ -512,6 +512,7 @@ async function handlePOST(request:Request){
    next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts??(p.address===undefined||p.address===o.address?o.addressParts:undefined));next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)&&(!canLogisticEditBasket(o)||p.items===undefined)?o.items:itemsSchemaFor(employee?.role==='admin').parse(p.items);validateManualOrderAmount(next.items,o.items);next.comment=o.comment;if(!isLogistic(employee.role)){const added=z.string().trim().max(3000).parse(p.newOrderComment||"");if(added)Object.assign(next,appendOrderComment(o,added,employee,now));else if(p.comment!==undefined&&p.comment!==o.comment&&String(p.comment).trim())Object.assign(next,appendOrderComment(o,z.string().max(3000).parse(p.comment),employee,now));}text=isLogistic(employee.role)?"Логист уточнил данные заказа":"Обновлены доставка, адрес, корзина и комментарий менеджера";
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
+   if(employee.role==='department_head'&&to==='packing'&&p.clientConfirmedByHead!==true)throw Error('Подтвердите, что вы связались с клиентом и он подтвердил заказ');
    const returnKind=to==="rework"?z.enum(["clarification","refusal","delivery"],{error:"Выберите тип возврата: уточнение данных, отказ клиента или смена доставки. Обновите страницу, если выбора нет."}).parse(p.returnKind):undefined;
    const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role,returnKind);
    if(needsNameExplanation(o.status,to,c.name))next.incompleteNameExplanation={text:nameExplanationSchema.parse(p.incompleteNameReason??""),clientName:c.name,by:employee.id,name:employee.name,at:now};
@@ -734,7 +735,7 @@ async function handlePOST(request:Request){
  }else throw new Error("Неизвестное действие");
  const response=await timing.measure('snapshot',()=>responseState(user,true,scopedOrder,false,scopedClient,'',undefined,true,deferredWorkspace&&scopedMutation));
  const state=p.transport==='compact-v1'?compactCrmState(response):response;
- if(scopedMutation)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state,...(deferredWorkspace?{deferredWorkspace:true}:{})},message}));
+ if(scopedMutation)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state,...(deferredWorkspace?{deferredWorkspace:true,orderTasks:employeeTasks(state,user.employee!).filter(t=>!!t.orderId)}:{})},message}));
  if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return timing.finish(Response.json({statePatch:orderSavePatch(s,state,p.id),message}));
  return timing.finish(Response.json({state,message}));
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return timing.finish(Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400}));}

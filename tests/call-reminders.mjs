@@ -30,3 +30,7 @@ const {callAuthor}=await import('../lib/crm.ts');
 assert.equal(callAuthor(order,[{id:'log',name:'Legacy logistic'}]),'Legacy logistic');
 assert.equal(callAuthor({...order,contactAuthor:{id:'deleted',name:'Original author'}},[]),'Original author');
 console.log('Shared logistics calls across delivery methods, role isolation and author attribution passed');
+
+const head={id:'head',role:'department_head',department:'1'},staff=[{...op,department:'1'},head];
+for(const status of ['confirm','extra'])assert.equal(scheduledCalls([{...future,status}],head,staff).length,0,'head is not notified of logistics calls');
+assert.equal(scheduledCalls([future],head,staff).length,1,'head retains operator rework reminders');

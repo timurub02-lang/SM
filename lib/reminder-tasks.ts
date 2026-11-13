@@ -28,11 +28,11 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
    else if(o.courier&&phase==='operator'&&logistic)add(o,'repack-recall','Запросите посылку на пересборку',undefined,o.courierRepackRequest!.at,'task',o.courierRepackRequest!.reason);
    if(!o.courier||phase==='operator')continue;
   }
+  if(head&&!o.courier&&['confirm','extra'].includes(o.status))continue; // Helping logistics is optional for the department head.
   if(calls.has(o.id)){
    add(o,'call:'+o.due,Date.parse(o.due)<=now?'Пора позвонить клиенту':'Запланирован звонок',o.due,o.contactAuthor?.at||o.updatedAt,'call',[o.reason,o.contactAuthor?.name?'Кто назначил: '+o.contactAuthor.name:''].filter(Boolean).join(' · '));continue;
   }
   if(e.role==='operator'||head){
-   if(head&&!o.courier&&['confirm','extra'].includes(o.status))add(o,o.status,o.status==='extra'?'Повторно подтвердите заказ отдела':'Подтвердите заказ отдела',confirmationDeadline(o),o.confirmationStartedAt);
    if(o.status==='draft')add(o,'draft','Передайте заказ логисту',draftDeadline(o),o.createdAt,'draft','Заказ ещё на оформлении');
    if(o.status==='rework')add(o,'rework','Доработайте возвращённый заказ',o.reworkDeadline,o.courier?.operatorStartedAt||o.updatedAt,'task',o.returnReason||o.reason);
    continue;
