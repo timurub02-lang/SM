@@ -1,0 +1,33 @@
+[Unit]
+Description=SM CRM web slot %i
+After=network.target sm-crm-snapshot@%i.service
+Requires=sm-crm-snapshot@%i.service
+ConditionPathExists=/srv/crm/slots/%i/.next/standalone/server.js
+
+[Service]
+Type=simple
+User=crmadmin
+Group=crmadmin
+WorkingDirectory=/srv/crm/slots/%i/.next/standalone
+EnvironmentFile=/etc/sm-crm.env
+EnvironmentFile=/srv/crm/slots/%i.env
+Environment=NODE_OPTIONS=--max-old-space-size=1536
+Environment=MALLOC_ARENA_MAX=2
+Environment=MALLOC_TRIM_THRESHOLD_=131072
+ExecStart=/usr/bin/env HOSTNAME=127.0.0.1 CRM_RUNTIME=miran CRM_MAINTENANCE_WORKER=1 /opt/sm-node/bin/node server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=infinity
+SendSIGKILL=no
+SuccessExitStatus=143
+MemoryHigh=2G
+MemoryMax=3G
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sm-crm
+
+[Install]
+WantedBy=multi-user.target

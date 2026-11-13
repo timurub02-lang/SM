@@ -92,6 +92,11 @@ jobs:
           node scripts/oktell-bridge/bridge.test.cjs
           node scripts/oktell-bridge/test-control.cjs
           python3 tests/deployment.py
+          python3 tests/blue-green.py
+          sudo apt-get update -qq
+          sudo apt-get install -y nginx
+          sudo systemctl stop nginx
+          python3 tests/blue-green-http.py
           python3 tests/inventory.py
           python3 tests/pbx-call-queue.py
           python3 tests/phone-analysis.py

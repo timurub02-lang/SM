@@ -1,0 +1,28 @@
+[Unit]
+Description=SM CRM snapshot slot %i
+After=network.target
+ConditionPathExists=/srv/crm/slots/%i/.next/standalone/server.js
+
+[Service]
+Type=simple
+User=crmadmin
+Group=crmadmin
+EnvironmentFile=/etc/sm-crm.env
+EnvironmentFile=/srv/crm/slots/%i.env
+WorkingDirectory=/srv/crm/slots/%i/.next/standalone
+ExecStart=/usr/bin/env CRM_RUNTIME=miran CRM_LEGACY_SNAPSHOT_WORKER=1 HOSTNAME=127.0.0.1 PORT=${SNAPSHOT_PORT} /opt/sm-node/bin/node --max-old-space-size=768 server.js
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=infinity
+SendSIGKILL=no
+SuccessExitStatus=143
+MemoryMax=1G
+CPUWeight=50
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target
