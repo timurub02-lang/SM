@@ -318,6 +318,19 @@ try{
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(detailOrder.id,detailOrder.clientId,JSON.stringify(detailOrder));
  db.prepare('INSERT INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').run(detailOrder.id,detailOrder.createdAt,'{}');
  const detailUrl='/api/redemption?id='+detailOrder.id;
+ const futureDate=new Date(Date.now()+3*86400000).toISOString().slice(0,10),oldDate=new Date(Date.now()-86400000).toISOString();
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...detailOrder,testOnly:true,cdekStorageUntil:futureDate}),detailOrder.id);
+ db.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').run(JSON.stringify({action:'date',result:'date',resultDate:futureDate,dateConfirmation:'confirmed',dateConfirmedAt:oldDate,author:'Earlier result'}),detailOrder.id);
+ assert(!(await call('/api/redemption',{cookie:redemptionOrdinary.cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Future confirmed order stays out of the working queue');
+ for(const cookie of [redemptionOrdinary.cookie,cookies.admin]){const allOrders=await call('/api/redemption?tab=all',{cookie});assert.equal(allOrders.status,200,allOrders.text);assert(allOrders.data.rows.some(r=>r.order_id===detailOrder.id));assert(!allOrders.data.rows.some(r=>r.phone||r.clientPhone));}
+ for(const cookie of [detailOperator.cookie,(await fixture('redemption-search-head','1','department_head')).cookie])assert.equal((await call('/api/redemption?tab=all',{cookie})).status,403);
+ let version=db.prepare('SELECT version FROM redemption_entries WHERE order_id=?').get(detailOrder.id).version;
+ const replacement={id:detailOrder.id,version,action:'courier',result:'courier',comment:'Changed after project-wide search'};
+ assert.equal((await call('/api/redemption',{cookie:redemptionOrdinary.cookie,body:replacement})).status,400,'Future result replacement still needs confirmation');
+ const changedResult=await call('/api/redemption',{cookie:redemptionOrdinary.cookie,body:{...replacement,replaceConfirmed:true}});assert.equal(changedResult.status,200,changedResult.text);
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(detailOrder.id).data).result,'courier');
+ assert(db.prepare("SELECT id FROM redemption_history WHERE order_id=? AND json_extract(data,'$.resultDate')=?").get(detailOrder.id,futureDate),'Prior scheduled result remains in history');
+
  const buyerDetails=await call(detailUrl,{cookie:redemptionOrdinary.cookie});assert.equal(buyerDetails.status,200,buyerDetails.text);
  assert.equal(buyerDetails.data.rows[0].deliveryAddress,'Pickup address');assert.equal(buyerDetails.data.rows[0].clientPhone,'+79990000001');
  const operatorDetails=await call(detailUrl,{cookie:detailOperator.cookie});assert.equal(operatorDetails.status,200,operatorDetails.text);assert.equal(operatorDetails.data.rows[0].clientPhone,undefined);
