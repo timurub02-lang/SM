@@ -862,7 +862,7 @@ try{
  assert.ok(history.find(r=>r.id===rejectionId).readAt);assert.equal(history.find(r=>r.id===approvalId).decision,'approved');
  await approvalCall(policyOperator.cookie,{action:'createOrder',items:[],addressConfirmed:true},400);
  // Recover a decision made before notifications were added.
- db.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest',json(?)) WHERE id=?").run(JSON.stringify({...request,id:'legacy-rejected',status:'rejected',at:hourAgo}),approvalClient.id);
+ db.prepare("UPDATE clients SET data=json_set(data,'$.orderRequest',json(?)) WHERE id=?").run(JSON.stringify({...request,id:'legacy-rejected',status:'rejected',at:new Date().toISOString()}),approvalClient.id);
  assert.ok((await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.some(r=>r.id==='decision:legacy-rejected'&&r.decision==='rejected'));
  console.log('Order decisions: delayed admin rejection, head approval, requester isolation, atomic notification, read history, one-use permission and legacy recovery passed.');
 
@@ -1053,20 +1053,23 @@ try{
   db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run(id,name.toLowerCase(),JSON.stringify({name,sku:id,weight:1,cost:1}));
   db.prepare('INSERT INTO stock_movements(id,product_id,quantity,reason,actor_id,at) VALUES(?,?,?,?,?,?)').run(id,id,100,'Synthetic fixture','admin',new Date().toISOString());
  }
- const saveTotal=quantity=>call('/api/crm',{cookie:draftHead.cookie,body:{action:'updateOrder',id:headDraft.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(headDraft.id).version,items:[{name:'Basket goods',quantity,price:0},{name:'ИТОГО',quantity:1,price:5000.01}],addressConfirmed:true}});
+ const saveTotal=(quantity,price=5000)=>call('/api/crm',{cookie:draftHead.cookie,body:{action:'updateOrder',id:headDraft.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(headDraft.id).version,items:[{name:'Basket goods',quantity,price:0},{name:'ИТОГО',quantity:1,price}],addressConfirmed:true}});
+ assert.equal((await saveTotal(3,5000.01)).status,400);
  for(const quantity of [3,5]){
   const saved=await saveTotal(quantity);assert.equal(saved.status,200,JSON.stringify(saved.data));
   const items=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(headDraft.id).data).items;
   assert.equal(items[0].quantity,quantity);assert.equal(items.at(-1).name,'ИТОГО');
-  assert.equal(items.reduce((sum,item)=>sum+Math.round(item.price*100)*item.quantity,0),500001);
+  assert.equal(items.reduce((sum,item)=>sum+Math.round(item.price*100)*item.quantity,0),500000);
   assert.equal(db.prepare("SELECT reserved FROM product_stock WHERE id='basket-goods'").get().reserved,quantity);
  }
  const basketClient={...draftClient,id:'basket-new-client',phone:'+79990000992'};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(basketClient.id,basketClient.phone,JSON.stringify(basketClient));
- const newBasket=await call('/api/crm',{cookie:draftOp.cookie,body:{action:'createOrder',clientId:basketClient.id,addressConfirmed:true,items:[{name:'Basket goods',quantity:2,price:0},{name:'ИТОГО',quantity:1,price:1234.56}]}});
+ const fractionalBasket=await call('/api/crm',{cookie:draftOp.cookie,body:{action:'createOrder',clientId:basketClient.id,addressConfirmed:true,items:[{name:'Basket goods',quantity:2,price:0},{name:'ИТОГО',quantity:1,price:1234.56}]}});
+ assert.equal(fractionalBasket.status,400);
+ const newBasket=await call('/api/crm',{cookie:draftOp.cookie,body:{action:'createOrder',clientId:basketClient.id,addressConfirmed:true,items:[{name:'Basket goods',quantity:2,price:0},{name:'ИТОГО',quantity:1,price:1234}]}});
  assert.equal(newBasket.status,200,JSON.stringify(newBasket.data));
  const createdBasket=JSON.parse(db.prepare('SELECT data FROM orders WHERE client_id=?').get(basketClient.id).data);
- assert.equal(createdBasket.items.at(-1).price,1234.56);
+ assert.equal(createdBasket.items.at(-1).price,1234);
  console.log('Basket total HTTP: zero-priced goods, exact total, quantity edits and warehouse reservation passed');
 
  // Cancellation requests from incoming calls preserve stage until logistics resolves them.
@@ -1099,6 +1102,9 @@ try{
  assert.equal((await resolveCancel(cancelF)).status,200);
  assert.equal(cancelOrder(cancelF.id).status,'refused');assert.equal(cancelOrder(cancelF.id).manager,draftOp.e.id);
  assert.equal(cancelOrder(cancelF.id).cancellationAuthor.id,cancelLog.e.id);
+ const cancelNotices=db.prepare("SELECT employee_id,data FROM reminders WHERE json_extract(data,'$.kind')='order-cancelled' AND json_extract(data,'$.orderId')=?").all(cancelF.id);
+ assert(cancelNotices.some(r=>r.employee_id===draftOp.e.id));assert(cancelNotices.some(r=>r.employee_id===draftHead.e.id));assert(cancelNotices.every(r=>r.employee_id!==cancelLog.e.id));
+ assert.match(JSON.parse(cancelNotices[0].data).text,/Client called and requested cancellation/);
  assert.equal(db.prepare("SELECT reserved FROM product_stock WHERE id='basket-goods'").get().reserved,stockBeforeCancel-1);
  assert.equal((await resolveCancel(cancelF)).status,400);
  for(const patch of [{testOnly:true,cdekExported:true,delivery:'cdek_pickup'},{cdekTransferredAt:new Date().toISOString(),delivery:'cdek_pickup'},{status:'shipping',delivery:'russian_post'},{courier:{id:'synthetic-courier',phase:'pending'},delivery:'moscow_courier'}]){

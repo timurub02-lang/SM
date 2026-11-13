@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {basketAmount,isBasketTotal,withBasketTotal} from '../lib/basket-total.ts';
+import {basketAmount,isBasketTotal,withBasketTotal,validateManualOrderAmount} from '../lib/basket-total.ts';
 import {itemsSchema,total} from '../lib/crm.ts';
 import {shipmentPayload,shipmentFormSchema} from '../lib/cdek-shipment.ts';
 const old=[{name:'Товар',quantity:3,price:100},{name:'ИТОГО',quantity:1,price:4700}];
@@ -19,3 +19,8 @@ const payload=shipmentPayload(order,{name:'Test',phone:'+79990000001'},products,
 assert.equal(payload.packages[0].items.reduce((sum,item)=>sum+Math.round(item.payment.value*100)*item.amount,0),500001);
 assert.equal(payload.packages[0].items[0].amount,3);
 console.log('Basket total: legacy sums, quantities, bottom total, validation and exact CDEK payment passed');
+
+assert.doesNotThrow(()=>validateManualOrderAmount(withBasketTotal(old,11400)));
+assert.throws(()=>validateManualOrderAmount(withBasketTotal(old,11399.98)),/целыми рублями/);
+assert.doesNotThrow(()=>validateManualOrderAmount(next,next));
+assert.throws(()=>validateManualOrderAmount(withBasketTotal(old,5000.02),next),/целыми рублями/);

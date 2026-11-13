@@ -1,3 +1,4 @@
+import {cancelledOrderNotices,releasedClientNotices} from './client-lifecycle-notice.ts';
 import {ledgerKey,orderKey,type PremiumLedger} from './premium-ledger.ts';
 import {courierDoorRefusal,courierDeadline,courierToOperator,cancelCourierWork} from './courier.ts';
 import {courierReminderStatements} from './reminder-store.ts';
@@ -38,7 +39,7 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
    }else if(expired)cancelCourierWork(next,at);
    const e:Event={id:"EV-"+crypto.randomUUID(),clientId:o.clientId,orderId:o.id,at,actor:"Система",text:migrateCourier?"Заказ передан оператору из упразднённой очереди логиста · "+expiryReason:backToOperator?"Заказ передан оператору: "+expiryReason:expired?"Заказ отменён: "+expiryReason:`Включён таймер ${o.status==="extra"?"повторного":"первого"} подтверждения для существующего заказа: ${o.confirmationHours} ч`};
    const notices=(migrateCourier||expired)&&(next.courier||next.courierRecall)?await courierReminderStatements(d,o,next,e,mutation,(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data))):[];
-   const results=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?").bind(json(next),o.id,o.version),...(migrateCourier||expired||initialize&&deadline?[d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,at,json(e),o.id,mutation)]:[]),...notices]);
+   const results=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?").bind(json(next),o.id,o.version),...(migrateCourier||expired||initialize&&deadline?[d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,at,json(e),o.id,mutation)]:[]),...notices,...await cancelledOrderNotices(d,o,next,e)]);
    orderChanged=orderChanged||!!results[0].meta.changes;
   }
  return orderChanged;
@@ -59,9 +60,11 @@ export async function reconcileClients(d:Db,clients:Client[],orders:Order[],sale
    const event:Event={id:eid,clientId:c.id,orderId:"",at,actor:"Система",text:next.owner?"Правило К · закрепление обновлено":"Правило К · откреплён, возвращён в "+(next.baseType==='J'?'Ж':'М')+" / "+(clientSheet(next)||"исходный лист")+(next.releaseBaseReview?" · Требуется проверка ФИО для выбора базы М/Ж":"")};
    const guard=" AND COALESCE((SELECT data FROM settings WHERE id='premium-ledger'),'')=? AND (SELECT COUNT(*) FROM orders WHERE client_id=?)=?"+related.map(()=>" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)").join("");
    const args=[ledgerRow?.data||'',c.id,related.length,...related.flatMap(o=>[o.id,o.version])];
+   const releaseReason=c.trialUntil&&!related.some(o=>o.manager===c.owner)?'Истёк срок первичного закрепления без заказа':related.some(o=>o.manager===c.owner&&o.status==='redeemed')?'Истёк срок закрепления после выкупа':'Нет действующих заказов и действующего срока закрепления';
+   const releaseNotices=await releasedClientNotices(d,c,next,event,related,releaseReason);
    const result=await d.batch([
     d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?"+guard+")").bind(eid,c.id,"",at,json(event),c.id,c.version,...args),
-    d.prepare("UPDATE clients SET data=?,version=version+1 WHERE id=? AND version=?"+guard).bind(json(next),c.id,c.version,...args)
+    d.prepare("UPDATE clients SET data=?,version=version+1 WHERE id=? AND version=?"+guard).bind(json(next),c.id,c.version,...args),...releaseNotices
    ]);
    changed=changed||!!result[1].meta.changes;
   }
