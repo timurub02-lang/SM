@@ -50,3 +50,7 @@ export function returnedFromCdek(order:Order,at:string):Order{
  delete next.cdekAcceptedAt;delete next.cdekStatus;delete next.cdekTransferredAt;delete next.cdekExported;delete next.cdekWaybillReceived;delete next.cdekDeleting;delete next.shippedAt;delete next.contactAuthor;
  return next;
 }
+
+export function cdekExportMessage(error:string){
+ return /ev_cash_on_delivery_is_not_available_in_receiver_city|Наложенный плат[её]ж недоступен в городе получателя/i.test(error)?'СДЭК: наложенный платёж недоступен в населённом пункте получателя. Согласуйте с клиентом предоплату или получение в ПВЗ, который принимает наложенный платёж. Повторная выгрузка с прежними условиями не поможет.':error;
+}
