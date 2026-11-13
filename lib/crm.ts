@@ -171,7 +171,9 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
  const original=c.returnSheet??(clientSheet(c)==="К"?"П":clientSheet(c));
  const own=orders.filter(o=>o.clientId===c.id&&o.manager===c.owner&&(!c.assignmentStartedAt||o.createdAt>=c.assignmentStartedAt));
  const active=orders.some(o=>o.clientId===c.id&&["new","accepted","sent"].includes(orderGroup(o.status).id));
- if(c.trialUntil&&!own.length&&!active&&!unpaidPremium){return Date.parse(c.trialUntil)>now?c:{...c,owner:"",distributedAt:new Date(now).toISOString(),releasedAt:new Date(now).toISOString(),sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
+ // Recover the original one-day assignment deadline; reconciliation must not restart it.
+ const trialUntil=c.trialUntil||(!own.length&&!c.importRetentionUntil&&Number.isFinite(Date.parse(c.assignmentStartedAt||""))?new Date(Math.max(Date.parse(c.assignmentStartedAt!)+86400000,Date.parse(c.retentionExtensionUntil||"")||0)).toISOString():undefined);
+ if(trialUntil&&!own.length&&!active&&!unpaidPremium){return Date.parse(trialUntil)>now?{...c,trialUntil,assignedUntil:trialUntil}:{...c,owner:"",distributedAt:new Date(now).toISOString(),releasedAt:new Date(now).toISOString(),sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
  const base={...c,trialUntil:undefined,trialReturnSheet:undefined,sheet:"К",returnSheet:original,assignedUntil:"",assignmentStartedAt:c.assignmentStartedAt||own.map(o=>o.createdAt).filter(Boolean).sort()[0]};
  if(active||unpaidPremium||(!own.length&&!c.importRetentionUntil))return base;
  const paid=own.filter(o=>o.status==="redeemed");
