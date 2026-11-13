@@ -1,3 +1,4 @@
+import {needsNameExplanation,nameExplanationSchema} from '@/lib/incomplete-name';
 import {validateManualOrderAmount} from '@/lib/basket-total';
 import {cancelledOrderNotices,releasedClientNotices} from '@/lib/client-lifecycle-notice';
 import {isRefusalRework,reworkHandoff} from "@/lib/crm";
@@ -511,6 +512,7 @@ async function handlePOST(request:Request){
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
    const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);
+   if(needsNameExplanation(o.status,to,c.name))next.incompleteNameExplanation={text:nameExplanationSchema.parse(p.incompleteNameReason??""),clientName:c.name,by:employee.id,name:employee.name,at:now};
    const returnKind=to==="rework"?z.enum(["clarification","refusal","delivery"],{error:"Выберите тип возврата: уточнение данных, отказ клиента или смена доставки. Обновите страницу, если выбора нет."}).parse(p.returnKind):undefined;
    if((to==='rework'||to==='refused')&&(returnKind==='delivery'||canReturnFromPacking(o,employee.role))){
     if(!canReturnFromPacking(o,employee.role))throw Error('Смена доставки доступна логисту до отправки заказа');
@@ -561,6 +563,7 @@ async function handlePOST(request:Request){
    const labels=await import("@/lib/crm");text=`${o.zvd?"ЗВД снят · ":""}${labels.statuses[o.status]} → ${labels.statuses[to]}${returnKind?" · "+(returnKind==="refusal"?"Отработать отказ клиента":"Уточнить данные / связаться с клиентом"):""}${reason?" · "+reason:""}`;
    if(courierRecalledAtWarehouse(o)&&['rework','packing'].includes(to))text+=' · После пересборки · посылка на складе';
    if(to==='shipping'&&o.delivery==='moscow_courier')text="Передан курьеру · ожидает приёма посылки · заказ остаётся Принят";
+   if(next.incompleteNameExplanation?.at===now)text+=' · ФИО неполное («'+c.name+'»): '+next.incompleteNameExplanation.text;
    if(p.confirmationAt)text+=" · Просил подтверждения ко времени: "+new Date(next.confirmationRequest!.at).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК · по просьбе клиента";
   }else if(p.action==="contact"){
    if(courierRecalledAtWarehouse(o)&&o.status==='rework'&&!['admin','operator','department_head'].includes(employee.role))throw Error('Заказ после пересборки находится в работе у оператора');

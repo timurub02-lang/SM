@@ -285,7 +285,7 @@ try{
  console.log('Product picker catalog: zero stock, reserved stock and reconciliation block passed.');
  async function step(cookie,to,expected=200,kind="refusal"){
   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version;
-  const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,returnKind:to==='rework'?kind:undefined,reason:'Test reason',finalHandoffConfirmed:true}});
+  const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,returnKind:to==='rework'?kind:undefined,reason:'Test reason',incompleteNameReason:'Клиент пожелал не указывать фамилию',finalHandoffConfirmed:true}});
   assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
  }
  await step(editor.cookie,'rework',400,null);
@@ -294,9 +294,16 @@ try{
   const returned=await step(editor.cookie,'rework',200,'clarification');
   assert.equal(returned.returnKind,'clarification');
   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version;
-  const response=await call('/api/crm',{cookie:returnOperator.cookie,body:{action:'transition',id:flowId,version,to:'confirm'}});
+  for(const incompleteNameReason of [undefined,'   ']){
+   const rejected=await call('/api/crm',{cookie:returnOperator.cookie,body:{action:'transition',id:flowId,version,to:'confirm',incompleteNameReason}});
+   assert.equal(rejected.status,400,rejected.text);
+   assert.equal(db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version,version);
+  }
+  const response=await call('/api/crm',{cookie:returnOperator.cookie,body:{action:'transition',id:flowId,version,to:'confirm',incompleteNameReason:'Клиент так пожелал'}});
   assert.equal(response.status,200,response.text);
   const updated=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
+  assert.equal(updated.incompleteNameExplanation.text,'Клиент так пожелал');assert.equal(updated.incompleteNameExplanation.by,returnOperator.e.id);
+  assert.ok(db.prepare("SELECT data FROM events WHERE order_id=? AND data LIKE '%ФИО неполное%'").get(flowId));
   assert.equal(updated.round,1);assert.equal(updated.finalHandoffAt,undefined);assert.ok(updated.confirmationStartedAt);
   await step(editor.cookie,'refused',400);
  }
@@ -666,7 +673,7 @@ try{
  db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('policy-stock','policy-product',10,'Fixture','admin',new Date().toISOString());
  let policyOrder=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(policyId).data);
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...policyOrder,address:'Москва, ул. Тестовая, дом 1',addressParts:undefined,delivery:'cdek_courier',items:[{name:'Policy product',quantity:1,price:100}]}),policyId);
- async function policyAction(cookie,body,status=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(body.id||policyId).version;const r=await call('/api/crm',{cookie,body:{id:policyId,version,...body}});assert.equal(r.status,status,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(body.id||policyId).data);}
+ async function policyAction(cookie,body,status=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(body.id||policyId).version;const r=await call('/api/crm',{cookie,body:{id:policyId,version,incompleteNameReason:"Клиент так пожелал",...body}});assert.equal(r.status,status,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(body.id||policyId).data);}
  await policyAction(editor.cookie,{action:'updateOrder',address:'Changed'},400);
  await policyAction(editor.cookie,{action:'updateDelivery',delivery:'moscow_courier'},400);
  await policyAction(policyOperator.cookie,{action:'updateOrder',id:'policy-operator-o-draft',items:[]},400);
