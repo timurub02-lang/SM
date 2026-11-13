@@ -436,7 +436,7 @@ try{
   for(const action of ['updateOrder','updateWaybillComment'])assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action,id:editId,version:2,address:'Blocked',text:'Blocked'}})).status,400,state+' '+action);
  }
  assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(editId).data).address,'Corrected address');
- console.log('Logistic edits passed: every status, immutable basket, exported and in-flight shipment guards.');
+ console.log('Logistic edits passed: every status, basket protected outside assembly, exported and in-flight shipment guards.');
  const courier=await fixture('courier',undefined,'courier');
  const chiefState=await call('/api/crm',{cookie:chief.cookie});assert.equal(chiefState.status,200);assert.ok(chiefState.data.employees.some(e=>e.id===editor.e.id&&e.hasPassword));
  for(const e of [staff[0],staff[1],chief.e])assert.equal((await call('/api/crm',{cookie:chief.cookie,body:{action:'saveEmployee',id:e.id,version:1,employee:{...e,accessEnabled:false}}})).status,400);
@@ -808,6 +808,12 @@ try{
   returned=await step(policyOperator.cookie,{action:'updateOrder',delivery:target,address:packingBase.address,items:packingBase.items,addressConfirmed:true});
   returned=await step(policyOperator.cookie,{action:'transition',to:'confirm',finalHandoffConfirmed:true});assert.equal(returned.status,'confirm');
   returned=await step(editor.cookie,{action:'transition',to:'packing'});assert.equal(returned.status,'packing');assert.equal(returned.delivery,target);
+  if(target==='cdek_courier')for(const [status,person] of [['packing',editor],['phone',chief]]){
+   db.prepare("UPDATE orders SET data=json_set(data,'$.status',?,'$.cdekTariff',json(?),'$.packingWaybillAt',?) WHERE id=?").run(status,JSON.stringify({amount:10}),new Date().toISOString(),pid);
+   const changedItems=returned.items.map(item=>({...item,price:item.price+1}));
+   returned=await step(person.cookie,{action:'updateOrder',items:changedItems,addressConfirmed:true});
+   assert.deepEqual(returned.items,changedItems);assert.equal(returned.cdekTariff,undefined);assert.equal(returned.packingWaybillAt,undefined);
+  }
   db.prepare('DELETE FROM settings WHERE id=?').run('cdek-shipment-'+pid);
  }
  console.log('Packing return and one logistic reconfirmation HTTP passed for delivery change and refusal.');

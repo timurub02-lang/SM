@@ -82,10 +82,13 @@ try{
  assert.equal(db.prepare("SELECT COUNT(*) n FROM settings WHERE id LIKE 'cdek-shipment-%'").get().n,0,'Archived shipment no longer consumes routing quota');
  assert.equal(db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(f.order.id).n,1);
  assert.equal((await call(path,'admin',{action:'refresh',orderId:f.order.id})).status,400,'Old shipment is no longer active');
- // Admin edits the returned basket; logistics retains its established no-basket-edit permission.
- r=await call('/api/crm','chief_logistic',{action:'updateOrder',id:f.order.id,version:returned.version,items:[{name:product.name,quantity:2,price:100}],addressConfirmed:true});assert.equal(r.status,400);
- r=await call('/api/crm','admin',{action:'updateOrder',id:f.order.id,version:returned.version,items:returned.items,address:client.address,comment:'Corrected',addressConfirmed:true});assert.equal(r.status,200,r.text);
+ // After confirmed deletion, the unexported packing basket is editable by chief logistics.
+ r=await call('/api/crm','chief_logistic',{action:'updateOrder',id:f.order.id,version:returned.version,items:[{name:product.name,quantity:2,price:100}],addressConfirmed:true});assert.equal(r.status,200,r.text);assert.equal(readOrder(f.order.id).items[0].quantity,2);
+ r=await call('/api/crm','admin',{action:'updateOrder',id:f.order.id,version:readOrder(f.order.id).version,items:returned.items,address:client.address,comment:'Corrected',addressConfirmed:true});assert.equal(r.status,200,r.text);
 
+ assert.equal(readOrder(f.order.id).cdekTariff,undefined,'Basket edits invalidate the old delivery quote');
+ // The later provider retry uses a fresh fixture quote for the restored original basket.
+ db.prepare("UPDATE orders SET data=json_set(data,'$.cdekTariff',json(?),'$.packingWaybillAt',?) WHERE id=?").run(JSON.stringify(f.order.cdekTariff),new Date().toISOString(),f.order.id);
  await call('/api/phone-replacement');
  db.prepare("UPDATE settings SET data=? WHERE id='phone-replacement'").run(JSON.stringify({enabled:true,threshold:500,enable:{crm:['shipping'],cdek:[]},disable:{crm:[],cdek:[]},release:{crm:['refused'],cdek:['REMOVED']}}));
  db.prepare('INSERT INTO replacement_numbers(number,added_at) VALUES(?,?)').run('79000000098',new Date().toISOString());

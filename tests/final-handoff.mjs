@@ -81,3 +81,11 @@ for(const delivery of ['cdek_pickup','cdek_courier','russian_post','moscow_couri
 }
 assert.throws(()=>validateTransition({...o,status:'rework',returnKind:'delivery',delivery:'cdek_pickup'},'confirm',{name:'Тестовый клиент'},'','operator'),/Согласуйте/);
 console.log('Packing returns allow one reconfirmation for unchanged or manual delivery; exported orders and changed CDEK routes stay guarded.');
+
+const {canLogisticEditBasket}=await import('../lib/crm.ts');
+for(const status of ['packing','phone']){
+ const editable={status,delivery:'cdek_courier'};
+ assert(canLogisticEditBasket(editable));
+ for(const guard of [{cdekExported:true},{cdekDeleting:true},{shippedAt:now},{courier:{id:'courier'}}])assert(!canLogisticEditBasket({...editable,...guard}));
+}
+for(const status of ['draft','confirm','extra','check','shipping','redeemed','returned'])assert(!canLogisticEditBasket({status,delivery:'cdek_courier'}));

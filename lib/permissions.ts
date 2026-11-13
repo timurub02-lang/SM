@@ -1,6 +1,6 @@
 import {canEditMoscowOrderDetails,canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
-import {canOperatorAmendMissed,canOperatorReachClient,canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
+import {canOperatorAmendMissed,canOperatorReachClient,canLogisticEditBasket,canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
 import {headDraftStage,departmentWorkStage,isDepartmentOrder} from './department-orders.ts';
 export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'owner'>){return !!c&&(e.role!=='operator'||c.owner===e.id);}
 export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
@@ -67,7 +67,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(isLogistic(e.role)&&['updateOrder','updateDelivery','updateWaybillComment'].includes(p.action)){
   allow(canLogisticEditOrder(order));
   if(p.action==='updateOrder'){
-   allow(p.items===undefined||JSON.stringify(p.items)===JSON.stringify(order.items));
+   allow(canLogisticEditBasket(order)||p.items===undefined||JSON.stringify(p.items)===JSON.stringify(order.items));
    return;
   }
  }

@@ -302,6 +302,7 @@ export function orderLocation(order:Order){
 }
 
 export const canAdminEditReturnedCdekOrder=(o:Pick<Order,"status"|"cdekReturnedAt"|"cdekExported">)=>!!o.cdekReturnedAt&&!o.cdekExported&&["packing","phone"].includes(o.status);
+export const canLogisticEditBasket=(o:Order)=>['packing','phone'].includes(o.status)&&!!o.delivery?.startsWith('cdek_')&&!o.cdekExported&&!o.cdekDeleting&&!o.shippedAt&&!o.courier;
 export const canLogisticEditOrder=(o:Pick<Order,"status"|"cdekExported"|"courier">)=>!o.courier&&!o.cdekExported&&!["redeemed","returned"].includes(o.status);
 
 export const teamEmployees=(staff:Employee[],viewer:Employee)=>staff.filter(e=>viewer.role==="admin"||canCreateRedemptionStaff(viewer)&&e.role==="redemption"||viewer.role==="chief_logistic"&&e.role==="logistic"||viewer.role==="department_head"&&e.role==="operator"&&!!viewer.department&&e.department===viewer.department);
