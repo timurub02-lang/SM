@@ -13,7 +13,7 @@ export function useNotificationPopups(actor:string,ready:boolean,tasks:Reminder[
   if(!ready||!actor)return;
   const freshAll=tracker.current.update(actor,popupNotifications(tasks,events));
   const paid=freshAll.filter(r=>r.kind==='order-paid');
-  if(paid.length)toast.success(paid.length===1?paid[0].title:`🎉 Выкуплено заказов: ${paid.length}`,{id:`crm-paid:${actor}`,description:paid.map(r=>r.text).join(' · '),duration:15000,closeButton:true,action:{label:'Открыть колокольчик',onClick:()=>openBell('events')}});
+  if(paid.length)toast.success(paid.length===1?paid[0].title:`🎉 Выкуплено заказов: ${paid.length}`,{id:`crm-paid:${actor}`,description:paid.map(r=>r.text).join(' · '),duration:15000,closeButton:true,action:{label:'Открыть колокольчик',onClick:()=>openBell('paid')}});
   const fresh=freshAll.filter(r=>r.kind!=='order-paid'&&!(r.kind==='courier'&&paid.some(p=>p.orderId===r.orderId)));
   if(!fresh.length)return;
   popupId.current=toast.info(fresh.length===1?fresh[0].title:`Новые уведомления · ${fresh.length}`,{
