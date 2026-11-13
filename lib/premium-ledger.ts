@@ -34,9 +34,11 @@ export function periodOrders(ledger:PremiumLedger,periodId:string,orders:Order[]
   return {id:r.order.id,externalId:orderKey(r.order),employeeId:r.order.manager,login:e?.login||'',department:e?.department||'',amount:premiumRemittance(r.order)?premiumRemittance(r.order)!.collectedCents/100:r.amount};
  });
 }
+export function departmentSigned(p:PayrollPeriod,department:string){return !!p.signers?.some(s=>s.department===department&&p.signatures[s.id]);}
 export function ledgerRows(ledger:PremiumLedger,period:string,orders:Order[],employees:Employee[],adjustments:Record<string,PremiumSaved>):PayrollRow[]{
  const p=ledger.periods[period];if(!p)return [];
- if(p.rows)return p.status==='open'?p.rows.map(r=>{
+ if(p.rows)return p.status!=='paid'?p.rows.map(r=>{
+  if(departmentSigned(p,r.department))return r;
   const e=employees.find(e=>e.id===r.employeeId),saved=adjustments[r.employeeId||''];
   const row=saved?recalculateRow(r,saved,e?.bonus??r.rate,period):r;
   return {...row,input:{...row.input,sz:e?.sz??row.input.sz}};
@@ -82,6 +84,7 @@ export function freezePeriod(ledger:PremiumLedger,period:string,orders:Order[],e
 export function signPeriod(ledger:PremiumLedger,period:string,actor:Employee,at:string){
  const p=ledger.periods[period];if(p?.status!=='frozen'||actor.role!=='department_head'||!p.signers?.some(e=>e.id===actor.id))throw Error('Подписание недоступно');
  if(p.signatures[actor.id])return ledger;
+ if(p.rows?.some(r=>r.department===actor.department&&r.result===null))throw Error('Не все суммы отдела рассчитаны');
  return {...ledger,revision:crypto.randomUUID(),periods:{...ledger.periods,[period]:{...p,signatures:{...p.signatures,[actor.id]:{at,by:actor.id}}}}};
 }
 export function payPeriod(ledger:PremiumLedger,period:string,actor:string,at:string){
@@ -91,7 +94,9 @@ export function payPeriod(ledger:PremiumLedger,period:string,actor:string,at:str
  return {...ledger,revision:crypto.randomUUID(),activePeriod:next.id,periods:{...ledger.periods,[period]:{...p,status:'paid' as const,paidAt:at,paidBy:actor},[next.id]:{status:'open' as const,signatures:{}}}};
 }
 
-export function reopenPeriod(ledger:PremiumLedger,period:string,actor:string,at:string){
+export function reopenPeriod(ledger:PremiumLedger,period:string,actor:string,at:string,department?:string){
  const p=ledger.periods[period];if(period!==ledger.activePeriod||p?.status!=='frozen')throw Error('Вернуть можно только зафиксированный, ещё не выплаченный период');
- return {...ledger,revision:crypto.randomUUID(),periods:{...ledger.periods,[period]:{...p,status:'open' as const,signatures:{},returns:[...(p.returns||[]),{at,by:actor,rows:p.rows||[],signatures:p.signatures}]}}};
+ if(department&&!p.signers?.some(s=>s.department===department&&p.signatures[s.id]))throw Error('Отдел ещё не подписан');
+ const signatures=department?Object.fromEntries(Object.entries(p.signatures).filter(([id])=>!p.signers?.some(s=>s.id===id&&s.department===department))):{};
+ return {...ledger,revision:crypto.randomUUID(),periods:{...ledger.periods,[period]:{...p,status:'frozen' as const,signatures,returns:[...(p.returns||[]),{at,by:actor,rows:p.rows||[],signatures:p.signatures}]}}};
 }
