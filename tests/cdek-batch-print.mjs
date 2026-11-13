@@ -35,3 +35,9 @@ assert.equal((await collectCdekWaybills('actor',[],()=>{})).bytes,null);
 mkdirSync('work/batch-pdf',{recursive:true});
 writeFileSync('work/batch-pdf/combined.pdf',Buffer.from(result.bytes));
 console.log('CDEK batch PDF: exact selection, page order/size, multipage orders, duplicates, corrupt/empty PDFs, partial errors, access and empty result passed');
+
+const manyIds=Array.from({length:200},(_,i)=>'PAGED-'+i),requested=[];
+const many=await collectCdekWaybills('actor',manyIds,()=>{},async body=>{requested.push(body.orderId);return new Response(documents.one,{headers:{'Content-Type':'application/pdf'}});});
+assert.deepEqual(requested,manyIds);assert.deepEqual(many.completed,manyIds);assert.deepEqual(many.errors,[]);
+assert.equal((await PDFDocument.load(many.bytes)).getPageCount(),200);
+console.log('All 200 selected IDs reach the PDF independently of the visible page or compact snapshot.');
