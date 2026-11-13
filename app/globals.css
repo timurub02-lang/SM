@@ -301,11 +301,12 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 
 /* Keep navigation anchored while sections and their toolbar contents change. */
 .premium-panel{min-height:100dvh;overflow-anchor:none}
-.premium-heading{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center}
+.premium-heading{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center}
 .premium-heading .order-status-tabs{justify-self:start;min-width:0;max-width:100%}
 .premium-heading .tabs-line{justify-content:flex-start}
 .premium-heading .tabs-line button{flex:0 0 auto;transition:background-color .15s,color .15s,box-shadow .15s}
-.premium-heading .premium-actions-slot{grid-column:1/-1;min-height:38px;width:100%;margin:0}
+.premium-heading .premium-actions-slot{min-height:38px;margin:0}
+@media(max-width:1100px){.premium-heading{grid-template-columns:auto minmax(0,1fr)}.premium-heading .premium-actions-slot{grid-column:1/-1;width:100%}}
 
 .premium-department-summary td:not(:first-child),.premium-department-summary th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
 .premium-department-summary tbody tr:nth-child(even){background:rgba(240,243,250,.55)}
@@ -344,6 +345,7 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .incoming-card-body .notice{min-width:0;width:100%;margin:0;padding:10px 12px;align-items:stretch;text-align:left;gap:6px}.incoming-card-body .incoming-handoff-note{gap:4px}.incoming-handoff-note strong{font-size:14px;line-height:1.4;overflow-wrap:anywhere}.incoming-handoff-note small{font-size:12px}.incoming-handoff-note p{margin:0;line-height:1.45}.incoming-card-body .call-route-buttons{width:100%;min-width:0;gap:6px;justify-content:flex-start}.incoming-card-body .call-route-buttons button{min-height:36px;padding:7px 10px;font-size:13px;flex:0 1 auto}.incoming-card-body .call-client-time{width:100%;min-width:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:4px 8px;font-size:13px}.incoming-card-body .call-client-time span{font-size:13px}.incoming-card-body .call-client-time small{font-size:12px}.incoming-result-fold{min-width:0;border-top:1px solid var(--border);padding-top:8px}.incoming-result-fold>summary{cursor:pointer;font-weight:600;font-size:14px;color:#426ba7;padding:4px 0}.incoming-card-body .incoming-result{margin-top:8px;gap:8px}.incoming-card-body .incoming-result>strong{font-size:13px;line-height:1.4}.incoming-card-body .incoming-result .field{gap:4px;font-size:13px}.incoming-card-body .incoming-result textarea{padding:8px 10px;font-size:14px}.incoming-card-body .incoming-result button{max-width:100%;min-height:36px;padding:7px 10px;font-size:13px;white-space:normal}
 
 .incoming-contact-actions:empty{display:none}.incoming-card-body .incoming-contact-actions{align-items:center}.incoming-contact-actions .call-route-buttons{display:contents}.incoming-contact-actions .call-client-time{flex-basis:100%;flex-direction:row;max-width:none}.incoming-contact-actions .call-client-time small{padding-left:0}
+.incoming-contact-actions .incoming-client-search{margin-right:auto;flex-shrink:0}.incoming-contact-actions:has(.incoming-client-search) .call-route-beeline{flex-shrink:0}
 
 .order-row-zvd td{background:var(--muted,#edf0f4);color:var(--muted-foreground,#78858e)}
 
@@ -365,4 +367,4 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .premium-payroll .premium-fit-table small{display:block;font-size:11px}
 .premium-payroll .premium-leader-row{background:var(--muted,#edf0f4);border-top:2px solid var(--border)}
 
-.incoming-contact-actions .incoming-client-search{margin-right:auto;flex-shrink:0}.incoming-contact-actions:has(.incoming-client-search) .call-route-beeline{flex-shrink:0}
+.premium-order-actions .premium-search{margin:0;width:clamp(220px,24vw,400px);min-width:0}.premium-order-actions .premium-search>div{min-height:36px}.premium-order-actions .premium-search input{font-size:13px}
