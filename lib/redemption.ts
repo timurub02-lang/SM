@@ -16,7 +16,7 @@ export function operatorReturnDeadline(storageUntil:string,now=new Date()){
  const limit=new Date(now.getTime()+48*60*60*1000).toISOString();
  return validDate(storageUntil||'')?[limit,storageUntil+'T20:59:59.999Z'].sort()[0]:limit;
 }
-export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:false};
+export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:true};
 const redemptionSchemas=new WeakMap<Db,Promise<unknown>>();
 export async function initRedemption(d:Db){let schema=redemptionSchemas.get(d);if(!schema){schema=d.batch([
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_entries(order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,entered_at TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)`),
