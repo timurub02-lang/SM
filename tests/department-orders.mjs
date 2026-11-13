@@ -1,3 +1,4 @@
+import {mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {allowedOrderTransitions,orderEditingLocked,scheduledCalls,callAuthor} from '../lib/crm.ts';
 import {authorizeCrm} from '../lib/permissions.ts';
@@ -5,6 +6,8 @@ import {departmentWorkStage,headOrderMarks,usesOrderLease} from '../lib/departme
 import {applyCourierCommand,courierLabel} from '../lib/courier.ts';
 import {defaultOrderPolicy} from '../lib/order-policy.ts';
 import {employeeTasks} from '../lib/reminder-tasks.ts';
+// Keep workday timer assertions independent of the day CI runs.
+mock.timers.enable({apis:['Date'],now:Date.parse('2026-11-11T09:00:00Z')});
 const at=new Date().toISOString(),due=new Date(Date.now()+3600000).toISOString();
 const operator={id:'op',role:'operator',department:'1'},head={id:'head',role:'department_head',department:'1',name:'Руководитель'},foreign={...head,id:'foreign',department:'2'},logistic={id:'log',role:'logistic'};
 const employees=[operator,head,foreign,logistic],base={id:'order',clientId:'client',manager:'op',status:'confirm',delivery:'cdek_pickup',contact:'none',due:'',round:1,extra:false,createdAt:at,updatedAt:at,items:[]};
@@ -58,3 +61,5 @@ assert.equal(scheduledCalls([{...draft,contact:'callback',due}],head,employees).
 const repack=applyCourierCommand(returned,{action:'courierWorkflow',operation:'requestRepack',reason:'Change basket'},head,defaultOrderPolicy,nextAt,employees);
 assert.equal(repack.order.courierRepackRequest.by,head.id);
 assert.throws(()=>applyCourierCommand(returned,{action:'courierWorkflow',operation:'requestRepack',reason:'Change basket'},foreign,defaultOrderPolicy,nextAt,employees));
+
+mock.timers.reset();
