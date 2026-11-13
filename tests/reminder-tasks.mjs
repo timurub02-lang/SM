@@ -71,3 +71,9 @@ for(const e of [logistic,chief]){
  assert(tasks(e,sent).some(t=>t.id.endsWith(':cdek-waybill')));
  assert(!tasks(e,{...sent,legacyLv:{trial:false}}).some(t=>t.id.endsWith(':cdek-waybill')));
 }
+
+for(const status of ['confirm','extra'])for(const contact of ['none','callback','missed']){
+ const order={...base,status,contact,due:future};
+ assert.equal(tasks(head,order).length,0,'logistic confirmation is not a mandatory head task');
+ assert.equal(tasks(logistic,order).length,1,'logistic retains confirmation and callback task');
+}
