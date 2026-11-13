@@ -328,6 +328,21 @@ try{
  }
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...beforePolicy,delivery:'russian_post'}),editableMoscow);await act(editableMoscow,'logistic',details(),400);
  console.log('Moscow recipient edits: logistics/chief/admin, courier visibility, client/order CAS, audit, policy and terminal/other-delivery guards; basket, money and courier state unchanged.');
+ const handoverId=await create();await assembled(handoverId);await act(handoverId,'courier',{action:'courierAccept',confirmed:true});await act(handoverId,'courier',{action:'courierWorkflow',operation:'confirm'});
+ await act(handoverId,'courier',{action:'courierWorkflow',operation:'handoverMoney',confirmed:true},400);
+ await act(handoverId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});
+ const moneyBefore=order(handoverId),handover={action:'courierWorkflow',operation:'handoverMoney',confirmed:true};
+ await act(handoverId,'stranger',handover,400);await act(handoverId,'logistic',handover,400);await act(handoverId,'courier',{...handover,confirmed:false},400);
+ const handed=await act(handoverId,'courier',{...handover,amount:1});assert.ok(order(handoverId).courier.cashHandoverAt);assert.equal(order(handoverId).courier.amount,10000);assert.equal(order(handoverId).status,'redeemed');assert.equal(order(handoverId).paymentReceivedAt,undefined);
+ assert.equal(courierBalance([moneyBefore],'courier').cash,courierBalance([order(handoverId)],'courier').cash,'Handover does not settle money');
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM cash_operations WHERE order_id=?').get(handoverId).n,0);
+ const handoverEvents=db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(handoverId).n;
+ await act(handoverId,'courier',handover,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(handoverId).n,handoverEvents);
+ assert.ok((await call('logistic')).data.reminders.some(r=>r.orderId===handoverId&&r.title.includes('передачу денег')));
+ await act(handoverId,'courier',{action:'receivePayment'},403);
+ await act(handoverId,'chief',{action:'receivePayment'});assert.ok(order(handoverId).paymentReceivedAt);assert.equal(courierBalance([order(handoverId)],'courier').cash,0);assert.equal(db.prepare('SELECT COUNT(*) n FROM cash_operations WHERE order_id=?').get(handoverId).n,1);
+ await act(handoverId,'courier',handover,400);
+ console.log('Cash handover: assigned courier only, confirmation, unchanged accountability/cash, duplicate protection, logistics notice and separate chief receipt passed.');
  console.log('Money, warehouse and repacking receipts: one notification, correct recipient, read/history and revoked order access passed.');
  console.log('All active courier tasks persist, viewed tasks stay actionable, missing tasks recover, completed history limited to 20.');
  console.log('Moscow API: real create/handoff/accept, operator-only returns, forbidden retired actions, operator calls, shared budget and legacy migration, money, expiry, physical return and stock passed.');

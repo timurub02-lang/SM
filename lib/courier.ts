@@ -7,7 +7,7 @@ export type CourierRecall={requestedAt:string;by:string;name:string;reason:strin
 export const courierRecalledAtWarehouse=(o:Pick<Order,'delivery'|'courier'|'courierRecall'>)=>o.delivery==='moscow_courier'&&!o.courier&&!!o.courierRecall?.returnedAt&&!!o.courierRecall.completedAt;
 export type CourierAssignment={
  recall?:CourierRecall;
- id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number;
+ id:string;name:string;assignedAt:string;acceptedAt?:string;amount:number;cashHandoverAt?:string;
  // 'logistic' is read only to migrate orders from the retired queue.
  phase?:'pending'|'confirmation'|'logistic'|'operator'|'resume'|'delivery'|'recall'|'recall_returned';
  workStartedAt?:string;workHours?:number|null;
@@ -115,7 +115,7 @@ export function courierLabel(o:Order){
  if(c.phase==='recall_returned')return 'Передано логисту · ожидает подтверждения приёма';
  if(stage==='return')return o.status==='refused'?'Отменён · вернуть посылку на склад':'Окончательный возврат · вернуть на склад';
  if(stage==='settled')return o.paymentReceivedAt?'Деньги приняты логистом':'Посылка принята на склад';
- if(stage==='money')return 'Оплачен · деньги у курьера';
+ if(stage==='money')return c.cashHandoverAt?'Оплачен · передача денег ожидает подтверждения логиста':'Оплачен · деньги у курьера';
  if(c.phase==='resume')return c.confirmedBy==='department_head'?'Подтверждено руководителем · клиент готов выкупить заказ':c.confirmedBy==='operator'?'Подтверждено оператором · клиент готов выкупить заказ':'Подтверждено логистом · клиент ожидает заказ';
  if(stage==='pending')return 'Ожидает приёма курьером';
  if(stage==='confirmation')return 'У курьера на подтверждении · 1-й этап';
@@ -160,9 +160,15 @@ export function cancelCourierWork(o:Order,at:string){
 export const canEditRecalledCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'|'department'>,staff:Employee[]=[])=>o.delivery==='moscow_courier'&&!o.courier&&['packing','rework'].includes(o.status)&&!!o.courierRecall?.completedAt&&!o.packingWaybillAt&&(e.role==='admin'||isOrderOperator(e,o,staff));
 export const canEditMoscowOrderDetails=(employee:Pick<Employee,'role'>,order:Pick<Order,'delivery'|'status'>)=>['admin','logistic','chief_logistic'].includes(employee.role)&&order.delivery==='moscow_courier'&&!['redeemed','returned','refused'].includes(order.status);
 export const canEditCourierOrder=(o:Order,e:Pick<Employee,'id'|'role'|'department'>,staff:Employee[]=[])=>o.delivery==='moscow_courier'&&o.courier?.phase==='operator'&&o.status==='rework'&&(e.role==='admin'||isOrderOperator(e,o,staff));
-export type CourierCommand={action:'courierAccept'|'courierWorkflow';operation?:'confirm'|'toOperator'|'resume'|'recall'|'returnRecall'|'receiveRecall'|'requestRepack'|'doorRefusal'|'claimDoor'|'resolveDoor';reason?:string;confirmed?:boolean;result?:'deliver'|'return'};
+export type CourierCommand={action:'courierAccept'|'courierWorkflow';operation?:'handoverMoney'|'confirm'|'toOperator'|'resume'|'recall'|'returnRecall'|'receiveRecall'|'requestRepack'|'doorRefusal'|'claimDoor'|'resolveDoor';reason?:string;confirmed?:boolean;result?:'deliver'|'return'};
 // Shared by the API and tests; ordinary shipping cannot bypass this workflow.
 export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee,'id'|'role'|'name'|'department'>,policy:OrderPolicy,at:string,staff:Employee[]=[]){
+ if(p.operation==='handoverMoney'){
+  if(p.action!=='courierWorkflow'||e.role!=='courier'||order.courier?.id!==e.id||!order.courier.acceptedAt||courierStage(order)!=='money'||order.importedPayment)throw Error('Передача денег доступна только курьеру своего оплаченного заказа');
+  if(p.confirmed!==true)throw Error('Подтвердите фактическую передачу денег логисту');
+  if(order.courier.cashHandoverAt)throw Error('Передача денег уже отмечена. Ожидается подтверждение логиста');
+  return {order:{...order,courier:{...order.courier,cashHandoverAt:at},updatedAt:at},text:'Курьер отметил передачу денег логисту · '+order.courier.amount+' ₽ · ожидается подтверждение получения'};
+ }
  if(order.delivery!=='moscow_courier'||!order.courier||['redeemed','returned','refused'].includes(order.status))throw Error('Работа с этой посылкой недоступна');
  let o:Order={...order,courier:{...order.courier},updatedAt:at};const c=o.courier!,phase=courierPhase(o);
  const logistic=['admin','logistic','chief_logistic'].includes(e.role);
