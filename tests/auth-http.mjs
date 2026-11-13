@@ -1,4 +1,4 @@
-import {internalDeadline,internalElapsed} from '../lib/internal-timers.ts';
+import {internalDeadline,internalElapsed,addWeekdayMilliseconds} from '../lib/internal-timers.ts';
 // Run after the Miran standalone build. Uses only a temporary, synthetic database.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -729,7 +729,7 @@ try{
  policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'extra',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,3);assert.ok(Math.abs(internalElapsed(Date.now(),Date.parse(policyOrder.noAnswerDeadline))-3*3600000)<10000);
  const frozenFinal=policyOrder.noAnswerDeadline;await setPolicy({finalHours:1});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,frozenFinal);
- db.prepare("UPDATE orders SET data=json_set(data,'$.finalHandoffAt',?) WHERE id=?").run(new Date(Date.now()-4*3600000).toISOString(),policyId);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.finalHandoffAt',?) WHERE id=?").run(addWeekdayMilliseconds(Date.now(),-4*3600000),policyId);
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).status,'refused');
  // New drafts freeze the configured duration; both call outcomes respect their deadline.
  const timerClient={id:'timer-client',name:'Timer client',phone:'+79990000987',owner:policyOperator.e.id,source:'Test',sheet:'К',returnSheet:'Т2',address:'Test address',createdAt:new Date().toISOString()};
@@ -746,7 +746,7 @@ try{
   const rejected=await call('/api/crm',{cookie:policyOperator.cookie,body});assert.equal(rejected.status,400,rejected.text);assert.match(rejected.data.error,/позже срока оформления/);
   const accepted=await call('/api/crm',{cookie:policyOperator.cookie,body:{...body,due:internalDeadline(timerOrder.createdAt,24)}});assert.equal(accepted.status,200,accepted.text);timerOrder=accepted.data.state.orders.find(o=>o.id===timerOrder.id);assert.equal(timerOrder.draftHours,24);
  }
- const pastCreated=new Date(Date.now()-25*3600000).toISOString();
+ const pastCreated=addWeekdayMilliseconds(Date.now(),-25*3600000);
  db.prepare("UPDATE orders SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(pastCreated,timerOrder.id);
  db.prepare("UPDATE clients SET data=json_set(data,'$.assignmentStartedAt',?) WHERE id=?").run(pastCreated,timerClient.id);
  const expiredDraft=(await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===timerOrder.id);assert.equal(expiredDraft.status,'refused');assert.equal(expiredDraft.cancelledAt,internalDeadline(pastCreated,24));
