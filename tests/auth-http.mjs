@@ -311,10 +311,16 @@ try{
  await step(editor.cookie,'refused',400);
  await step(editor.cookie,'rework');let flowOrder=await step(returnOperator.cookie,'confirm');assert.equal(flowOrder.round,2);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);
- await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);assert.equal(flowOrder.confirmationHours,48);assert.equal(flowOrder.noAnswerDeadline,internalDeadline(flowOrder.confirmationStartedAt,48));
- await step(editor.cookie,'refused',400);
- await step(editor.cookie,'rework');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,3);assert.ok(flowOrder.finalHandoffAt);
- await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
+ const refusalHandoffAt=flowOrder.refusalHandoffAt;assert.ok(refusalHandoffAt);
+ for(let i=0;i<3;i++){
+  await step(editor.cookie,'rework',200,'clarification');
+  flowOrder=await step(returnOperator.cookie,'confirm');assert.equal(flowOrder.round,2);assert.equal(flowOrder.refusalHandoffAt,refusalHandoffAt);
+  await step(editor.cookie,'rework',400,'refusal');
+ }
+ await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);assert.equal(flowOrder.refusalHandoffAt,refusalHandoffAt);assert.equal(flowOrder.confirmationHours,48);assert.equal(flowOrder.noAnswerDeadline,internalDeadline(flowOrder.confirmationStartedAt,48));
+ await step(editor.cookie,'rework',400,'refusal');
+ await step(editor.cookie,'rework',200,'clarification');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.refusalHandoffAt,refusalHandoffAt);assert.ok(flowOrder.finalHandoffAt);
+ await step(editor.cookie,'rework',400,'refusal');await step(editor.cookie,'refused');
  console.log('Return workflow: cancellation denied before return in each stage; second return permits cancellation.');
  const redemptionLead=await fixture('redemption-lead',undefined,'redemption');
  db.prepare("UPDATE employees SET data=json_set(data,'$.canCreateRedemptionStaff',json('true')) WHERE id=?").run(redemptionLead.e.id);
@@ -696,7 +702,7 @@ try{
  await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'refusal',reason:'Test'},400);
  await policyAction(editor.cookie,{action:'transition',to:'check',reason:'Test'});
  await policyAction(cookies.admin,{action:'transition',to:'extra',reason:'Test'});
- policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'refusal',reason:'Своя причина возврата'});assert.equal(policyOrder.returnReason,'Своя причина возврата');assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
+ policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'clarification',reason:'Своя причина возврата'});assert.equal(policyOrder.returnReason,'Своя причина возврата');assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
  await setPolicy({...originalPolicy,finalHours:3});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).reworkDeadline,undefined);
  policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',addressConfirmed:true,items:policyOrder.items,address:'Updated address, дом 1'});assert.equal(policyOrder.address,'Updated address, дом 1');
@@ -801,7 +807,7 @@ try{
  // Packing return: reason and uncertain-result guards, operator agreement, one logistic confirmation.
  for(const [kind,source,target] of [['delivery','cdek_courier','russian_post'],['refusal','cdek_courier','cdek_courier'],['refusal','russian_post','russian_post'],['refusal','moscow_courier','moscow_courier']]){
   const pid='packing-return-'+target+kind;
-  const packingBase={...policyOrder,id:pid,status:'packing',delivery:source,extra:true,finalHandoffAt:undefined,packingWaybillAt:new Date().toISOString(),reworkDeadline:undefined,shippedAt:undefined,courier:undefined,packingReworkDelivery:undefined};
+  const packingBase={...policyOrder,id:pid,status:'packing',delivery:source,extra:true,refusalHandoffAt:undefined,finalHandoffAt:undefined,packingWaybillAt:new Date().toISOString(),reworkDeadline:undefined,shippedAt:undefined,courier:undefined,packingReworkDelivery:undefined};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(pid,packingBase.clientId,JSON.stringify(packingBase));
   const step=(cookie,body,status=200)=>policyAction(cookie,{id:pid,...body},status);
   await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:''},400);

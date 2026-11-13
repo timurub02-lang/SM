@@ -161,3 +161,9 @@ assert.deepEqual(allowedOrderTransitions({...received,status:'rework'},'logistic
 assert.equal(orderGroup({...received,status:'rework'}).id,'accepted');
 assert.equal(packingStage({...received,status:'rework'}),'operator');
 console.log('Moscow stage labels, return origins, physical locations and warehouse rework transitions passed.');
+
+const doorAt='2026-11-13T20:59:00.000Z';
+const urgent=applyCourierCommand({id:'door-weekend',manager:'op',delivery:'moscow_courier',status:'shipping',courier:{id:'courier',acceptedAt:doorAt,phase:'delivery'}},{action:'courierWorkflow',operation:'doorRefusal',reason:'Клиент отказывается',confirmed:true},{id:'courier',role:'courier'},policy,doorAt).order;
+assert.equal(urgent.courier.doorRefusal.claimDueAt,'2026-11-13T21:01:00.000Z');
+assert.equal(urgent.courier.doorRefusal.decisionDueAt,'2026-11-13T21:09:00.000Z');
+assert.equal(urgent.courier.doorRefusal.clock,'elapsed-v1');

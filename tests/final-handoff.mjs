@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import {operatorReturnLabel,allowedOrderTransitions,finalNoAnswerDeadline,validateTransition} from '../lib/crm.ts';
 const now='2026-10-01T10:00:00Z';
 const o={status:'confirm',finalHandoffAt:now,address:'Москва, ул. Тестовая, дом 1',items:[{name:'Product',quantity:1,price:1}]};
-assert.deepEqual(allowedOrderTransitions(o),['check','refused']);
-assert.deepEqual(allowedOrderTransitions({...o,status:'extra'}),['packing','refused']);
+assert.deepEqual(allowedOrderTransitions(o),['check','rework','refused']);
+assert.deepEqual(allowedOrderTransitions({...o,status:'extra'}),['packing','rework','refused']);
 assert(allowedOrderTransitions({...o,finalHandoffAt:undefined}).includes('rework'));
-assert.throws(()=>validateTransition(o,'rework',{},'Reason'),/недоступен/);
+assert.doesNotThrow(()=>validateTransition(o,'rework',{},'Reason','logistic','clarification'));
+assert.throws(()=>validateTransition(o,'rework',{},'Reason','logistic','refusal'),/уже отрабатывался/);
 assert.doesNotThrow(()=>validateTransition(o,'refused',{},'Refusal'));
 assert.throws(()=>validateTransition(o,'refused',{},''),/причину/);
 const deadline=finalNoAnswerDeadline(o,'missed',now);
@@ -35,7 +36,7 @@ for(const status of ['confirm','extra']){
  assert.throws(()=>validateTransition(initial,'refused',{},'Refusal','logistic'));
  const afterReturn={...initial,finalHandoffAt:now};
  assert(allowedOrderTransitions(afterReturn,'logistic').includes('refused'));
- assert(!allowedOrderTransitions(afterReturn,'logistic').includes('rework'));
+ assert(allowedOrderTransitions(afterReturn,'logistic').includes('rework'));
  assert.doesNotThrow(()=>validateTransition(afterReturn,'refused',{},'Refusal','logistic'));
 }
 assert(allowedOrderTransitions({...o,status:'extra',finalHandoffAt:undefined},'admin').includes('refused'));
@@ -45,7 +46,7 @@ for(const delivery of ['moscow_courier','russian_post']){
  const first={...o,delivery,finalHandoffAt:undefined};
  const target=delivery==='moscow_courier'?'packing':'extra';
  assert.deepEqual(allowedOrderTransitions(first,'logistic'),[target,'rework']);
- assert.deepEqual(allowedOrderTransitions({...first,finalHandoffAt:now},'logistic'),[target,'refused']);
+ assert.deepEqual(allowedOrderTransitions({...first,finalHandoffAt:now},'logistic'),[target,'rework','refused']);
  assert.throws(()=>validateTransition(first,'check',{},'','logistic'));
  assert.doesNotThrow(()=>validateTransition(first,target,{},'','logistic'));
 }
@@ -63,7 +64,9 @@ for(let i=0;i<5;i++){
 }
 const final={...clarification,...reworkHandoff({...clarification,returnKind:'refusal'},now,defaultOrderPolicy),status:'confirm'};
 assert.equal(final.round,2);assert.equal(final.finalHandoffAt,now);
-assert(!allowedOrderTransitions(final,'logistic').includes('rework'));
+assert(allowedOrderTransitions(final,'logistic').includes('rework'));
+assert.equal(final.refusalHandoffAt,now);
+assert.throws(()=>validateTransition({...final,finalHandoffAt:undefined},'rework',{},'Отказ','logistic','refusal'),/уже отрабатывался/);
 assert(allowedOrderTransitions(final,'logistic').includes('refused'));
 assert.equal(reworkHandoff({...clarification,extra:true},now,defaultOrderPolicy).confirmationHours,defaultOrderPolicy.extraConfirmationHours);
 assert.equal(reworkHandoff({...clarification,returnKind:undefined},now,defaultOrderPolicy).finalHandoffAt,now,'Legacy returns preserve their existing final handoff policy');
@@ -77,7 +80,7 @@ for(const delivery of ['cdek_pickup','cdek_courier','russian_post','moscow_couri
  if(delivery==='moscow_courier')assert(!allowedOrderTransitions({...packing,courierRecall:{completedAt:now}},'logistic').includes('rework'));
  const reconfirm={...packing,status:'confirm',packingReworkDelivery:delivery,finalHandoffAt:undefined,extra:false,returnKind:'refusal'};
  assert.deepEqual(allowedOrderTransitions(reconfirm,'logistic'),['packing','rework']);
- assert.deepEqual(allowedOrderTransitions({...reconfirm,finalHandoffAt:now},'logistic'),['packing','refused']);
+ assert.deepEqual(allowedOrderTransitions({...reconfirm,finalHandoffAt:now},'logistic'),['packing','rework','refused']);
  assert(!allowedOrderTransitions({...reconfirm,delivery:'cdek_courier',packingReworkDelivery:'russian_post'},'logistic').includes('packing'));
 }
 assert.throws(()=>validateTransition({...o,status:'rework',returnKind:'delivery',delivery:'cdek_pickup'},'confirm',{name:'Тестовый клиент'},'','operator'),/Согласуйте/);
