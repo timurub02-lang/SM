@@ -19,5 +19,5 @@ export async function clientPhones(actor:Employee,p:{mode:string;clientId?:strin
  }
  const linked=JSON.parse(row.data).linkedPhones||[];
  const numbers=[...new Set([row.phone,...linked].map(normalizeOutgoingNumber).filter((number):number is string=>!!number))];
- return {clientId,phones:numbers.map((number,index)=>({number,key:createHmac('sha256',process.env.CRM_PHONE_RESULT_KEY||'').update(clientId+':'+number).digest('hex'),label:(normalizeOutgoingNumber(row.phone)===number?'Основной':'Дополнительный '+index)+' · '+(['operator','department_head'].includes(actor.role)?'Номер скрыт':'+'+number)}))};
+ return {clientId,phones:numbers.map((number,index)=>({number,key:createHmac('sha256',process.env.CRM_PHONE_RESULT_KEY||'').update(clientId+':'+number).digest('hex'),label:(normalizeOutgoingNumber(row.phone)===number?'Основной':'Дополнительный '+index)+(['operator','department_head'].includes(actor.role)?'':' · +'+number)}))};
 }
