@@ -27,6 +27,6 @@ export const GET=authenticated(async req=>{
    where=`instr(lower(${name}),?)>0`;params.push(text);
   }
   const rows=await db().prepare(`SELECT c.id,json_extract(c.data,'$.name') AS name,c.phone,json_extract(c.data,'$.owner') AS ownerId,json_extract(e.data,'$.name') AS ownerName,json_extract(e.data,'$.department') AS department FROM clients c LEFT JOIN employees e ON e.id=json_extract(c.data,'$.owner') WHERE ${where} ORDER BY json_extract(c.data,'$.name'),c.id LIMIT 31`).bind(...params).all<{id:string;name:string;phone:string;ownerId:string;ownerName:string;department:string}>();
-  return Response.json({matches:rows.results.slice(0,30).map(c=>({...c,phone:employee.role==='admin'?c.phone:'Номер скрыт',ownerName:c.ownerName||(c.ownerId?'Ответственный не найден':'Не закреплён')})),more:rows.results.length>30});
+  return Response.json({matches:rows.results.slice(0,30).map(c=>({...c,phone:employee.role==='admin'?c.phone:'',ownerName:c.ownerName||(c.ownerId?'Ответственный не найден':'Не закреплён')})),more:rows.results.length>30});
  }catch(error){return Response.json({error:error instanceof Error?error.message:'Не удалось найти клиента'},{status:400});}
 });
