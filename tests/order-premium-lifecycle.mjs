@@ -57,9 +57,9 @@ const {ledgerRows}=await import('../lib/premium-ledger.ts');
 const szStaff=staff.map(e=>e.id==='op'?{...e,sz:true}:e);
 const openSz={...ledger,activePeriod:'2026-10-2',periods:{'2026-10-2':{status:'open',signatures:{}}}};
 assert.equal(ledgerRows(openSz,'2026-10-2',[initial],szStaff,{}).find(r=>r.employeeId==='op').input.sz,true);
-const frozenSz=freezePeriod(openSz,'2026-10-2',[initial],szStaff,{},'admin','now');
+const frozenSz=signPeriod(freezePeriod(openSz,'2026-10-2',[initial],szStaff,{},'admin','now'),'2026-10-2',head,'now');
 assert.equal(ledgerRows(frozenSz,'2026-10-2',[initial],staff.map(e=>({...e,sz:false})),{}).find(r=>r.employeeId==='op').input.sz,true);
-const importedSz={...openSz,periods:{'2026-10-2':{...frozenSz.periods['2026-10-2'],status:'open'}}};
+const importedSz={...openSz,periods:{'2026-10-2':{...frozenSz.periods['2026-10-2'],status:'open',signatures:{}}}};
 assert.equal(ledgerRows(importedSz,'2026-10-2',[initial],staff.map(e=>({...e,sz:false})),{}).find(r=>r.employeeId==='op').input.sz,false);
 
 const {nextPremiumPreview}=await import('../lib/premium-ledger.ts');

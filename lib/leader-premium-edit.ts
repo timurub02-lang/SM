@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import type {Employee} from './crm.ts';
-import {recalculateRow,type PremiumLedger} from './premium-ledger.ts';
+import {departmentSigned,recalculateRow,type PremiumLedger} from './premium-ledger.ts';
 const rates=z.array(z.object({operatorId:z.string().min(1),rate:z.number().finite().min(0).max(100).nullable()})).max(10000);
 export function editLeaderRates(actor:Employee|undefined,leader:Employee|undefined,employees:Employee[],value:unknown,ledger:PremiumLedger|null){
  if(actor?.role!=='admin')throw Error('Проценты руководителя изменяет только администратор');
@@ -14,10 +14,10 @@ export function editLeaderRates(actor:Employee|undefined,leader:Employee|undefin
  const changed=canonical(links)!==canonical(leader.leaderPremium.links);
  if(!changed)return {terms:leader.leaderPremium,ledger,changed};
  const p=ledger?.periods[ledger.activePeriod];
- if(p&&p.status!=='paid'&&(p.status!=='open'||Object.keys(p.signatures).some(id=>employees.some(e=>e.id===id&&e.department===leader.department))))throw Error('Сначала снимите подпись отдела или верните расчёт на исправление');
+ if(p&&p.status!=='paid'&&departmentSigned(p,leader.department||''))throw Error('Сначала снимите подпись отдела или верните расчёт на исправление');
  if(!ledger)return {terms,ledger,changed};
  const next=structuredClone(ledger);next.revision=crypto.randomUUID();
  const period=next.periods[next.activePeriod];
- if(period?.status==='open'&&period.rows){const volumes=new Map(period.rows.map(r=>[r.employeeId,r.volume]));const commission=links.reduce((s,l)=>s+Math.round(((volumes.get(l.operatorId)||0)*l.rate/100+Number.EPSILON)*100)/100,0);period.rows=period.rows.map(r=>r.employeeId===leader.id?recalculateRow({...r,terms,commission},r.input,r.rate,next.activePeriod):r);}
+ if(period&&period.status!=='paid'&&period.rows){const volumes=new Map(period.rows.map(r=>[r.employeeId,r.volume]));const commission=links.reduce((s,l)=>s+Math.round(((volumes.get(l.operatorId)||0)*l.rate/100+Number.EPSILON)*100)/100,0);period.rows=period.rows.map(r=>r.employeeId===leader.id?recalculateRow({...r,terms,commission},r.input,r.rate,next.activePeriod):r);}
  return {terms,ledger:next,changed};
 }

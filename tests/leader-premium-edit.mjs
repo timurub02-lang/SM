@@ -10,7 +10,7 @@ for(const rate of [-1,101,Infinity,NaN])assert.throws(()=>editLeaderRates(admin,
 assert.throws(()=>editLeaderRates(admin,leader,staff,[...edits,...edits],ledger));assert.throws(()=>editLeaderRates(admin,leader,staff,[{operatorId:'other',rate:5}],ledger));
 assert.equal(editLeaderRates(admin,leader,staff,[{operatorId:'op',rate:null}],ledger).terms.links.some(x=>x.operatorId==='op'),false);
 assert.equal(editLeaderRates(admin,leader,staff,[{operatorId:'op',rate:0}],ledger).terms.links.find(x=>x.operatorId==='op').rate,0);
-const signed=structuredClone(ledger);signed.periods['2026-11-1'].signatures.head={at:'now',by:'head'};assert.throws(()=>editLeaderRates(admin,leader,staff,edits,signed),/подпись/);assert.equal(editLeaderRates(admin,leader,staff,[{operatorId:'op',rate:5}],signed).changed,false);
-const frozen=structuredClone(ledger);frozen.periods['2026-11-1'].status='frozen';assert.throws(()=>editLeaderRates(admin,leader,staff,edits,frozen));
+const signed=structuredClone(ledger);signed.periods['2026-11-1'].signers=[{id:'head',department:'1'}];signed.periods['2026-11-1'].signatures.head={at:'now',by:'head'};assert.throws(()=>editLeaderRates(admin,leader,staff,edits,signed),/подпись/);assert.equal(editLeaderRates(admin,leader,staff,[{operatorId:'op',rate:5}],signed).changed,false);
+const frozen=structuredClone(ledger);frozen.periods['2026-11-1'].status='frozen';assert.equal(editLeaderRates(admin,leader,staff,edits,frozen).changed,true);
 const dynamic=structuredClone(ledger);delete dynamic.periods['2026-11-1'].rows;assert.equal(editLeaderRates(admin,leader,staff,edits,dynamic).ledger.periods['2026-11-1'].rows,undefined);
 console.log('Leader rates: admin only, validation, participation, signed periods, recalculation and archive preservation passed');

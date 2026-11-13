@@ -90,12 +90,28 @@ try{
  assert.equal((await stages()).late,undefined);
  assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('admin','pay')).status,400);
+
+ const editTwo={employeeId:'two',employeeVersion:1,revision:'',adjustment:{...draft,sz:true,debt:0,salary:100}};
+ assert.equal((await call('/api/premium?period='+period,{cookie:cookies.head,body:editTwo})).status,403,'Head cannot edit another department');
+ const editOther=await call('/api/premium?period='+period,{cookie:cookies.head2,body:editTwo});
+ assert.equal(editOther.status,200,editOther.text);
+ assert.equal(editOther.data.payroll.find(r=>r.employeeId==='two').payout,200);
+ assert.equal(ledger().periods[period].signatures.head.by,'head');
+ const resetOther=await call('/api/premium?period='+period,{cookie:cookies.head2,body:{...editTwo,revision:editOther.data.adjustments.two.revision,adjustment:{...editTwo.adjustment,salary:0}}});
+ assert.equal(resetOther.status,200,resetOther.text);
  assert.equal((await act('head2','sign')).status,200);
  assert.equal((await act('head','reopen')).status,403);
+ const reopenDept=(who,department)=>call('/api/premium/lifecycle',{cookie:cookies[who],body:{period,revision:ledger().revision,action:'reopen',department}});
+ assert.equal((await reopenDept('head','2')).status,403);
+ assert.equal((await reopenDept('head2','2')).status,200);
+ assert.deepEqual(Object.keys(ledger().periods[period].signatures),['head']);
+ assert.equal((await act('admin','pay')).status,400);
+ assert.equal((await act('head2','sign')).status,200);
+
  assert.equal((await act('admin','reopen')).status,200);
- assert.equal(ledger().periods[period].status,'open');
+ assert.equal(ledger().periods[period].status,'frozen');
  assert.deepEqual(ledger().periods[period].signatures,{});
- assert.equal(ledger().periods[period].returns.length,1);
+ assert.equal(ledger().periods[period].returns.length,2);
  assert.equal((await act('admin','freeze')).status,400);
  assert.equal((await act('head','sign')).status,200);
  assert.equal((await act('head','sign')).status,200);

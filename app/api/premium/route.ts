@@ -1,6 +1,6 @@
 import {readPreparedFinancialPeriod} from '@/lib/crm-financial-projection';
 import {readPremiumState} from '@/lib/premium-store';
-import {ledgerRows,periodOrders,payrollVisible,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
+import {departmentSigned,ledgerRows,periodOrders,payrollVisible,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -28,11 +28,13 @@ async function handle(req:Request){
   const ledger=stored?JSON.parse(stored.data) as PremiumLedger:null;
   const entry=ledger?.periods[period];
   if(req.method==='POST'){
-   if(entry&&entry.status!=='open')return Response.json({error:'Зафиксированную ведомость изменять нельзя'},{status:409});
+   if(entry?.status==='paid')return Response.json({error:'Зафиксированную ведомость изменять нельзя'},{status:409});
    if(actor.role==='operator')return Response.json({error:'Недостаточно прав'},{status:403});
    const body=z.object({employeeId:z.string(),employeeVersion:z.number().int(),rate:z.number().finite().min(0).max(100).optional(),revision:z.string(),adjustment:premiumAdjustmentSchema}).parse(await req.json());
    const target=employees.find(e=>e.id===body.employeeId);
    if(!target||!premiumStaff(actor,target)||target.role==='department_head'&&!target.leaderPremium)return Response.json({error:'Сотрудник недоступен'},{status:403});
+   const department=entry?.rows?.find(r=>r.employeeId===target.id)?.department??target.department??'';
+   if(entry&&departmentSigned(entry,department))return Response.json({error:'Сначала снимите подпись этого отдела'},{status:409});
    if(target.version!==body.employeeVersion)return Response.json({error:'Карточка сотрудника изменилась. Обновите данные.'},{status:409});
    if(body.rate!==undefined&&target.role!=='operator')throw Error('Процент задаётся только оператору');
    const id=prefix+target.id,old=await d.prepare('SELECT data FROM settings WHERE id=?').bind(id).first<{data:string}>();
