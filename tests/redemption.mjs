@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {redemptionNdCount,compareRedemptionRows,redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+import {redemptionConfig,redemptionNdCount,compareRedemptionRows,redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
 assert.equal(redemptionDayAuthor({author:'Иван',lastDay:'2026-10-18'},'2026-10-19'),'');
 assert.equal(redemptionDayAuthor({author:'Мария',lastDay:'2026-10-19'},'2026-10-19'),'Мария');
 assert.equal(redemptionDayAuthor({author:'API',lastDay:'2026-10-19'},'2026-10-19'),'API');
@@ -9,7 +9,11 @@ const admin={id:'a',name:'Админ',role:'admin'},buyer={id:'b',name:'Выку
 try{
  await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)'].map(s=>d.prepare(s)));
  await initRedemption(d);
+ assert.equal((await redemptionConfig(d)).headsAll,true,'Heads see all orders by default');
  await d.prepare('INSERT INTO settings VALUES(?,?)').bind('redemption-config',JSON.stringify({statuses:['ACCEPTED_AT_DELIVERY_WAREHOUSE']})).run();
+ await d.prepare("UPDATE settings SET data=json_set(data,'$.headsAll',json('false')) WHERE id='redemption-config'").run();
+ assert.equal((await redemptionConfig(d)).headsAll,false,'Explicit department-only setting is retained');
+ await d.prepare("UPDATE settings SET data=json_remove(data,'$.headsAll') WHERE id='redemption-config'").run();
  await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({id:'c',name:'Тест',phone:'+70000000001'})).run();
  await d.prepare('INSERT INTO employees VALUES(?,?)').bind(op.id,JSON.stringify(op)).run();
  const order={id:'o',manager:op.id,delivery:'cdek_pickup',cdekStatus:{code:'ACCEPTED_AT_DELIVERY_WAREHOUSE'},items:[]};
