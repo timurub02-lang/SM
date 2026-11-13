@@ -777,6 +777,26 @@ try{
  await setPolicy(originalPolicy);
  console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
 
+ // Packing return: reason and uncertain-result guards, operator agreement, one logistic confirmation.
+ for(const [kind,source,target] of [['delivery','cdek_courier','russian_post'],['refusal','cdek_courier','cdek_courier'],['refusal','russian_post','russian_post'],['refusal','moscow_courier','moscow_courier']]){
+  const pid='packing-return-'+target+kind;
+  const packingBase={...policyOrder,id:pid,status:'packing',delivery:source,extra:true,finalHandoffAt:new Date().toISOString(),packingWaybillAt:new Date().toISOString(),reworkDeadline:undefined,shippedAt:undefined,courier:undefined,packingReworkDelivery:undefined};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(pid,packingBase.clientId,JSON.stringify(packingBase));
+  const step=(cookie,body,status=200)=>policyAction(cookie,{id:pid,...body},status);
+  await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:''},400);
+  db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+pid,JSON.stringify({state:'unknown'}));
+  await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:'Согласовать доставку или отработать отказ'},400);
+  db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+pid,JSON.stringify({state:'invalid',error:'Rejected'}));
+  let returned=await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:'Согласовать доставку или отработать отказ'});
+  assert.equal(returned.status,'rework');assert.equal(returned.returnKind,kind);assert.equal(returned.packingReworkDelivery,source);assert.equal(returned.extra,false);assert.equal(returned.finalHandoffAt,undefined);assert.equal(returned.packingWaybillAt,undefined);
+  if(kind==='delivery')await step(policyOperator.cookie,{action:'transition',to:'confirm'},400);
+  returned=await step(policyOperator.cookie,{action:'updateOrder',delivery:target,address:packingBase.address,items:packingBase.items,addressConfirmed:true});
+  returned=await step(policyOperator.cookie,{action:'transition',to:'confirm',finalHandoffConfirmed:true});assert.equal(returned.status,'confirm');
+  returned=await step(editor.cookie,{action:'transition',to:'packing'});assert.equal(returned.status,'packing');assert.equal(returned.delivery,target);
+  db.prepare('DELETE FROM settings WHERE id=?').run('cdek-shipment-'+pid);
+ }
+ console.log('Packing return and one logistic reconfirmation HTTP passed for delivery change and refusal.');
+
  // Replies belong to the requester and survive closing the form, retries and using permission.
  const approvalClient={...noticeClient,id:'approval-client',phone:'+79990000989',createdAt:new Date().toISOString()};
  const approvalOrder={...noticeOrder,id:'approval-existing',clientId:approvalClient.id,items:[],createdAt:approvalClient.createdAt,status:'extra',extra:true,confirmationStartedAt:approvalClient.createdAt,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(approvalClient.createdAt)+48*3600000).toISOString()};

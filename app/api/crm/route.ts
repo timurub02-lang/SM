@@ -63,7 +63,7 @@ import {cleanImportedAddress} from "@/lib/dadata";
 import {addressPartsSchema,orderAddressWarnings} from "@/lib/address";
 import {db} from "@/lib/db";
 import {getChatGPTUser} from "@/app/chatgpt-auth";
-import {canOperatorAmendMissed,canOperatorReachClient,markClientWaiting,deliveryChangedAfterHandoff,deliveryLabels,cdekReviewOnDeliveryChange,clientAssignment,draftDeadline,confirmationDeadline,reworkDeadlineFrom,validateReworkCall,hasActiveOrder,employeeForManager,canLogisticEditOrder,canAdminEditReturnedCdekOrder,orderEditingLocked,clientAddressFromOrder,deliverySchema,applyRetention,sourceSheet,clientSheet,seed,orderDatesForTransition,clientSchema,itemsSchemaFor,employeeSchema,validateTransition,roles,type State,type Client,type Order,type Employee,type Event,type Status} from "@/lib/crm";
+import {canReturnFromPacking,canOperatorAmendMissed,canOperatorReachClient,markClientWaiting,deliveryChangedAfterHandoff,deliveryLabels,cdekReviewOnDeliveryChange,clientAssignment,draftDeadline,confirmationDeadline,reworkDeadlineFrom,validateReworkCall,hasActiveOrder,employeeForManager,canLogisticEditOrder,canAdminEditReturnedCdekOrder,orderEditingLocked,clientAddressFromOrder,deliverySchema,applyRetention,sourceSheet,clientSheet,seed,orderDatesForTransition,clientSchema,itemsSchemaFor,employeeSchema,validateTransition,roles,type State,type Client,type Order,type Employee,type Event,type Status} from "@/lib/crm";
 import {z} from "zod";
 export const dynamic="force-dynamic";
 const json=JSON.stringify;
@@ -503,7 +503,13 @@ async function handlePOST(request:Request){
   }else if(p.action==="transition"){
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
    const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role);
-   const returnKind=to==="rework"?z.enum(["clarification","refusal"],{error:"Выберите тип возврата: уточнение данных или отказ клиента. Обновите страницу, если выбора нет."}).parse(p.returnKind):undefined;
+   const returnKind=to==="rework"?z.enum(["clarification","refusal","delivery"],{error:"Выберите тип возврата: уточнение данных или отказ клиента. Обновите страницу, если выбора нет."}).parse(p.returnKind):undefined;
+   if(to==='rework'&&(returnKind==='delivery'||canReturnFromPacking(o,employee.role))){
+    if(!canReturnFromPacking(o,employee.role))throw Error('Смена доставки доступна логисту до отправки заказа');
+    const row=await d.prepare('SELECT data FROM settings WHERE id=?').bind(`cdek-shipment-${o.id}`).first<{data:string}>();
+    if(row&&JSON.parse(row.data).state!=='invalid')throw Error('Сначала проверьте результат отправки СДЭК. Выгруженный заказ или отправление с неизвестным результатом нельзя вернуть для смены доставки');
+    next.packingReworkDelivery=o.delivery;next.extra=false;delete next.finalHandoffAt;delete next.packingWaybillAt;delete next.confirmationStartedAt;delete next.confirmationHours;
+   }
    if(to==='shipping'&&o.delivery==='moscow_courier'){
     if(!['admin','logistic','chief_logistic'].includes(employee.role)||o.courier)throw Error('Передача курьеру недоступна');
     const couriers=s.employees.filter(e=>e.role==='courier');
@@ -516,7 +522,7 @@ async function handlePOST(request:Request){
     next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o),phase:"pending",operatorBudgetMs:o.courierRecall?.operatorBudgetMs};
    }
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(isRefusalRework(o)&&p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с отказом клиента");Object.assign(next,reworkHandoff(o,now,s.settings.orderPolicy!));}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
-   delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnKind=returnKind;next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;
+   delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(to==='packing')delete next.packingReworkDelivery;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnKind=returnKind;next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;
    if(to==='shipping'&&o.delivery==='moscow_courier'){next.status='packing';delete next.shippedAt;delete next.finalHandoffAt;delete next.reworkDeadline;}
    if(courierRecalledAtWarehouse(o)){
     if(to==='rework'){

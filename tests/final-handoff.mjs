@@ -68,3 +68,15 @@ assert(allowedOrderTransitions(final,'logistic').includes('refused'));
 assert.equal(reworkHandoff({...clarification,extra:true},now,defaultOrderPolicy).confirmationHours,defaultOrderPolicy.extraConfirmationHours);
 assert.equal(reworkHandoff({...clarification,returnKind:undefined},now,defaultOrderPolicy).finalHandoffAt,now,'Legacy returns preserve their existing final handoff policy');
 console.log('Five clarification cycles do not consume refusal handoff; refusal and legacy restrictions preserved.');
+
+for(const delivery of ['cdek_pickup','cdek_courier','russian_post','moscow_courier']){
+ const packing={...o,status:'packing',delivery,extra:true,packingWaybillAt:now,shippedAt:undefined,cdekExported:false};
+ assert(allowedOrderTransitions(packing,'logistic').includes('rework'));
+ assert(!allowedOrderTransitions({...packing,cdekExported:true},'logistic').includes('rework'));
+ const reconfirm={...packing,status:'confirm',packingReworkDelivery:delivery,finalHandoffAt:undefined,extra:false,returnKind:'refusal'};
+ assert.deepEqual(allowedOrderTransitions(reconfirm,'logistic'),['packing','rework']);
+ assert.deepEqual(allowedOrderTransitions({...reconfirm,finalHandoffAt:now},'logistic'),['packing','refused']);
+ assert(!allowedOrderTransitions({...reconfirm,delivery:'cdek_courier',packingReworkDelivery:'russian_post'},'logistic').includes('packing'));
+}
+assert.throws(()=>validateTransition({...o,status:'rework',returnKind:'delivery',delivery:'cdek_pickup'},'confirm',{name:'Тестовый клиент'},'','operator'),/Согласуйте/);
+console.log('Packing returns allow one reconfirmation for unchanged or manual delivery; exported orders and changed CDEK routes stay guarded.');
