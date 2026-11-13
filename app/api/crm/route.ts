@@ -442,7 +442,7 @@ async function handlePOST(request:Request){
   }else if(p.action==="markPV"){
    if(employee.role!=='admin'||o.status!=='check')throw Error('Метка ПВ ставится администратором на этапе проверки');next.pv=z.boolean().parse(p.value);next.pvMarkedAt=next.pv?now:undefined;text=next.pv?'Заказ отмечен ПВ':'Метка ПВ снята';
   }else if(p.action==="courierAccept"||p.action==="courierWorkflow"){
-   const command=z.object({action:z.enum(['courierAccept','courierWorkflow']),operation:z.enum(['confirm','toOperator','resume','recall','returnRecall','receiveRecall','requestRepack','doorRefusal','claimDoor','resolveDoor']).optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional(),result:z.enum(['deliver','return']).optional()}).parse(p);
+   const command=z.object({action:z.enum(['courierAccept','courierWorkflow']),operation:z.enum(['handoverMoney','confirm','toOperator','resume','recall','returnRecall','receiveRecall','requestRepack','doorRefusal','claimDoor','resolveDoor']).optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional(),result:z.enum(['deliver','return']).optional()}).parse(p);
    const result=applyCourierCommand(o,command,employee,s.settings.orderPolicy!,now,s.employees);next={...result.order,_mutation:next._mutation};text=result.text;
   }else if(p.action==="courierOutcome"){
    if(!o.courier?.acceptedAt)throw Error('Сначала примите посылку у логиста');
