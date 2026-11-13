@@ -63,6 +63,8 @@ with tempfile.TemporaryDirectory(prefix='crm-blue-green-') as folder:
             assert d.activate_slots(new,old,state);assert read()=='green';assert not d.reap_slots();assert not stopped
             upload.send(b'upload!');response=upload.getresponse();assert response.status==200;assert response.read()==b'blue';upload.close();upload=None
             assert not d.reap_slots(),'persistent upgraded connection must keep old slot alive'
+            assert d.activate_slots(old,new,state);assert read()=='blue';assert not stopped
+            assert d.activate_slots(new,old,state);assert read()=='green';assert not stopped
             release_ws.set();ws.close();ws=None
             for _ in range(100):
                 if d.reap_slots():break

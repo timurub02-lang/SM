@@ -48,6 +48,8 @@ The installer starts a pinned web/snapshot pair (blue 3000/3101, green 3002/3102
 
 The old slot remains alive until all Nginx workers from before the reload exit. This deliberately covers buffered POST bodies that have not yet opened an upstream connection. Phone WebSockets may keep those workers alive a long time: the next timer run defers slot reuse instead of truncating them. Do not set a global short `worker_shutdown_timeout`. Do not kill old workers to force a publication. Retained slots use infinite graceful stop timeouts and no forced SIGKILL. A later implementation can add reliable per-request drain accounting if long phone sessions make this conservative delay unacceptable.
 
+A manual rollback to the retained live slot can switch traffic back before that drain completes, after the usual call guard and health check. It reuses the existing process and preserves whether it is a legacy service. Preparing an unrelated third release still waits for a free slot.
+
 Separate initial installation on MIRAN / VM100:
 
 1. Pause publication, wait for the existing installer to finish, and hold `/run/lock/sm-crm-deploy.lock` for all configuration changes. Record current/state, service definitions and enabled state; back up installer, units and both Nginx vhosts outside releases. Confirm current and state agree, and that ports 3002/3102/3099 are free. Do not restart the running web, snapshot or phone bridge.

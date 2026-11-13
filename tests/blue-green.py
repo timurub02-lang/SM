@@ -64,6 +64,15 @@ class BlueGreen(unittest.TestCase):
         with patch.object(d,'prepare_slot'),patch.object(d,'healthy'),patch.object(d,'nginx_workers',return_value=[]),patch.object(d,'route_slot') as route,patch.object(d,'restart_workers'),patch.object(d,'idle',return_value=False):
             with self.assertRaisesRegex(RuntimeError,'Active call'):d.activate_slots(self.new,self.old,self.deployment)
             self.assertEqual([c.args[0] for c in route.call_args_list],['blue'])
+    def test_manual_rollback_reuses_live_legacy_slot_before_drain(self):
+        self.state={'active':'green','slots':{'blue':{'release':self.old.name,'legacy':True},'green':{'release':self.new.name}},'draining':{'slot':'blue','workers':[[1,'2','3']]}}
+        self.deployment={'current':self.new.name,'history':[self.new.name,self.old.name]}
+        d.write_json(self.base/'blue-green.json',self.state);d.write_json(self.base/'deploy-state.json',self.deployment);d.point_current(self.new)
+        with patch.object(d,'prepare_slot') as prepare,patch.object(d,'healthy'),patch.object(d,'nginx_workers',return_value=[[1,'2','3']]),patch.object(d,'route_slot'),patch.object(d,'restart_workers'),patch.object(d,'idle',return_value=True),patch.object(d,'reap_slots',return_value=False),patch.object(d,'activate',side_effect=lambda target,previous,state:d.activate_slots(target,previous,state)):
+            d.run(self.old.name);prepare.assert_not_called()
+        self.assertEqual(d.current(),self.old);self.assertEqual(d.slots()['active'],'blue')
+        self.assertTrue(d.slots()['slots']['blue']['legacy']);self.assertEqual(d.slots()['draining']['slot'],'green')
+        self.assertTrue((self.base/'deploy-paused').exists())
     def test_templates_pin_releases_and_never_force_kill(self):
         for kind in ['web','snapshot']:
             unit=(root/('deploy/sm-crm-'+kind+'@.service')).read_text()

@@ -161,7 +161,7 @@ def activate(target,previous,state):
 
 def run(rollback=None):
     recover_slots()
-    if not reap_slots():print('Previous Nginx connections are draining; update deferred');return
+    if not reap_slots() and not rollback:print('Previous Nginx connections are draining; update deferred');return
     state=json.loads((BASE/'deploy-state.json').read_text());previous=current()
     if (BASE/'deploy-paused').exists() and not rollback:print('Automatic deployment is paused');return
     if not NAME.fullmatch(previous.name):raise RuntimeError('Legacy publication detected; reconcile source before resuming')
@@ -346,14 +346,17 @@ def recover_slots():
 
 def activate_slots(target,previous,deploy_state):
     state=slots();old=state['active'];candidate='green' if old=='blue' else 'blue'
-    if state.get('draining') or len(state['slots'])!=1:raise RuntimeError('Previous slot has not drained')
+    retained=state['slots'].get(candidate)
+    reuse=retained is not None and retained['release']==target.name
+    if not reuse and (state.get('draining') or len(state['slots'])!=1):raise RuntimeError('Previous slot has not drained')
     if state['slots'][old]['release']!=previous.name:raise RuntimeError('Slot and current differ')
     journal=BASE/'blue-green-pending.json'
-    pending={'before':state,'candidate':candidate,'slot':{'release':target.name},'deployState':deploy_state}
+    pending={'before':state,'candidate':candidate,'slot':retained if reuse else {'release':target.name},'deployState':deploy_state}
     write_json(journal,pending)
     try:
         publish_static([target.name]+deploy_state['history']+slot_releases())
-        prepare_slot(candidate,target)
+        if reuse:healthy(SLOTS[candidate][0])
+        else:prepare_slot(candidate,target)
         if not idle():raise RuntimeError('Active call before traffic switch; candidate deferred')
         workers=nginx_workers();route_slot(candidate,pending['slot'])
         point_current(target);restart_workers()
