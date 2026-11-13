@@ -109,6 +109,32 @@ try{
  const releasedOrder=released.data.entityPatch.state.orders.find(o=>o.id===zvdOrder.id);
  assert.equal(releasedOrder.status,'packing');assert.equal(releasedOrder.zvd,undefined);
  assert(db.prepare("SELECT data FROM events WHERE order_id=?").all(zvdOrder.id).some(r=>JSON.parse(r.data).text.includes('ЗВД снят')));
+ // Blacklist review is atomic, administrator-only, and notifies the order's operator.
+ const blackClient={...client,id:'black-client',phone:'+79990000003',owner:'one',sheet:'ПВ'};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(blackClient.id,blackClient.phone,JSON.stringify(blackClient));
+ const blackOrder={...zvdOrder,id:'black-order',clientId:blackClient.id,zvd:{at:new Date().toISOString(),by:'admin'},pv:true};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(blackOrder.id,blackClient.id,JSON.stringify(blackOrder));
+ const blackCommand={action:'markBlacklist',id:blackOrder.id,version:1,confirmed:true,responseMode:'entity-patch'};
+ const operatorLogin=await fetch(base+'/api/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({login:'one',password})});
+ assert.equal(operatorLogin.status,200);const opCookie=operatorLogin.headers.get('set-cookie').split(';')[0];
+ const deniedBlack=await fetch(base+'/api/crm',{method:'POST',headers:{cookie:opCookie,Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(blackCommand)});
+ assert.equal(deniedBlack.status,400);
+ assert.equal((await call('/api/crm',{...blackCommand,confirmed:false})).status,400);
+ inject({match:'UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND NOT EXISTS',method:'run',when:'before',sql:"UPDATE clients SET version=version+1 WHERE id='black-client'"});
+ assert.equal((await call('/api/crm',blackCommand)).status,400);used();
+ assert.equal(JSON.parse(db.prepare("SELECT data FROM orders WHERE id='black-order'").get().data).status,'check');
+ const black=await call('/api/crm',blackCommand);assert.equal(black.status,200,JSON.stringify(black.data));
+ const cancelled=black.data.entityPatch.state.orders.find(o=>o.id===blackOrder.id);
+ const freed=black.data.entityPatch.state.clients.find(c=>c.id===blackClient.id);
+ assert.equal(cancelled.status,'refused');assert.ok(cancelled.blacklistedAt);assert.equal(cancelled.zvd,undefined);
+ assert.deepEqual(cancelled.items,blackOrder.items);assert.equal(cancelled.manager,'one');
+ assert.equal(freed.owner,'');assert.equal(freed.sheet,'ЧС');assert.equal(freed.releasedFromOwner,'one');
+ assert.equal((await call('/api/crm',blackCommand)).status,400);
+ assert.equal((await call('/api/crm',{...blackCommand,id:zvdOrder.id,version:zvdVersion()})).status,400,'Packing cannot be blacklisted by the review action');
+ const operatorState=await fetch(base+'/api/crm',{headers:{cookie:opCookie}});const opState=await operatorState.json();
+ assert.equal(operatorState.status,200);assert.ok(opState.orders.some(o=>o.id===blackOrder.id&&o.status==='refused'));
+ assert.ok(opState.reminders.some(r=>r.kind==='order-blacklist'&&r.orderId===blackOrder.id&&r.title.includes('ЧС')));
+ assert.equal(JSON.parse(db.prepare("SELECT data FROM clients WHERE id='black-client'").get().data).sheet,'ЧС');
  console.log('Review regressions: cash/delete races, no ghost orders/history, assignment rollback passed. No external services used.');
 }catch(e){console.error(logs);throw e;}finally{
  if(server){server.kill();await once(server,'exit');}
