@@ -1,3 +1,4 @@
+import {internalDeadline,internalElapsed} from '../lib/internal-timers.ts';
 // Run after the Miran standalone build. Uses only a temporary, synthetic database.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -191,7 +192,7 @@ try{
   for(const [i,status] of [...statuses,'none'].entries()){
    const c={id:id+'-c-'+status,name:'Client',phone:'+7'+String(8000000000+db.prepare('SELECT COUNT(*) AS n FROM clients').get().n),city:'',address:'',source:'test.xlsx · Т3',sheet:'К',returnSheet:'Т3',trialReturnSheet:'Т1',owner:id,createdAt:new Date().toISOString(),version:1};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));
    if(status==='none')continue;
-   const o={id:id+'-o-'+status,clientId:c.id,manager:id,logistic:'',status,delivery:'cdek_courier',items:[],comment:'Original comment',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,redeemedAt:c.createdAt,...(['confirm','extra'].includes(status)?{confirmationStartedAt:c.createdAt,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(c.createdAt)+48*3600000).toISOString()}:{}),...(status==='rework'?{reworkDeadline:new Date(Date.now()+86400000).toISOString()}:{}),version:1};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
+   const o={timerCalendar:'weekdays-v1',id:id+'-o-'+status,clientId:c.id,manager:id,logistic:'',status,delivery:'cdek_courier',items:[],comment:'Original comment',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,redeemedAt:c.createdAt,...(['confirm','extra'].includes(status)?{confirmationStartedAt:c.createdAt,confirmationHours:48,noAnswerDeadline:internalDeadline(c.createdAt,48)}:{}),...(status==='rework'?{reworkDeadline:new Date(Date.now()+86400000).toISOString()}:{}),version:1};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
   }
  }
  async function remove(actor,e,mode,targetId,version=e.version){return call('/api/crm',{cookie:cookies[actor],body:{action:'deleteEmployee',id:e.id,version,mode,targetId}});}
@@ -310,7 +311,7 @@ try{
  await step(editor.cookie,'refused',400);
  await step(editor.cookie,'rework');let flowOrder=await step(returnOperator.cookie,'confirm');assert.equal(flowOrder.round,2);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);
- await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);assert.equal(flowOrder.confirmationHours,48);assert.equal(flowOrder.noAnswerDeadline,new Date(Date.parse(flowOrder.confirmationStartedAt)+48*3600000).toISOString());
+ await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);assert.equal(flowOrder.confirmationHours,48);assert.equal(flowOrder.noAnswerDeadline,internalDeadline(flowOrder.confirmationStartedAt,48));
  await step(editor.cookie,'refused',400);
  await step(editor.cookie,'rework');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,3);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400);await step(editor.cookie,'refused');
@@ -684,7 +685,7 @@ try{
  const operatorReturnView=(await call('/api/crm',{cookie:policyOperator.cookie})).data;
  assert.equal(operatorReturnView.orders.find(o=>o.id===policyId).returnReason,selectedReturnReason);
  assert.ok(operatorReturnView.events.some(e=>e.orderId===policyId&&e.text.includes(selectedReturnReason)));
- assert.equal(policyOrder.reworkHours,2);assert.ok(Math.abs(Date.parse(policyOrder.reworkDeadline)-Date.now()-2*3600000)<10000);
+ assert.equal(policyOrder.reworkHours,2);assert.ok(Math.abs(internalElapsed(Date.now(),Date.parse(policyOrder.reworkDeadline))-2*3600000)<10000);
  await policyAction(policyOperator.cookie,{action:'updateOrder',items:policyOrder.items},400);
  const frozenDeadline=policyOrder.reworkDeadline;
  await setPolicy({reworkHours:null,finalHours:null});
@@ -699,7 +700,7 @@ try{
  await setPolicy({...originalPolicy,finalHours:3});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).reworkDeadline,undefined);
  policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',addressConfirmed:true,items:policyOrder.items,address:'Updated address, дом 1'});assert.equal(policyOrder.address,'Updated address, дом 1');
- policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'extra',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,3);assert.ok(Math.abs(Date.parse(policyOrder.noAnswerDeadline)-Date.now()-3*3600000)<10000);
+ policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'extra',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,3);assert.ok(Math.abs(internalElapsed(Date.now(),Date.parse(policyOrder.noAnswerDeadline))-3*3600000)<10000);
  const frozenFinal=policyOrder.noAnswerDeadline;await setPolicy({finalHours:1});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,frozenFinal);
  db.prepare("UPDATE orders SET data=json_set(data,'$.finalHandoffAt',?) WHERE id=?").run(new Date(Date.now()-4*3600000).toISOString(),policyId);
@@ -709,20 +710,20 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(timerClient.id,timerClient.phone,JSON.stringify(timerClient));
  let timerResult=await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'createOrder',clientId:timerClient.id,items:[{name:'Policy product',quantity:1,price:100}],addressConfirmed:true,delivery:'russian_post'}});assert.equal(timerResult.status,200,timerResult.text);
  let timerOrder=timerResult.data.state.orders.find(o=>o.clientId===timerClient.id);assert.equal(timerOrder.draftHours,24);
- const timerReminder=timerResult.data.state.reminders.find(r=>r.kind==='draft'&&r.orderId===timerOrder.id);assert.ok(timerReminder);assert.equal(timerReminder.resolved,false);assert.equal(timerReminder.due,new Date(Date.parse(timerOrder.createdAt)+86400000).toISOString());
+ const timerReminder=timerResult.data.state.reminders.find(r=>r.kind==='draft'&&r.orderId===timerOrder.id);assert.ok(timerReminder);assert.equal(timerReminder.resolved,false);assert.equal(timerReminder.due,internalDeadline(timerOrder.createdAt,24));
  assert.ok(!(await call('/api/crm',{cookie:chief.cookie})).data.reminders.some(r=>r.id===timerReminder.id));
  assert.equal((await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'readReminder',id:timerReminder.id}})).status,200);
  const reread=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.filter(r=>r.id===timerReminder.id);assert.equal(reread.length,1);assert.ok(reread[0].readAt);
  await setPolicy({draftHours:2});
  for(const contact of ['missed','callback']){
-  const body={action:'contact',id:timerOrder.id,version:timerOrder.version,contact,reason:'Test',due:new Date(Date.parse(timerOrder.createdAt)+86400001).toISOString()};
+  const body={action:'contact',id:timerOrder.id,version:timerOrder.version,contact,reason:'Test',due:new Date(Date.parse(internalDeadline(timerOrder.createdAt,24))+1).toISOString()};
   const rejected=await call('/api/crm',{cookie:policyOperator.cookie,body});assert.equal(rejected.status,400,rejected.text);assert.match(rejected.data.error,/позже срока оформления/);
-  const accepted=await call('/api/crm',{cookie:policyOperator.cookie,body:{...body,due:new Date(Date.parse(timerOrder.createdAt)+86400000).toISOString()}});assert.equal(accepted.status,200,accepted.text);timerOrder=accepted.data.state.orders.find(o=>o.id===timerOrder.id);assert.equal(timerOrder.draftHours,24);
+  const accepted=await call('/api/crm',{cookie:policyOperator.cookie,body:{...body,due:internalDeadline(timerOrder.createdAt,24)}});assert.equal(accepted.status,200,accepted.text);timerOrder=accepted.data.state.orders.find(o=>o.id===timerOrder.id);assert.equal(timerOrder.draftHours,24);
  }
  const pastCreated=new Date(Date.now()-25*3600000).toISOString();
  db.prepare("UPDATE orders SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(pastCreated,timerOrder.id);
  db.prepare("UPDATE clients SET data=json_set(data,'$.assignmentStartedAt',?) WHERE id=?").run(pastCreated,timerClient.id);
- const expiredDraft=(await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===timerOrder.id);assert.equal(expiredDraft.status,'refused');assert.equal(expiredDraft.cancelledAt,new Date(Date.parse(pastCreated)+86400000).toISOString());
+ const expiredDraft=(await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===timerOrder.id);assert.equal(expiredDraft.status,'refused');assert.equal(expiredDraft.cancelledAt,internalDeadline(pastCreated,24));
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(timerClient.id).data).owner,'');
  const completedReminder=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.find(r=>r.id===timerReminder.id);assert.equal(completedReminder.resolved,true);assert.equal(completedReminder.text,'Заказ отменён');assert.ok(completedReminder.readAt);
  // A handoff resolves the existing reminder; disabled timers create no reminder.
@@ -732,7 +733,7 @@ try{
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(noticeOrder.id,noticeClient.id,JSON.stringify(noticeOrder));
  const handoffReminder=(await call('/api/crm',{cookie:policyOperator.cookie})).data.reminders.find(r=>r.kind==='draft'&&r.orderId===noticeOrder.id);assert.ok(handoffReminder);assert.equal(handoffReminder.resolved,false);
  let confirmed=await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'confirm'});
- assert.equal(confirmed.confirmationHours,48);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.confirmationStartedAt)+48*3600000).toISOString());
+ assert.equal(confirmed.confirmationHours,48);assert.equal(confirmed.noAnswerDeadline,internalDeadline(confirmed.confirmationStartedAt,48));
  const firstDeadline=confirmed.noAnswerDeadline;
  for(const contact of ['missed','callback']){
   await policyAction(editor.cookie,{action:'contact',id:noticeOrder.id,contact,reason:'Test',due:new Date(Date.parse(firstDeadline)+1).toISOString()},400);
@@ -741,10 +742,10 @@ try{
  confirmed=await policyAction(editor.cookie,{action:'updateOrder',id:noticeOrder.id,comment:'Changed during confirmation',addressConfirmed:true});assert.equal(confirmed.noAnswerDeadline,firstDeadline);
  await setPolicy({confirmationHours:1,extraConfirmationHours:2,finalHours:24});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===noticeOrder.id).noAnswerDeadline,firstDeadline);
- confirmed=await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'extra'});assert.equal(confirmed.confirmationHours,2);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.confirmationStartedAt)+2*3600000).toISOString());
+ confirmed=await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'extra'});assert.equal(confirmed.confirmationHours,2);assert.equal(confirmed.noAnswerDeadline,internalDeadline(confirmed.confirmationStartedAt,2));
  for(const contact of ['missed','callback'])await policyAction(editor.cookie,{action:'contact',id:noticeOrder.id,contact,reason:'Test',due:new Date(Date.parse(confirmed.noAnswerDeadline)+1).toISOString()},400);
  await policyAction(editor.cookie,{action:'transition',id:noticeOrder.id,to:'rework',returnKind:'refusal',reason:'Test'});
- confirmed=await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'extra',finalHandoffConfirmed:true});assert.equal(confirmed.finalConfirmHours,24);assert.equal(confirmed.noAnswerDeadline,new Date(Date.parse(confirmed.finalHandoffAt)+86400000).toISOString());
+ confirmed=await policyAction(policyOperator.cookie,{action:'transition',id:noticeOrder.id,to:'extra',finalHandoffConfirmed:true});assert.equal(confirmed.finalConfirmHours,24);assert.equal(confirmed.noAnswerDeadline,internalDeadline(confirmed.finalHandoffAt,24));
  // Client-requested first confirmation: validate on handoff, preserve timers and the original request.
  await setPolicy({confirmationHours:48});
  const scheduledDraft={...noticeOrder,id:'scheduled-confirmation',createdAt:new Date().toISOString(),status:'draft'};
@@ -762,7 +763,7 @@ try{
  assert.deepEqual(scheduled.confirmationRequest,{at:requestedAt,by:policyOperator.e.id});
  assert.equal(scheduled.contact,'none');assert.equal(scheduled.due,'');assert.equal(scheduled.confirmationHours,48);
  const scheduledDeadline=scheduled.noAnswerDeadline;
- assert.equal(scheduledDeadline,new Date(Date.parse(scheduled.confirmationStartedAt)+48*3600000).toISOString());
+ assert.equal(scheduledDeadline,internalDeadline(scheduled.confirmationStartedAt,48));
  assert.ok((await call('/api/crm',{cookie:editor.cookie})).data.orders.some(o=>o.id===scheduled.id&&o.confirmationRequest.at===requestedAt));
  assert.ok(JSON.parse(db.prepare('SELECT data FROM events WHERE order_id=? ORDER BY at DESC LIMIT 1').get(scheduled.id).data).text.includes('Просил подтверждения ко времени'));
  await policyAction(policyOperator.cookie,{action:'transition',id:scheduled.id,to:'check'},400);
@@ -829,7 +830,7 @@ try{
 
  // Replies belong to the requester and survive closing the form, retries and using permission.
  const approvalClient={...noticeClient,id:'approval-client',phone:'+79990000989',createdAt:new Date().toISOString()};
- const approvalOrder={...noticeOrder,id:'approval-existing',clientId:approvalClient.id,items:[],createdAt:approvalClient.createdAt,status:'extra',extra:true,confirmationStartedAt:approvalClient.createdAt,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(approvalClient.createdAt)+48*3600000).toISOString()};
+ const approvalOrder={...noticeOrder,timerCalendar:'weekdays-v1',id:'approval-existing',clientId:approvalClient.id,items:[],createdAt:approvalClient.createdAt,status:'extra',extra:true,confirmationStartedAt:approvalClient.createdAt,confirmationHours:48,noAnswerDeadline:internalDeadline(approvalClient.createdAt,48)};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(approvalClient.id,approvalClient.phone,JSON.stringify(approvalClient));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(approvalOrder.id,approvalClient.id,JSON.stringify(approvalOrder));
  const approvalPeer=await fixture('approval-peer');
@@ -985,7 +986,7 @@ try{
   ['cdek_pickup','cdek_courier']
  ]){
   const id=`delivery-review-${action}-${from}-${to}`,at=new Date().toISOString();
-  const original={...flow,id,clientId:cleanId,status:'extra',delivery:from,address:'142106, г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:validParts,items:[{name:'Test',quantity:1,price:100}],extra:true,finalHandoffAt:at,confirmationStartedAt:at,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(at)+86400000).toISOString(),packingWaybillAt:at,manualDeliveryCost:100,contact:'callback',due:new Date(Date.now()+3600000).toISOString()};
+  const original={...flow,id,clientId:cleanId,status:'extra',delivery:from,address:'142106, г Подольск, пр-кт Ленина, д 16, кв 15',addressParts:validParts,items:[{name:'Test',quantity:1,price:100}],extra:true,finalHandoffAt:at,confirmationStartedAt:at,confirmationHours:48,noAnswerDeadline:internalDeadline(at,24),packingWaybillAt:at,manualDeliveryCost:100,contact:'callback',due:new Date(Date.now()+3600000).toISOString()};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,cleanId,JSON.stringify(original));
   const snapshot=db.prepare('SELECT * FROM orders WHERE id=?').get(id);
   const body={action,id,version:snapshot.version,delivery:to,addressConfirmed:true};

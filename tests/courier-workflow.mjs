@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {internalDeadline} from '../lib/internal-timers.ts';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
 import {applyCourierCommand,courierLabel,courierParcelLocation,courierToOperator,courierDeadline,courierStage,courierBalance,courierConfirmationStage,courierMissedCallTime,courierReminderNeedsAction} from '../lib/courier.ts';
@@ -6,7 +7,7 @@ import {allowedOrderTransitions,orderGroup,packingStage,applyRetention,scheduled
 import {defaultOrderPolicy as policy} from '../lib/order-policy.ts';
 import {reconcileOrderTimers} from '../lib/base-retention-store.ts';
 import {inventorySQL,migrateCourierStock} from '../lib/inventory-sql.ts';
-const hour=3600000,at=new Date().toISOString(),time=Date.parse(at),later=n=>new Date(time+n*hour).toISOString();
+const hour=3600000,at='2026-10-05T09:00:00.000Z',time=Date.parse(at),later=n=>new Date(time+n*hour).toISOString();
 const courier={id:'driver',name:'Courier',role:'courier'},logistic={id:'logistic',name:'Logistic',role:'logistic'},operator={id:'operator',name:'Operator',role:'operator'};
 const client={id:'client',name:'Client',phone:'+79990000111',owner:operator.id,source:'',sheet:'К',address:'Address',createdAt:at,version:1};
 const base={id:'o',clientId:client.id,manager:operator.id,logistic:'',delivery:'moscow_courier',status:'packing',packingWaybillAt:at,createdAt:at,updatedAt:at,items:[{name:'Product',quantity:1,price:10000}],address:'Address',comment:'',reason:'',contact:'none',due:'',round:1,extra:false,version:1,courier:{id:courier.id,name:courier.name,assignedAt:at,phase:'pending',amount:10000}};
@@ -24,7 +25,7 @@ assert.equal(courierDeadline(base),undefined);assert.equal(orderGroup(base.statu
 assert.deepEqual(courierBalance([base],courier.id),{pending:10000,parcels:0,cash:0,total:0});
 assert.throws(()=>run(base,courier,'confirm'));assert.throws(()=>applyCourierCommand(base,{action:'courierAccept',confirmed:true},{...courier,id:'other'},policy,at));
 let accepted=applyCourierCommand(base,{action:'courierAccept',confirmed:true},courier,policy,later(100)).order;
-assert.equal(courierStage(accepted),'confirmation');assert.equal(accepted.status,'packing');assert.equal(courierDeadline(accepted),later(148));assert.equal(courierBalance([accepted],courier.id).total,10000);
+assert.equal(courierStage(accepted),'confirmation');assert.equal(accepted.status,'packing');assert.equal(courierDeadline(accepted),internalDeadline(later(100),48));assert.equal(courierBalance([accepted],courier.id).total,10000);
 assert.equal(courierConfirmationStage(accepted,time+142*hour),'expiring');
 assert.equal(courierReminderNeedsAction({...notice,at:later(100)},accepted),false,'Physical acceptance is history, not a new task');
 const callOrder={...accepted,contact:'missed',due:later(101)},callNotice={...notice,kind:'call',due:callOrder.due,readAt:later(100)};
@@ -39,14 +40,14 @@ for(const contact of ['missed','callback']){
  for(const hours of [144,145])assert.equal(courierConfirmationStage(scheduled,time+hours*hour),'new','A due call returns to New');
  assert.equal(courierDeadline(scheduled),courierDeadline(accepted),'Scheduling does not extend confirmation');
 }
-assert.throws(()=>run(accepted,logistic,'confirm',101));assert.throws(()=>run(accepted,courier,'confirm',149));
+assert.throws(()=>run(accepted,logistic,'confirm',101));assert.throws(()=>applyCourierCommand(accepted,{action:'courierWorkflow',operation:'confirm'},courier,policy,new Date(Date.parse(courierDeadline(accepted))+hour).toISOString()));
 let sent=run(accepted,courier,'confirm',101);assert.equal(sent.status,'shipping');assert.equal(courierStage(sent),'delivery');assert.equal(courierDeadline(sent),undefined);
-let work=run(sent,courier,'toOperator',102,{reason:'Questions'});assert.equal(work.status,'rework');assert.equal(work.courier.atDoor,false);assert.equal(courierStage(work),'waiting');assert.equal(work.reworkDeadline,later(198));
+let work=run(sent,courier,'toOperator',102,{reason:'Questions'});assert.equal(work.status,'rework');assert.equal(work.courier.atDoor,false);assert.equal(courierStage(work),'waiting');assert.equal(work.reworkDeadline,internalDeadline(later(102),96));
 assert.equal(courierBalance([work],courier.id).parcels,10000);assert.equal(applyRetention(client,[work],time).owner,operator.id);
 assert.deepEqual(allowedOrderTransitions(work,'operator'),['refused']);assert.deepEqual(allowedOrderTransitions(work,'logistic'),[]);
 assert.throws(()=>run(work,courier,'confirm',103));
 let resume=run(work,operator,'confirm',104);assert.equal(resume.courier.operatorBudgetMs,94*hour);assert.equal(resume.courier.operatorStartedAt,undefined);assert.equal(courierStage(resume),'pending');assert.equal(resume.courier.acceptedAt,accepted.courier.acceptedAt);assert.equal(courierBalance([resume],courier.id).total,10000);
-sent=run(resume,courier,'resume',150);work=run(sent,courier,'toOperator',151,{reason:'Again'});assert.equal(work.reworkDeadline,later(245));assert.equal(work.courier.operatorBudgetMs,94*hour);
+sent=run(resume,courier,'resume',150);work=run(sent,courier,'toOperator',151,{reason:'Again'});assert.equal(work.reworkDeadline,internalDeadline(later(151),94));assert.equal(work.courier.operatorBudgetMs,94*hour);
 // Retired actions cannot be replayed by an older mobile page.
 for(const operation of ['toLogistic','requestPostpone','approvePostpone','rejectPostpone'])assert.throws(()=>run(accepted,courier,operation,101,{reason:'Test',at:later(250)}));
 const returned=run(accepted,courier,'toOperator',101,{reason:'Недозвон'});

@@ -1,3 +1,4 @@
+import {internalDeadline,upgradeInternalDeadline} from './internal-timers.ts';
 import {canEditOrderRedemption} from './redemption-priority.ts';
 import {incomingForAction} from './incoming.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
@@ -13,7 +14,7 @@ export function compareRedemptionRows(a:any,b:any,tab:string,day:string){return 
 export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 export function operatorReturnDeadline(storageUntil:string,now=new Date()){
- const limit=new Date(now.getTime()+48*60*60*1000).toISOString();
+ const limit=internalDeadline(now.toISOString(),48);
  return validDate(storageUntil||'')?[limit,storageUntil+'T20:59:59.999Z'].sort()[0]:limit;
 }
 export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:true};
@@ -34,9 +35,16 @@ export async function syncRedemption(d:Db,now=new Date()){
  await d.prepare(`INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) SELECT o.id,?,'{}' FROM orders o WHERE json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.statuses') WHERE settings.id='redemption-config' AND json_each.value=json_extract(o.data,'$.cdekStatus.code'))`).bind(at).run();
  await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.pendingEnrollment',json('false')),entered_at=?,version=version+1 WHERE json_extract(data,'$.pendingEnrollment')=1 AND EXISTS(SELECT 1 FROM orders o WHERE o.id=order_id AND json_extract(o.data,'$.status')='shipping' AND EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.statuses') WHERE settings.id='redemption-config' AND json_each.value=json_extract(o.data,'$.cdekStatus.code')))` ).bind(at).run();
  // Release previously scheduled refusal follow-ups once, without restarting active deadlines.
- await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.operatorReturn.previousStartsAt',json_extract(data,'$.operatorReturn.startsAt'),'$.operatorReturn.startsAt',?,'$.operatorReturn.deadline',?,'$.resultDate',?,'$.changedBy','Система','$.changeKind','operator_return_start_now','$.updatedAt',?),version=version+1 WHERE json_extract(data,'$.operatorReturn.startsAt')>? AND json_extract(data,'$.operatorReturn.resolvedAt') IS NULL AND json_extract(data,'$.action')='refusal' AND json_extract(data,'$.result')='date'`).bind(at,new Date(now.getTime()+48*60*60*1000).toISOString(),dayOf(now),at,at).run();
+ await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.operatorReturn.previousStartsAt',json_extract(data,'$.operatorReturn.startsAt'),'$.operatorReturn.startsAt',?,'$.operatorReturn.timerCalendar','weekdays-v1','$.operatorReturn.deadline',?,'$.resultDate',?,'$.changedBy','Система','$.changeKind','operator_return_start_now','$.updatedAt',?),version=version+1 WHERE json_extract(data,'$.operatorReturn.startsAt')>? AND json_extract(data,'$.operatorReturn.resolvedAt') IS NULL AND json_extract(data,'$.action')='refusal' AND json_extract(data,'$.result')='date'`).bind(at,internalDeadline(now.toISOString(),48),dayOf(now),at,at).run();
  // Extend live legacy handoffs from their original start; never revive expired work.
  await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.operatorReturn.durationHours',48,'$.operatorReturn.deadline',strftime('%Y-%m-%dT%H:%M:%fZ',COALESCE(json_extract(data,'$.operatorReturn.startsAt'),json_extract(data,'$.operatorReturn.at')),'+48 hours'),'$.changedBy','Система','$.changeKind','operator_return_48_hours','$.updatedAt',?),version=version+1 WHERE COALESCE(json_extract(data,'$.operatorReturn.durationHours'),0)<>48 AND json_extract(data,'$.operatorReturn.resolvedAt') IS NULL AND json_extract(data,'$.operatorReturn.deadline')>? AND json_extract(data,'$.operatorReturn.deadline') IN (strftime('%Y-%m-%dT%H:%M:%fZ',COALESCE(json_extract(data,'$.operatorReturn.startsAt'),json_extract(data,'$.operatorReturn.at')),'+2 hours'),strftime('%Y-%m-%dT%H:%M:%fZ',COALESCE(json_extract(data,'$.operatorReturn.startsAt'),json_extract(data,'$.operatorReturn.at')),'+10 hours'))`).bind(at,at).run();
+ // Upgrade unresolved saved deadlines before expiry; the following storage cap remains calendar time.
+ const legacyReturns=await d.prepare("SELECT order_id,data,version FROM redemption_entries WHERE json_extract(data,'$.operatorReturn.deadline') IS NOT NULL AND json_extract(data,'$.operatorReturn.resolvedAt') IS NULL AND COALESCE(json_extract(data,'$.operatorReturn.timerCalendar'),'')<>'weekdays-v1'").all();
+ for(const row of legacyReturns.results){
+  const data=JSON.parse(row.data);data.operatorReturn={...data.operatorReturn,timerCalendar:'weekdays-v1',deadline:upgradeInternalDeadline(data.operatorReturn.deadline)};
+  data.updatedAt=at;data.changedBy='Система';data.changeKind='operator_return_weekdays';
+  await d.prepare('UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id=? AND version=?').bind(JSON.stringify(data),row.order_id,row.version).run();
+ }
  // A storage date ends at 23:59:59.999 Moscow time; shrinking it also shortens live handoffs.
  const storageEnd="(SELECT json_extract(o.data,'$.cdekStorageUntil')||'T20:59:59.999Z' FROM orders o WHERE o.id=order_id AND date(json_extract(o.data,'$.cdekStorageUntil'))=json_extract(o.data,'$.cdekStorageUntil'))";
  await d.prepare(`UPDATE redemption_entries SET data=json_set(data,'$.operatorReturn.deadline',${storageEnd},'$.operatorReturn.durationHours',48,'$.changedBy','Система','$.changeKind','operator_return_storage_limit','$.updatedAt',?),version=version+1 WHERE json_extract(data,'$.operatorReturn.resolvedAt') IS NULL AND json_extract(data,'$.operatorReturn.deadline')>${storageEnd}`).bind(at).run();
@@ -129,7 +137,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(!returnReasons.includes(p.reason)||typeof p.comment!=='string'||p.comment.length>2000||p.reason==='Другое'&&!p.comment.trim())throw Error('Выберите причину и заполните комментарий для «Другое»');
   if(!validDate(row.storageUntil||''))throw Error('СДЭК пока не передал срок хранения');
   const deadline=operatorReturnDeadline(row.storageUntil,now);if(deadline<=at)throw Error('Срок хранения истёк. Передача оператору недоступна');
-  Object.assign(next,{operatorReturn:{sourceTab:awaitingReturn(row)?'returns':awaitingDateConfirmation(row)?'confirm':'work',reason:p.reason,comment:p.comment.trim(),author:e.name,authorId:e.id,at,durationHours:48,deadline}});
+  Object.assign(next,{operatorReturn:{sourceTab:awaitingReturn(row)?'returns':awaitingDateConfirmation(row)?'confirm':'work',reason:p.reason,comment:p.comment.trim(),author:e.name,authorId:e.id,at,timerCalendar:"weekdays-v1",durationHours:48,deadline}});
  }else if(p.operation==='verify_return'){if(!['admin','redemption'].includes(e.role)||!returnConfirmedToday(row,day)||!row.returnWaybill||row.returnVerifiedAt)throw Error('Проверить возврат может сотрудник выкупа после сохранения накладной');Object.assign(next,{returnVerifiedAt:at,returnVerifiedBy:e.name,returnVerifiedById:e.id});}
  else if(p.operation==='verify_date'){if(!['admin','redemption'].includes(e.role)||!dateConfirmedToday(row,day)||row.dateVerifiedAt)throw Error('Проверить может сотрудник выкупа после подтверждения даты');Object.assign(next,{dateVerifiedAt:at,dateVerifiedBy:e.name,dateVerifiedById:e.id});}
  else if(p.operation==='confirm_date'){if(!['admin','redemption'].includes(e.role)||!awaitingDateConfirmation(row)||row.resultDate<day)throw Error('Подтверждение доступно администратору и сотруднику выкупа для ожидающей даты');Object.assign(next,{dateConfirmation:'confirmed',dateConfirmedBy:e.name,dateConfirmedById:e.id,dateConfirmedAt:at});}
@@ -156,7 +164,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(p.action==='refusal'&&p.result==='date'){
    const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(row.manager).first();
    if(!manager||JSON.parse(manager.data).role!=='operator')throw Error('У заказа нет ответственного оператора');
-   next.operatorReturn={sourceTab:'work',reason:'Отработать отказ',comment:'Проработать отказ сразу после передачи',author:e.name,authorId:e.id,at,durationHours:48,deadline:operatorReturnDeadline(row.storageUntil,now)};
+   next.operatorReturn={sourceTab:'work',reason:'Отработать отказ',comment:'Проработать отказ сразу после передачи',author:e.name,authorId:e.id,at,timerCalendar:"weekdays-v1",durationHours:48,deadline:operatorReturnDeadline(row.storageUntil,now)};
   }
   if(awaitingOperator(row))next.operatorReturn={...v.operatorReturn,resolvedAt:at,resolvedBy:e.name,resolvedById:e.id};
   Object.assign(next,{incomingScheduled:!!incoming&&p.result==='date',resultSource:incoming?'incoming':null,refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?(incoming?'incoming':'pending'):null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,dateVerifiedAt:null,dateVerifiedBy:null,dateVerifiedById:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,authorRole:e.role,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at,ndCount:redemptionNdCount(v,day)+(p.action==='nd'?1:0)}}});

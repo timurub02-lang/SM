@@ -1,3 +1,4 @@
+import {internalDeadline,internalElapsed} from './internal-timers.ts';
 import {nameBase} from './name-base.ts';
 import type {CdekRemittance} from './cdek-remittance.ts';
 import {courierDoorRefusal,courierPhase,courierParcelLocation,courierWarehouseReturn,courierRecalledAtWarehouse} from './courier.ts';
@@ -33,7 +34,7 @@ export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
 export const deliveryLabels:Record<DeliveryMethod,string>={"":"Не выбран",cdek_pickup:"СДЭК · ПВЗ",cdek_courier:"СДЭК · Курьер",moscow_courier:"Москва · Курьер",russian_post:"Почта России"};
-export type Order={incompleteNameExplanation?:{text:string;clientName:string;by:string;name:string;at:string};packingReworkDelivery?:DeliveryMethod;blacklistedAt?:string;cdekExportError?:string;zvd?:{at:string;by:string};skLeadId?:string;priorPremiumPaid?:{at:string;source:string};cdekAcceptedAt?:string;postalTrackingNumber?:string;cdekHistoryRecovery?:{at:string;registry:string;paymentDate:string};cancellationRequest?:import("./order-cancellation").OrderCancellation;premiumNextPeriod?:string;importedPayment?:{periodId:string;source:string;sha256:string;amount:number;recordedAt:string};premiumStage?:import("./order-premium-stage").OrderPremiumStage;paymentReceivedAmount?:number;cdekRemittances?:CdekRemittance[];cdekTrackingNumber?:string;legacyLv?:{paymentPendingReview?:boolean;originalOperatorLogin?:string;orderId:string;importedAt:string;batch:string;trial:boolean;status:string;track:string;cdekOrderNumber?:string;retentionDays:number};operatorComments?:{text:string;at?:string;by?:string;name?:string}[];logisticComment?:string;clientWaiting?:{at:string;by:string;name:string;message?:string;changes?:string[]};cdekStorageUntil?:string;confirmationAuthor?:OrderActionAuthor;cancellationAuthor?:OrderActionAuthor;deliveryChange?:{from:DeliveryMethod;to:DeliveryMethod;at:string;by:string;name:string};cdekReturnedAt?:string;cdekDeleting?:boolean;contactAuthor?:{id:string;name:string;at:string;role?:Employee['role']};confirmationRequest?:{at:string;by:string;handledAt?:string};confirmationStartedAt?:string;confirmationHours?:number|null;draftHours?:number|null;pvMarkedAt?:string;pv?:boolean;reworkHours?:number|null;finalConfirmHours?:number|null;courier?:CourierAssignment;courierRecall?:CourierRecall;courierRepackRequest?:{at:string;by:string;name:string;reason:string;completedAt?:string};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnKind?:"clarification"|"refusal"|"delivery";returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{deliveryPoint?:{code:string;address:string;workTime:string};needsConfirmation?:boolean;code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
+export type Order={timerCalendar?:"weekdays-v1";incompleteNameExplanation?:{text:string;clientName:string;by:string;name:string;at:string};packingReworkDelivery?:DeliveryMethod;blacklistedAt?:string;cdekExportError?:string;zvd?:{at:string;by:string};skLeadId?:string;priorPremiumPaid?:{at:string;source:string};cdekAcceptedAt?:string;postalTrackingNumber?:string;cdekHistoryRecovery?:{at:string;registry:string;paymentDate:string};cancellationRequest?:import("./order-cancellation").OrderCancellation;premiumNextPeriod?:string;importedPayment?:{periodId:string;source:string;sha256:string;amount:number;recordedAt:string};premiumStage?:import("./order-premium-stage").OrderPremiumStage;paymentReceivedAmount?:number;cdekRemittances?:CdekRemittance[];cdekTrackingNumber?:string;legacyLv?:{paymentPendingReview?:boolean;originalOperatorLogin?:string;orderId:string;importedAt:string;batch:string;trial:boolean;status:string;track:string;cdekOrderNumber?:string;retentionDays:number};operatorComments?:{text:string;at?:string;by?:string;name?:string}[];logisticComment?:string;clientWaiting?:{at:string;by:string;name:string;message?:string;changes?:string[]};cdekStorageUntil?:string;confirmationAuthor?:OrderActionAuthor;cancellationAuthor?:OrderActionAuthor;deliveryChange?:{from:DeliveryMethod;to:DeliveryMethod;at:string;by:string;name:string};cdekReturnedAt?:string;cdekDeleting?:boolean;contactAuthor?:{id:string;name:string;at:string;role?:Employee['role']};confirmationRequest?:{at:string;by:string;handledAt?:string};confirmationStartedAt?:string;confirmationHours?:number|null;draftHours?:number|null;pvMarkedAt?:string;pv?:boolean;reworkHours?:number|null;finalConfirmHours?:number|null;courier?:CourierAssignment;courierRecall?:CourierRecall;courierRepackRequest?:{at:string;by:string;name:string;reason:string;completedAt?:string};paymentReceipt?:{amount:number;operatorLogin:string;receivedByName:string;delivery:DeliveryMethod};paymentReceivedAt?:string;paymentReceivedBy?:string;deliveryReset?:{at:string;calculation:boolean;waybill:boolean};adminReviewedAt?:string;testOnly?:boolean;cdekTransferredAt?:string;finalHandoffAt?:string;noAnswerDeadline?:string;reworkDeadline?:string;returnKind?:"clarification"|"refusal"|"delivery";returnReason?:string;manualDeliveryCost?:number;warehouseReturnedAt?:string;cdekExported?:boolean;cdekWaybillReceived?:boolean;packingWaybillAt?:string;cdekStatus?:{code:string;at:string;revision:string};waybillComment?:string;cdekTariff?:{deliveryPoint?:{code:string;address:string;workTime:string};needsConfirmation?:boolean;code:number;name:string;amount:number;min:number;max:number;account:string;slot:number;calculatedAt:string;params:{delivery:"cdek_pickup"|"cdek_courier";originPostalCode:string;originMode:"warehouse"|"door";weight:number;length:number;width:number;height:number}};id:string;clientId:string;address?:string;addressParts?:AddressParts;delivery?:DeliveryMethod;status:Status;items:Item[];comment:string;reason:string;contact:"none"|"missed"|"callback";due:string;round:number;extra:boolean;createdAt:string;confirmedAt?:string;shippedAt?:string;redeemedAt?:string;returnedAt?:string;cancelledAt?:string;updatedAt:string;manager:string;logistic:string;version:number};
 export type LeaderPremium={model:"salary_bonus"|"udl_guarantee";fixedPerPeriod:number;monthlyGuarantee:number;firstPeriod:number;links:{operatorId?:string;login:string;rate:number}[]};
 export type Employee={canCreateRedemptionStaff?:boolean;sz?:boolean;leaderPremium?:LeaderPremium;oktell?:import("./oktell-provisioning").OktellLink;baseAccess?:"M"|"J"|"both";hasPassword?:boolean;accessEnabled?:boolean;id:string;name:string;alias:string;login:string;skLogin:string;role:keyof typeof roles;department?:keyof typeof departments;salary:number;bonus:number;version:number};
 export type Event={actorId?:string;id:string;clientId:string;orderId:string;at:string;actor:string;text:string};
@@ -115,17 +116,17 @@ export function reworkHandoff(o:Order,at:string,policy:OrderPolicy):Partial<Orde
 }
 export function draftDeadline(o:Pick<Order,"status"|"createdAt"|"draftHours">){
  if(o.status!=="draft"||o.draftHours===null)return undefined;
- return new Date(Date.parse(o.createdAt)+(o.draftHours??24)*3600000).toISOString();
+ return internalDeadline(o.createdAt,o.draftHours??24);
 }
 export function finalNoAnswerDeadline(o:Order,contact:string,now:string){
  if(o.finalConfirmHours===null||!o.finalHandoffAt||!["confirm","extra"].includes(o.status))return undefined;
- return new Date(Date.parse(o.finalHandoffAt)+(o.finalConfirmHours??24)*3600000).toISOString();
+ return internalDeadline(o.finalHandoffAt,o.finalConfirmHours??24);
 }
 export function confirmationDeadline(o:Order){
  if(!["confirm","extra"].includes(o.status))return undefined;
  if(o.finalHandoffAt)return finalNoAnswerDeadline(o,o.contact,o.finalHandoffAt);
  if(!o.confirmationStartedAt||o.confirmationHours===null)return undefined;
- return new Date(Date.parse(o.confirmationStartedAt)+(o.confirmationHours??48)*3600000).toISOString();
+ return internalDeadline(o.confirmationStartedAt,o.confirmationHours??48);
 }
 export function validateTransition(o:Order,to:Status,c:Client,reason:string,role?:string){
  const deadline=draftDeadline(o);if(deadline&&Date.now()>=Date.parse(deadline))throw Error("Срок оформления истёк. Заказ подлежит отмене");
@@ -256,7 +257,7 @@ export const confirmationStage=(order:Order,now=Date.now(),policy:OrderPolicy=de
  // A client-requested first call is separate from the logistic's own call results.
  if(pendingConfirmationRequest(order))return Date.parse(order.confirmationRequest!.at)-now>5*60000?"callback":"new";
  const deadline=confirmationDeadline(order);
- const stage=deadline&&Date.parse(deadline)-now<=policy.finalWarningHours*3600000?"expiring":order.contact==="none"?"new":order.contact;
+ const stage=deadline&&internalElapsed(now,Date.parse(deadline))<=policy.finalWarningHours*3600000?"expiring":order.contact==="none"?"new":order.contact;
  return order.status==="extra"?(stage==="new"?"repeat":"repeat_"+stage):stage;
 };
 
@@ -274,19 +275,19 @@ export function callTimeClass(due:string,now:number){
  return !Number.isFinite(elapsed)||elapsed<0?"":elapsed<300000?"call-due":"overdue-call";
 }
 
-export const reworkDeadlineFrom=(at:string,hours:number|null=96)=>hours===null?undefined:new Date(Date.parse(at)+hours*3600000).toISOString();
+export const reworkDeadlineFrom=(at:string,hours:number|null=96)=>hours===null?undefined:internalDeadline(at,hours);
 export function validateReworkCall(order:Pick<Order,"status"|"reworkDeadline">,due:string){
  if(order.status==="rework"&&order.reworkDeadline&&Date.parse(due)>Date.parse(order.reworkDeadline))throw Error("Звонок нельзя назначить позже срока доработки заказа");
 }
 export function reworkTimeLeft(deadline:string,now:number){
- const minutes=Math.max(0,Math.ceil((Date.parse(deadline)-now)/60000));
+ const minutes=Math.max(0,Math.ceil(internalElapsed(now,Date.parse(deadline))/60000));
  if(!Number.isFinite(minutes))return "";
  return minutes===0?"Срок истёк — отмена заказа":`${Math.floor(minutes/1440)} д ${Math.floor(minutes%1440/60)} ч ${minutes%60} мин`;
 }
 
 export function reworkStage(order:Pick<Order,"reworkDeadline"|"contact"> & {extra?:boolean;delivery?:Order['delivery'];courier?:Order['courier']},now:number,policy:OrderPolicy=defaultOrderPolicy){
  if(order.delivery==='moscow_courier'&&order.courier?.phase==='operator'&&order.courier.doorRefusal&&!order.courier.doorRefusal.resolvedAt)return 'new';
- const stage=order.reworkDeadline&&Date.parse(order.reworkDeadline)-now<=policy.reworkWarningHours*3600000?"expiring":order.contact==="missed"?"missed":order.contact==="callback"?"callback":"new";
+ const stage=order.reworkDeadline&&internalElapsed(now,Date.parse(order.reworkDeadline))<=policy.reworkWarningHours*3600000?"expiring":order.contact==="missed"?"missed":order.contact==="callback"?"callback":"new";
  return order.extra?"extra_"+stage:stage;
 }
 

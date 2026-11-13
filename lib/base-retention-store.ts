@@ -1,3 +1,4 @@
+import {upgradeOrderTimers} from './internal-timers.ts';
 import {cancelledOrderNotices,releasedClientNotices} from './client-lifecycle-notice.ts';
 import {ledgerKey,orderKey,type PremiumLedger} from './premium-ledger.ts';
 import {courierDoorRefusal,courierDeadline,courierToOperator,cancelCourierWork} from './courier.ts';
@@ -10,6 +11,15 @@ import {defaultOrderPolicy,orderPolicySchema} from './order-policy.ts';
 const json=JSON.stringify;
 export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
   let orderChanged=false;
+  const upgradedOrders:Order[]=[];
+  for(const order of orders){
+   const upgraded=upgradeOrderTimers(order);
+   if(upgraded===order){upgradedOrders.push(order);continue;}
+   const result=await d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?').bind(json(upgraded),order.id,order.version).run();
+   orderChanged=orderChanged||!!result.meta.changes;
+   if(result.meta.changes)upgradedOrders.push({...upgraded,version:order.version+1});
+  }
+  orders=upgradedOrders; // A lost CAS must never continue with the stale order.
   const returnedAt=new Map<string,string>();
   for(const event of events)if(!returnedAt.has(event.orderId)&&event.text.includes("→ Возврат оператору"))returnedAt.set(event.orderId,event.at);
   const saved=await d.prepare("SELECT data FROM settings WHERE id='order-policy'").first();
@@ -31,11 +41,11 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
    if(!migrateCourier&&!initialize&&(!deadline||!expired&&(!!courierDue||draft||(confirmation?o.noAnswerDeadline===deadline:!!o.reworkDeadline))))continue;
    const expiryReason=migrateCourier?(o.courier!.workReason||o.reason||"Передача работы от курьера"):courierDue?`Истёк срок подтверждения курьером: ${o.courier?.workHours??48} ч`:draft?`Истёк срок оформления до первой передачи логисту: ${o.draftHours??24} ч`:confirmation?(o.finalHandoffAt?`Истёк срок финального подтверждения: ${o.finalConfirmHours??24} ч`:`Истёк срок ${o.status==="extra"?"повторного":"первого"} подтверждения: ${o.confirmationHours??48} ч`):`Истёк срок доработки после возврата логистом: ${o.reworkHours??96} ч`;
    const mutation=crypto.randomUUID();
-   let next:Order & {_mutation:string}={...o,...(confirmation?{noAnswerDeadline:deadline}:{}),reworkDeadline:draft||confirmation?o.reworkDeadline:deadline,returnReason:o.returnReason||o.reason,_mutation:mutation,...(expired?{status:"refused",cancelledAt:o.cancelledAt||deadline,updatedAt:at,contact:"none",due:"",reason:expiryReason}:{})};
+   let next:Order & {_mutation:string}={...o,...(confirmation?{noAnswerDeadline:deadline}:{}),reworkDeadline:draft||confirmation?o.reworkDeadline:deadline,timerCalendar:"weekdays-v1",returnReason:o.returnReason||o.reason,_mutation:mutation,...(expired?{status:"refused",cancelledAt:o.cancelledAt||deadline,updatedAt:at,contact:"none",due:"",reason:expiryReason}:{})};
    const backToOperator=migrateCourier||expired&&(!!courierDue||o.delivery==='moscow_courier'&&confirmation&&!o.finalHandoffAt);
    if(backToOperator){
     if(o.courier)next={...courierToOperator(o,expiryReason,policy,at),_mutation:mutation};
-    else{next={...o,status:'rework',returnKind:'clarification',contact:'none',due:'',reason:expiryReason,returnReason:expiryReason,reworkHours:policy.reworkHours,reworkDeadline:reworkDeadlineFrom(at,policy.reworkHours),updatedAt:at,_mutation:mutation};delete next.noAnswerDeadline;}
+    else{next={...o,status:'rework',returnKind:'clarification',contact:'none',due:'',reason:expiryReason,returnReason:expiryReason,reworkHours:policy.reworkHours,reworkDeadline:reworkDeadlineFrom(at,policy.reworkHours),timerCalendar:'weekdays-v1',updatedAt:at,_mutation:mutation};delete next.noAnswerDeadline;}
    }else if(expired)cancelCourierWork(next,at);
    const e:Event={id:"EV-"+crypto.randomUUID(),clientId:o.clientId,orderId:o.id,at,actor:"Система",text:migrateCourier?"Заказ передан оператору из упразднённой очереди логиста · "+expiryReason:backToOperator?"Заказ передан оператору: "+expiryReason:expired?"Заказ отменён: "+expiryReason:`Включён таймер ${o.status==="extra"?"повторного":"первого"} подтверждения для существующего заказа: ${o.confirmationHours} ч`};
    const notices=(migrateCourier||expired)&&(next.courier||next.courierRecall)?await courierReminderStatements(d,o,next,e,mutation,(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data))):[];

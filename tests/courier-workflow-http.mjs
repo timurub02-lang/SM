@@ -1,3 +1,4 @@
+import {courierDeadline} from '../lib/courier.ts';
 // Full API flow against temporary data; never uses the live CRM or carrier services.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -72,7 +73,7 @@ try{
  }
  await act(id,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true},400);
  await act(id,'logistic',{action:'contact',contact:'missed',reason:'Test'},400);
- await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:hours(49)},400);
+ await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:new Date(Date.parse(courierDeadline(order(id)))+1000).toISOString()},400);
  await act(id,'courier',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
  for(const operation of ['toLogistic','requestPostpone','approvePostpone','rejectPostpone'])await act(id,'courier',{action:'courierWorkflow',operation,reason:'Test',at:hours(200)},400);
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Недозвон'});
@@ -165,7 +166,7 @@ try{
   const cancelledId=await create();await assembled(cancelledId);await act(cancelledId,'courier',{action:'courierAccept',confirmed:true});
   await act(cancelledId,'logistic',{action:'courierWorkflow',operation:'recall',reason:'Repack'});await act(cancelledId,'courier',{action:'courierWorkflow',operation:'returnRecall',confirmed:true});await act(cancelledId,'logistic',{action:'courierWorkflow',operation:'receiveRecall',confirmed:true});
   await act(cancelledId,'chief',{action:'transition',to:'rework',returnKind:'refusal',reason:'Client refuses'});const reservedStock=stock();
-  if(expire){const expired=order(cancelledId);expired.reworkDeadline=hours(-1);expired.courierRecall.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(expired),cancelledId);await call('operator');}
+  if(expire){const expired=order(cancelledId);expired.reworkDeadline=hours(-1);expired.courierRecall.operatorStartedAt=hours(-169);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(expired),cancelledId);await call('operator');}
   else await act(cancelledId,'operator',{action:'transition',to:'refused',reason:'Client confirmed refusal'});
   assert.equal(order(cancelledId).status,'refused');assert.equal(stock(),reservedStock+1);assert.equal(courierBalance([order(cancelledId)],'courier').total,0);
   await act(cancelledId,'operator',{action:'transition',to:'refused',reason:'Duplicate'},400);await act(cancelledId,'logistic',{action:'returnToWarehouse'},400);await call('operator');assert.equal(stock(),reservedStock+1);
@@ -191,7 +192,7 @@ try{
   await act(headId,'logistic',{action:'transition',to},409);
   const started=order(headId).confirmationStartedAt,deadline=order(headId).noAnswerDeadline;
   await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});assert.equal(order(headId).contactAuthor.role,'department_head');
-  await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(49)},400);
+  await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:new Date(Date.parse(order(headId).noAnswerDeadline)+1000).toISOString()},400);
   await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(-1)},400);
   await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});assert.equal(order(headId).confirmationStartedAt,started);assert.equal(order(headId).noAnswerDeadline,deadline);
   await act(headId,'head',{action:'updateOrder',items:order(headId).items,comment:'Forbidden edit',addressConfirmed:true},400);
@@ -208,7 +209,7 @@ try{
  const lease=crypto.randomUUID();await call('operator','/api/order-access',{orderId:reworkId,token:lease,action:'acquire'});
  await act(reworkId,'head',{action:'contact',contact:'missed',reason:'No answer'},409);await call('head','/api/mainsms',{action:'send',orderId:reworkId},409);await call('operator','/api/order-access',{orderId:reworkId,token:lease,action:'release'});
  const deadline=order(reworkId).reworkDeadline;await act(reworkId,'head',{action:'contact',contact:'callback',reason:'Discuss',due:hours(1)});assert.equal(order(reworkId).reworkDeadline,deadline);
- await act(reworkId,'head',{action:'contact',contact:'callback',reason:'Too late',due:hours(100)},400);
+ await act(reworkId,'head',{action:'contact',contact:'callback',reason:'Too late',due:new Date(Date.parse(order(reworkId).reworkDeadline)+1000).toISOString()},400);
  await act(reworkId,'head',{action:'transition',to:'confirm',finalHandoffConfirmed:true});assert.equal(order(reworkId).confirmationAuthor.id,'head');assert.equal(order(reworkId).round,2);
  for(const cancel of [false,true]){
   const headId=await create();await assembled(headId);await act(headId,'courier',{action:'courierAccept',confirmed:true});
@@ -237,7 +238,7 @@ try{
  // Expired confirmation returns work, expired shared budget cancels sale but keeps the parcel reserved.
  const returnedId=await create();await assembled(returnedId);await act(returnedId,'courier',{action:'courierAccept',confirmed:true});
  const accepted=order(returnedId);accepted.courier.workStartedAt=hours(-49);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(accepted),returnedId);await call('operator');assert.equal(order(returnedId).status,'rework');
- const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
+ const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-169);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
  await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
  await receipt(returnedId,'Возврат принят на склад',10000);
  // Explicit doorstep refusal: two human decisions, no timer-driven cancellation.
@@ -267,7 +268,7 @@ try{
   await act(doorId,'head',{action:'courierWorkflow',operation:'claimDoor'});
   await call('operator','/api/crm',{action:'courierWorkflow',operation:'resolveDoor',id:doorId,version:oldVersion,result,confirmed:true},400);
   await act(doorId,'operator',{action:'courierWorkflow',operation:'resolveDoor',result,confirmed:true},400);
-  const overdue=order(doorId);overdue.courier.doorRefusal.decisionDueAt=hours(-1);overdue.reworkDeadline=hours(-1);overdue.courier.operatorStartedAt=hours(-97);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(overdue),doorId);
+  const overdue=order(doorId);overdue.courier.doorRefusal.decisionDueAt=hours(-1);overdue.reworkDeadline=hours(-1);overdue.courier.operatorStartedAt=hours(-169);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(overdue),doorId);
   const late=(await call('head')).data;assert.equal(order(doorId).status,'rework');assert.equal(stock(),reserve);
   assert.ok(late.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved&&r.title.includes('решение задерживается')));
   await act(doorId,'head',{action:'courierWorkflow',operation:'resolveDoor',result},400);

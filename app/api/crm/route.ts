@@ -1,3 +1,4 @@
+import {internalDeadline} from '@/lib/internal-timers';
 import {needsNameExplanation,nameExplanationSchema} from '@/lib/incomplete-name';
 import {validateManualOrderAmount} from '@/lib/basket-total';
 import {cancelledOrderNotices,releasedClientNotices} from '@/lib/client-lifecycle-notice';
@@ -535,14 +536,14 @@ async function handlePOST(request:Request){
     next.courier={id:courier.id,name:courier.name,assignedAt:now,amount:total(o),phase:"pending",operatorBudgetMs:o.courierRecall?.operatorBudgetMs};
    }
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(isRefusalRework(o)&&p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с отказом клиента");Object.assign(next,reworkHandoff(o,now,s.settings.orderPolicy!));}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
-   delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(to==='packing')delete next.packingReworkDelivery;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);if(to==="rework"){next.returnKind=returnKind;next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;
+   delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(to==='packing')delete next.packingReworkDelivery;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);next.timerCalendar="weekdays-v1";if(to==="rework"){next.returnKind=returnKind;next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;
    if(to==='shipping'&&o.delivery==='moscow_courier'){next.status='packing';delete next.shippedAt;delete next.finalHandoffAt;delete next.reworkDeadline;}
    if(courierRecalledAtWarehouse(o)){
     if(to==='rework'){
      const budget=o.courierRecall!.operatorBudgetMs===undefined?(s.settings.orderPolicy!.reworkHours===null?null:s.settings.orderPolicy!.reworkHours!*3600000):o.courierRecall!.operatorBudgetMs;
-     next.courierRecall={...o.courierRecall!,operatorBudgetMs:budget,operatorStartedAt:now};
+     next.timerCalendar="weekdays-v1";next.courierRecall={...o.courierRecall!,operatorBudgetMs:budget,operatorStartedAt:now};
      next.reworkHours=budget===null?null:budget/3600000;
-     next.reworkDeadline=budget===null?undefined:new Date(Date.parse(now)+budget).toISOString();
+     next.reworkDeadline=budget===null?undefined:internalDeadline(now,budget/3600000);
      delete next.packingWaybillAt;delete next.finalHandoffAt;delete next.contactAuthor;next.extra=false;
     }else if(o.status==='rework'&&to==='packing'){
      if(o.courierRepackRequest&&!o.courierRepackRequest.completedAt)throw Error('Сначала сохраните исправленную корзину для пересборки');
