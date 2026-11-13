@@ -1,7 +1,7 @@
 'use client';
 import {OperatorSelect} from './operator-select';
 import {useState} from 'react';
-import {initials,stamp,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
+import {initials,stamp,hideClientPhone,type Client,type Employee,type IncomingRequest} from '@/lib/crm';
 import {PhoneIncoming,ChevronRight} from 'lucide-react';
 import {canOpenClientCard} from '@/lib/permissions';
 import {CallButton} from './browser-phone';
@@ -65,7 +65,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    <summary className="incoming-card-summary">
     <div className="incoming-card-top"><span>Входящий · {new Date(item.at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}</span><PhoneIncoming size={20}/></div>
     <div className="incoming-card-person"><span className="avatar">{item.clientId?initials(item.clientName||'Клиент'):'?'}</span><strong>{item.clientName||'Неизвестный клиент'}</strong></div>
-    <p className="incoming-card-contact">{item.phone||'Номер скрыт'} · {item.clientId?'Наш клиент':'Неизвестный клиент'}</p>
+    <p className="incoming-card-contact">{!hideClientPhone(employee.role)&&item.phone||'Номер скрыт'} · {item.clientId?'Наш клиент':'Неизвестный клиент'}</p>
     <div className="incoming-card-order-label">{item.hasActiveOrder?'Есть действующий заказ':'Без действующего заказа'}</div>
     <div className="incoming-card-stats"><div><strong>{item.callCount||1}</strong><span>звонков</span></div>{[[item.at,'первый звонок'],[item.lastAt||item.at,'последний звонок']].map(([at,label])=><div key={label} title={stamp(at,'Europe/Moscow')+' МСК'}><strong>{new Date(at).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'})}</strong><span>{label}</span></div>)}</div>
     <div className="incoming-card-status"><span className={'badge '+(item.spam?'rose':item.closedAt?'mint':'amber')}>{item.spam?'Возможный спам':item.closedAt?'Закрыто':'Требует действия'}</span><ChevronRight size={22}/></div>
@@ -73,7 +73,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    </summary>
    <div className="incoming-card-body stack"><IncomingHandoffNote item={item}/>
    <div className="incoming-client-heading">{!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} onLink={clientId=>onLink(item.id,clientId)}/>}</div>
-   {item.calledNumber&&<small className="muted">На номер {item.calledNumber}</small>}
+   {!hideClientPhone(employee.role)&&item.calledNumber&&<small className="muted">На номер {item.calledNumber}</small>}
    {item.spam&&<p>{item.spamReason}{item.blocked?' · Номер заблокирован':''}</p>}
    {employee.role==='admin'&&<div className="action-buttons">
     {item.spam&&!item.closedAt&&<button className="primary" disabled={protecting||busy||!item.phone} onClick={()=>void protection({id:item.id,operation:'restore'})}>Вернуть в работу</button>}
