@@ -8,10 +8,11 @@ test('personal clients and department clients use existing ownership rules',()=>
  assert.equal(rows.find(r=>r.id==='h').clients,358);
  assert.equal(rows.find(r=>r.id==='n').clients,0);
  const selected=filterBaseStats(rows,'M31');
- assert.deepEqual(selected.rows.map(r=>r.id),['o','r']);
+ assert.deepEqual(selected.rows.map(r=>r.id),['o','r','h']);
  assert.equal(selected.total,358);
  assert.equal(filterBaseStats(rows,'SKP').total,9);
  assert.equal(filterBaseStats(rows,'missing').total,0);
+ assert.deepEqual(filterBaseStats(rows,'').rows.map(r=>r.id),['o','r','h','x','n']);
  assert.equal(filterBaseStats(rows,'').total,367);
  assert.equal(filterBaseStats(rows,'').rows.length,rows.length);
 });
