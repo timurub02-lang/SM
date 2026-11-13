@@ -874,7 +874,7 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 
 .operator-stats-dialog .base-stats-toolbar{align-items:center}
 .base-stats-leader{display:flex;align-items:center;min-height:30px;min-width:0}
-.base-stats-leader strong{font-size:inherit;overflow-wrap:anywhere}
+.base-stats-leader strong{font-size:14px;overflow-wrap:anywhere}
 
 .base-stats-averages{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.base-stats-average{display:inline-flex;gap:8px;align-items:baseline;min-height:30px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:inherit;font-variant-numeric:tabular-nums}
+.base-stats-average{display:inline-flex;gap:8px;align-items:baseline;min-height:30px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-variant-numeric:tabular-nums}
