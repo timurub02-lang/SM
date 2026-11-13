@@ -858,3 +858,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .premium-archive-toolbar{justify-content:flex-start;flex-wrap:wrap;gap:16px}.premium-archive-toolbar .search{flex:0 1 380px;margin-left:0;min-width:240px}
 
 .order-pagination-slot{margin-bottom:16px}
+
+.data-status-button{width:36px;height:36px;flex:0 0 36px}.data-status-dot{display:block;width:10px;height:10px;border-radius:50%;background:#36865d}.data-status-dot.pending{background:#c47b24}.data-status-details{width:min(360px,calc(100vw - 32px));max-height:70dvh;overflow:auto}.data-status-details p{margin:10px 0;overflow-wrap:anywhere}
