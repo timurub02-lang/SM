@@ -9,7 +9,7 @@ const order={status:'confirm',finalHandoffAt:at,contact:'none'};
 assert.equal(finalNoAnswerDeadline(order,'missed',at),'2026-10-03T09:00:00.000Z');
 assert.equal(finalNoAnswerDeadline({...order,finalConfirmHours:3},'callback',at),'2026-10-02T12:00:00.000Z');
 assert.equal(finalNoAnswerDeadline({...order,finalConfirmHours:null},'none',at),undefined);
-assert.ok(!allowedOrderTransitions({...order,finalConfirmHours:null},'logistic').includes('rework'));
+assert.ok(allowedOrderTransitions({...order,finalConfirmHours:null},'logistic').includes('rework'));
 const changed={...defaults,reworkWarningHours:2,finalWarningHours:1,operatorDraftEdit:false,operatorReworkEdit:false,logisticDetailsEdit:false};
 assert.equal(reworkStage({contact:'none',reworkDeadline:reworkDeadlineFrom(at,3)},now,changed),'new');
 assert.equal(confirmationStage({...order,finalConfirmHours:2},now,changed),'new');

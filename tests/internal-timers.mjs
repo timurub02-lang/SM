@@ -50,3 +50,13 @@ try{
  assert.equal(JSON.parse((await db.prepare('SELECT data FROM orders').first()).data).cdekStorageUntil,'2026-11-14');
 }finally{Date.now=originalNow;db.close();}
 console.log('Weekday timers: Moscow boundaries, existing-order CAS/idempotence, frozen weekends, courier budget and unchanged CDEK cap passed');
+
+// Urgent courier deadlines always use elapsed minutes, including existing weekday rows.
+const doorAt='2026-11-13T20:59:00.000Z';
+const oldDoor={status:'rework',timerCalendar:'weekdays-v1',courier:{phase:'operator',doorRefusal:{at:doorAt,claimDueAt:internalDeadline(doorAt,2/60),decisionDueAt:internalDeadline(doorAt,10/60)}}};
+const realDoor=upgradeOrderTimers(oldDoor);
+assert.equal(realDoor.courier.doorRefusal.claimDueAt,'2026-11-13T21:01:00.000Z');
+assert.equal(realDoor.courier.doorRefusal.decisionDueAt,'2026-11-13T21:09:00.000Z');
+assert.equal(realDoor.courier.doorRefusal.at,doorAt);assert.strictEqual(upgradeOrderTimers(realDoor),realDoor);
+const preWeekday={...oldDoor,timerCalendar:undefined,courier:{...oldDoor.courier,doorRefusal:{...realDoor.courier.doorRefusal,clock:undefined}}};
+assert.equal(upgradeOrderTimers(preWeekday).courier.doorRefusal.claimDueAt,realDoor.courier.doorRefusal.claimDueAt);
