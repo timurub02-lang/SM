@@ -19,9 +19,16 @@ assert.equal((await searchBaseClients(d,"' OR 1=1 --")).matches.length,0);
 await assert.rejects(searchBaseClients(d,'12'));
 for(let i=0;i<31;i++)await d.prepare('INSERT INTO clients VALUES(?,?,1)').bind('extra'+i,JSON.stringify({name:'Тестовый'})).run();
 const limited=await searchBaseClients(d,'тест');assert.equal(limited.matches.length,30);assert.equal(limited.more,true);
-for(const role of ['operator','logistic','purchasing'])assert.equal(mayCallEndpoint({role},new URL('http://localhost/api/base-search'),'GET'),false);
+for(const role of ['operator','courier','redemption','purchasing'])assert.equal(mayCallEndpoint({role},new URL('http://localhost/api/base-search'),'GET'),false);
 assert.equal(mayCallEndpoint({role:'admin'},new URL('http://localhost/api/base-search'),'GET'),true);
 
+for(const role of ['logistic','chief_logistic']){
+ const viewer={id:role,role};
+ assert.equal(mayCallEndpoint(viewer,new URL('http://localhost/api/base-search'),'GET'),true);
+ assert.equal(mayCallEndpoint(viewer,new URL('http://localhost/api/base-search'),'POST'),false);
+ const match=(await searchBaseClients(d,'Худяков',viewer)).matches[0];
+ assert.equal(match.canOpen,true);assert.equal(match.ownerName,'Оператор');
+}
 const head={id:'head',role:'department_head',department:'SKP_'};
 assert.equal(mayCallEndpoint(head,new URL('http://localhost/api/base-search'),'GET'),true);
 assert.equal(mayCallEndpoint(head,new URL('http://localhost/api/base-search'),'POST'),false);
