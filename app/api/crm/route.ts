@@ -241,16 +241,20 @@ async function handlePOST(request:Request){
   if(!result[0].meta.changes)throw Error('Обращение уже изменилось. Обновите данные');
   message='Клиент создан, обращение передано оператору';
  }else if(p.action==="linkIncomingClient"){
-  if(employee?.role!=='admin')throw Error('Связать номер может только администратор');
+  if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Соединение номера недоступно');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
   if(row.client_id)throw Error('Обращение уже связано с клиентом. Обновите данные');
   const c=s.clients.find(c=>c.id===z.string().min(1).max(100).parse(p.clientId));if(!c)throw Error('Клиент не найден');
   await initBaseStorage(d);await initCrmReadIndexes(d);
+  if(employee.role==='department_head'){
+   const lookup=normalizePhone(z.string().min(1).max(100).parse(p.lookupPhone));
+   if(!lookup||!await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=? AND client_id=?').bind(normalizedPhone(lookup),c.id).first())throw Error('Введите полный телефон выбранного клиента и повторите поиск');
+  }
   const phone=normalizePhone(row.phone);if(!phone)throw Error('В обращении отсутствует корректный номер');
   const existing=await d.prepare('SELECT client_id FROM client_phone_index WHERE phone=?').bind(normalizedPhone(phone)).first<{client_id:string}>();
   if(existing&&existing.client_id!==c.id)throw Error('Этот номер уже принадлежит другому клиенту');
   const linkedPhones=[...new Set([...(c.linkedPhones||[]),...(normalizedPhone(c.phone)===normalizedPhone(phone)?[]:[phone])])];
-  const marker=crypto.randomUUID(),routing=await incomingRouting(d,c.id,c,row.at);
+  const marker=crypto.randomUUID(),routing=employee.role==='department_head'?{assignee:employee,department:employee.department||'',shared:false}:await incomingRouting(d,c.id,c,row.at);
   const gate="EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._incomingLink')=?)";
   const event=ev(c.id,'','Номер '+phone+' добавлен из входящего обращения · '+row.id);
   const result=await d.batch([
