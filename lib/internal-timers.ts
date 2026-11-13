@@ -31,16 +31,19 @@ export const upgradeInternalDeadline=(at:string)=>!Number.isFinite(Date.parse(at
 
 // Stored deadlines are upgraded once; do not change completed orders or restart any clock.
 export function upgradeOrderTimers<T extends {status:string;timerCalendar?:string;reworkDeadline?:string;noAnswerDeadline?:string;courier?:any}>(order:T):T{
+ const door=order.courier?.doorRefusal;
+ if(door&&!door.resolvedAt&&door.clock!=='elapsed-v1'&&!['redeemed','returned','refused'].includes(order.status)){
+  // Undo only the weekend extension; retain the original start and minute budgets.
+  const start=Date.parse(door.at),deadline=(at:string)=>new Date(start+(order.timerCalendar==='weekdays-v1'?internalElapsed(start,Date.parse(at)):Date.parse(at)-start)).toISOString();
+  order={...order,courier:{...order.courier,doorRefusal:{...door,clock:'elapsed-v1',claimDueAt:deadline(door.claimDueAt),decisionDueAt:deadline(door.decisionDueAt)}}};
+ }
  if(order.timerCalendar==='weekdays-v1'||['redeemed','returned','refused'].includes(order.status))return order;
  if(!['draft','rework','confirm','extra'].includes(order.status)&&order.courier?.phase!=='confirmation')return order;
  if(!order.reworkDeadline&&!order.noAnswerDeadline&&!order.courier?.doorRefusal)return order;
  const next={...order,timerCalendar:'weekdays-v1'};
  if(next.reworkDeadline)next.reworkDeadline=upgradeInternalDeadline(next.reworkDeadline);
  if(next.noAnswerDeadline)next.noAnswerDeadline=upgradeInternalDeadline(next.noAnswerDeadline);
- if(order.courier?.doorRefusal&&!order.courier.doorRefusal.resolvedAt){
-  const door=order.courier.doorRefusal;
-  next.courier={...order.courier,doorRefusal:{...door,claimDueAt:upgradeInternalDeadline(door.claimDueAt),decisionDueAt:upgradeInternalDeadline(door.decisionDueAt)}};
- }
+
  return next as T;
 }
 

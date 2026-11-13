@@ -14,7 +14,7 @@ export type CourierAssignment={
  workStartedAt?:string;workHours?:number|null;
  confirmedBy?:'courier'|'logistic'|'operator'|'department_head';confirmedAt?:string;
  workReason?:string;atDoor?:boolean;
- doorRefusal?:{at:string;claimDueAt:string;decisionDueAt:string;claimedAt?:string;claimedBy?:string;claimedName?:string;resolvedAt?:string;result?:'deliver'|'return'};
+ doorRefusal?:{clock?:'elapsed-v1';at:string;claimDueAt:string;decisionDueAt:string;claimedAt?:string;claimedBy?:string;claimedName?:string;resolvedAt?:string;result?:'deliver'|'return'};
  operatorBudgetMs?:number|null;operatorStartedAt?:string;
  postponement?:{at:string;reason:string;requestedAt:string;state:'pending'|'approved'|'rejected';decidedAt?:string;by?:string;name?:string};
 };
@@ -139,7 +139,7 @@ export function courierParcelLocation(o:Order){
 function clearCall(o:Order){o.contact='none';o.due='';delete o.contactAuthor;delete o.noAnswerDeadline;}
 function stopCourierClock(o:Order){if(o.courier){delete o.courier.workStartedAt;delete o.courier.workHours;}}
 export function courierToOperator(order:Order,reason:string,policy:OrderPolicy,at:string):Order{
- const o={...order,timerCalendar:"weekdays-v1" as const,courier:{...order.courier!},status:'rework' as const,reason,returnReason:reason,updatedAt:at,extra:false};
+ const o={...order,refusalHandoffAt:order.refusalHandoffAt||order.finalHandoffAt,timerCalendar:"weekdays-v1" as const,courier:{...order.courier!},status:'rework' as const,reason,returnReason:reason,updatedAt:at,extra:false};
  const c=o.courier;
  if(c.operatorBudgetMs===undefined){c.operatorBudgetMs=policy.reworkHours===null?null:policy.reworkHours*3600000;o.reworkHours=policy.reworkHours;}
  c.phase='operator';c.workReason=reason;c.operatorStartedAt=at;
@@ -171,7 +171,7 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
   return {order:{...order,courier:{...order.courier,cashHandoverAt:at},updatedAt:at},text:'Курьер отметил передачу денег логисту · '+order.courier.amount+' ₽ · ожидается подтверждение получения'};
  }
  if(order.delivery!=='moscow_courier'||!order.courier||['redeemed','returned','refused'].includes(order.status))throw Error('Работа с этой посылкой недоступна');
- let o:Order={...order,courier:{...order.courier},updatedAt:at};const c=o.courier!,phase=courierPhase(o);
+ let o:Order={...order,refusalHandoffAt:order.refusalHandoffAt||order.finalHandoffAt,courier:{...order.courier},updatedAt:at};const c=o.courier!,phase=courierPhase(o);
  const logistic=['admin','logistic','chief_logistic'].includes(e.role);
  const courier=e.role==='courier'&&c.id===e.id,operator=(e.role==='operator'&&o.manager===e.id)||e.role==='admin'||isDepartmentOrder(e,o,staff);
  const require=(ok:boolean,message='Это действие недоступно на текущем этапе')=>{if(!ok)throw Error(message);};
@@ -236,7 +236,7 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
  }else if(p.operation==='toOperator'||p.operation==='doorRefusal'){
   require(courier&&['confirmation','delivery'].includes(phase||''));
   c.atDoor=p.operation==='doorRefusal';
-  if(c.atDoor){require(phase==='delivery','Отказ у двери доступен только на этапе доставки');require(p.confirmed===true,'Подтвердите, что вы у клиента и ждёте решения');o.timerCalendar="weekdays-v1";c.doorRefusal={at,claimDueAt:internalDeadline(at,(policy.courierDoorClaimMinutes??2)/60),decisionDueAt:internalDeadline(at,(policy.courierDoorDecisionMinutes??10)/60)};}
+  if(c.atDoor){require(phase==='delivery','Отказ у двери доступен только на этапе доставки');require(p.confirmed===true,'Подтвердите, что вы у клиента и ждёте решения');o.timerCalendar="weekdays-v1";c.doorRefusal={clock:"elapsed-v1",at,claimDueAt:new Date(Date.parse(at)+(policy.courierDoorClaimMinutes??2)*60000).toISOString(),decisionDueAt:new Date(Date.parse(at)+(policy.courierDoorDecisionMinutes??10)*60000).toISOString()};}
   const r=reason();o=courierToOperator(o,r,policy,at);
   text=(c.atDoor?'СРОЧНО: отказ у двери · курьер ждёт решения · ':phase==='delivery'?'Возврат с доставки · ':'Возврат с подтверждения курьером · ')+'Заказ передан в работу оператору · '+r+' · посылка остаётся у курьера';
  }else throw Error('Неизвестное действие курьера');
