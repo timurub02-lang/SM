@@ -36,7 +36,7 @@ export function visibleState(s:State,e:Employee):State{
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
- if(p.action==='markZvd')return allow(false);
+ if(['markZvd','markBlacklist'].includes(p.action))return allow(false);
  if(e.role==='purchasing')return allow(false);
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
  if(['readReminder','closeIncoming','transferIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
