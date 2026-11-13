@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {paidHistoryResults} from '../lib/premium-paid-history.ts';
+const history={source:'historical.xlsx',sha256:'test',orders:[{externalId:'140470',period:'2026-07-2'},{externalId:'absent',period:'2026-01-1'},{externalId:'other',period:'2026-03-2'}]};
+const employees=[{id:'op',login:'POD_test',department:'pod',role:'operator'},{id:'other',login:'SKP_test',department:'skp',role:'operator'}];
+const orders=[{id:'LV-140470',externalId:'140470',manager:'op'},{id:'LV-other',externalId:'other',manager:'other'}];
+const before=JSON.stringify({history,orders,employees});
+const admin=paidHistoryResults(history,{role:'admin'},orders,employees);
+assert.equal(admin.length,3);assert.equal(admin[0].period,'Июль 2026 · 2-й период');assert.equal(admin[0].source,'historical.xlsx');assert.equal(admin[0].amountUnknown,true);assert.equal(admin[1].id,undefined);
+assert.deepEqual(paidHistoryResults(history,employees[0],orders,employees).map(r=>r.externalId),['140470']);
+assert.deepEqual(paidHistoryResults(history,{role:'department_head',department:'pod'},orders,employees).map(r=>r.externalId),['140470']);
+assert.equal(paidHistoryResults(history,{role:'department_head',department:''},orders,employees).length,0);
+assert.equal(paidHistoryResults(history,{role:'operator',id:'unknown'},orders,employees).length,0);
+assert.equal(paidHistoryResults(null,{role:'admin'},orders,employees).length,0);
+assert.equal(JSON.stringify({history,orders,employees}),before);
+console.log('Historical payout confirmation: period, unknown amount, absent order, role scope, immutable inputs passed');

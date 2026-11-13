@@ -2,6 +2,7 @@ import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {ledgerKey,payrollVisible,type PremiumLedger} from '@/lib/premium-ledger';
+import {paidHistoryKey,paidHistoryResults,type PaidHistory} from '@/lib/premium-paid-history';
 import type {Employee} from '@/lib/crm';
 import {premiumPeriods} from '@/lib/premium-periods';
 export const dynamic='force-dynamic';
@@ -17,5 +18,9 @@ export const GET=authenticated(async(req:Request)=>{
   if(!rows.length&&!visibleOrders.length&&actor.role!=='admin')return [];
   return [{id,label:premiumPeriods.find(p=>p.id===id)?.label||id,paidAt:p.paidAt,source:p.source?.name,count:orders.length,payout:rows.reduce((n,r)=>n+Math.round((r.payout||0)*100),0)/100,orders,historyOrders}];
  });
- return Response.json({periods},{headers:{'Cache-Control':'no-store'}});
+ const historical=await d.prepare('SELECT data FROM settings WHERE id=?').bind(paidHistoryKey).first<{data:string}>();
+ const employees=historical?(await d.prepare('SELECT data FROM employees').all<{data:string}>()).results.map(r=>JSON.parse(r.data) as Employee):[];
+ const linked=historical?(await d.prepare("SELECT id,CAST(COALESCE(json_extract(data,'$.legacyLv.orderId'),REPLACE(id,'LV-','')) AS TEXT) AS externalId,json_extract(data,'$.manager') AS manager FROM orders").all<{id:string;externalId:string;manager:string}>()).results:[];
+ const confirmedHistory=paidHistoryResults(historical?JSON.parse(historical.data) as PaidHistory:null,actor,linked,employees);
+ return Response.json({periods,confirmedHistory},{headers:{'Cache-Control':'no-store'}});
 });
