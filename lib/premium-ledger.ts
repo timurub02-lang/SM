@@ -57,13 +57,16 @@ export function nextPremiumPreview(ledger:PremiumLedger|null,orders:Order[],empl
  const preview:PremiumLedger={...ledger,periods:{...ledger.periods,[ledger.activePeriod]:{...active,status:'paid',orders:periodOrders(ledger,ledger.activePeriod,orders,employees),knownReceipts:active.knownReceipts??premiumOrders(orders,admin,employees).map(r=>orderKey(r.order))},[next.id]:ledger.periods[next.id]??{status:'open',signatures:{}}}};
  return {period:next.id,orderIds:new Set(periodOrders(preview,next.id,orders,employees).map(o=>o.id))};
 }
-export function premiumStagesByKey(ledger:PremiumLedger|null,orders:Order[],employees:Employee[]){
+export function premiumStagesByKey(ledger:PremiumLedger|null,orders:Order[],employees:Employee[],history:import('./premium-paid-history.ts').PaidHistory|null=null){
  const stages=new Map<string,{status:'accrued'|'paid';periodId:string;paidAt?:string}>();
+ // Historical confirmations supply stages only; they never add payroll amounts or members.
+ const historical=new Map((history?.orders||[]).map(o=>[o.externalId,o.period]));
+ for(const o of orders){const periodId=historical.get(orderKey(o));if(periodId&&!o.importedPayment)stages.set(orderKey(o),{status:'paid',periodId});}
  if(ledger)for(const [id,p] of Object.entries(ledger.periods))if(p.status==='paid'||id===ledger.activePeriod)for(const o of periodOrders(ledger,id,orders,employees))stages.set(o.externalId,{status:p.status==='paid'?'paid':'accrued',periodId:id,...(p.paidAt?{paidAt:p.paidAt}:{})});
  return stages;
 }
-export function applyPremiumStages(ledger:PremiumLedger|null,orders:Order[],employees:Employee[]){
- const stages=premiumStagesByKey(ledger,orders,employees);
+export function applyPremiumStages(ledger:PremiumLedger|null,orders:Order[],employees:Employee[],history:import('./premium-paid-history.ts').PaidHistory|null=null){
+ const stages=premiumStagesByKey(ledger,orders,employees,history);
  return orders.map(o=>({...o,premiumStage:stages.get(orderKey(o))}));
 }
 export function freezePeriod(ledger:PremiumLedger,period:string,orders:Order[],employees:Employee[],adjustments:Record<string,PremiumSaved>,actor:string,at:string){

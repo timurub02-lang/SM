@@ -56,6 +56,15 @@ try{
   assert.equal((await financialStageStatements(d,projection)).length,0,'unchanged financial stage projection generates no writes');
   const saved=(await d.prepare('SELECT COUNT(*) AS n FROM crm_financial_stages').first('n'));assert.equal(saved,Object.keys(projection.stageProjection.stages).length+projection.stageProjection.nextOrderIds.length);
  }
+ // Historical confirmations affect existing order stages, never payroll totals or membership.
+ const withoutHistory=await buildFinancialProjection(d);
+ await d.prepare('INSERT INTO settings(id,data) VALUES(?,?)').bind('premium-paid-history',JSON.stringify({source:'history.xlsx',orders:[{externalId:'legacy',period:'2026-09-1'},{externalId:'absent-history',period:'2026-09-1'}]})).run();
+ const withHistory=await buildFinancialProjection(d);
+ assert.deepEqual(withHistory.byPeriod,withoutHistory.byPeriod);
+ assert.deepEqual(withHistory.overview,withoutHistory.overview);
+ assert.equal(withHistory.stageProjection.stages.legacy.status,'paid');
+ assert.equal(withHistory.stageProjection.stages['absent-history'],undefined,'History must not create absent orders');
+ await d.prepare("DELETE FROM settings WHERE id='premium-paid-history'").run();
  // Frozen money remains historical when current employment terms and departments change.
  await d.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").bind(JSON.stringify(paid)).run();
  const before=await buildFinancialProjection(d);

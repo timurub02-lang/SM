@@ -1,3 +1,4 @@
+import {readPaidHistory} from '@/lib/premium-paid-history';
 import {internalDeadline} from '@/lib/internal-timers';
 import {needsNameExplanation,nameExplanationSchema} from '@/lib/incomplete-name';
 import {validateManualOrderAmount} from '@/lib/basket-total';
@@ -91,7 +92,7 @@ async function readState(reconcile=true,extraClientId='',includeFree=false,order
  const preview=nextPremiumPreview(ledger,state.orders,state.employees);
  state.premiumActivePeriod=ledger?.activePeriod;
  state.premiumNextPeriod=preview?.period;
- state.orders=applyPremiumStages(ledger,state.orders,state.employees).map(o=>({...o,premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
+ state.orders=applyPremiumStages(ledger,state.orders,state.employees,await readPaidHistory(d)).map(o=>({...o,premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
  return state;
 }
 async function initialize(){const d=db();if(await d.prepare("SELECT id FROM settings WHERE id='main'").first())return;
