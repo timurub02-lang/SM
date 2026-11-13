@@ -1,4 +1,5 @@
 "use client";
+import type {CashPayroll} from '@/lib/premium-cash';
 import {Search} from 'lucide-react';
 import {Tabs,TabsList,TabsTrigger} from '@/components/ui/tabs';
 import {PremiumStatistics} from '@/components/premium-statistics';
@@ -12,7 +13,7 @@ import {money,departments,deliveryLabels,type Order,type Employee,type Client} f
 import {Table,TableHeader,TableBody,TableRow,TableHead,TableCell} from '@/components/ui/table';
 
 const dateLabel=(date:string)=>date.split('-').reverse().join('.');
-export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload}:{orders:Order[];employee:Employee;employees:Employee[];clients:Client[];onOpen:(id:string)=>void;onReload:()=>Promise<unknown>}){
+export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload,onCashPayroll}:{onCashPayroll?:(value:CashPayroll|null)=>void;orders:Order[];employee:Employee;employees:Employee[];clients:Client[];onOpen:(id:string)=>void;onReload:()=>Promise<unknown>}){
  const [actionsTarget,setActionsTarget]=useState<HTMLDivElement|null>(null);
  const [view,setView]=useState<'calculation'|'orders'|'employees'|'archive'|'statistics'>('calculation');
  const [current]=useState(()=>currentPremiumPeriod(new Date(Date.now()+3*3600000).toISOString().slice(0,10)));
@@ -25,16 +26,21 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
   let active=true,pending=false,prepared=false,lastRead=0;const controller=new AbortController();
   async function refresh(){if(pending||document.hidden||!navigator.onLine||Date.now()-lastRead<(prepared?5000:60000))return;pending=true;lastRead=Date.now();
    try{const response=await fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(current?.id||''),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(20000)])});
-    const r=await response.json() as {periods?:string[];activePeriod?:string;periodCounts?:Record<string,number>;readModel?:{status:string;message?:string};error?:string};
+    const r=await response.json() as {payroll?:CashPayroll['rows']|null;calculatedPayroll?:CashPayroll['rows'];lifecycle?:{status:string}|null;periods?:string[];activePeriod?:string;periodCounts?:Record<string,number>;readModel?:{status:string;message?:string};error?:string};
     prepared=!!r.readModel;
     if(!response.ok)throw Error(r.error||'Не удалось загрузить премию');
     if(!r.activePeriod)throw Error('Текущий расчётный период не указан');
+    if(onCashPayroll){
+     let cashData=r;
+     if(r.activePeriod!==current?.id){const cashResponse=await fetch('/api/premium?actorId='+encodeURIComponent(employee.id)+'&period='+encodeURIComponent(r.activePeriod),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(20000)])});cashData=await cashResponse.json();if(!cashResponse.ok)throw Error(cashData.error||'Не удалось загрузить прогноз касс');}
+     if(active)onCashPayroll(cashData.activePeriod===r.activePeriod&&cashData.lifecycle?.status!=='paid'&&(!cashData.readModel||cashData.readModel.status==='ready')&&(cashData.payroll||cashData.calculatedPayroll)?{period:r.activePeriod,rows:cashData.payroll??cashData.calculatedPayroll!}:null);
+    }
     if(active){setLedgerPeriods(r.periods||[]);setLedgerCounts(r.periodCounts||{});setPeriodId(r.activePeriod);setActivePeriod(r.activePeriod);setPeriodError('');setPreparedWarning(r.readModel&&r.readModel.status!=='ready'?r.readModel.message||'Показана последняя сводка выплат. Обновление выполняется.':'');}
-   }catch(e){if(active)setPeriodError(e instanceof Error&&e.name!=='TimeoutError'?e.message:'Сервер не ответил вовремя. Повторите загрузку.');}finally{pending=false;}
+   }catch(e){if(active)onCashPayroll?.(null);if(active)setPeriodError(e instanceof Error&&e.name!=='TimeoutError'?e.message:'Сервер не ответил вовремя. Повторите загрузку.');}finally{pending=false;}
   }
   void refresh();const timer=setInterval(()=>void refresh(),5000);
   return()=>{active=false;controller.abort();clearInterval(timer);};
- },[employee.id,current?.id,periodRetry]);
+ },[employee.id,current?.id,periodRetry,onCashPayroll]);
 
  const all=premiumOrders(orders,employee,employees).map(r=>({...r,periodId:r.order.premiumStage?.periodId||r.periodId||periodForReceipt(r.date)?.id||'unassigned'})).filter(r=>!ledgerPeriods.includes(r.periodId)||r.order.premiumStage?.periodId===r.periodId);
  const visiblePeriod=activePeriod;

@@ -84,3 +84,12 @@ const {premiumCashSpends}=await import('../lib/premium-cash.ts');
 const paidCash={status:'paid',paidAt:'2026-11-13T12:00:00Z',paidBy:'admin',signers:[{id:'head',name:'Head',department:'a'},{id:'head2',name:'Other',department:'b'}],rows:[{department:'a',login:'one',input:{sz:false},payout:100},{department:'b',login:'two',input:{sz:false},payout:200}]};
 assert.deepEqual(premiumCashSpends('2026-11-1',paidCash,[{id:'head',cashDisabled:true}]).map(x=>[x.sender,x.amount]),[['head2',20000]]);
 assert.equal(paidCash.rows[0].payout,100,'Disabling cash does not change payroll');
+
+const {cashAfterPayroll}=await import('../lib/premium-cash.ts');
+const forecastRows=[{department:'a',input:{sz:false},payout:10000},{department:'a',role:'department_head',input:{sz:false},payout:3000},{department:'a',input:{sz:true},payout:9000},{department:'b',input:{sz:false},payout:500}];
+assert.deepEqual(cashAfterPayroll(1000000,'a',forecastRows),{payout:1300000,remaining:-300000});
+assert.equal(cashAfterPayroll(1500000,'a',forecastRows).remaining,200000);
+assert.equal(cashAfterPayroll(-100,'a',forecastRows).remaining,-1300100);
+assert.equal(cashAfterPayroll(1300000,'a',forecastRows).remaining,0);
+assert.equal(cashAfterPayroll(0,'a',[...forecastRows,{department:'a',input:{sz:false},payout:null}]),null);
+assert.equal(cashAfterPayroll(0,'missing',forecastRows),null);

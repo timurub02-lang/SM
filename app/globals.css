@@ -349,3 +349,9 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 
 /* Closed cards fill their grid row without truncating names or assignees. */
 .incoming-card:not([open]){display:flex;flex-direction:column}.incoming-card:not([open])>.incoming-card-summary{display:flex;flex-direction:column;flex:1}.incoming-card:not([open]) .incoming-card-person{min-height:54px}.incoming-card:not([open]) .incoming-card-stats{margin-top:auto}.incoming-card:not([open]) .incoming-card-footer{min-height:70px}.incoming-card:not([open]) .incoming-card-footer>span{flex-shrink:0}
+
+.cash-forecast{display:flex;flex-direction:column;gap:3px;width:100%;font-size:12px;line-height:1.25;margin-top:6px}
+.cash-forecast-label{color:#64748b;font-size:11px}
+.cash-forecast-track{position:relative;display:block;height:7px;background:#e7eaf0;border-radius:5px;overflow:hidden}
+.cash-forecast-track::after{content:"";position:absolute;left:50%;top:0;height:100%;width:1px;background:#8995a5}
+.cash-forecast-track>span{position:absolute;top:0;height:100%;border-radius:4px}
