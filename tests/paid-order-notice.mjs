@@ -19,3 +19,12 @@ for(const delivery of ['cdek_pickup','russian_post','moscow_courier']){
  assert.deepEqual(await paidOrderNoticeStatements(d,after,after,'ok','now'),[]);
 }
 console.log('Paid notices: all delivery methods, recipients, transaction guard and repeat protection passed');
+
+const {maintainReminders}=await import('../lib/reminder-maintenance.ts');
+await d.prepare('DELETE FROM reminders').run();
+for(const kind of ['order-paid','client-released'])for(let i=0;i<21;i++){
+ const notice={kind,id:kind+':'+i,clientId:'c',title:kind,text:'',at:new Date(Date.UTC(2026,10,1,0,i)).toISOString()};
+ await d.prepare('INSERT INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?)').bind('op',notice.id,JSON.stringify(notice),notice.at).run();
+}
+await maintainReminders(d,{employees:[{id:'op',role:'operator'}],clients:[],orders:[],settings:{}},'op');
+for(const kind of ['order-paid','client-released'])assert.equal((await d.prepare("SELECT COUNT(*) n FROM reminders WHERE json_extract(data,'$.kind')=?").bind(kind).first()).n,20,'each event history retains its own 20 records');
