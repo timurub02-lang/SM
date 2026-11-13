@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // Preserve PBX recording bodies up to the existing nginx/handler limit.
+  experimental: {proxyClientMaxBodySize: 45*1024*1024},
   async headers(){return [
     {source:'/:path*',headers:[
       {key:'X-Content-Type-Options',value:'nosniff'},

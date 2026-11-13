@@ -242,6 +242,15 @@ The proxy streams bytes without building another snapshot. It requests identity 
 
 Provisional worker containment is768MiB V8 heap,1GiB MemoryMax and CPUWeight50. This adds to existing service limits: web4GiB + export1.5GiB + summaries0.75GiB + SK-events0.375GiB + snapshots1GiB =7.625GiB, leaving insufficient worst-case headroom on the observed7.76GiB VM for OS/bridge/maintenance. Do not enable it based on nominal free RAM alone. Measure simultaneous peaks and Linux throttling first; if retaining all these limits, plan at least12GiB guest RAM in the approved window, after checking host headroom and the guest's supported memory-change procedure. No VM memory change or server-side capacity validation has been performed by this change.
 
+### PBX recording upload limit
+
+The Next.js proxy request buffer is capped at 45 MiB to match the existing PBX
+recording endpoint and nginx location. Its default 10 MiB buffer truncated valid
+base64 recordings before the authenticated handler. Endpoint-specific limits,
+PBX authentication and snapshot-worker route isolation remain enforced. The
+telephony HTTP test uploads an 8 MiB WAV (over 10 MiB as JSON/base64), verifies stored
+bytes and replay protection. Existing PBX spool files must remain until acknowledged.
+
 ### Provider-compatible SK delivery
 
 The receiver accepts both single call_result objects and batches, with HTTP200 after durable intake of the complete selected batch. The existing nginx20MiB body limit is also enforced in the authenticated handler. No new service, schema, installer or timer is required. Keep the exact webhook location forwarding Authorization; do not remove authentication from other routes. Final result_id is read from call_result; unused documented event types are acknowledged without importing. Test batch retries, atomic capacity failure and write rollback before publishing. Provider credentials still need configuration; deploying this change does not enable the subscription.

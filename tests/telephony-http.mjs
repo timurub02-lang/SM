@@ -135,7 +135,8 @@ try{
  const accounts=await call('/api/telephony/pbx?accounts=1',{headers:{'X-CRM-PBX-Key':pbxKey}});assert.equal(accounts.data.accounts.length,10);
  assert.equal((await call('/api/telephony/pbx?accounts=1')).status,403);
  assert.equal((await pbx('GET',callId)).status,409,'Same call ID cannot dial twice');
- const epoch=Math.floor(Date.now()/1000),audio=Buffer.alloc(16044);audio.write('RIFF');audio.writeUInt32LE(audio.length-8,4);audio.write('WAVEfmt ',8);audio.writeUInt32LE(16,16);audio.writeUInt16LE(1,20);audio.writeUInt16LE(1,22);audio.writeUInt32LE(8000,24);audio.writeUInt32LE(16000,28);audio.writeUInt16LE(2,32);audio.writeUInt16LE(16,34);audio.write('data',36);audio.writeUInt32LE(audio.length-44,40);
+ // Base64 makes this recording exceed the proxy's former 10 MiB request limit.
+ const epoch=Math.floor(Date.now()/1000),audio=Buffer.alloc(8*1024*1024);audio.write('RIFF');audio.writeUInt32LE(audio.length-8,4);audio.write('WAVEfmt ',8);audio.writeUInt32LE(16,16);audio.writeUInt16LE(1,20);audio.writeUInt16LE(1,22);audio.writeUInt32LE(8000,24);audio.writeUInt32LE(16000,28);audio.writeUInt16LE(2,32);audio.writeUInt16LE(16,34);audio.write('data',36);audio.writeUInt32LE(audio.length-44,40);
  const orderBefore=db.prepare('SELECT data FROM orders WHERE id=?').get('o-one').data;
  const payload={analysis:{kind:'screening',reason:'screening_greeting',method:'local-asr-v1'},id:callId,started:epoch,answered:epoch+1,ended:epoch+3,status:'ANSWERED',cause:'16',audio:audio.toString('base64')};
  assert.equal((await pbx('POST','',payload,'wrong-key')).status,403);
@@ -160,7 +161,7 @@ try{
  const recording='/api/call-history/recording?id='+callId;
  assert.equal((await call(recording)).status,401);assert.equal((await api(recording,undefined,cookies.two)).status,403);assert.equal((await api(recording,undefined,cookies.one)).status,200);
  const range=await call(recording,{cookie:cookies.admin,headers:{Range:'bytes=0-43'}});assert.equal(range.status,206);assert.equal(range.headers.get('content-length'),'44');
- assert.equal((await call(recording,{cookie:cookies.admin,headers:{Range:'bytes=999999-'}})).status,416);
+ assert.equal((await call(recording,{cookie:cookies.admin,headers:{Range:`bytes=${audio.length}-`}})).status,416);
  const wavPath=join(dir,'recordings',callId+'.wav'),mp3Path=join(dir,'recordings',callId+'.mp3');
  renameSync(wavPath,wavPath+'.saved');writeFileSync(mp3Path,'ID3-synthetic-audio');
  try{
