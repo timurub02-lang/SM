@@ -1,3 +1,4 @@
+import {addWeekdayMilliseconds} from '../lib/internal-timers.ts';
 import {courierDeadline} from '../lib/courier.ts';
 // Full API flow against temporary data; never uses the live CRM or carrier services.
 import assert from 'node:assert/strict';
@@ -95,7 +96,7 @@ try{
  await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Questions during delivery'});assert.equal(order(id).status,'rework');assert.equal(order(id).courier.atDoor,false);
  assert.ok((await call('operator')).data.reminders.some(r=>r.orderId===id&&r.title.includes('Возврат с доставки')));
- const working=order(id);working.courier.operatorStartedAt=hours(-2);working.reworkDeadline=hours(94);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(working),id);
+ const working=order(id);working.courier.operatorStartedAt=addWeekdayMilliseconds(Date.now(),-2*3600000);working.reworkDeadline=hours(94);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(working),id);
  await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});assert.ok(Math.abs(order(id).courier.operatorBudgetMs-94*3600000)<10000);
  const remaining=order(id).courier.operatorBudgetMs;
  await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
@@ -147,7 +148,7 @@ try{
  await act(editId,'logistic',{action:'markPackingWaybill'},400);
  await act(editId,'operator',{...edit,items:[{name:'Product',quantity:2,price:9000}]});assert.equal(stock(),editStock-1);assert.ok(order(editId).courierRepackRequest.completedAt);
  assert.ok((await call('logistic')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('правки для пересборки сохранены')));
- const afterRework=order(editId);afterRework.courierRecall.operatorStartedAt=hours(-2);afterRework.reworkDeadline=new Date(Date.now()+recallBudget-2*3600000).toISOString();db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(afterRework),editId);
+ const afterRework=order(editId);afterRework.courierRecall.operatorStartedAt=addWeekdayMilliseconds(Date.now(),-2*3600000);afterRework.reworkDeadline=new Date(Date.now()+recallBudget-2*3600000).toISOString();db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(afterRework),editId);
  await act(editId,'operator',{action:'transition',to:'packing'});
  const repackedBudget=order(editId).courierRecall.operatorBudgetMs;assert.ok(Math.abs(repackedBudget-(recallBudget-2*3600000))<10000);assert.equal(order(editId).reworkDeadline,undefined);assert.equal(order(editId).packingWaybillAt,undefined);
  await act(editId,'logistic',{action:'markPackingWaybill'});

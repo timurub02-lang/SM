@@ -1,3 +1,4 @@
+import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import type {RetentionPreview} from './client-retention-preview.ts';
 import {draftDeadline,hasActiveOrder,reworkTimeLeft,type Client,type Order} from './crm.ts';
 
@@ -8,8 +9,8 @@ export function clientRetentionLabel(client:Client,orders:Order[],now=Date.now()
   const handoff=related.filter(o=>o.manager===client.owner).map(draftDeadline).filter((x):x is string=>!!x).sort()[0];
   return handoff?`Есть активный заказ · До передачи логисту: ${reworkTimeLeft(handoff,now)}`:'Есть активный заказ';
  }
- // Only a paid payroll period confirms payment, just as in the retention reconciler.
- if(related.some(o=>o.manager===client.owner&&o.status==='redeemed'&&o.premiumStage?.status!=='paid')){
+ // Match the reconciler: paid payroll and historical confirmations do not hold a client.
+ if(related.some(o=>o.manager===client.owner&&o.status==='redeemed'&&!legacyPremiumPaid(o)&&o.premiumStage?.status!=='paid')){
   const remaining=Date.parse(preview?.until||'')-now;
   if(preview?.expiresAfterPremium||Number.isFinite(remaining)&&remaining<=0)return 'После выплаты премии клиент открепится';
   return Number.isFinite(remaining)?`Ожидается премия · до конца закрепления ${Math.ceil(remaining/86400000)} дн.`:'Ожидается выплата премии · срок закрепления не определён';

@@ -1,3 +1,4 @@
+import {mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
@@ -5,6 +6,8 @@ import {reconcileOrderTimers} from '../lib/base-retention-store.ts';
 import {confirmationDeadline,confirmationStage,applyRetention} from '../lib/crm.ts';
 import {defaultOrderPolicy} from '../lib/order-policy.ts';
 import {inventorySQL} from '../lib/inventory-sql.ts';
+// Keep workday timer assertions independent of the day CI runs.
+mock.timers.enable({apis:['Date'],now:Date.parse('2026-11-11T09:00:00Z')});
 const db=openDatabase(':memory:'),now=Date.now(),old=new Date(now-49*3600000).toISOString(),fresh=new Date(now).toISOString();
 try{
  for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await db.prepare(sql).run();
@@ -60,4 +63,4 @@ try{
  assert.equal(migrated.find(o=>o.id==='legacy-extra').confirmationHours,null);
  assert.equal(await reconcileOrderTimers(db,migrated,[]),false);
  console.log('Confirmation timers: stage expiry, call/edit stability, final priority, disabled stages, warnings, stock/retention, concurrency and one-time legacy initialization passed.');
-}finally{db.close();}
+}finally{db.close();mock.timers.reset();}
