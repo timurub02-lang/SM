@@ -1,3 +1,4 @@
+import {internalElapsed,internalWarningAt} from './internal-timers.ts';
 import type {ActivityDb} from './activity-store.ts';
 import type {Reminder} from './reminders.ts';
 import {courierDoorRefusal,courierDoorPhase,courierDoorNoticeId,canHandleCourierDoor,courierDeadline,courierStage,courierPendingAction,courierReminderNeedsAction} from './courier.ts';
@@ -51,7 +52,7 @@ export async function maintainReminders(d:ActivityDb,s:State,employeeId?:string,
    const action=e.id===o.courier.id?courierPendingAction(o):undefined;
    if(action&&!existing.some(r=>r.kind==='courier'&&r.orderId===o.id&&courierReminderNeedsAction(r,o)))courierNotices.push({kind:'courier',id:`courier-task:${o.id}:${courierStage(o)}:${action.at}`,orderId:o.id,clientId:o.clientId,title:action.title,text:o.id,at:action.at});
    const deadline=courierDeadline(o),warning=(s.settings.orderPolicy||defaultOrderPolicy).courierWarningHours;
-   if(deadline&&Date.now()>=Date.parse(deadline)-warning*3600000)courierNotices.push({kind:'courier-warning',id:`courier-warning:${o.id}:${deadline}`,orderId:o.id,clientId:o.clientId,title:'Заказ скоро вернётся оператору',text:o.id+' · срок подтверждения подходит к концу',at:new Date(Date.parse(deadline)-warning*3600000).toISOString(),due:deadline});
+   if(deadline&&internalElapsed(Date.now(),Date.parse(deadline))<=warning*3600000)courierNotices.push({kind:'courier-warning',id:`courier-warning:${o.id}:${deadline}`,orderId:o.id,clientId:o.clientId,title:'Заказ скоро вернётся оператору',text:o.id+' · срок подтверждения подходит к концу',at:internalWarningAt(deadline,warning),due:deadline});
    const date=o.courier.postponement;
    if(date?.state==='approved'&&courierStage(o)==='delivery'&&Date.now()>=Date.parse(date.at))courierNotices.push({kind:'courier-delivery',id:`courier-delivery:${o.id}:${date.at}`,orderId:o.id,clientId:o.clientId,title:'Наступило согласованное время доставки',text:o.id+' · '+date.reason+' · Согласовал: '+date.name,at:date.at,due:date.at});
   }
