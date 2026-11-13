@@ -271,3 +271,12 @@ The additive `timerCalendar` marker prevents a second extension. The installerâ€
 normal consistent database backup precedes activation. Verify maintenance, a Friday
 budget ending on Monday, and storage-capped redemption work without changing a real
 order merely for a test. Application rollback does not revert stored deadlines.
+
+
+Urgent courier-at-door claim/decision deadlines use real elapsed minutes, including
+weekends. Active older door deadlines are corrected once without restarting their
+original clock; the additive door `clock=elapsed-v1` marker prevents repeat changes.
+A timeout still only escalates the request and never decides the refusal automatically.
+Order refusal handoffs retain an additive `refusalHandoffAt` independently of the
+confirmation timer. Clarification returns do not consume another refusal attempt;
+extra confirmation and delivery edits cannot reset the prior refusal handoff.
