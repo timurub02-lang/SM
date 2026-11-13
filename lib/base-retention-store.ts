@@ -34,7 +34,7 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
    const backToOperator=migrateCourier||expired&&(!!courierDue||o.delivery==='moscow_courier'&&confirmation&&!o.finalHandoffAt);
    if(backToOperator){
     if(o.courier)next={...courierToOperator(o,expiryReason,policy,at),_mutation:mutation};
-    else{next={...o,status:'rework',contact:'none',due:'',reason:expiryReason,returnReason:expiryReason,reworkHours:policy.reworkHours,reworkDeadline:reworkDeadlineFrom(at,policy.reworkHours),updatedAt:at,_mutation:mutation};delete next.noAnswerDeadline;}
+    else{next={...o,status:'rework',returnKind:'clarification',contact:'none',due:'',reason:expiryReason,returnReason:expiryReason,reworkHours:policy.reworkHours,reworkDeadline:reworkDeadlineFrom(at,policy.reworkHours),updatedAt:at,_mutation:mutation};delete next.noAnswerDeadline;}
    }else if(expired)cancelCourierWork(next,at);
    const e:Event={id:"EV-"+crypto.randomUUID(),clientId:o.clientId,orderId:o.id,at,actor:"Система",text:migrateCourier?"Заказ передан оператору из упразднённой очереди логиста · "+expiryReason:backToOperator?"Заказ передан оператору: "+expiryReason:expired?"Заказ отменён: "+expiryReason:`Включён таймер ${o.status==="extra"?"повторного":"первого"} подтверждения для существующего заказа: ${o.confirmationHours} ч`};
    const notices=(migrateCourier||expired)&&(next.courier||next.courierRecall)?await courierReminderStatements(d,o,next,e,mutation,(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data))):[];
