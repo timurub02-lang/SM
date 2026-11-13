@@ -33,3 +33,13 @@ const accessChanged=mergeOrderEntityPatch(initial,{clientId:client.id,state:{...
 assert.deepEqual(accessChanged.tasks,[initial.tasks[0]],'changed staff access cannot retain scoped drafts of auxiliary data');
 const incomingChanged=mergeOrderEntityPatch({...initial,incoming:[{id:'incoming',clientId:client.id,assigneeId:'operator'}]},{clientId:client.id,state:{...deferred,incoming:[]},deferredWorkspace:true});
 assert.deepEqual(incomingChanged.incoming,[],'incoming assignment is always read authoritatively');
+
+const staleTask={id:'task:order:draft',orderId:order.id,clientId:client.id,title:'Передайте заказ',text:'',at:''};
+const personalTask={id:'personal',clientId:client.id,title:'Личное напоминание',text:'',at:''};
+const beforeAction={...initial,tasks:[initial.tasks[0],personalTask,staleTask]};
+const completed=mergeOrderEntityPatch(beforeAction,{clientId:client.id,state:deferred,deferredWorkspace:true,orderTasks:[]});
+assert.deepEqual(completed.tasks,[initial.tasks[0],personalTask],'completed card action immediately removes order task without clearing other tasks');
+const nextTask={...staleTask,id:'task:order:rework',title:'Доработайте заказ'};
+assert.deepEqual(mergeOrderEntityPatch(beforeAction,{clientId:client.id,state:deferred,deferredWorkspace:true,orderTasks:[nextTask]}).tasks,[initial.tasks[0],personalTask,nextTask],'next stage replaces old task');
+const incomingTask={id:'task:incoming:i',kind:'incoming',incomingId:'i',clientId:client.id};
+assert.equal(mergeOrderEntityPatch({...initial,tasks:[incomingTask]},{clientId:client.id,state:{...deferred,incoming:[{id:'i',clientId:client.id,closedAt:'now'}]},deferredWorkspace:true,orderTasks:[]}).tasks.length,0,'incoming result saved in card removes its task');

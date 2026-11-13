@@ -734,7 +734,7 @@ async function handlePOST(request:Request){
  }else throw new Error("Неизвестное действие");
  const response=await timing.measure('snapshot',()=>responseState(user,true,scopedOrder,false,scopedClient,'',undefined,true,deferredWorkspace&&scopedMutation));
  const state=p.transport==='compact-v1'?compactCrmState(response):response;
- if(scopedMutation)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state,...(deferredWorkspace?{deferredWorkspace:true}:{})},message}));
+ if(scopedMutation)return timing.finish(Response.json({entityPatch:{clientId:s.clients[0].id,state,...(deferredWorkspace?{deferredWorkspace:true,orderTasks:employeeTasks(state,user.employee!).filter(t=>!!t.orderId)}:{})},message}));
  if(p.responseMode==='order-patch'&&user.employee?.role==='admin'&&orderPatchActions.has(p.action)&&s.orders.some(o=>o.id===p.id))return timing.finish(Response.json({statePatch:orderSavePatch(s,state,p.id),message}));
  return timing.finish(Response.json({state,message}));
  }catch(e){console.error(e);const error=e instanceof z.ZodError?e.issues.map(x=>x.message).join("; "):e instanceof Error?e.message:"Не удалось сохранить";return timing.finish(Response.json({error:error.includes("UNIQUE")?"Клиент с таким телефоном уже есть в базе":error},{status:400}));}
