@@ -793,7 +793,7 @@ try{
  // Packing return: reason and uncertain-result guards, operator agreement, one logistic confirmation.
  for(const [kind,source,target] of [['delivery','cdek_courier','russian_post'],['refusal','cdek_courier','cdek_courier'],['refusal','russian_post','russian_post'],['refusal','moscow_courier','moscow_courier']]){
   const pid='packing-return-'+target+kind;
-  const packingBase={...policyOrder,id:pid,status:'packing',delivery:source,extra:true,finalHandoffAt:new Date().toISOString(),packingWaybillAt:new Date().toISOString(),reworkDeadline:undefined,shippedAt:undefined,courier:undefined,packingReworkDelivery:undefined};
+  const packingBase={...policyOrder,id:pid,status:'packing',delivery:source,extra:true,finalHandoffAt:undefined,packingWaybillAt:new Date().toISOString(),reworkDeadline:undefined,shippedAt:undefined,courier:undefined,packingReworkDelivery:undefined};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(pid,packingBase.clientId,JSON.stringify(packingBase));
   const step=(cookie,body,status=200)=>policyAction(cookie,{id:pid,...body},status);
   await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:''},400);
@@ -808,12 +808,14 @@ try{
   returned=await step(policyOperator.cookie,{action:'updateOrder',delivery:target,address:packingBase.address,items:packingBase.items,addressConfirmed:true});
   returned=await step(policyOperator.cookie,{action:'transition',to:'confirm',finalHandoffConfirmed:true});assert.equal(returned.status,'confirm');
   returned=await step(editor.cookie,{action:'transition',to:'packing'});assert.equal(returned.status,'packing');assert.equal(returned.delivery,target);
+  if(kind==='refusal'){await step(editor.cookie,{action:'transition',to:'rework',returnKind:'refusal',reason:'Повторный отказ'},400);assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(pid).data).status,'packing');}
   if(target==='cdek_courier')for(const [status,person] of [['packing',editor],['phone',chief]]){
    db.prepare("UPDATE orders SET data=json_set(data,'$.status',?,'$.cdekTariff',json(?),'$.packingWaybillAt',?) WHERE id=?").run(status,JSON.stringify({amount:10}),new Date().toISOString(),pid);
    const changedItems=returned.items.map(item=>({...item,price:item.price+1}));
    returned=await step(person.cookie,{action:'updateOrder',items:changedItems,addressConfirmed:true});
    assert.deepEqual(returned.items,changedItems);assert.equal(returned.cdekTariff,undefined);assert.equal(returned.packingWaybillAt,undefined);
   }
+  if(kind==='refusal'){await step(editor.cookie,{action:'transition',to:'refused',reason:''},400);const cancelled=await step(editor.cookie,{action:'transition',to:'refused',reason:'Повторный отказ клиента'});assert.equal(cancelled.status,'refused');}
   db.prepare('DELETE FROM settings WHERE id=?').run('cdek-shipment-'+pid);
  }
  console.log('Packing return and one logistic reconfirmation HTTP passed for delivery change and refusal.');
