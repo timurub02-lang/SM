@@ -797,8 +797,10 @@ try{
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(pid,packingBase.clientId,JSON.stringify(packingBase));
   const step=(cookie,body,status=200)=>policyAction(cookie,{id:pid,...body},status);
   await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:''},400);
-  db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+pid,JSON.stringify({state:'unknown'}));
-  await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:'Согласовать доставку или отработать отказ'},400);
+  for(const state of ['unknown','pending','ready']){
+   db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+pid,JSON.stringify({state,number:'synthetic-track'}));
+   await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:'Согласовать доставку или отработать отказ'},400);
+  }
   db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+pid,JSON.stringify({state:'invalid',error:'Rejected'}));
   let returned=await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:'Согласовать доставку или отработать отказ'});
   assert.equal(returned.status,'rework');assert.equal(returned.returnKind,kind);assert.equal(returned.packingReworkDelivery,source);assert.equal(returned.extra,false);assert.equal(returned.finalHandoffAt,undefined);assert.equal(returned.packingWaybillAt,undefined);
