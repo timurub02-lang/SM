@@ -10,12 +10,22 @@ for(const state of [undefined,'new','ready','deleting','failed'])for(const numbe
  db.prepare('INSERT INTO orders VALUES(?,?,?)').run(id,JSON.stringify(order),7);
  if(state!==undefined)db.prepare('INSERT INTO settings VALUES(?,?)').run('cdek-shipment-'+id,JSON.stringify({state,number,downloadedAt}));
  const active=state==='ready'||state==='deleting',sqlNumber=typeof number==='boolean'?Number(number):number;
- expected.push({...order,version:7,cdekTrackingNumber:active&&sqlNumber?String(sqlNumber):undefined,cdekExported:active&&number!=null||testOnly,cdekDeleting:state==='deleting',cdekWaybillReceived:state!==undefined&&downloadedAt!=null});
+ expected.push({...order,version:7,cdekExportError:undefined,cdekTrackingNumber:active&&sqlNumber?String(sqlNumber):undefined,cdekExported:active&&number!=null||testOnly,cdekDeleting:state==='deleting',cdekWaybillReceived:state!==undefined&&downloadedAt!=null});
 }
 assert.deepEqual(db.prepare(snapshotOrdersQuery).all().map(snapshotOrder),expected.reverse());
 const plan=db.prepare('EXPLAIN QUERY PLAN '+snapshotOrdersQuery).all().map(r=>r.detail);
 assert.equal(plan.filter(s=>s.includes('SEARCH s USING INDEX')).length,1);
 assert.ok(!plan.some(s=>s.includes('CORRELATED')));
 assert.throws(()=>snapshotOrder({data:'invalid',version:1}));
+for(const state of ['invalid','unknown','ready','pending']){
+ const order={id:'error-order',cdekExportError:'stale'};
+ db.prepare('INSERT OR REPLACE INTO orders VALUES(?,?,?)').run(order.id,JSON.stringify(order),1);
+ db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+order.id,JSON.stringify({state,error:'Carrier rejected COD'}));
+ const result=db.prepare(snapshotOrdersQuery).all().map(snapshotOrder).find(o=>o.id===order.id);
+ assert.equal(result.cdekExportError,['invalid','unknown'].includes(state)?'Carrier rejected COD':undefined);
+}
+const {cdekExportMessage}=await import('../lib/cdek-shipment.ts');
+assert.match(cdekExportMessage('ev_cash_on_delivery_is_not_available_in_receiver_city: Наложенный платеж недоступен в городе получателя'),/Согласуйте с клиентом предоплату/);
+assert.equal(cdekExportMessage('Other carrier error'),'Other carrier error');
 db.close();
 console.log('PASS: snapshot shipment projection, test-only fallback, SQL null/boolean semantics, versions and one indexed lookup');
