@@ -71,8 +71,22 @@ def extract(archive,directory):
 
 def current():return (BASE/'current').resolve(strict=True)
 
-def write_json(path,value):
-    tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,indent=2)+'\n');os.replace(tmp,path)
+def atomic_text(path,text):
+    tmp=path.with_suffix('.tmp')
+    with tmp.open('w') as output:
+        output.write(text);output.flush();os.fsync(output.fileno())
+    os.replace(tmp,path)
+    fd=os.open(path.parent,os.O_DIRECTORY)
+    try:os.fsync(fd)
+    finally:os.close(fd)
+
+def write_json(path,value):atomic_text(path,json.dumps(value,indent=2)+'\n')
+
+def remove_journal(path):
+    path.unlink()
+    fd=os.open(path.parent,os.O_DIRECTORY)
+    try:os.fsync(fd)
+    finally:os.close(fd)
 
 def idle():
     with sqlite3.connect('file:/var/lib/sm-crm/crm.sqlite?mode=ro',uri=True) as db:
@@ -84,14 +98,14 @@ def idle():
     if response.status!=200 or not isinstance(state,dict) or type(state.get('busy')) is not bool:raise RuntimeError('Cannot verify phone state')
     return not busy and not state['busy']
 
-def healthy():
+def healthy(port=3000):
     for _ in range(30):
         try:
-            body=get('http://127.0.0.1:3000/login')
+            body=get('http://127.0.0.1:'+str(port)+'/login',timeout=3)
             if b'<html' not in body:raise ValueError('Invalid login response')
             scripts=re.findall(rb'src="(/_next/static/[^"?]+\.js)',body)
             if not scripts:raise ValueError('Login has no application scripts')
-            for script in scripts:get('http://127.0.0.1:3000'+script.decode(),16*1024*1024)
+            for script in scripts:get('http://127.0.0.1:'+str(port)+script.decode(),16*1024*1024,timeout=3)
             return
         except Exception:time.sleep(1)
     raise RuntimeError('CRM health check failed')
@@ -121,9 +135,10 @@ def retain(history,live):
     keep=list(dict.fromkeys([live.name]+history))[:3]
     # Only our explicitly managed immutable runtime directories may be removed.
     for path in (BASE/'releases').iterdir():
-        if path.name in keep or not NAME.fullmatch(path.name) or path.is_symlink():continue
+        if path.name in keep or path.name in slot_releases() or not NAME.fullmatch(path.name) or path.is_symlink():continue
         if path.resolve().parent!=BASE/'releases' or not (path/'release.json').is_file():continue
         shutil.rmtree(path)
+    if (BASE/'blue-green.json').exists():publish_static(keep+slot_releases(),prune=True)
     return keep
 
 def activate(target,previous,state):
@@ -132,6 +147,7 @@ def activate(target,previous,state):
     backup=BASE/'backups/deploy-latest.sqlite';backup.parent.mkdir(exist_ok=True)
     with sqlite3.connect('file:/var/lib/sm-crm/crm.sqlite?mode=ro',uri=True) as src,sqlite3.connect(str(backup)+'.tmp') as dst:src.backup(dst)
     os.chmod(str(backup)+'.tmp',0o600);os.replace(str(backup)+'.tmp',backup)
+    if (BASE/'blue-green.json').exists():return activate_slots(target,previous,state)
     # A failed new worker may already be inactive when automatic rollback begins.
     legacy_was_active=subprocess.run(['systemctl','is-active','--quiet','sm-crm-legacy-snapshots'],check=False).returncode==0
     try:switch(target)
@@ -144,6 +160,8 @@ def activate(target,previous,state):
     return True
 
 def run(rollback=None):
+    recover_slots()
+    if not reap_slots():print('Previous Nginx connections are draining; update deferred');return
     state=json.loads((BASE/'deploy-state.json').read_text());previous=current()
     if (BASE/'deploy-paused').exists() and not rollback:print('Automatic deployment is paused');return
     if not NAME.fullmatch(previous.name):raise RuntimeError('Legacy publication detected; reconcile source before resuming')
@@ -196,6 +214,171 @@ def run(rollback=None):
     if json.loads(get(API+'/commits/main'))['sha']!=sha:print('A newer commit arrived; update deferred');return
     print('Deployed '+sha if activate(target,previous,state) else 'Active call; update deferred')
 
+SLOTS={'blue':(3000,3101),'green':(3002,3102)}
+UPSTREAM=pathlib.Path('/etc/nginx/conf.d/sm-crm-upstream.conf')
+NGINX_PID=pathlib.Path('/run/nginx.pid')
+PROBE_PORT=3099
+
+def slots():
+    path=BASE/'blue-green.json'
+    if not path.exists():return None
+    value=json.loads(path.read_text())
+    if value.get('active') not in SLOTS:raise ValueError('Invalid active slot')
+    for name,slot in value['slots'].items():
+        if name not in SLOTS or not NAME.fullmatch(slot['release']):raise ValueError('Invalid slot identity')
+    return value
+
+def slot_releases():
+    state=slots()
+    return [s['release'] for s in state['slots'].values()] if state else []
+
+def publish_static(names,prune=False):
+    root=BASE/'static';root.mkdir(exist_ok=True);root.chmod(0o755);keep=set()
+    for name in set(names):
+        if not NAME.fullmatch(name):raise ValueError('Invalid static release')
+        release=BASE/'releases'/name
+        for relative in json.loads((release/'release.json').read_text())['staticFiles']:
+            path=pathlib.PurePosixPath(relative)
+            if path.is_absolute() or '..' in path.parts:raise ValueError('Unsafe static path')
+            src=release/'.next/standalone/.next/static'/path;dest=root/path;keep.add(dest)
+            if dest.exists():
+                if hashlib.sha256(dest.read_bytes()).digest()!=hashlib.sha256(src.read_bytes()).digest():raise ValueError('Immutable asset collision')
+            else:
+                dest.parent.mkdir(parents=True,exist_ok=True)
+                for parent in dest.parents:
+                    if parent==root:break
+                    parent.chmod(0o755)
+                tmp=dest.with_suffix(dest.suffix+'.tmp');shutil.copyfile(src,tmp);tmp.chmod(0o644);os.replace(tmp,dest)
+    if prune:
+        for path in root.rglob('*'):
+            if path.is_file() and path not in keep:path.unlink()
+
+def service_names(name,slot):
+    return ['sm-crm','sm-crm-legacy-snapshots'] if slot.get('legacy') else ['sm-crm-web@'+name,'sm-crm-snapshot@'+name]
+
+def process_identity(pid):
+    try:
+        fields=pathlib.Path('/proc/'+str(int(pid))+'/stat').read_text().rsplit(')',1)[1].split()
+        return [int(pid),fields[19],pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()]
+    except FileNotFoundError:return None
+
+def nginx_workers():
+    master=int(NGINX_PID.read_text())
+    children=pathlib.Path('/proc/'+str(master)+'/task/'+str(master)+'/children').read_text().split()
+    return [identity for pid in children if (identity:=process_identity(pid))]
+
+def route_slot(name,slot):
+    port=SLOTS[name][0];release=slot['release']
+    atomic_text(UPSTREAM, 'upstream sm_crm_web { server 127.0.0.1:'+str(port)+'; }\n'
+        'server { listen 127.0.0.1:'+str(PROBE_PORT)+'; server_name localhost;\n'
+        ' location / { proxy_pass http://sm_crm_web; proxy_set_header Host crm.smanalytics.ru;\n'
+        ' add_header X-SM-Release "'+release+'" always; }\n}\n')
+    subprocess.run(['nginx','-t'],check=True,capture_output=True)
+    subprocess.run(['systemctl','reload','nginx'],check=True)
+    # A successful signal is not proof that new workers loaded this generation.
+    for _ in range(30):
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:'+str(PROBE_PORT)+'/login',timeout=3) as response:
+                if response.status==200 and response.headers.get('X-SM-Release')==release and b'<html' in response.read(1024*1024):return
+        except Exception:pass
+        time.sleep(.2)
+    raise RuntimeError('Nginx did not serve the selected release')
+
+def point_current(target):
+    link=BASE/'current.next';link.unlink(missing_ok=True);link.symlink_to(target);os.replace(link,BASE/'current')
+    fd=os.open(BASE,os.O_DIRECTORY)
+    try:os.fsync(fd)
+    finally:os.close(fd)
+
+def restart_workers():
+    for service in ['sm-crm-summaries','sm-crm-sk-events']:
+        if subprocess.run(['systemctl','is-active','--quiet',service],check=False).returncode==0:
+            subprocess.run(['systemctl','try-restart',service],check=True)
+
+def prepare_slot(name,target):
+    for service in service_names(name,{}):
+        result=subprocess.run(['systemctl','show',service,'--property=ActiveState','--value'],check=True,capture_output=True,text=True)
+        if result.stdout.strip() not in ('inactive','failed'):raise RuntimeError('Candidate slot is still running')
+    if json.loads((target/'release.json').read_text()).get('legacySnapshots')!=1:raise RuntimeError('Slot deployment requires compatible snapshot runtime')
+    memory=dict(line.split(':',1) for line in pathlib.Path('/proc/meminfo').read_text().splitlines())
+    if int(memory['MemAvailable'].split()[0])<4*1024*1024:raise RuntimeError('Need 4 GiB available for candidate pair')
+    directory=BASE/'slots';directory.mkdir(exist_ok=True);directory.chmod(0o755)
+    link=directory/name;link.unlink(missing_ok=True);link.symlink_to(target)
+    web,snapshot=SLOTS[name]
+    atomic_text(directory/(name+'.env'),'PORT='+str(web)+'\nSNAPSHOT_PORT='+str(snapshot)+'\nCRM_LEGACY_SNAPSHOT_ORIGIN=http://127.0.0.1:'+str(snapshot)+'\n')
+    services=service_names(name,{})
+    subprocess.run(['systemctl','enable',*services],check=True)
+    subprocess.run(['systemctl','start',services[1]],check=True)
+    for _ in range(30):
+        try:
+            if json.loads(get('http://127.0.0.1:'+str(snapshot)+'/api/crm-worker-health',1024,timeout=2)).get('ok') is True:break
+        except Exception:pass
+        time.sleep(1)
+    else:raise RuntimeError('Candidate snapshot worker unhealthy')
+    subprocess.run(['systemctl','start',services[0]],check=True);healthy(web)
+
+def reap_slots():
+    state=slots()
+    if not state or not state.get('draining'):return True
+    drain=state['draining']
+    # Include old Nginx workers: buffered uploads may not yet have an upstream socket.
+    # shortcut: long-lived phone WebSockets defer reuse of this slot; never truncate them.
+    if any(process_identity(identity[0])==identity for identity in drain['workers']):return False
+    name=drain['slot']
+    if name==state['active']:raise RuntimeError('Refusing to stop active slot')
+    for service in service_names(name,state['slots'][name]):
+        subprocess.run(['systemctl','stop',service],check=True)
+        subprocess.run(['systemctl','disable',service],check=True)
+    del state['slots'][name];del state['draining'];write_json(BASE/'blue-green.json',state)
+    return True
+
+def recover_slots():
+    journal=BASE/'blue-green-pending.json'
+    if not journal.exists():return
+    pending=json.loads(journal.read_text());state=pending['before'];old=state['active'];candidate=pending['candidate']
+    # Recovery always returns to the retained old process; never restores an old database.
+    healthy(SLOTS[old][0]);workers=nginx_workers();route_slot(old,state['slots'][old])
+    point_current(BASE/'releases'/state['slots'][old]['release']);restart_workers()
+    state['slots'][candidate]=pending['slot']
+    state['draining']={'slot':candidate,'workers':workers}
+    write_json(BASE/'blue-green.json',state);write_json(BASE/'deploy-state.json',pending['deployState'])
+    (BASE/'deploy-paused').touch();remove_journal(journal)
+
+def activate_slots(target,previous,deploy_state):
+    state=slots();old=state['active'];candidate='green' if old=='blue' else 'blue'
+    if state.get('draining') or len(state['slots'])!=1:raise RuntimeError('Previous slot has not drained')
+    if state['slots'][old]['release']!=previous.name:raise RuntimeError('Slot and current differ')
+    journal=BASE/'blue-green-pending.json'
+    pending={'before':state,'candidate':candidate,'slot':{'release':target.name},'deployState':deploy_state}
+    write_json(journal,pending)
+    try:
+        publish_static([target.name]+deploy_state['history']+slot_releases())
+        prepare_slot(candidate,target)
+        if not idle():raise RuntimeError('Active call before traffic switch; candidate deferred')
+        workers=nginx_workers();route_slot(candidate,pending['slot'])
+        point_current(target);restart_workers()
+        state['slots'][candidate]=pending['slot'];state['active']=candidate
+        state['draining']={'slot':old,'workers':workers};write_json(BASE/'blue-green.json',state)
+        deploy_state['current']=target.name
+        deploy_state['history']=list(dict.fromkeys([target.name,previous.name]+deploy_state.get('history',[])))[:3]
+        deploy_state['updatedAt']=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+        write_json(BASE/'deploy-state.json',deploy_state)
+        remove_journal(journal)
+    except Exception:
+        recover_slots();raise
+    reap_slots();retain(deploy_state['history'],target)
+    return True
+
+def initialize_slots():
+    if not (BASE/'deploy-paused').exists():raise RuntimeError('Pause publication before installing slot infrastructure')
+    if slots():raise RuntimeError('Slots already initialized')
+    previous=current();state=json.loads((BASE/'deploy-state.json').read_text())
+    if previous.name!=state['current'] or not NAME.fullmatch(previous.name):raise RuntimeError('Current and deployment state differ')
+    healthy();publish_static([previous.name]+state['history'])
+    slot={'release':previous.name,'legacy':True}
+    route_slot('blue',slot)
+    write_json(BASE/'blue-green.json',{'active':'blue','slots':{'blue':slot}})
+
 def link_job_dependencies(staged):
     # Jobs live at release/scripts; the web bundle keeps its traced dependencies inside standalone.
     dependencies=staged/'.next/standalone/node_modules'
@@ -212,8 +395,9 @@ def validate_jobs(path,meta):
     if {p.name for p in path.glob('sync-*.mjs')}!=expected:raise ValueError('Background jobs are missing or unexpected')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--rollback');args=parser.parse_args()
+    parser=argparse.ArgumentParser();group=parser.add_mutually_exclusive_group();group.add_argument('--rollback');group.add_argument('--init-blue-green',action='store_true');args=parser.parse_args()
     with open('/run/lock/sm-crm-deploy.lock','w') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise SystemExit('Another deployment is running')
-        run(args.rollback)
+        if args.init_blue_green:initialize_slots()
+        else:run(args.rollback)

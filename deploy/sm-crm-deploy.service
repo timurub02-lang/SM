@@ -6,5 +6,5 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /usr/local/sbin/deploy-sm-crm
-TimeoutStartSec=5min
+TimeoutStartSec=infinity
 UMask=0077

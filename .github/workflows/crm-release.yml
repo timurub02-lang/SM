@@ -55,6 +55,7 @@ jobs:
             node --experimental-strip-types tests/crm-workspace-http.mjs
             node --experimental-strip-types tests/crm-summaries-http.mjs
           node --experimental-strip-types tests/crm-legacy-http.mjs
+          node --experimental-strip-types tests/blue-green-runtime.mjs
           node --experimental-strip-types tests/crm-transport-http.mjs
           CRM_SPLIT_READS=1 node --experimental-strip-types tests/crm-transport-http.mjs
           node --experimental-strip-types tests/review-http.mjs
@@ -92,6 +93,11 @@ jobs:
           node scripts/oktell-bridge/bridge.test.cjs
           node scripts/oktell-bridge/test-control.cjs
           python3 tests/deployment.py
+          python3 tests/blue-green.py
+          sudo apt-get update -qq
+          sudo apt-get install -y nginx
+          sudo systemctl stop nginx
+          python3 tests/blue-green-http.py
           python3 tests/inventory.py
           python3 tests/pbx-call-queue.py
           python3 tests/phone-analysis.py
