@@ -1,3 +1,4 @@
+import {readPaidHistory} from './premium-paid-history.ts';
 import {preparedModelsEnabled} from './crm-read-model.ts';
 import {attachPreparedPremiumStages} from './crm-financial-projection.ts';
 import type {ActivityDb} from './activity-store.ts';
@@ -49,7 +50,7 @@ async function premiumStages(d:ActivityDb,state:State){
  const fields=['id','manager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery'];
  const premium:Order[]=ledger?(await d.prepare(`SELECT json_object(${fields.map(key=>`'${key}',json_extract(data,'$.${key}')`).join(',')}) AS data FROM orders WHERE json_extract(data,'$.status')='redeemed' ORDER BY id DESC`).all()).results.map((r:{data:string})=>JSON.parse(r.data)):state.orders;
  const preview=nextPremiumPreview(ledger,premium,state.employees);
- const stages=new Map(applyPremiumStages(ledger,[...premium,...state.orders.filter(o=>o.status!=='redeemed')],state.employees).map(o=>[o.id,o.premiumStage]));
+ const stages=new Map(applyPremiumStages(ledger,[...premium,...state.orders.filter(o=>o.status!=='redeemed')],state.employees,await readPaidHistory(d)).map(o=>[o.id,o.premiumStage]));
  state.premiumActivePeriod=ledger?.activePeriod;state.premiumNextPeriod=preview?.period;
  state.orders=state.orders.map(o=>({...o,premiumStage:stages.get(o.id),premiumNextPeriod:preview?.orderIds.has(o.id)?preview.period:undefined}));
 }

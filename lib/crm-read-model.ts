@@ -44,7 +44,7 @@ export async function initPreparedModels(d:ActivityDb){
     if(table==='settings'){
      access='0';
      const row=op==='DELETE'?'OLD':'NEW';
-     finance=`(${row}.id='premium-ledger' OR ${row}.id GLOB 'premium-draft:*' OR ${row}.id GLOB 'cdek-shipment-*')`;
+     finance=`(${row}.id='premium-ledger' OR ${row}.id='premium-paid-history' OR ${row}.id GLOB 'premium-draft:*' OR ${row}.id GLOB 'cdek-shipment-*')`;
      if(op==='UPDATE')finance+=` AND (${String(triggers.get('crm_clock_settings_UPDATE')).match(/ WHEN (.*?) BEGIN /)?.[1]||'OLD.data IS NOT NEW.data'})`;
     }
     const name=`crm_model_source_${table}_${op}`,sql=`CREATE TRIGGER ${name} AFTER ${op} ON ${table} BEGIN UPDATE crm_model_source SET access=access+CASE WHEN (${access}) THEN 1 ELSE 0 END,finance=finance+CASE WHEN (${finance}) THEN 1 ELSE 0 END WHERE id=1; END`;
