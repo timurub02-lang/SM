@@ -443,6 +443,15 @@ try{
  assert.equal(courierBalance((await call('/api/crm',{cookie:dispatchCourier.cookie})).data.orders,dispatchCourier.e.id).total,0);
  console.log('Courier: assignment, scoped mobile data, payment, return, warehouse stock and settlement passed.');
  console.log('Manual routes: Moscow confirms after parcel acceptance; Post uses extra confirmation; cancellation blocked before return.');
+ const historicCashCount=db.prepare('SELECT count(*) n FROM cash_operations').get().n;
+ for(const delivery of ['russian_post','moscow_courier']){
+  const id='historic-paid-'+delivery;
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,'one-c-confirm',JSON.stringify({...flow,id,clientId:'one-c-confirm',status:'redeemed',delivery,items:[],courier:undefined,paymentReceivedAt:undefined,priorPremiumPaid:{at:new Date().toISOString(),source:'Explicit historical confirmation',paymentAccepted:true}}));
+  const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
+  for(const person of [editor,chief])assert.equal((await call('/api/crm',{cookie:person.cookie,body:{action:'receivePayment',id,version}})).status,400);
+ }
+ assert.equal(db.prepare('SELECT count(*) n FROM cash_operations').get().n,historicCashCount,'Historical acceptance cannot create a cash receipt');
+ console.log('Historical manual acceptance blocks a second cash receipt for logistics and chief.');
  const editId='one-o-confirm';
  assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:editId,version:2,items:[{name:'Injected',quantity:1,price:1}]}})).status,400);
  for(const state of ['creating','ready']){
