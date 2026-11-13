@@ -1,13 +1,14 @@
 "use client";
 import {Search} from "lucide-react";
 import {useEffect,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {money,type Employee,type Order} from '@/lib/crm';
 import type {PaidHistoryResult} from '@/lib/premium-paid-history';
 import type {PayrollOrder} from '@/lib/premium-ledger';
 import {PremiumPayroll} from './premium-payroll';
 import {Table,TableHeader,TableBody,TableRow,TableHead,TableCell} from './ui/table';
 type Period={id:string;label:string;paidAt?:string;source?:string;count:number;payout:number;orders:PayrollOrder[];historyOrders:PayrollOrder[]};
-export function PremiumArchive({employee,employees,orders,onOpen,onReload}:{employee:Employee;employees:Employee[];orders:Order[];onOpen:(id:string)=>void;onReload:()=>Promise<unknown>}){
+export function PremiumArchive({employee,employees,orders,onOpen,onReload,actionsTarget}:{actionsTarget:HTMLDivElement|null;employee:Employee;employees:Employee[];orders:Order[];onOpen:(id:string)=>void;onReload:()=>Promise<unknown>}){
  const [confirmedHistory,setConfirmedHistory]=useState<PaidHistoryResult[]>([]);
  const [periods,setPeriods]=useState<Period[]>([]),[selected,setSelected]=useState(''),[query,setQuery]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(true),[page,setPage]=useState(0),[group,setGroup]=useState('all');
  useEffect(()=>{let active=true;fetch('/api/premium/archive?actorId='+encodeURIComponent(employee.id),{cache:'no-store'}).then(async r=>{const data=await r.json() as {periods:Period[];confirmedHistory?:PaidHistoryResult[];error?:string};if(!r.ok)throw Error(data.error||'Не удалось загрузить архив');if(active){setPeriods(data.periods);setConfirmedHistory(data.confirmedHistory||[]);setSelected(data.periods[0]?.id||'');}}).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[employee.id]);
@@ -16,7 +17,7 @@ export function PremiumArchive({employee,employees,orders,onOpen,onReload}:{empl
  const archiveById=new Map(archived.map(o=>[o.externalId,o]));
  for(const o of search?confirmedHistory:[]){const saved=archiveById.get(o.externalId);archiveById.set(o.externalId,{...o,...saved,period:o.period,source:o.source,amountUnknown:saved?saved.amountUnknown:o.amountUnknown});}
  const found=[...archiveById.values()].filter(o=>!search||[o.externalId,o.id,o.login].join(' ').toLowerCase().includes(search));
- return <div className="stack"><h3>История оплат</h3><div className="toolbar premium-archive-toolbar"><label>Выплаченный период <select aria-label="Период архива премии" value={selected} onChange={e=>{setSelected(e.target.value);setQuery('');setPage(0);}}>{periods.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><div className="search"><Search size={17} aria-hidden="true"/><input aria-label="Поиск по истории выплат" placeholder="Номер заказа или логин — по всему архиву" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></div></div>
+ return <div className="stack"><h3>История оплат</h3>{actionsTarget&&createPortal(<div className="premium-actions premium-order-actions premium-archive-actions"><label className="premium-archive-period">Период <select aria-label="Период архива премии" value={selected} onChange={e=>{setSelected(e.target.value);setQuery('');setPage(0);}}>{periods.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><label className="premium-search"><div><Search size={17} aria-hidden="true"/><input aria-label="Поиск по истории выплат" placeholder="Номер заказа или логин — по всему архиву" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></div></label></div>,actionsTarget)}
  {loading?<p>Загрузка архива…</p>:error?<p role="alert">{error}</p>:!period&&!search?<p>Выплаченных периодов пока нет.</p>:<>
  {!search&&period&&<><p>{period.label} · Выплачено: <strong>{money(period.payout)}</strong> · Заказов: {period.count}</p>{period.source&&<small className="muted">Источник: {period.source}</small>}</>}
  {!search&&period&&!!period.historyOrders.length&&<p className="notice">Отдельно в старой истории: {period.historyOrders.map(o=>o.externalId).join(', ')}. Эти заказы уже выплачены, но не входят в подтверждённый расчёт периода; суммы в источнике отсутствуют.</p>}
