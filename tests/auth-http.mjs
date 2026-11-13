@@ -337,7 +337,18 @@ try{
  db.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').run(JSON.stringify({action:'date',result:'date',resultDate:futureDate,dateConfirmation:'confirmed',dateConfirmedAt:oldDate,author:'Earlier result'}),detailOrder.id);
  assert(!(await call('/api/redemption',{cookie:redemptionOrdinary.cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Future confirmed order stays out of the working queue');
  for(const cookie of [redemptionOrdinary.cookie,cookies.admin]){const allOrders=await call('/api/redemption?tab=all',{cookie});assert.equal(allOrders.status,200,allOrders.text);assert(allOrders.data.rows.some(r=>r.order_id===detailOrder.id));assert(!allOrders.data.rows.some(r=>r.phone||r.clientPhone));}
- for(const cookie of [detailOperator.cookie,(await fixture('redemption-search-head','1','department_head')).cookie])assert.equal((await call('/api/redemption?tab=all',{cookie})).status,403);
+ const searchHead=await fixture('redemption-search-head','1','department_head');
+ for(const cookie of [detailOperator.cookie,searchHead.cookie]){const found=await call('/api/redemption?tab=all',{cookie});assert.equal(found.status,200,found.text);assert(found.data.rows.some(r=>r.order_id===detailOrder.id));assert(!found.data.rows.some(r=>r.phone||r.clientPhone));}
+ const unrelatedOperator=await fixture('redemption-search-unrelated','2');
+ assert(!(await call('/api/redemption?tab=all',{cookie:unrelatedOperator.cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Project-wide search preserves operator ownership');
+ const previousSearchConfig=db.prepare("SELECT data FROM settings WHERE id='redemption-config'").get();
+ db.prepare("INSERT INTO settings(id,data) VALUES('redemption-config',?) ON CONFLICT(id) DO UPDATE SET data=json_set(data,'$.headsAll',json('false'))").run(JSON.stringify({headsAll:false}));
+ const unrelatedHead=await fixture('redemption-search-other-head','2','department_head');
+ assert(!(await call('/api/redemption?tab=all',{cookie:unrelatedHead.cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Project-wide search preserves the configured department scope');
+ if(previousSearchConfig)db.prepare("UPDATE settings SET data=? WHERE id='redemption-config'").run(previousSearchConfig.data);else db.prepare("DELETE FROM settings WHERE id='redemption-config'").run();
+ db.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').run(JSON.stringify({action:'date',result:'delivered',lastDay:oldDate.slice(0,10)}),detailOrder.id);
+ for(const cookie of [cookies.admin,detailOperator.cookie,searchHead.cookie])assert((await call('/api/redemption?tab=all',{cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Completed older orders remain searchable');
+ db.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').run(JSON.stringify({action:'date',result:'date',resultDate:futureDate,dateConfirmation:'confirmed',dateConfirmedAt:oldDate,author:'Earlier result'}),detailOrder.id);
  let version=db.prepare('SELECT version FROM redemption_entries WHERE order_id=?').get(detailOrder.id).version;
  const replacement={id:detailOrder.id,version,action:'courier',result:'courier',comment:'Changed after project-wide search'};
  assert.equal((await call('/api/redemption',{cookie:redemptionOrdinary.cookie,body:replacement})).status,400,'Future result replacement still needs confirmation');
