@@ -410,3 +410,9 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .incoming-order-actions button{max-width:100%;white-space:normal;text-align:left}
 
 .partner-cash-dialog{width:96vw!important;max-width:1500px!important;max-height:94dvh;display:flex;flex-direction:column}.partner-cash-dialog .sheet-body{overflow:auto;min-height:0}.partner-cash .cash-summary strong{font-size:24px}.partner-cash .form-grid{align-items:end}
+/* Free clients stay identifiable after an incoming is handed to an operator. */
+.incoming-card.incoming-card-free{border-color:#a8cfee;background:linear-gradient(135deg,#f4faff,#e1f0fc)}
+.incoming-card-free .incoming-card-person .avatar{background:linear-gradient(145deg,#f4faff,#c5e2f7);color:#3f7199}
+.incoming-card-free .incoming-card-top,.incoming-card-free .incoming-card-contact{color:#507b9f}
+.incoming-card-free .incoming-card-status{background:#cce5f566}
+.incoming-card-free .incoming-card-footer{background:#edf7fcbf}

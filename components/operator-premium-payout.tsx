@@ -13,7 +13,7 @@ export function OperatorPremiumPayout({actor,period,preview,orders,rate,readMode
   };
   void refresh();const timer=setInterval(()=>{if(prepared)void refresh();},5000);
   return()=>{active=false;controller.abort();clearInterval(timer);};
- },[actor,period,preview,orders]);
+ },[actor,period,preview]);
  if(readModel&&['pending','error'].includes(readModel.status))return <strong>Расчёт выплаты ожидает готовую сводку…</strong>;
  if(preview)return <span><strong>Предполагаемая выплата: {money(nextOperatorPayout(orders,rate))}{readModel?.status==='stale'?' · обновляется':''}</strong><small className="block">Только {rate}% от заказов, без оклада и корректировок</small></span>;
  return <strong>{!period?'Период выплаты ещё не открыт':error?'Не удалось загрузить премию':amount===null?'Расчёт выплаты загружается…':'К выплате за период: '+money(amount)+(stale?' · сводка обновляется':'')}</strong>;

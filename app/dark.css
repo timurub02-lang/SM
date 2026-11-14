@@ -98,3 +98,12 @@ html.dark:not(:has(.courier-app)) {
 .dark:not(:has(.courier-app)) .order-status-tile { background:var(--dark-panel); color:rgb(var(--status-tint)); border-color:var(--status-edge); box-shadow:none; }
 .dark:not(:has(.courier-app)) .order-status-tile[data-state=active] { background:var(--dark-raised); color:rgb(var(--status-tint)); border-color:var(--status-edge); box-shadow:0 0 0 2px var(--status-edge); }
 }
+
+.dark:not(:has(.courier-app)) .incoming-card.incoming-card-free{background:linear-gradient(135deg,#1c3045,#233e58);border-color:#5185ad}
+.dark:not(:has(.courier-app)) .incoming-card-free .incoming-card-top,.dark:not(:has(.courier-app)) .incoming-card-free .incoming-card-contact{color:#a7cfee}
+.dark:not(:has(.courier-app)) .incoming-card-free .incoming-card-status,.dark:not(:has(.courier-app)) .incoming-card-free .incoming-card-footer{background:#28476166}
+.dark:not(:has(.courier-app)) .incoming-card-free :is(.incoming-card-person>strong,.incoming-card-stats strong){color:var(--foreground)}
+.dark:not(:has(.courier-app)) .incoming-card-free .incoming-card-order-label{color:var(--dark-muted)}
+.dark:not(:has(.courier-app)) .incoming-card-free .incoming-card-body{background:transparent}
+.dark:not(:has(.courier-app)) :is(.incoming-card-body,.incoming-action-dialog) button.call-route-beeline{background:#16834a;border-color:#16834a;color:#fff}
+.dark:not(:has(.courier-app)) :is(.incoming-card-body,.incoming-action-dialog) button.call-route-beeline:hover:not(:disabled){background:#116b3c;border-color:#116b3c}
