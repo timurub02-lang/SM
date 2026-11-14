@@ -4,6 +4,7 @@ import {initIncoming,incomingCloseStatement} from '../lib/incoming.ts';
 import {incomingClientWorkStatements} from '../lib/client-work-store.ts';
 import {clientWorkStatus} from '../lib/client-work.ts';
 const d=openDatabase(':memory:'),at='2026-10-27T12:00:00Z',e={id:'op',role:'operator',name:'Operator'};
+await d.prepare('CREATE TABLE IF NOT EXISTS auth_accounts(employee_id TEXT PRIMARY KEY,enabled INTEGER)').run();
 await d.batch(['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(s=>d.prepare(s)));
 await d.prepare('INSERT INTO clients VALUES(?,?)').bind('c',JSON.stringify({id:'c',owner:'op',assignedUntil:'2026-11-01T12:00:00Z'})).run();
 await initIncoming(d);

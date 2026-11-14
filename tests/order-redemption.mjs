@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
 import {initRedemption,redemptionRows,editRedemption,canSeeRedemption,redemptionResultLabel} from '../lib/redemption.ts';
 const d=openDatabase(':memory:'),now=new Date('2026-10-27T10:00:00Z');
+await d.prepare('CREATE TABLE IF NOT EXISTS auth_accounts(employee_id TEXT PRIMARY KEY,enabled INTEGER)').run();
 const op={id:'op',name:'Operator',role:'operator',department:'1'},buyer={id:'buyer',name:'Buyout',role:'redemption'};
 await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)'].map(s=>d.prepare(s)));
 await initRedemption(d);
