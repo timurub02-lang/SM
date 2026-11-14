@@ -66,7 +66,7 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
    <button className="secondary" type="button" onClick={()=>setSettings(null)}>Закрыть</button>
   </div>}
   {tab==='spam'&&<p className="muted">Последние 100 обращений, отмеченных как спам. «Вернуть в работу» восстановит обращение, но неизвестному номеру при следующем звонке всё равно нужно нажать 1.</p>}
-  <div className="incoming-card-grid">{shown.map(item=><details className={'incoming-card'+(item.hasActiveOrder?' incoming-card-has-order':free(item)?' incoming-card-free':'')} key={item.id} open={linkedIncoming===item.id?true:undefined} onToggle={e=>{if(!e.currentTarget.open&&linkedIncoming===item.id)setLinkedIncoming('');}}>
+  <div className="incoming-card-grid">{shown.map(item=><details className={'incoming-card'+(item.hasActiveOrder?' incoming-card-has-order':item.clientId&&item.clientOwnerId?' incoming-card-owned-no-order':'')} key={item.id} open={linkedIncoming===item.id?true:undefined} onToggle={e=>{if(!e.currentTarget.open&&linkedIncoming===item.id)setLinkedIncoming('');}}>
    <summary className="incoming-card-summary">
     <div className="incoming-card-top"><span>Входящий · {new Date(item.at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}</span><PhoneIncoming size={20}/></div>
     <div className="incoming-card-person"><span className="avatar">{item.clientId?initials(item.clientName||'Клиент'):'?'}</span><strong>{item.clientName||'Неизвестный клиент'}</strong></div>
