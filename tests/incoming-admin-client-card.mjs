@@ -21,7 +21,7 @@ for(const [patch,tab] of [[{},'free'],[{clientOwnerId:'other'},'known'],[{closed
 assert.equal(render('admin',{clientId:undefined},[],'unknown').buttons.length,0);
 assert.equal(render('admin',{spam:true},[],'spam').buttons.length,0);
 assert.equal(render('operator',{clientOwnerId:'other'},[],'known').buttons.length,0,'Foreign operator card remains hidden');
-assert.equal(render('department_head',{},[],'free').buttons.length,0,'No new head permission is introduced');
+assert.equal(render('department_head',{},[],'free').buttons.length,1,'Head can inspect an available free client through incoming');
 assert.equal(render('operator',{assigneeId:'actor'},[],'known').buttons.length,1,'Assigned free-client history remains available');
 assert.equal(render('operator',{clientOwnerId:'actor'},[{id:item.clientId,owner:'actor'}],'known').buttons.length,1);
 console.log('Inbox navigation: admin missing-cache/free/owned/closed, callback IDs and unchanged operator/head guards passed');
