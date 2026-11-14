@@ -1,7 +1,7 @@
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
-import {internalWaybill,courierCheatsheet} from '@/lib/internal-waybill';
+import {internalWaybill,courierCheatsheet,canDownloadCourierCheatsheet} from '@/lib/internal-waybill';
 async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  const q=new URL(req.url).searchParams;
@@ -10,7 +10,7 @@ async function handleGET(req:Request){
  const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(q.get('orderId')||'').first<{data:string}>();
  if(!row)return Response.json({error:'Заказ не найден'},{status:404});
  const order=JSON.parse(row.data);
- if(q.get('format')==='cheatsheet'&&order.delivery!=='moscow_courier')return Response.json({error:'Шпаргалка доступна для доставки Курьер Москва'},{status:400});
+ if(q.get('format')==='cheatsheet'&&!canDownloadCourierCheatsheet(order))return Response.json({error:'Шпаргалка доступна после перехода заказа в раздел Курьер Москва'},{status:400});
  const client=await db().prepare('SELECT data FROM clients WHERE id=?').bind(order.clientId).first<{data:string}>();
  if(!client)return Response.json({error:'Клиент не найден'},{status:404});
  const manager=await db().prepare('SELECT data FROM employees WHERE id=?').bind(order.manager).first<{data:string}>();
