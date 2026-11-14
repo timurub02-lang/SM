@@ -415,3 +415,8 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .incoming-card-owned-no-order .incoming-card-top,.incoming-card-owned-no-order .incoming-card-contact{color:#507b9f}
 .incoming-card-owned-no-order .incoming-card-status{background:#cce5f566}
 .incoming-card-owned-no-order .incoming-card-footer{background:#edf7fcbf}
+
+.order-top-actions{flex-direction:row;align-items:center;flex-wrap:wrap}
+.order-top-actions:empty{display:none}
+.order-top-actions>.order-quick-bar,.order-top-actions .order-quick-buttons{display:contents}
+.order-top-actions>.order-quick-bar>small,.order-top-actions>.order-quick-bar>.field{flex-basis:100%}
