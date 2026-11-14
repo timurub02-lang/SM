@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {canTransferIncoming,incomingTransferLabel} from '../lib/incoming-transfer.ts';
+const head={id:'head',role:'department_head'},admin={id:'admin',role:'admin'};
+assert.equal(canTransferIncoming(head,{clientOwnerId:'one',assigneeId:'one'}),false);
+assert.equal(canTransferIncoming(head,{clientOwnerId:'one',assigneeId:'head'}),true,'Owner handoff after phone linking');
+assert.equal(canTransferIncoming(head,{clientOwnerId:'',assigneeId:''}),true);
+assert.equal(canTransferIncoming(admin,{clientOwnerId:'one',assigneeId:'one'}),true);
+assert.equal(canTransferIncoming({id:'one',role:'operator'},{clientOwnerId:''}),false);
+assert.equal(canTransferIncoming(admin,{closedAt:'now'}),false);
+assert.equal(canTransferIncoming(head,{spam:true}),false);
+assert.equal(incomingTransferLabel(admin,{hasActiveOrder:true}),'Передать другому оператору');
+assert.equal(incomingTransferLabel(head,{hasActiveOrder:true}),'Передать оператору');
+assert.equal(incomingTransferLabel(head,{hasActiveOrder:false}),'Передать оператору');
+console.log('Incoming transfer: owned work stays with owner/head; free and admin handoffs preserved');

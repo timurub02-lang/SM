@@ -95,6 +95,10 @@ export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee
  if(clientId!==undefined&&row.client_id!==clientId)throw Error('Обращение относится к другому клиенту');
  return row;
 }
+export async function canReadIncomingClient(d:Db,e:Employee,incomingId:string,clientId:string){
+ if(!['admin','operator','department_head'].includes(e.role)||!incomingId||incomingId.length>100||!clientId)return false;
+ try{await incomingForAction(d,incomingId,e,[],clientId);return true;}catch{return false;}
+}
 export function incomingCloseStatement(d:Db,id:string,employeeId:string,at:string,reason:string,orderId:string|null,mutation?:string,handoff?:string){
  return d.prepare("UPDATE incoming_calls SET closed_at=?,closed_by=?,reason=?,order_id=? WHERE id=? AND closed_at IS NULL"+(!orderId&&!handoff?" AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=incoming_calls.client_id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))":"")+(handoff?" AND assignee_id=? AND handoff=?":"")+(mutation?" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)":"")).bind(at,employeeId,reason,orderId,id,...(handoff?[employeeId,handoff]:[]),...(mutation?[orderId,mutation]:[]));
 }
@@ -116,7 +120,9 @@ export async function incomingRouting(d:Db,clientId:string,c:{owner?:string}|nul
  const buyoutCaller=last?.order_id&&eligible(last.actor_id)?.role==='redemption'&&!!await d.prepare("SELECT id FROM orders WHERE id=? AND client_id=? AND json_extract(data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(data,'$.status') IN ('shipping','pickup')").bind(last.order_id,clientId).first()?eligible(last.actor_id):undefined;
  const clientOrders=clientId&&!c?.owner?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(clientId).all()).results:[];
  const shared=!!clientId&&!c?.owner&&!clientOrders.some((r:{data:string})=>activeIncomingOrder(JSON.parse(r.data)));
- const assignee=shared?undefined:cdekSent?buyoutCaller||(c?.owner&&eligible(c.owner))||undefined:(last&&eligible(last.actor_id))||(c?.owner&&eligible(c.owner));
+ const previous=last&&eligible(last.actor_id),ownerCaller=c?.owner&&eligible(c.owner);
+ const logisticCaller=previous&&['logistic','chief_logistic'].includes(previous.role)&&!!await d.prepare("SELECT id FROM orders WHERE client_id=? AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned') LIMIT 1").bind(clientId).first()?previous:undefined;
+ const assignee=shared?undefined:cdekSent?buyoutCaller||ownerCaller||undefined:ownerCaller?logisticCaller||ownerCaller:previous||undefined;
  const owner=staff.find(e=>e.id===c?.owner);
  return {assignee,department:owner?.department||assignee?.department||'',shared,cdekSent,callbackOrderId:buyoutCaller?last.order_id:undefined};
 }

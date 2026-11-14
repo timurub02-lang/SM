@@ -4,10 +4,10 @@ import type {ClientOrderHistoryEntry} from "@/lib/client-order-history";
 import {money,type Client,type Order} from '@/lib/crm';
 import {clientHistoryEntries} from '@/lib/client-order-history';
 const date=(value:string)=>new Date(value).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'});
-export function ClientOrderHistory({client,orders,remote=false}:{client:Client;orders:Order[];remote?:boolean}){
+export function ClientOrderHistory({client,orders,remote=false,incomingId}:{incomingId?:string;client:Client;orders:Order[];remote?:boolean}){
  const [page,setPage]=useState(0),[data,setData]=useState<{rows:ClientOrderHistoryEntry[];total:number}|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false);
  useEffect(()=>setPage(0),[client.id,client.version]);
- useEffect(()=>{if(!remote)return;const abort=new AbortController();setLoading(true);setError('');fetch('/api/crm/history?'+new URLSearchParams({clientId:client.id,legacy:'1',page:String(page)}),{signal:abort.signal}).then(async r=>{const d=await r.json() as {rows:ClientOrderHistoryEntry[];total:number;error?:string};if(!r.ok)throw Error(d.error||'Не удалось загрузить историю');setData(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[remote,client.id,client.version,page]);
+ useEffect(()=>{if(!remote)return;const abort=new AbortController();setLoading(true);setError('');fetch('/api/crm/history?'+new URLSearchParams({clientId:client.id,legacy:'1',page:String(page),...(incomingId?{incomingId}:{})}),{signal:abort.signal}).then(async r=>{const d=await r.json() as {rows:ClientOrderHistoryEntry[];total:number;error?:string};if(!r.ok)throw Error(d.error||'Не удалось загрузить историю');setData(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[remote,client.id,client.version,page,incomingId]);
  const rows=remote?(data?.rows||[]):clientHistoryEntries(client.legacyOrderHistory||[],orders);
  if(loading)return <p role="status">Загрузка предыдущих заказов…</p>;
  if(error)return <p role="alert">{error}</p>;

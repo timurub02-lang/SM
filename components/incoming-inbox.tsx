@@ -1,4 +1,5 @@
 'use client';
+import {canTransferIncoming,incomingTransferLabel} from '@/lib/incoming-transfer';
 import {IncomingOrderActions,type IncomingAction} from './incoming-order-actions';
 import {OperatorSelect} from './operator-select';
 import {useState} from 'react';
@@ -23,10 +24,10 @@ export function IncomingHandoffNote({item}:{item:IncomingRequest}){
 }
 export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item:IncomingRequest;employee:Employee;operators:Pick<Employee,'id'|'name'|'department'|'login'>[];busy:boolean;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>}){
  const [operator,setOperator]=useState(operators.some(e=>e.id===item.clientOwnerId)?item.clientOwnerId||'':operators.some(e=>e.id===item.assigneeId)?item.assigneeId||'':''),[comment,setComment]=useState('');
- if(!['admin','department_head'].includes(employee.role)||item.closedAt||item.spam)return null;
+ if(!canTransferIncoming(employee,item))return null;
  return <form className="notice stack incoming-transfer" onSubmit={async e=>{e.preventDefault();if(operator&&comment.trim()&&await onTransfer(item.id,operator,comment.trim()))setComment('');}}>
-  <strong>Передать входящее оператору</strong>
-  <OperatorSelect label="Оператор для передачи входящего" required disabled={busy} operators={operators} value={operator} onChange={setOperator}/>
+  <strong>{incomingTransferLabel(employee,item)}</strong>
+  <OperatorSelect label="Оператор для передачи входящего" required disabled={busy} operators={employee.role==='department_head'&&item.clientOwnerId?operators.filter(e=>e.id===item.clientOwnerId):operators} value={operator} onChange={setOperator}/>
   <label className="field"><span>Комментарий оператору *</span><textarea required maxLength={1900} rows={3} disabled={busy} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Что выяснили в разговоре и что нужно сделать оператору"/></label>
   <button type="submit" className="primary" disabled={busy||!operator||!comment.trim()}>Передать входящее с комментарием</button>
  </form>;
@@ -88,11 +89,11 @@ export function IncomingInbox({items,clients,employees,employee,busy,onReload,on
 
    <div className="action-buttons incoming-contact-actions">
    {!item.spam&&!item.clientId&&!item.closedAt&&['admin','department_head'].includes(employee.role)&&<IncomingClientLink incomingId={item.id} phone={item.phone} busy={busy} employees={employees} onCreate={(name,operatorId,baseType)=>onCreate(item.id,name,operatorId,baseType)} phoneOnly={employee.role==='department_head'} onLink={async(clientId,lookupPhone)=>{const ok=await onLink(item.id,clientId,lookupPhone);if(ok){setTab('known');setLinkedIncoming(item.id);}return ok;}}/>}
-   {!item.spam&&item.clientId&&(employee.role==='admin'||canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))||!item.closedAt&&!item.clientOwnerId&&!item.hasActiveOrder&&item.assigneeId===employee.id)&&<button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!,item.closedAt?undefined:item.id)}>Карточка клиента</button>}
+   {!item.spam&&item.clientId&&(employee.role==='admin'||canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))||!item.closedAt&&(employee.role==='department_head'||employee.role==='operator'&&(item.assigneeId===employee.id||item.clientOwnerId===employee.id)))&&<button type="button" className="secondary" disabled={busy} onClick={()=>onOpenClient(item.clientId!,item.closedAt?undefined:item.id)}>Карточка клиента</button>}
    {!item.spam&&!item.closedAt&&(!item.clientId||assignedCallback(item)||sharedCallback(item))&&(['admin','department_head'].includes(employee.role)||employee.role==='operator'&&item.assigneeId===employee.id)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'incoming',incomingId:item.id}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    {!item.spam&&item.clientId&&canOpenClientCard(employee,clients.find(c=>c.id===item.clientId))&&!item.hasActiveOrder&&!assignedCallback(item)&&!sharedCallback(item)&&<CallButton client={clients.find(c=>c.id===item.clientId)} target={{mode:'client',clientId:item.clientId}} onCompleted={()=>afterCall(item)} disabled={busy}>Перезвонить</CallButton>}
    </div>
-   {!item.closedAt&&!item.spam&&['admin','department_head'].includes(employee.role)&&<details className="incoming-transfer-fold" open={linkedIncoming===item.id?true:undefined}><summary>Передать оператору</summary><IncomingTransfer key={item.id+':'+(item.clientOwnerId||'')} item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/></details>}
+   {canTransferIncoming(employee,item)&&<details className="incoming-transfer-fold" open={linkedIncoming===item.id?true:undefined}><summary>{incomingTransferLabel(employee,item)}</summary><IncomingTransfer key={item.id+':'+(item.clientOwnerId||'')} item={item} employee={employee} operators={employees} busy={busy} onTransfer={onTransfer}/></details>}
    {!item.spam&&(item.closedAt?<><span>Закрыто: {stamp(item.closedAt,'Europe/Moscow')} МСК · {item.closedBy}</span><p>{item.reason}</p>{item.orderId&&<button type="button" className="secondary" onClick={()=>onOpen(item.orderId!,item.id)}>Открыть {item.orderId}</button>}</>:<>
     {item.hasActiveOrder&&!delegated(item)?<><span>Действующие заказы</span><div className="action-buttons">{item.orderIds?.map(id=><button className="primary" key={id} onClick={()=>onOpen(id,item.id)}>Открыть {id}</button>)}</div>{!item.orderIds?.length&&<p>Заказ недоступен вашей роли. Обратитесь к администратору.</p>}</>:<details className="incoming-result-fold"><summary>Итог обращения / закрыть</summary><IncomingResult item={item} busy={busy} onSave={reason=>onClose(item.id,reason)}/></details>}
    </>)}

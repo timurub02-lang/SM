@@ -1,3 +1,4 @@
+import {canReadIncomingClient} from '@/lib/incoming';
 import {open} from 'node:fs/promises';
 import {Readable} from 'node:stream';
 import {byteRange} from '@/lib/byte-range';
@@ -10,10 +11,11 @@ export const dynamic='force-dynamic';
 export const GET=authenticated(async req=>{
  const id=new URL(req.url).searchParams.get('id')||'',e=(await getChatGPTUser())?.employee;
  if(!e||!/^[a-f0-9]{32}$/.test(id))return new Response(null,{status:404});
+ const incomingId=new URL(req.url).searchParams.get('incomingId');
  const masked=new URL(req.url).searchParams.get('masked')==='1';
  if(masked&&!['admin','redemption'].includes(e.role))return new Response(null,{status:403});
  await initPhone(db());const c=await db().prepare(masked?'SELECT * FROM replacement_calls WHERE id=?':'SELECT * FROM phone_calls WHERE id=?').bind(id).first<PhoneCall>();
- if(!c||!c.recording||!masked&&!(await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
+ if(!c||!c.recording||!masked&&!(incomingId?await canReadIncomingClient(db(),e,incomingId,c.client_id||''):await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
  try{
   const dir=process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings';
   let extension='wav';
