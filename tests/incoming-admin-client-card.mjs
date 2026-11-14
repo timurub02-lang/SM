@@ -11,8 +11,8 @@ const item={id:'incoming-test',clientId:'client-test',clientName:'Synthetic clie
 function render(role,itemPatch={},clients=[],tab='free'){
  globalThis.__incomingTab=tab;const opened=[];
  const tree=IncomingInbox({items:[{...item,...itemPatch}],clients,employees:[],employee:{id:'actor',role},busy:false,onOpenClient:(...args)=>opened.push(args)});
- const buttons=[];function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;if(node.type==='button'&&node.props.children==='Карточка клиента')buttons.push(node);walk(node.props?.children);}
- walk(tree);return {buttons,opened};
+ const cards=[],buttons=[];function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;if(node.type==='details'&&node.props.className?.includes('incoming-card'))cards.push(node);if(node.type==='button'&&node.props.children==='Карточка клиента')buttons.push(node);walk(node.props?.children);}
+ walk(tree);return {buttons,opened,cards};
 }
 for(const [patch,tab] of [[{},'free'],[{clientOwnerId:'other'},'known'],[{closedAt:'2026-11-14T13:00:00Z'},'closed']]){
  const view=render('admin',patch,[],tab);assert.equal(view.buttons.length,1,'Admin card navigation must not depend on the client cache');
@@ -25,3 +25,6 @@ assert.equal(render('department_head',{},[],'free').buttons.length,1,'Head can i
 assert.equal(render('operator',{assigneeId:'actor'},[],'known').buttons.length,1,'Assigned free-client history remains available');
 assert.equal(render('operator',{clientOwnerId:'actor'},[{id:item.clientId,owner:'actor'}],'known').buttons.length,1);
 console.log('Inbox navigation: admin missing-cache/free/owned/closed, callback IDs and unchanged operator/head guards passed');
+
+for(const patch of [{},{assigneeId:'actor'}])assert.ok(render('admin',patch).cards[0].props.className.includes('incoming-card-free'),'Free clients remain blue after handoff');
+for(const [patch,tab] of [[{clientOwnerId:'owner'},'known'],[{hasActiveOrder:true},'known'],[{clientId:undefined},'unknown']])assert.ok(!render('admin',patch,[],tab).cards[0].props.className.includes('incoming-card-free'),'Owned, active-order and unknown cards keep their existing colors');
