@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {packingStage,orderLocation} from '../lib/crm.ts';
+import {courierBalance} from '../lib/courier.ts';
+import {filteredOrderList} from '../lib/crm-order-list.ts';
+const base={clientId:'c',manager:'op',delivery:'moscow_courier',status:'rework',items:[],contact:'none',due:'',createdAt:'2026-11-14T10:00:00Z',updatedAt:'2026-11-14T10:00:00Z'};
+const courier={id:'courier',name:'Courier',phase:'operator',assignedAt:base.createdAt,acceptedAt:base.createdAt,amount:1000};
+const orders=[{...base,id:'with-courier',courier},{...base,id:'before-dispatch'},{...base,id:'at-warehouse',courierRecall:{requestedAt:base.createdAt,returnedAt:base.createdAt,completedAt:base.createdAt}}, {...base,id:'active-delivery',status:'shipping',courier:{...courier,phase:'delivery'}},{...base,id:'recalled',status:'packing',courier:{...courier,phase:'recall'}},{...base,id:'awaiting-receipt',status:'packing',courier:{...courier,phase:'recall_returned'}}];
+const employee={id:'logistic',role:'logistic'},state={orders,clients:[{id:'c',name:'Client',phone:'',city:''}],employees:[employee],settings:{}};
+const query={view:'moscow',filter:'operator',query:'',showNextPremium:false};
+assert.deepEqual(filteredOrderList(state,employee,query).map(o=>o.id).sort(),['at-warehouse','before-dispatch','with-courier']);
+assert(!filteredOrderList(state,employee,{...query,filter:'exported'}).some(o=>o.status==='rework'));
+assert.equal(packingStage(orders[3]),'exported');assert.equal(packingStage(orders[4]),'exported');assert.equal(packingStage(orders[5]),'new');
+assert.equal(orderLocation(orders[0]),'У курьера');assert.equal(orderLocation(orders[2]),'На складе');
+assert.deepEqual(courierBalance([orders[0]],courier.id),{pending:0,parcels:1000,cash:0,total:1000});
+assert.equal(packingStage({...base,delivery:'russian_post'}),'new');
+assert.equal(filteredOrderList(state,{id:'other',role:'operator'},query).length,0);
+console.log('Moscow operator queue: all rework origins, no duplicate active queue, unchanged custody/accountability, lifecycle and permissions passed');
