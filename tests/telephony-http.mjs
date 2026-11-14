@@ -563,6 +563,21 @@ try{
  const closedCreation=db.prepare('SELECT closed_at,order_id,reason FROM incoming_calls WHERE id=?').get(createIncoming);assert.ok(closedCreation.closed_at);assert.equal(closedCreation.order_id,made.id);assert.ok(closedCreation.reason.includes(made.id));
  assert.equal((await api('/api/crm',makeOrder,cookies.one)).status,400,'Retry cannot create a second order');assert.equal(db.prepare('SELECT count(*) n FROM orders WHERE client_id=?').get(createClient.id).n,1);
  assert.ok(db.prepare('SELECT data FROM events WHERE order_id=?').all(made.id).some(r=>JSON.parse(r.data).actorId==='one'&&JSON.parse(r.data).text.includes(made.id)),'Audit keeps actual creator and created order number');
+ // A free client assigned through an incoming can be reviewed without claiming, then claimed by creating an order.
+ const freeWork={...createClient,id:'incoming-free-work',phone:'+79990000559',name:'Free incoming client',owner:'',address:'History address'};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(freeWork.id,freeWork.phone,JSON.stringify(freeWork));
+ const freePast={...JSON.parse(made.data),id:'free-past-order',clientId:freeWork.id,status:'redeemed',manager:'two'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(freePast.id,freeWork.id,JSON.stringify(freePast));
+ db.prepare('INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)').run('free-history-event',freeWork.id,freePast.id,new Date().toISOString(),JSON.stringify({id:'free-history-event',at:new Date().toISOString(),actor:'Test',text:'Contact +79990000559'}));
+ const freeWorkIncoming='d9'.repeat(16);await incoming(freeWorkIncoming,'79990000559');
+ assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:freeWorkIncoming,operatorId:'one',comment:'Handle free client'},cookies.head)).status,200);
+ const freeHistoryPath='/api/incoming-order-client?'+new URLSearchParams({incomingId:freeWorkIncoming,view:'history'});
+ let fh=await api(freeHistoryPath,undefined,cookies.one);assert.equal(fh.status,200,fh.text);assert.equal(fh.data.client.owner,'');assert.equal(fh.data.managerLogin,'one');assert.equal(fh.data.client.phone,'');assert.equal(fh.data.client.address,'History address');assert.ok(fh.data.events.some(e=>e.id==='free-history-event'));assert.ok(fh.data.orders.some(o=>o.id===freePast.id));assert.ok(!fh.text.includes('79990000559'));
+ assert.equal((await api(freeHistoryPath,undefined,cookies.two)).status,400,'Unassigned operator cannot inspect history');
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(freeWork.id).data).owner,'','Reading/cancelling does not claim client');
+ const freeMade=await api('/api/crm',{...makeOrder,clientId:freeWork.id,incomingId:freeWorkIncoming},cookies.one);assert.equal(freeMade.status,200,freeMade.text);
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(freeWork.id).data).owner,'one');assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE client_id=? AND id<>?').get(freeWork.id,freePast.id).data).manager,'one');assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(freeWorkIncoming).closed_at);
+ assert.equal((await api(freeHistoryPath,undefined,cookies.one)).status,400,'Closed incoming revokes narrow history access');
  // Delegated operator requests edits; logistics approves; the owner edits and returns to the original stage.
  const editClient={...createClient,id:'incoming-edit-client',phone:'+79990000552'};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(editClient.id,editClient.phone,JSON.stringify(editClient));
