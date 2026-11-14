@@ -188,7 +188,7 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
 
 function retentionWithPV(c:Client,orders:Order[],now:number,days:number,explicitPolicy:boolean,unpaidPremium:boolean):Client{
  const next=retentionResult(c,orders,now,days,explicitPolicy,unpaidPremium),related=orders.filter(o=>o.clientId===c.id);
- if(!related.some(o=>o.pv||o.blacklistedAt))return c.manualSheet?.sheet==='ПВ'&&next.owner?{...next,sheet:'ПВ'}:next;
+ if(!c.manualSheet&&!related.some(o=>o.pv||o.blacklistedAt))return next;
  const events=related.flatMap(o=>o.blacklistedAt?[{at:o.blacklistedAt,sheet:'ЧС',startedAt:''}]:o.status==='redeemed'&&o.redeemedAt?[{at:o.redeemedAt,sheet:next.owner?'К':'П',startedAt:''}]:o.pv?[{at:o.status==='returned'?o.returnedAt||o.updatedAt:o.status==='refused'?o.cancelledAt||o.updatedAt:o.pvMarkedAt||o.createdAt,sheet:['returned','refused'].includes(o.status)?'ЧС':'ПВ',startedAt:o.createdAt}]:[]).filter(e=>!c.manualSheet||Date.parse(e.at)>Date.parse(c.manualSheet.at)).sort((a,b)=>b.at.localeCompare(a.at));
  const latest=events[0];if(!latest)return c.manualSheet?.sheet==='ПВ'&&next.owner?{...next,sheet:'ПВ'}:next;
  // A purchase while the PV order was in progress wins over that order's later return.
