@@ -394,3 +394,10 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .notification-dialog .notification-tabs{position:sticky;top:0;z-index:1;background:var(--background,#fff);flex-shrink:0}
 .notification-dialog .sheet-body{scrollbar-gutter:stable}
 @media(max-width:600px){.notification-dialog{height:calc(100dvh - 24px)}.notification-dialog [data-slot=dialog-description]{min-height:4.8em}}
+
+.shipping-stage-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.shipping-stage-toolbar>[data-slot=tabs]{min-width:0;flex:1}
+.shipping-stage-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.shipping-stage-actions button{font-size:13px;padding:8px 12px;min-height:36px;white-space:nowrap}
+.shipping-stage-actions button svg{width:15px;height:15px}
+@media(max-width:800px){.shipping-stage-toolbar{flex-wrap:wrap;gap:10px}.shipping-stage-toolbar>[data-slot=tabs]{flex-basis:100%}.shipping-stage-actions{margin-left:auto}}
