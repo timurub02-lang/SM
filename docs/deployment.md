@@ -295,3 +295,9 @@ A timeout still only escalates the request and never decides the refusal automat
 Order refusal handoffs retain an additive `refusalHandoffAt` independently of the
 confirmation timer. Clarification returns do not consume another refusal attempt;
 extra confirmation and delivery edits cannot reset the prior refusal handoff.
+
+Admin client/order cards load individually through the authenticated card endpoint,
+while the admin workspace keeps its existing snapshot path. This includes free
+incoming clients absent from the working-client list. Reads use the existing scoped
+client state without reconciliation; they do not claim clients or change orders.
+Other roles retain their existing card access checks. No migration or new worker.
