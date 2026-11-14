@@ -1,3 +1,4 @@
+import {changeClientSheet} from '@/lib/client-sheet-change';
 import {canReceiveWarehouseReturn,legacyReturnItems} from '@/lib/warehouse-return';
 import {readPaidHistory} from '@/lib/premium-paid-history';
 import {internalDeadline} from '@/lib/internal-timers';
@@ -372,8 +373,9 @@ async function handlePOST(request:Request){
   const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(user.employee&&["operator","department_head"].includes(employee!.role)?{...p.client,phone:c.phone}:p.client);if(employee?.role==="operator")data.owner=c.owner;ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
   const firstSheet=s.clients.map(c=>sourceSheet(c.source)).find(x=>x&&x!=="К")||"Т1";
   const next={...c,...data,...clientAssignment(c,data.owner,now,firstSheet),addressReview:data.address===c.address?c.addressReview:false,_mutation:mutation};
-  const e=ev(c.id,"","Обновлена карточка клиента"+(c.owner!==data.owner?data.owner?" · передан оператору на 24 часа без нового заказа":" · клиент освобождён":""));
-  const releaseNotices=await releasedClientNotices(d,c,next,e,s.orders,data.owner?'Клиент передан другому оператору сотрудником '+(employee?.name||'Администратор'):'Закрепление снято сотрудником '+(employee?.name||'Администратор'));
+  if(p.client.sheet!==undefined){const saved=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());Object.assign(next,changeClientSheet(c,next,p.client.sheet,employee?.role||'',config[c.baseType||'M'].sheets.map(s=>s.name),now));}
+  const e=ev(c.id,"","Обновлена карточка клиента"+(clientSheet(c)!==clientSheet(next)?` · лист ${clientSheet(c)} → ${clientSheet(next)}`:"")+(c.owner!==next.owner?next.owner?" · передан оператору на 24 часа без нового заказа":" · клиент освобождён":""));
+  const releaseNotices=await releasedClientNotices(d,c,next,e,s.orders,next.owner?'Клиент передан другому оператору сотрудником '+(employee?.name||'Администратор'):'Закрепление снято сотрудником '+(employee?.name||'Администратор'));
   const result=await d.batch([d.prepare("UPDATE clients SET phone=?,data=?,version=version+1 WHERE id=? AND version=?").bind(next.phone,json(next),c.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),c.id,mutation),...releaseNotices]);
   if(!result[0].meta.changes)throw new Error("Карточка уже изменена. Обновите страницу и повторите");
  }else if(p.action==="requestOrder"||p.action==="decideOrderRequest"){
