@@ -145,11 +145,11 @@ async function handleGET(request:Request){
   const list=params.has('list')?listSchema.safeParse(Object.fromEntries(params)):null;
   if(list&&!list.success)return Response.json({error:'Некорректная страница заказов'},{status:400});
   await initialize();
-  const split=splitWorkspaceEnabled(user.employee),part=params.get('part');
+  const split=splitWorkspaceEnabled(user.employee),part=params.get('part'),adminCard=part==='card'&&user.employee?.role==='admin';
   if(part&&list)return Response.json({error:'Выберите страницу или часть рабочей области'},{status:400});
   if(part&&!['bootstrap','context','tasks','card','summary'].includes(part))return Response.json({error:'Неизвестная часть рабочей области'},{status:400});
   if(split&&part==='bootstrap')return timing.finish(Response.json(await workspaceBootstrap(db(),user.employee!)));
-  if(part&&part!=='bootstrap'&&!split)return Response.json({error:'Раздельная загрузка недоступна'},{status:403});
+  if(part&&part!=='bootstrap'&&!split&&!adminCard)return Response.json({error:'Раздельная загрузка недоступна'},{status:403});
   if(split&&preparedModelsEnabled()){
    await requestPreparedWorkspace(db(),user.employee!.id);
    if(part==='summary'||part==='context'){
@@ -162,9 +162,15 @@ async function handleGET(request:Request){
     return timing.finish(await conditionalJson(request,{...data,readModel,financialReadModel}));
    }
   }else if(part==='summary')return timing.finish(Response.json({error:'Подготовленные сводки недоступны'},{status:403}));
-  if(split&&part==='card'){
+  if((split||adminCard)&&part==='card'){
    const target=z.object({type:z.enum(['client','order']),id:z.string().min(1).max(100)}).safeParse(Object.fromEntries(params));
    if(!target.success)return Response.json({error:'Некорректная карточка'},{status:400});
+   if(adminCard){
+    const table=target.data.type==='client'?'clients':'orders';
+    if(!await db().prepare(`SELECT id FROM ${table} WHERE id=?`).bind(target.data.id).first())return Response.json({error:'Карточка недоступна'},{status:404});
+    const card=await readState(false,'',false,target.data.type==='order'?target.data.id:'',false,target.data.type==='client'?target.data.id:'');
+    return timing.finish(Response.json(compactCrmState(await responseState(user,false,'',true,'','',card,false,true))));
+   }
    const card=await readWorkspaceCard(db(),user.employee!,target.data.type,target.data.id);
    if(!card)return Response.json({error:'Карточка недоступна'},{status:404});
    return timing.finish(Response.json(compactCrmState(await responseState(user,false,'',true,'','',card,false))));
