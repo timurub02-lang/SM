@@ -17,3 +17,7 @@ console.log('Packing return uses the shared top action for all delivery methods;
 
 for(const status of ['confirm','extra'])assert.ok(evaluate({status,delivery:'russian_post'},['packing'],false,false,()=>false).includes('packing'));
 for(const delivery of ['moscow_courier','russian_post'])assert.ok(evaluate({status:'packing',delivery},['shipping'],false,false,()=>false).includes('shipping'));
+
+for(const status of ['shipping','pickup'])assert.deepEqual(evaluate({status,delivery:'russian_post'},['redeemed','returned'],false,false,()=>false),['redeemed','returned']);
+assert.deepEqual(evaluate({status:'shipping',delivery:'russian_post'},[],false,false,()=>false),[]);
+assert.deepEqual(evaluate({status:'shipping',delivery:'cdek_courier'},['redeemed','returned'],false,false,()=>false),[]);
