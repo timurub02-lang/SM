@@ -10,6 +10,7 @@ import {snapshotOrdersQuery,snapshotOrder} from '../lib/snapshot-orders.ts';
 import {applyPremiumStages,nextPremiumPreview} from '../lib/premium-ledger.ts';
 import {readIncoming,initIncoming} from '../lib/incoming.ts';
 const d=openDatabase(':memory:');
+await d.prepare('CREATE TABLE IF NOT EXISTS auth_accounts(employee_id TEXT PRIMARY KEY,enabled INTEGER)').run();
 const clean=x=>JSON.parse(JSON.stringify(x));
 try{
  for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await d.prepare(sql).run();

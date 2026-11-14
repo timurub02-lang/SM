@@ -1,3 +1,5 @@
+import {shippedOrder} from './shipment-request.ts';
+import {beforeShipment} from './order-edit-request.ts';
 import {initProtection,incomingGate} from './incoming-protection.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {normalizePhone,orderGroup,hideClientPhone,type Employee,type Order,type IncomingRequest} from './crm.ts';
@@ -23,6 +25,7 @@ async function initializeIncoming(d:Db){
  }
  await d.prepare('CREATE INDEX IF NOT EXISTS incoming_open_phone ON incoming_calls(phone,closed_at)').run();
  await initProtection(d);
+  await d.prepare("UPDATE incoming_calls SET assignee_id=(SELECT json_extract(c.data,'$.owner') FROM clients c WHERE c.id=incoming_calls.client_id),department_id=COALESCE((SELECT json_extract(e.data,'$.department') FROM employees e JOIN clients c ON e.id=json_extract(c.data,'$.owner') WHERE c.id=incoming_calls.client_id),''),shared_queue=0 WHERE closed_at IS NULL AND (assignee_id IS NOT (SELECT json_extract(c.data,'$.owner') FROM clients c WHERE c.id=incoming_calls.client_id) OR shared_queue<>0) AND spam=0 AND COALESCE(handoff,'')='' AND NOT EXISTS(SELECT 1 FROM employees WHERE id=incoming_calls.assignee_id AND json_extract(data,'$.role')='redemption') AND EXISTS(SELECT 1 FROM clients c JOIN employees e ON e.id=json_extract(c.data,'$.owner') JOIN auth_accounts a ON a.employee_id=e.id AND a.enabled=1 WHERE c.id=incoming_calls.client_id AND json_extract(e.data,'$.role')='operator') AND EXISTS(SELECT 1 FROM orders o WHERE o.client_id=incoming_calls.client_id AND json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(o.data,'$.status') NOT IN ('redeemed','refused','returned') AND (json_extract(o.data,'$.status') IN ('shipping','pickup') OR COALESCE(json_extract(o.data,'$.shippedAt'),'')<>'' OR COALESCE(json_extract(o.data,'$.cdekTransferredAt'),'')<>''))").run();
  await d.prepare('CREATE INDEX IF NOT EXISTS incoming_assignee ON incoming_calls(assignee_id,closed_at,at)').run();
 }
 export function seesIncoming(row:Pick<Row,'client_id'|'assignee_id'|'department_id'|'shared_queue'|'spam'>,e:Employee,staff:Employee[]){
@@ -31,12 +34,12 @@ export function seesIncoming(row:Pick<Row,'client_id'|'assignee_id'|'department_
 export const activeIncomingOrder=(o:Order)=>['new','accepted','sent'].includes(orderGroup(o.status).id);
 export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumber:string;at:string;screening?:'passed'|'failed'|'blocked'}){
  await initIncoming(d);await initPhone(d);await initBaseStorage(d);
- if(await d.prepare('SELECT id FROM incoming_calls WHERE id=?').bind(p.id).first())return;
+ if(await d.prepare('SELECT id FROM incoming_calls WHERE id=?').bind(p.id).first()||await d.prepare('SELECT id FROM incoming_attempts WHERE id=? AND applied=1').bind(p.id).first())return;
  const decision=await incomingGate(d,p);
  const phone=normalizePhone(p.phone),called=normalizePhone(p.calledNumber);
  const client=phone?await d.prepare('SELECT c.id,c.data FROM clients c JOIN client_phone_index i ON i.client_id=c.id WHERE i.phone=?').bind(phone.slice(1)).first():null;
  const c=client?JSON.parse(client.data):null;
- const {assignee,department,shared}=await incomingRouting(d,client?.id||'',c,p.at);
+ const {assignee,department,shared,cdekSent,callbackOrderId}=await incomingRouting(d,client?.id||'',c,p.at);
  const blocked=await d.prepare("SELECT phone FROM incoming_phone_policy WHERE phone=? AND policy='block'").bind(phone).first();
  const spam=!!blocked||p.screening==='blocked'||p.screening==='failed'||decision==='block'||decision==='challenge'&&p.screening!=='passed';
  // Failed verification stays in the attempt journal and must not create or hide a request.
@@ -50,6 +53,7 @@ export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumbe
   d.prepare("INSERT OR IGNORE INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue,call_count,spam,spam_reason) SELECT ?,?,?,?,?,?,?,?,0,?,? WHERE EXISTS(SELECT 1 FROM incoming_attempts WHERE id=? AND applied=0) AND NOT EXISTS(SELECT 1 FROM incoming_calls WHERE phone=? AND closed_at IS NULL)").bind(p.id,client?.id||null,assignee?.id||null,department,p.at,phone,called,shared?1:0,spam?1:0,reason,p.id,phone),
   d.prepare("UPDATE incoming_attempts SET request_id=(SELECT id FROM incoming_calls WHERE phone=? AND closed_at IS NULL ORDER BY at,id LIMIT 1) WHERE id=? AND applied=0").bind(phone,p.id),
   d.prepare("UPDATE incoming_calls SET call_count=call_count+1,last_at=MAX(at,last_at,?),spam=MAX(spam,?),spam_reason=CASE WHEN ?=1 THEN ? ELSE spam_reason END WHERE id=(SELECT request_id FROM incoming_attempts WHERE id=? AND applied=0)").bind(p.at,spam?1:0,spam?1:0,reason,p.id),
+  ...(cdekSent?[d.prepare("UPDATE incoming_calls SET assignee_id=?,department_id=?,shared_queue=0,order_id=? WHERE id=(SELECT request_id FROM incoming_attempts WHERE id=? AND applied=0) AND closed_at IS NULL AND spam=0 AND COALESCE(handoff,'')='' AND client_id=?").bind(assignee?.id||null,department,callbackOrderId||null,p.id,client?.id)]:[]),
   d.prepare('UPDATE incoming_attempts SET applied=1 WHERE id=?').bind(p.id)
  ]);
 
@@ -64,13 +68,23 @@ export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order
  const spam=e.role==='admin'?(await d.prepare(select+' AND i.spam=1 ORDER BY i.last_at DESC,i.at DESC LIMIT 100').bind(...args).all()).results:[];
  const rows=[...open,...closed,...spam] as (Row&{client_name:string|null;client_owner:string|null})[];if(!rows.length)return [];
  const ids=new Set(rows.map(r=>r.client_id));
- if(scoped)orders=(await d.prepare("SELECT json_object('id',id,'clientId',client_id,'manager',json_extract(data,'$.manager'),'status',json_extract(data,'$.status')) AS data FROM orders WHERE client_id IN (SELECT value FROM json_each(?)) ORDER BY id DESC").bind(JSON.stringify([...ids].filter(Boolean))).all()).results.map((r:{data:string})=>JSON.parse(r.data));
+ if(scoped)orders=(await d.prepare("SELECT json_object('id',id,'clientId',client_id,'manager',json_extract(data,'$.manager'),'status',json_extract(data,'$.status'),'version',version,'shippedAt',json_extract(data,'$.shippedAt'),'courier',json_extract(data,'$.courier'),'delivery',json_extract(data,'$.delivery'),'cdekTransferredAt',json_extract(data,'$.cdekTransferredAt')) AS data FROM orders WHERE client_id IN (SELECT value FROM json_each(?)) ORDER BY id DESC").bind(JSON.stringify([...ids].filter(Boolean))).all()).results.map((r:{data:string})=>JSON.parse(r.data));
+ const buyoutByClient=new Map<string|null,string[]>();
+ const shippedByClient=new Map<string|null,string[]>();
+ const beforeByClient=new Map<string|null,string[]>();
  const activeByClient=new Map<string|null,Order[]>(),staffById=new Map<string|null,Employee>();
  for(const person of staff)if(!staffById.has(person.id))staffById.set(person.id,person);
- for(const order of orders)if(ids.has(order.clientId)&&activeIncomingOrder(order)){const active=activeByClient.get(order.clientId)||[];active.push(order);activeByClient.set(order.clientId,active);}
+ for(const order of orders)if(ids.has(order.clientId)){
+  const status=order.status;
+  if(activeIncomingOrder({status} as Order)){
+   const active=activeByClient.get(order.clientId)||[];active.push(order);activeByClient.set(order.clientId,active);
+   if(shippedOrder({status,shippedAt:order.shippedAt,courier:order.courier,cdekTransferredAt:order.cdekTransferredAt} as Order)){if(order.delivery?.startsWith('cdek_')){const buyout=buyoutByClient.get(order.clientId)||[];buyout.push(order.id);buyoutByClient.set(order.clientId,buyout);}const sent=shippedByClient.get(order.clientId)||[];sent.push(order.id);shippedByClient.set(order.clientId,sent);}
+   if(beforeShipment({status,shippedAt:order.shippedAt,courier:order.courier,cdekTransferredAt:order.cdekTransferredAt})){const before=beforeByClient.get(order.clientId)||[];before.push(order.id);beforeByClient.set(order.clientId,before);}
+  }
+ }
  return rows.map(r=>{
   const active=activeByClient.get(r.client_id)||[];
-  return {clientOwnerId:r.client_owner||'',handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staffById.get(r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:hideClientPhone(e.role)?'':r.phone,calledNumber:hideClientPhone(e.role)?'':r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staffById.get(r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
+  return {buyoutOrderIds:buyoutByClient.get(r.client_id)||[],shippedOrderIds:shippedByClient.get(r.client_id)||[],orderVersions:Object.fromEntries(active.map(o=>[o.id,o.version])),preShipmentOrderIds:beforeByClient.get(r.client_id)||[],clientOwnerId:r.client_owner||'',handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staffById.get(r.assignee_id)?.name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:hideClientPhone(e.role)?'':r.phone,calledNumber:hideClientPhone(e.role)?'':r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)&&(e.role!=='redemption'||!r.order_id||o.id===r.order_id)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staffById.get(r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
  });
 }
 export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee[],clientId?:string){
@@ -97,10 +111,12 @@ export async function incomingRouting(d:Db,clientId:string,c:{owner?:string}|nul
  const eligible=(id:string)=>staff.find(e=>e.id===id&&e.role!=='courier'&&accounts.some((a:{employee_id:string;enabled:number})=>a.employee_id===id&&a.enabled));
  // Only an attempt actually accepted by PBX counts; denied microphone access is not a call.
  // A one-off delegated callback does not transfer routing for future incoming calls.
- const last=clientId?await d.prepare("SELECT actor_id FROM phone_calls WHERE client_id=? AND claimed_at<=? AND NOT EXISTS(SELECT 1 FROM phone_call_incoming p JOIN incoming_calls i ON i.id=p.incoming_id WHERE p.call_id=phone_calls.id AND i.handoff<>'') ORDER BY claimed_at DESC,seq DESC LIMIT 1").bind(clientId,at).first():null;
+ const last=clientId?await d.prepare("SELECT actor_id,order_id FROM phone_calls WHERE client_id=? AND claimed_at<=? AND NOT EXISTS(SELECT 1 FROM phone_call_incoming p JOIN incoming_calls i ON i.id=p.incoming_id WHERE p.call_id=phone_calls.id AND i.handoff<>'') ORDER BY claimed_at DESC,seq DESC LIMIT 1").bind(clientId,at).first():null;
+ const cdekSent=clientId&&!!await d.prepare("SELECT id FROM orders WHERE client_id=? AND json_extract(data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned') AND (json_extract(data,'$.status') IN ('shipping','pickup') OR COALESCE(json_extract(data,'$.shippedAt'),'')<>'' OR COALESCE(json_extract(data,'$.cdekTransferredAt'),'')<>'') LIMIT 1").bind(clientId).first();
+ const buyoutCaller=last?.order_id&&eligible(last.actor_id)?.role==='redemption'&&!!await d.prepare("SELECT id FROM orders WHERE id=? AND client_id=? AND json_extract(data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(data,'$.status') IN ('shipping','pickup')").bind(last.order_id,clientId).first()?eligible(last.actor_id):undefined;
  const clientOrders=clientId&&!c?.owner?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(clientId).all()).results:[];
  const shared=!!clientId&&!c?.owner&&!clientOrders.some((r:{data:string})=>activeIncomingOrder(JSON.parse(r.data)));
- const assignee=shared?undefined:(last&&eligible(last.actor_id))||(c?.owner&&eligible(c.owner));
+ const assignee=shared?undefined:cdekSent?buyoutCaller||(c?.owner&&eligible(c.owner))||undefined:(last&&eligible(last.actor_id))||(c?.owner&&eligible(c.owner));
  const owner=staff.find(e=>e.id===c?.owner);
- return {assignee,department:owner?.department||assignee?.department||'',shared};
+ return {assignee,department:owner?.department||assignee?.department||'',shared,cdekSent,callbackOrderId:buyoutCaller?last.order_id:undefined};
 }
