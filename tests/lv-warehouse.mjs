@@ -63,8 +63,15 @@ try{
  const data=JSON.parse((await d.prepare("SELECT data FROM products WHERE id='existing'").first()).data);assert.equal(data.sku,'KEEP');assert.equal(data.name,'Local name');
  assert.equal((await d.prepare("SELECT COUNT(*) n FROM products WHERE json_extract(data,'$.name')='External name'").first()).n,0);
  await syncLvWarehouse(d,fetcher);assert.equal(Number(upstream[13].reserve),48);
+ // Historical orders never reserved local stock: physical receipt is a single manual credit.
+ await order('legacy-received',3,'returned','Local name',{legacyLv:{trial:false},warehouseReturnedAt:new Date().toISOString()});
+ assert.equal((await balance('existing')).available,48);
+ await d.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').bind('legacy-return:legacy-received:existing','existing',3,'Physical legacy return','logistic',new Date().toISOString()).run();
+ assert.equal((await balance('existing')).available,51);
+ await syncLvWarehouse(d,fetcher);assert.equal(Number(upstream[13].reserve),51);
+ const returnWrites=writes.length;await syncLvWarehouse(d,fetcher);assert.equal(writes.length,returnWrites,'No duplicate legacy stock credit');
  // Removing credentials preserves quantities and local accounting.
- await d.prepare("DELETE FROM settings WHERE id='lv-warehouse'").run();await order('local-only',1,'draft','Local name');assert.equal((await balance('existing')).available,47);assert.equal((await syncLvWarehouse(d,fetcher)).skipped,true);
+ await d.prepare("DELETE FROM settings WHERE id='lv-warehouse'").run();await order('local-only',1,'draft','Local name');assert.equal((await balance('existing')).available,50);assert.equal((await syncLvWarehouse(d,fetcher)).skipped,true);
  await assert.rejects(()=>fetchLvGoods(config,async()=>Response.json({error:'bad token'})));
  await assert.rejects(()=>fetchLvGoods(config,async()=>Response.json({1:{name:'Bad',reserve:null,used:true}})));
  console.log('LV warehouse: import, mapping, live balances, no double stock, reservations, payments, returns, cancellation, manual stock, switches, lost replies, recovery, lock and local-only transition passed.');

@@ -454,6 +454,31 @@ try{
  assert.equal(courierBalance((await call('/api/crm',{cookie:dispatchCourier.cookie})).data.orders,dispatchCourier.e.id).total,0);
  console.log('Courier: assignment, scoped mobile data, payment, return, warehouse stock and settlement passed.');
  console.log('Manual routes: Moscow confirms after parcel acceptance; Post uses extra confirmation; cancellation blocked before return.');
+ const legacyReturnCash=db.prepare('SELECT count(*) n FROM cash_operations').get().n;
+ for(const delivery of ['russian_post','moscow_courier']){
+  const oid='legacy-physical-return-'+delivery;
+  const baseOrder=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(courierReturnId).data);
+  const order={...baseOrder,id:oid,delivery,status:'returned',courier:undefined,warehouseReturnedAt:undefined,legacyLv:{trial:false,orderId:oid,importedAt:new Date().toISOString()},items:[{name:'ИТОГО',quantity:1,price:100},{name:'Test',quantity:2,price:0}]};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(oid,order.clientId,JSON.stringify(order));
+  const version=()=>db.prepare('SELECT version FROM orders WHERE id=?').get(oid).version;
+  const request=async(cookie,extra={},expected=200)=>{const r=await call('/api/crm',{cookie,body:{action:'returnToWarehouse',id:oid,version:version(),...extra}});assert.equal(r.status,expected,r.text);return r;};
+  const before=db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available;
+  await request(returnOperator.cookie,{confirmed:true},400);
+  await request(editor.cookie,{},400);
+  const bad={...order,id:oid+'-bad',items:[...order.items,{name:'Missing physical product',quantity:1,price:0}]};
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(bad.id,bad.clientId,JSON.stringify(bad));
+  const failed=await call('/api/crm',{cookie:editor.cookie,body:{action:'returnToWarehouse',id:bad.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(bad.id).version,confirmed:true}});
+  assert.equal(failed.status,400);assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(bad.id).data).warehouseReturnedAt,undefined);
+  await request(editor.cookie,{confirmed:true,version:version()-1},400);
+  assert.equal(db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available,before);
+  await request(editor.cookie,{confirmed:true});
+  assert.equal(db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available,before+2);
+  assert.equal(db.prepare('SELECT count(*) n FROM stock_movements WHERE id=?').get('legacy-return:'+oid+':return-product').n,1);
+  await request(editor.cookie,{confirmed:true},400);
+  assert.equal(db.prepare("SELECT available FROM product_stock WHERE id='return-product'").get().available,before+2);
+ }
+ assert.equal(db.prepare('SELECT count(*) n FROM cash_operations').get().n,legacyReturnCash);
+ console.log('Legacy Post/Moscow physical returns: role, confirmation, stale version, one stock credit and unchanged cash passed.');
  const historicCashCount=db.prepare('SELECT count(*) n FROM cash_operations').get().n;
  for(const delivery of ['russian_post','moscow_courier']){
   const id='historic-paid-'+delivery;
