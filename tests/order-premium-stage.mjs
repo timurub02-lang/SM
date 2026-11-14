@@ -42,3 +42,6 @@ const imported={status:'redeemed',delivery:'',importedPayment:{source:'Исто�
 assert.equal(cdekMoneyLabel(imported),'Деньги получены · История выплат · 2026-10-1');
 assert.equal(cdekMoneyLabel({...imported,status:'refused'}),'');
 assert.equal(cdekMoneyLabel({...imported,importedPayment:undefined}),'');
+
+for(const role of ['operator','department_head'])assert.equal(showOrderInList({status:'rework',manager:'original'},{owner:'original'},role),false);
+assert.equal(showOrderInList({status:'rework',manager:'original'},{owner:'original'},'admin'),true);
