@@ -382,3 +382,8 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .released-transfer .search svg{flex-shrink:0}
 .released-transfer>.primary{flex:0 0 auto;white-space:nowrap}
 @media(max-width:700px){.released-transfer>.field,.released-transfer>.operator-select-inline{flex-basis:100%;max-width:none}.released-transfer>.operator-select-inline{grid-template-columns:minmax(0,1fr)}.released-transfer>.primary{width:100%}}
+
+.order-current-status{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;width:fit-content;max-width:100%;margin:10px 0 0;padding:9px 14px;border:1px solid #b8d2f5;border-radius:12px;background:#eaf3ff;color:#24558d;font-size:14px;line-height:1.45;text-align:left}
+.order-current-status>span{font-size:12px;font-weight:500;color:#506f95}
+.order-current-status>strong{font-size:15px;font-weight:650;overflow-wrap:anywhere}
+.dark .order-current-status{background:#253b55;border-color:#42658c;color:#d7e9ff}.dark .order-current-status>span{color:#a9c2df}
