@@ -26,5 +26,5 @@ assert.equal(render('operator',{assigneeId:'actor'},[],'known').buttons.length,1
 assert.equal(render('operator',{clientOwnerId:'actor'},[{id:item.clientId,owner:'actor'}],'known').buttons.length,1);
 console.log('Inbox navigation: admin missing-cache/free/owned/closed, callback IDs and unchanged operator/head guards passed');
 
-for(const patch of [{},{assigneeId:'actor'}])assert.ok(render('admin',patch).cards[0].props.className.includes('incoming-card-free'),'Free clients remain blue after handoff');
-for(const [patch,tab] of [[{clientOwnerId:'owner'},'known'],[{hasActiveOrder:true},'known'],[{clientId:undefined},'unknown']])assert.ok(!render('admin',patch,[],tab).cards[0].props.className.includes('incoming-card-free'),'Owned, active-order and unknown cards keep their existing colors');
+for(const patch of [{clientOwnerId:'owner'},{clientOwnerId:'owner',assigneeId:'actor'}])assert.ok(render('admin',patch,[],'known').cards[0].props.className.includes('incoming-card-owned-no-order'),'Owned clients without active orders are blue regardless of the assigned handler');
+for(const [patch,tab] of [[{},'free'],[{assigneeId:'actor'},'free'],[{hasActiveOrder:true,clientOwnerId:'owner'},'known'],[{clientId:undefined},'unknown']])assert.ok(!render('admin',patch,[],tab).cards[0].props.className.includes('incoming-card-owned-no-order'),'Free, active-order and unknown cards are not blue');
