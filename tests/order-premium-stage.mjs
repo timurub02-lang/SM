@@ -21,7 +21,7 @@ for(const role of ['operator','department_head']){
  assert.equal(showOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},role),true);
  assert.equal(showOrderInList({...paidOrder,premiumStage:undefined},{owner:''},role),true);
 }
-assert.equal(showOrderInList(paidOrder,{owner:''},'admin'),true);
+assert.equal(showOrderInList(paidOrder,{owner:''},'admin'),false);
 assert.equal(paidOrder.premiumStage.status,'paid');
 
 const cancelled={status:'refused',manager:'original',cancelledAt:'2026-10-28T10:00:00Z',cancellationAuthor:{id:'original',name:'Operator'}};
@@ -45,3 +45,6 @@ assert.equal(cdekMoneyLabel({...imported,importedPayment:undefined}),'');
 
 for(const role of ['operator','department_head'])assert.equal(showOrderInList({status:'rework',manager:'original'},{owner:'original'},role),false);
 assert.equal(showOrderInList({status:'rework',manager:'original'},{owner:'original'},'admin'),true);
+
+assert.equal(showOrderInList(paidOrder,{owner:'original'},'admin'),true);
+assert.equal(showOrderInList(paidOrder,{owner:'other'},'admin'),false);
