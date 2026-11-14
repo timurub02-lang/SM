@@ -3,7 +3,7 @@ import {openDatabase} from '../server/sqlite.ts';
 import {initIncoming,readIncoming,seesIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder} from '../lib/incoming.ts';
 const d=openDatabase(':memory:');
 try{
- await d.batch(['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(s=>d.prepare(s)));
+ await d.batch(['CREATE TABLE auth_accounts(employee_id TEXT,enabled INTEGER)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT,version INTEGER DEFAULT 1)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(s=>d.prepare(s)));
  const staff=[{id:'admin',role:'admin'},{id:'head1',role:'department_head',department:'1'},{id:'head2',role:'department_head',department:'2'},{id:'head0',role:'department_head',department:''},{id:'one',role:'operator',department:'1'},{id:'two',role:'operator',department:'2'},{id:'logistic',role:'logistic'},{id:'courier',role:'courier'}];
  for(const e of staff)await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
  await d.prepare('INSERT INTO clients VALUES(?,?)').bind('known',JSON.stringify({id:'known',name:'Known'})).run();
@@ -34,7 +34,7 @@ try{
  assert.equal(activeIncomingOrder({status:'draft'}),true);assert.equal(activeIncomingOrder({status:'redeemed'}),false);
  const orders=[{id:'a-own',clientId:'known',manager:'one',status:'draft'},{id:'z-foreign',clientId:'known',manager:'two',status:'confirm'},{id:'m-own',clientId:'known',manager:'one',status:'shipping'},{id:'closed',clientId:'known',manager:'one',status:'redeemed'},{id:'unrelated',clientId:'elsewhere',manager:'one',status:'draft'}];
  const namedStaff=staff.map(e=>({...e,name:'Name '+e.id}));
- for(const order of orders)await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind(order.id,order.clientId,JSON.stringify(order)).run();
+ for(const order of orders)await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(order.id,order.clientId,JSON.stringify(order)).run();
  const full=await readIncoming(d,namedStaff[4],namedStaff,orders),scoped=await readIncoming(d,namedStaff[4],namedStaff,[],true);
  assert.deepEqual(full.find(i=>i.id==='known').orderIds,['a-own','m-own'],'global order input order is retained');
  assert.deepEqual(scoped.find(i=>i.id==='known').orderIds,['m-own','a-own'],'scoped SQL order is retained');

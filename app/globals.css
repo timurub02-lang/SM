@@ -406,3 +406,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .cash-history-scroll{max-height:360px;max-height:min(360px,50dvh);overflow:auto;overscroll-behavior:contain}
 
 .cash-history-scroll [data-slot="table-container"]{overflow:visible}
+
+.incoming-order-actions button{max-width:100%;white-space:normal;text-align:left}

@@ -6,6 +6,7 @@ import {initPhone} from '../lib/phone-store.ts';
 import {workspaceVersions} from '../lib/crm-workspace-clock.ts';
 import {cachedWorkspaceResponse} from '../lib/crm-workspace-cache.ts';
 const d=openDatabase(':memory:');
+await d.prepare('CREATE TABLE IF NOT EXISTS auth_accounts(employee_id TEXT PRIMARY KEY,enabled INTEGER)').run();
 const wallClock=Date.now;
 const staff=[{id:'a',role:'operator',department:'1'},{id:'b',role:'operator',department:'2'},{id:'h1',role:'department_head',department:'1'},{id:'h2',role:'department_head',department:'2'}];
 const save=(table,id,data)=>d.prepare(`INSERT INTO ${table}(id,data) VALUES(?,?)`).bind(id,JSON.stringify(data)).run();
