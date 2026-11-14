@@ -885,3 +885,6 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .client-profile-dialog [data-slot=dialog-header]:has(>.call-route-buttons)>[data-slot=dialog-description]{grid-column:1;grid-row:2}
 .client-profile-dialog [data-slot=dialog-header]>.call-route-buttons.card-header-call{position:static;grid-column:2;grid-row:1/3;grid-template-columns:minmax(0,1fr);justify-items:end;align-self:start;max-width:240px;margin:0}
 .client-profile-dialog [data-slot=dialog-header]>.call-route-buttons>.call-client-time{grid-column:1;max-width:240px;align-items:flex-end;text-align:right}
+
+/* Incoming actions share dimensions; their colors still describe the action. */
+:is(.incoming-card-body,.incoming-order-actions,.incoming-action-dialog) button:is(.primary,.secondary){display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;width:fit-content;max-width:100%;box-sizing:border-box;min-height:40px;padding:8px 14px;border-width:1px;border-style:solid;border-radius:6px;font-family:inherit;font-size:14px;font-weight:600;line-height:22px;letter-spacing:normal;white-space:normal;text-align:center;gap:8px}

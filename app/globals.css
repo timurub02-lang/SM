@@ -408,3 +408,10 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .cash-history-scroll [data-slot="table-container"]{overflow:visible}
 
 .incoming-order-actions button{max-width:100%;white-space:normal;text-align:left}
+
+/* Free clients stay identifiable after an incoming is handed to an operator. */
+.incoming-card.incoming-card-free{border-color:#a8cfee;background:linear-gradient(135deg,#f4faff,#e1f0fc)}
+.incoming-card-free .incoming-card-person .avatar{background:linear-gradient(145deg,#f4faff,#c5e2f7);color:#3f7199}
+.incoming-card-free .incoming-card-top,.incoming-card-free .incoming-card-contact{color:#507b9f}
+.incoming-card-free .incoming-card-status{background:#cce5f566}
+.incoming-card-free .incoming-card-footer{background:#edf7fcbf}
