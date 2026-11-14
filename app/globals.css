@@ -387,3 +387,10 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .order-current-status>span{font-size:12px;font-weight:500;color:#506f95}
 .order-current-status>strong{font-size:15px;font-weight:650;overflow-wrap:anywhere}
 .dark .order-current-status{background:#253b55;border-color:#42658c;color:#d7e9ff}.dark .order-current-status>span{color:#a9c2df}
+
+/* Keep notification tabs in place when lists have different lengths. */
+.notification-dialog{height:calc(100dvh - 48px)}
+.notification-dialog [data-slot=dialog-description]{min-height:3.2em;line-height:1.6}
+.notification-dialog .notification-tabs{position:sticky;top:0;z-index:1;background:var(--background,#fff);flex-shrink:0}
+.notification-dialog .sheet-body{scrollbar-gutter:stable}
+@media(max-width:600px){.notification-dialog{height:calc(100dvh - 24px)}.notification-dialog [data-slot=dialog-description]{min-height:4.8em}}
