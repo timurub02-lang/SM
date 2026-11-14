@@ -878,3 +878,10 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 
 .base-stats-averages{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .base-stats-average{display:inline-flex;gap:8px;align-items:baseline;min-height:30px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-variant-numeric:tabular-nums}
+
+/* Client names and the call action share header space without overlapping. */
+.client-profile-dialog.has-header-call>[data-slot=dialog-header]:has(>.call-route-buttons){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;padding-right:64px}
+.client-profile-dialog [data-slot=dialog-header]:has(>.call-route-buttons)>[data-slot=dialog-title]{grid-column:1;grid-row:1;min-width:0;overflow-wrap:anywhere;padding-right:0}
+.client-profile-dialog [data-slot=dialog-header]:has(>.call-route-buttons)>[data-slot=dialog-description]{grid-column:1;grid-row:2}
+.client-profile-dialog [data-slot=dialog-header]>.call-route-buttons.card-header-call{position:static;grid-column:2;grid-row:1/3;grid-template-columns:minmax(0,1fr);justify-items:end;align-self:start;max-width:240px;margin:0}
+.client-profile-dialog [data-slot=dialog-header]>.call-route-buttons>.call-client-time{grid-column:1;max-width:240px;align-items:flex-end;text-align:right}
