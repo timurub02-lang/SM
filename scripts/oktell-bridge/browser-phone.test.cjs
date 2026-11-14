@@ -34,6 +34,10 @@ const regResponse='SIP/2.0 200 OK\r\nVia: SIP/2.0/WSS browser.invalid;branch=z9h
 const registrations=new Map([['z9hG4bKabc',{uri:'sip:random@browser.invalid;transport=ws',cseq:'3'}]]);
 assert.match(normalizeRegisterContact(regResponse,registrations,'native'),/Contact: <sip:random@browser.invalid;transport=ws>;expires=60/);
 assert.equal(normalizeRegisterContact(regResponse,registrations,'other'),regResponse);
+const labRegResponse=regResponse.replace('10.20.0.10','10.21.105.2');
+assert.match(normalizeRegisterContact(labRegResponse,registrations,'native','10.21.105.2'),/Contact: <sip:random@browser.invalid;transport=ws>;expires=60/);
+assert.equal(normalizeRegisterContact(labRegResponse,registrations,'native','10.20.0.10'),labRegResponse);
+assert.equal(normalizeRegisterContact(regResponse,registrations,'native','10.21.105.2'),regResponse);
 assert.equal(normalizeRegisterContact(regResponse.replace('3 REGISTER','4 REGISTER'),registrations,'native'),regResponse.replace('3 REGISTER','4 REGISTER'));
 assert.equal(normalizeRegisterContact(regResponse.replace('Expires: 60\r\n',''),registrations,'native'),regResponse.replace('Expires: 60\r\n',''));
 
