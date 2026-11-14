@@ -14,3 +14,6 @@ for(const delivery of ['cdek_office','cdek_courier','moscow_courier','russian_po
 }
 assert.match(source,/transitionSection\(allowed.filter\(to=>!quickTransitions.includes\(to\)/,'quick actions excluded from bottom form');
 console.log('Packing return uses the shared top action for all delivery methods; permission and lock guards preserved');
+
+for(const status of ['confirm','extra'])assert.ok(evaluate({status,delivery:'russian_post'},['packing'],false,false,()=>false).includes('packing'));
+for(const delivery of ['moscow_courier','russian_post'])assert.ok(evaluate({status:'packing',delivery},['shipping'],false,false,()=>false).includes('shipping'));
