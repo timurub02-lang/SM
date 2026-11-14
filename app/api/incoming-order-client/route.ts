@@ -11,9 +11,17 @@ export const GET=authenticated(async(req:Request)=>{
   const id=new URL(req.url).searchParams.get('incomingId')||'';if(!id||id.length>100)throw Error('Выберите обращение');
   const row=await incomingForAction(db(),id,e,[]);if(!row.client_id)throw Error('Сначала найдите клиента');
   const found=await db().prepare('SELECT data,version FROM clients WHERE id=?').bind(row.client_id).first<{data:string;version:number}>();if(!found)throw Error('Клиент не найден');
-  const c:Client={...JSON.parse(found.data),version:found.version};if(!c.owner)throw Error('Клиент не закреплён');
+  const c:Client={...JSON.parse(found.data),version:found.version};
   const orders=(await db().prepare('SELECT data FROM orders WHERE client_id=?').bind(c.id).all()).results;
   if(orders.some(r=>activeIncomingOrder(JSON.parse(String(r.data)) as Order)))throw Error('У клиента уже есть действующий заказ');
-  return Response.json({client:e.role==='admin'?c:hideClientNumbers(c)},{headers:{'Cache-Control':'no-store'}});
+  const managerId=c.owner||row.assignee_id;
+  const manager=managerId?await db().prepare("SELECT e.data FROM employees e JOIN auth_accounts a ON a.employee_id=e.id AND a.enabled=1 WHERE e.id=? AND json_extract(e.data,'$.role')='operator'").bind(managerId).first<{data:string}>():null;
+  if(!manager)throw Error('Сначала передайте обращение оператору');
+  const person=JSON.parse(manager.data);
+  const history=new URL(req.url).searchParams.get('view')==='history';
+  const past=history?orders.map(r=>JSON.parse(String(r.data)) as Order).map(o=>({id:o.id,status:o.status,createdAt:o.createdAt,items:o.items})):undefined;
+  const mask=(text:string)=>e.role==='admin'?text:String(text||'').replace(/(?<!\d)(?:\+?7|8)(?:[\s().-]*\d){10}(?!\d)/g,'[телефон]');
+  const events=history?(await db().prepare('SELECT data FROM events WHERE client_id=? ORDER BY at DESC,id DESC LIMIT 100').bind(c.id).all()).results.map(r=>{const v=JSON.parse(String(r.data));return {id:v.id,at:v.at,text:mask(v.text),actor:v.actor};}):undefined;
+  return Response.json({client:e.role==='admin'?c:hideClientNumbers(c),managerLogin:person.login,orders:past,events},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Нет доступа'},{status:400});}
 });
