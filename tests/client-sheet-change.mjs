@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {changeClientSheet} from '../lib/client-sheet-change.ts';
+import {applyRetention,clientAssignment} from '../lib/crm.ts';
+const at='2026-11-14T15:00:00Z',before={id:'c',source:'Excel',sheet:'К',owner:'op',assignedUntil:'2026-12-01T00:00:00Z'},allowed=['К','П','ЧС','ПВ','Т1'];
+assert.throws(()=>changeClientSheet(before,before,'ЧС','operator',allowed,at));
+assert.throws(()=>changeClientSheet(before,before,'Ж1','admin',allowed,at));
+const changed={...before,...changeClientSheet(before,before,'ЧС','admin',allowed,at)};
+assert.equal(changed.owner,'');assert.equal(changed.sheet,'ЧС');assert.equal(changed.releasedAt,'');
+const old={id:'o',clientId:'c',status:'redeemed',pv:true,redeemedAt:'2026-11-01T00:00:00Z',createdAt:'2026-10-01T00:00:00Z',manager:'op'};
+assert.equal(applyRetention(changed,[old],Date.parse(at)).sheet,'ЧС');
+const lifted={...changed,...changeClientSheet(changed,changed,'Т1','admin',allowed,at)};
+assert.equal(applyRetention(lifted,[{...old,blacklistedAt:'2026-11-02T00:00:00Z'}],Date.parse(at)).sheet,'Т1');
+assert.equal(clientAssignment(lifted,'op',at).assignedUntil,'2026-11-15T15:00:00.000Z');
+assert.equal(applyRetention(lifted,[{...old,blacklistedAt:'2026-11-15T00:00:00Z'}],Date.parse('2026-11-16')).sheet,'ЧС');
+assert.deepEqual(changeClientSheet(before,before,'К','admin',allowed,at),{});
+console.log('Admin sheet changes preserve history and 24-hour assignment');
