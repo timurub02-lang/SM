@@ -3,13 +3,13 @@ import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {z} from 'zod';
-import {incomingCallTarget,createPhoneCall,initPhone,normalizeOutgoingNumber} from '@/lib/phone-store';
+import {createPhoneCall,initPhone,normalizeOutgoingNumber} from '@/lib/phone-store';
 
 import {phoneAccount,phoneRoles} from '@/lib/phone-accounts';
 export const dynamic='force-dynamic';
 const input=z.discriminatedUnion('mode',[
  z.object({mode:z.literal('test')}),z.object({mode:z.literal('echo')}),
- z.object({mode:z.literal('incoming'),incomingId:z.string().min(1).max(100)}),
+ z.object({mode:z.literal('incoming'),incomingId:z.string().min(1).max(100),phoneKey:z.string().max(64).optional()}),
  z.object({mode:z.literal('client'),clientId:z.string().min(1),phoneKey:z.string().max(64).optional()}),
  z.object({mode:z.literal('order'),orderId:z.string().min(1),phoneKey:z.string().max(64).optional()})
 ]);
@@ -29,15 +29,11 @@ export const POST=authenticated(async(req:Request)=>{
   const account=phoneAccount(actor.id);
   if(['test','echo'].includes(p.mode)&&actor.role!=='admin')throw Error('Тестовые звонки доступны администратору');
   let destination=p.mode==='echo'?'echo':normalizeOutgoingNumber(c.phone),clientId='';
-  if(p.mode==='client'||p.mode==='order'){
+  if(p.mode==='client'||p.mode==='order'||p.mode==='incoming'){
    const result=await clientPhones(actor,p);clientId=result.clientId;
    const selected=p.phoneKey?result.phones.find(n=>n.key===p.phoneKey):result.phones[0];
    if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');
    destination=selected.number;
-  }
-  if(p.mode==='incoming'){
-   destination=await incomingCallTarget(db(),actor,p.incomingId);
-   clientId=(await db().prepare('SELECT client_id FROM incoming_calls WHERE id=?').bind(p.incomingId).first<{client_id:string|null}>())?.client_id||'';
   }
   if(!destination)throw Error('У клиента не указан корректный российский номер телефона');
   await initPhone(db(),c.callerId);

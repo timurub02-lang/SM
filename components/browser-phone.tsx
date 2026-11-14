@@ -11,7 +11,7 @@ import {OktellPhone,useOktellPhone} from './oktell-phone';
 import {setCallMicrophoneMuted} from '@/lib/call-microphone';
 import type {SimpleUser} from 'sip.js/lib/platform/web';
 
-type Target={mode:'incoming';incomingId:string}|{mode:'test'|'echo'}|{mode:'client';clientId:string;phoneKey?:string}|{mode:'order';orderId:string;phoneKey?:string};
+type Target={mode:'incoming';incomingId:string;phoneKey?:string}|{mode:'test'|'echo'}|{mode:'client';clientId:string;phoneKey?:string}|{mode:'order';orderId:string;phoneKey?:string};
 type CallConfig={callId:string;username:string;password:string;destination:string;label:string;error?:string};
 type StatusConfig={configured:boolean;phone:string;callerId:string;error?:string};
 const PhoneContext=createContext<{start:(target:Target,onCompleted?:()=>void)=>void;busy:boolean;enabled:boolean}|null>(null);
@@ -68,11 +68,11 @@ function LegacyCallButton({target,disabled=false,children='Позвонить',c
  if(!phone)return null;
  async function choose(){
   if(!phone||loading)return;
-  if(target.mode!=='client'&&target.mode!=='order'){phone.start(target,onCompleted);return;}
+  if(target.mode!=='client'&&target.mode!=='order'&&target.mode!=='incoming'){phone.start(target,onCompleted);return;}
   setLoading(true);
   try{const query=new URLSearchParams(target),r=await fetch('/api/telephony?'+query,{cache:'no-store'}),data=await r.json() as {phones:{key:string;label:string}[];error?:string};if(!r.ok)throw Error(data.error||'Не удалось получить номера');if(!data.phones.length)throw Error('У клиента нет корректного номера телефона');if(data.phones.length===1)phone.start({...target,phoneKey:data.phones[0].key},onCompleted);else setChoices(data.phones);}catch(e){toast.error(e instanceof Error?e.message:'Не удалось получить номера');}finally{setLoading(false);}
  }
- return <><button type="button" className={`secondary browser-call-button ${className}`} disabled={disabled||loading||phone.busy||!phone.enabled} title={phone.enabled?'Позвонить через Билайн':'Телефония недоступна'} onClick={()=>void choose()}>{icon}{loading?'Загрузка…':children}</button><Dialog open={choices.length>0} onOpenChange={open=>{if(!open)setChoices([]);}}><DialogContent className="form-dialog"><DialogHeader><DialogTitle>На какой номер позвонить?</DialogTitle><DialogDescription>Выберите номер клиента — после нажатия начнётся звонок.</DialogDescription></DialogHeader><div className="stack">{choices.map(choice=><button type="button" className="secondary" key={choice.key} disabled={disabled||phone.busy} onClick={()=>{setChoices([]);if(target.mode==='client'||target.mode==='order')phone.start({...target,phoneKey:choice.key},onCompleted);}}><Phone size={17}/>{choice.label}</button>)}</div></DialogContent></Dialog></>;
+ return <><button type="button" className={`secondary browser-call-button ${className}`} disabled={disabled||loading||phone.busy||!phone.enabled} title={phone.enabled?'Позвонить через Билайн':'Телефония недоступна'} onClick={()=>void choose()}>{icon}{loading?'Загрузка…':children}</button><Dialog open={choices.length>0} onOpenChange={open=>{if(!open)setChoices([]);}}><DialogContent className="form-dialog"><DialogHeader><DialogTitle>На какой номер позвонить?</DialogTitle><DialogDescription>Выберите номер клиента — после нажатия начнётся звонок.</DialogDescription></DialogHeader><div className="stack">{choices.map(choice=><button type="button" className="secondary" key={choice.key} disabled={disabled||phone.busy} onClick={()=>{setChoices([]);if(target.mode==='client'||target.mode==='order'||target.mode==='incoming')phone.start({...target,phoneKey:choice.key},onCompleted);}}><Phone size={17}/>{choice.label}</button>)}</div></DialogContent></Dialog></>;
 
 }
 export function TelephonySettings(){

@@ -1,13 +1,14 @@
 import {createHmac} from 'node:crypto';
 import {closedOrderCallBlocked,operatorCallBlocked,type Employee,type Order} from './crm';
 import {db} from './db';
-import {phoneScope,normalizeOutgoingNumber} from './phone-store';
-export async function clientPhones(actor:Employee,p:{mode:string;clientId?:string;orderId?:string}){
- if(p.mode!=='client'&&p.mode!=='order')throw Error('Выберите клиента или заказ');
- if(!await phoneScope(db(),actor,p))throw Error('Нет доступа к этому клиенту или заказу');
- const clientId=p.mode==='client'?p.clientId:(await db().prepare('SELECT client_id FROM orders WHERE id=?').bind(p.orderId!).first<{client_id:string}>())?.client_id;
- if(!clientId)throw Error('Заказ не найден');
- if(actor.role==='operator'){
+import {phoneScope,normalizeOutgoingNumber,incomingCallTarget} from './phone-store';
+export async function clientPhones(actor:Employee,p:{mode:string;clientId?:string;orderId?:string;incomingId?:string}){
+ if(!['client','order','incoming'].includes(p.mode))throw Error('Выберите клиента, заказ или обращение');
+ const incomingNumber=p.mode==='incoming'?await incomingCallTarget(db(),actor,p.incomingId!):null;
+ if(p.mode!=='incoming'&&!await phoneScope(db(),actor,p))throw Error('Нет доступа к этому клиенту или заказу');
+ const clientId=p.mode==='incoming'?(await db().prepare('SELECT client_id FROM incoming_calls WHERE id=?').bind(p.incomingId!).first<{client_id:string|null}>())?.client_id:p.mode==='client'?p.clientId:(await db().prepare('SELECT client_id FROM orders WHERE id=?').bind(p.orderId!).first<{client_id:string}>())?.client_id;
+ if(!clientId){if(incomingNumber)return {clientId:'',phones:[{number:incomingNumber,key:createHmac('sha256',process.env.CRM_PHONE_RESULT_KEY||'').update(p.incomingId+':'+incomingNumber).digest('hex'),label:'С этого номера поступило входящее'}]};throw Error('Заказ не найден');}
+ if(p.mode!=='incoming'&&actor.role==='operator'){
   const rows=(await db().prepare('SELECT data FROM orders WHERE client_id=?').bind(clientId).all()).results;
   if(rows.some(r=>operatorCallBlocked(actor,JSON.parse(String(r.data)) as Order)))throw Error('Заказ у логиста. Оператор может звонить только при недозвоне; при перезвоне дождитесь звонка логиста');
  }
@@ -19,5 +20,6 @@ export async function clientPhones(actor:Employee,p:{mode:string;clientId?:strin
  }
  const linked=JSON.parse(row.data).linkedPhones||[];
  const numbers=[...new Set([row.phone,...linked].map(normalizeOutgoingNumber).filter((number):number is string=>!!number))];
- return {clientId,phones:numbers.map((number,index)=>({number,key:createHmac('sha256',process.env.CRM_PHONE_RESULT_KEY||'').update(clientId+':'+number).digest('hex'),label:(normalizeOutgoingNumber(row.phone)===number?'Основной':'Дополнительный '+index)+(['operator','department_head'].includes(actor.role)?'':' · +'+number)}))};
+ const ordered=incomingNumber?[incomingNumber,...numbers.filter(n=>n!==incomingNumber)]:numbers;
+ return {clientId,phones:ordered.map(number=>({number,key:createHmac('sha256',process.env.CRM_PHONE_RESULT_KEY||'').update(clientId+':'+number).digest('hex'),label:(normalizeOutgoingNumber(row.phone)===number?'Основной':'Дополнительный '+numbers.indexOf(number))+(number===incomingNumber?' · С этого номера поступило входящее':'')+(['operator','department_head'].includes(actor.role)?'':' · +'+number)}))};
 }

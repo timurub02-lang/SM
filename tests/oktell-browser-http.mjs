@@ -77,6 +77,13 @@ try{
  addCard('new-card','+79990000004');
  const choices=await req('/api/telephony?mode=client&clientId=new-card',null,cookies.irina);assert.equal(choices.status,200);assert.equal(choices.data.phones.length,2);assert.equal(choices.data.phones[0].label.includes('79990000004'),false);
  const extra=choices.data.phones[1].key;
+ db.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,at,phone,called_number) VALUES(?,?,?,?,?,?)').run('known-extra-incoming','new-card',id,c.createdAt,'+79990000002','');
+ const incomingChoices=await req('/api/telephony?mode=incoming&incomingId=known-extra-incoming',null,cookies.irina);assert.equal(incomingChoices.status,200,JSON.stringify(incomingChoices.data));assert.equal(incomingChoices.data.phones.length,2);assert.ok(incomingChoices.data.phones[0].label.includes('С этого номера поступило входящее'));
+ for(const choice of incomingChoices.data.phones){
+  const result=await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'known-extra-incoming',phoneKey:choice.key},cookies.irina);assert.equal(result.status,200,JSON.stringify(result.data));assert.equal(result.data.destination,choice.label==='Основной'?'79990000004':'79990000002');closeCalls();
+ }
+ assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'known-extra-incoming',phoneKey:'f'.repeat(64)},cookies.irina)).status,403);
+
  for(const route of ['mts','beeline']){
   const p=route==='mts'?{action:'call',tab,clientId:'new-card',phoneKey:extra}:{mode:'client',clientId:'new-card',phoneKey:extra};const res=await req(route==='mts'?'/api/oktell-phone':'/api/telephony',p,cookies.irina);assert.equal(res.status,200,JSON.stringify(res.data));assert.equal(route==='mts'?res.data.destination:db.prepare('SELECT destination FROM phone_call_targets WHERE call_id=?').get(res.data.callId).destination,'79990000002');closeCalls();
  }
