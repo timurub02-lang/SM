@@ -49,9 +49,14 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(['createClientReminder','closeClientReminder'].includes(p.action))return allow(!!client&&canOpenClientCard(e,client)&&visibleState(s,e).clients.some(c=>c.id===client.id));
  if(p.action==='saveClientWork')return allow(e.role==='operator'&&!!client&&client.owner===e.id);
  if(p.action==='updateClient')return allow(!!client&&ownsClient(e,client,s.employees));
+ if(p.action==='createOrder'&&typeof p.incomingId==='string')return allow(['operator','department_head'].includes(e.role));
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
+ if(['incomingBuyoutInfo','requestShipmentReturn','requestShipmentChange','requestOrderCancellation','requestOrderEdit','incomingResult'].includes(p.action)&&typeof p.incomingId==='string'&&['operator','department_head'].includes(e.role))return;
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
  if(p.action==='requestOrderCancellation')return allow(['operator','department_head'].includes(e.role)&&typeof p.incomingId==='string');
+ if(p.action==='resolveShipmentRequest')return allow(isLogistic(e.role)||e.role==='redemption');
+ if(p.action==='resolveOrderEdit')return allow(isLogistic(e.role));
+ if(p.action==='completeOrderEdit')return allow(['operator','department_head'].includes(e.role));
  if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
  if(p.action==='savePostalTracking')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
  if(p.action==='updateMoscowDetails')return allow(canEditMoscowOrderDetails(e,order));
@@ -98,6 +103,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/premium/lifecycle')return method==='POST'&&e.role==='department_head';
  if(path==='/api/premium')return method==='GET'&&['operator','department_head'].includes(e.role)||method==='POST'&&e.role==='department_head';
  if(path==='/api/sk-orders')return false;
+ if(path==='/api/incoming-order-client')return method==='GET'&&['operator','department_head'].includes(e.role);
  if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
  if(path==='/api/operator-state')return ['GET','POST'].includes(method)&&e.role==='operator';
  if(path==='/api/telephony')return ['GET','POST','PATCH'].includes(method)&&['operator','department_head','logistic','chief_logistic','redemption','courier'].includes(e.role);

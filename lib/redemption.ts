@@ -84,20 +84,21 @@ export function allowedResults(action:string,row:any,role:string,day:string){
 }
 export function futureRedemptionDate(row:any,day=dayOf()){return row.result==='date'&&!!row.resultDate&&row.resultDate>day;}
 export async function prepareIncomingRedemption(d:Db,e:Employee,orderId:string,incomingId:string,now=new Date()){
- if(e.role!=='operator'||typeof incomingId!=='string'||!incomingId||incomingId.length>100)throw Error('Обращение недоступно');
+ if(!['operator','redemption'].includes(e.role)||typeof incomingId!=='string'||!incomingId||incomingId.length>100)throw Error('Обращение недоступно');
  const stored=await d.prepare('SELECT client_id,data FROM orders WHERE id=?').bind(orderId).first();
  const o=JSON.parse(stored?.data||'{}');
- if(!stored||o.manager!==e.id||o.status!=='shipping'||!o.delivery?.startsWith('cdek_'))throw Error('Результат выкупа недоступен для этого заказа');
- await incomingForAction(d,incomingId,e,[],stored.client_id);
+ if(!stored||e.role==='operator'&&(o.manager!==e.id||o.status!=='shipping')||e.role==='redemption'&&!['shipping','pickup'].includes(o.status)||!o.delivery?.startsWith('cdek_'))throw Error('Результат выкупа недоступен для этого заказа');
+ const incoming=await incomingForAction(d,incomingId,e,[],stored.client_id);
+ if(e.role==='redemption'&&(incoming.assignee_id!==e.id||incoming.order_id&&incoming.order_id!==orderId))throw Error('Обращение относится к другому заказу или сотруднику');
  await initRedemption(d);
- await d.prepare('INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind(orderId,now.toISOString(),JSON.stringify({pendingEnrollment:true})).run();
+ await d.prepare('INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind(orderId,now.toISOString(),JSON.stringify({pendingEnrollment:e.role!=='redemption'})).run();
 }
 export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  if(p.incomingId!==undefined)await prepareIncomingRedemption(d,e,p.id,p.incomingId,now);
 
  const cfg=await redemptionConfig(d),row=(await redemptionRows(d,!!p.incomingId)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,cfg.headsAll))throw Error('Заказ недоступен');
  if(p.version!==row.version)throw Error('Заказ изменён другим сотрудником. Обновите результат');
- if(p.source==='order'){const stored=await d.prepare('SELECT data FROM orders WHERE id=?').bind(p.id).first();const order=JSON.parse(stored?.data||'{}');const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(order.manager||'').first();if(!canEditOrderRedemption(e,order,manager?{...JSON.parse(manager.data),id:order.manager}:undefined)||!p.incomingId&&!cfg.statuses.includes(order.cdekStatus?.code))throw Error('Результат выкупа недоступен для этого заказа');}
+ if(p.source==='order'){const stored=await d.prepare('SELECT data FROM orders WHERE id=?').bind(p.id).first();const order=JSON.parse(stored?.data||'{}');const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(order.manager||'').first();if(!(e.role==='redemption'&&p.incomingId)&&!canEditOrderRedemption(e,order,manager?{...JSON.parse(manager.data),id:order.manager}:undefined)||!p.incomingId&&!cfg.statuses.includes(order.cdekStatus?.code))throw Error('Результат выкупа недоступен для этого заказа');}
  let incoming:any=null;
  if(p.incomingId!==undefined){
   if(typeof p.incomingId!=='string'||!p.incomingId||p.incomingId.length>100||p.source!=='order'||p.operation)throw Error('Некорректный итог входящего обращения');
@@ -117,7 +118,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(!incoming){const saved=await d.prepare('UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id=? AND version=?').bind(JSON.stringify(next),p.id,p.version).run();if(!saved.meta.changes)throw Error('Заказ изменён другим сотрудником. Обновите результат');return;}
   const mutation=crypto.randomUUID();
   const reason=actions[p.action as keyof typeof actions]+' · '+results[p.result as keyof typeof results]+(next.resultDate?' · '+next.resultDate:'')+(p.comment.trim()?' · '+p.comment.trim():'');
-  const event={id:'INCOMING-'+incoming.id,clientId:row.clientId,orderId:p.id,at,actor:e.name,text:'Итог входящего обращения · '+reason};
+  const event={id:'INCOMING-'+incoming.id,clientId:row.clientId,orderId:p.id,at,actor:e.name,actorId:e.id,text:'Итог входящего обращения · '+reason};
   const gate="EXISTS(SELECT 1 FROM redemption_entries WHERE order_id=? AND json_extract(data,'$.incomingMutation')=?)";
   const saved=await d.batch([
    d.prepare("UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id=? AND version=? AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_at IS NULL AND spam=0 AND client_id=? AND assignee_id IS ?)").bind(JSON.stringify({...next,incomingMutation:mutation}),p.id,p.version,incoming.id,row.clientId,incoming.assignee_id),
