@@ -40,6 +40,8 @@ try{
    assert.deepEqual(clean(result.payroll),clean(expected),`${ledger?.revision} ${actor.id} ${selected} payroll`);
    if(!entry)assert.deepEqual(clean(result.calculatedPayroll),clean(premiumCalculation(orders,actor,staff,selected,input).rows.map(rowFromCalculation)),`${actor.id} provisional`);
    assert.deepEqual(clean(result.adjustments),clean(Object.fromEntries(Object.entries(input).filter(([id])=>staff.some(e=>e.id===id&&premiumStaff(actor,e))))));
+   const departments={};for(const r of (ledger?periodOrders(ledger,selected,orders,staff):[]).filter(r=>!r.historyOnly&&payrollVisible(actor,r)))departments[r.department]=(departments[r.department]||0)+1;
+   assert.deepEqual(result.departmentCounts,departments);
    assert.deepEqual(result.periodCounts,Object.fromEntries(Object.keys(ledger?.periods||{}).map(id=>[id,periodOrders(ledger,id,orders,staff).filter(r=>!r.historyOnly&&payrollVisible(actor,r)).length])));
    assert.deepEqual(clean(result.missingOrders),clean((entry?.orders||[]).filter(r=>!r.id&&payrollVisible(actor,r))));comparisons++;
   }
