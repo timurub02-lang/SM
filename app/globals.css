@@ -401,3 +401,8 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .shipping-stage-actions button{font-size:13px;padding:8px 12px;min-height:36px;white-space:nowrap}
 .shipping-stage-actions button svg{width:15px;height:15px}
 @media(max-width:800px){.shipping-stage-toolbar{flex-wrap:wrap;gap:10px}.shipping-stage-toolbar>[data-slot=tabs]{flex-basis:100%}.shipping-stage-actions{margin-left:auto}}
+
+.cash-history-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cash-history-scroll{max-height:360px;max-height:min(360px,50dvh);overflow:auto;overscroll-behavior:contain}
+
+.cash-history-scroll [data-slot="table-container"]{overflow:visible}
