@@ -504,12 +504,16 @@ try{
  // Head resolves an unknown incoming using a complete previous phone, then hands off explicitly.
  const matchedIncoming='bf'.repeat(16);await incoming(matchedIncoming,'79997773311');
  db.prepare("UPDATE clients SET data=json_set(data,'$.city','Test city','$.address','Test street 7') WHERE id='c-two'").run();
- const paidFixture={id:'paid-match',clientId:'c-two',manager:'two',status:'redeemed',items:[],redeemedAt:'2026-11-01T10:00:00Z',createdAt:'2026-10-01T10:00:00Z',updatedAt:'2026-11-01T10:00:00Z',version:1};
+ const paidFixture={id:'paid-match',clientId:'c-two',manager:'two',status:'redeemed',address:'Purchase street 12',items:[],redeemedAt:'2026-11-01T10:00:00Z',createdAt:'2026-10-01T10:00:00Z',updatedAt:'2026-11-01T10:00:00Z',version:1};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(paidFixture.id,paidFixture.clientId,JSON.stringify(paidFixture));
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','draft','$.address','Unconfirmed draft address','$.updatedAt',?) WHERE id='o-two'").run(new Date().toISOString());
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run('test-paid-address','c-two',JSON.stringify({...paidFixture,id:'test-paid-address',testOnly:true,address:'Synthetic address to exclude',redeemedAt:new Date().toISOString()}));
  const matchUrl=q=>'/api/incoming-clients?'+new URLSearchParams({incomingId:matchedIncoming,q});
  for(const q of ['0002','Ёлкин Тимур','7999'])assert.equal((await api(matchUrl(q),undefined,cookies.head)).status,400,'Partial phones and names cannot reveal matching addresses');
  const previousPhone='8 (999) 000-00-02',match=await api(matchUrl(previousPhone),undefined,cookies.head);assert.equal(match.status,200,match.text);
- const found=match.data.matches.find(c=>c.id==='c-two');assert.ok(found);assert.equal(found.phone,'');assert.equal(found.ownerId,'two');assert.equal(found.address,'Test street 7');assert.equal(found.city,'Test city');assert.ok(found.purchaseCount>=1);assert.ok(found.lastPurchaseAt);
+ const found=match.data.matches.find(c=>c.id==='c-two');assert.ok(found);assert.equal(found.phone,'');assert.equal(found.ownerId,'two');assert.equal(found.address,'Test street 7');assert.equal(found.city,'Test city');assert.ok(found.purchaseCount>=1);assert.ok(found.lastPurchaseAt);assert.equal(found.orderAddress,'Purchase street 12','Prefer a real buyout address to newer draft/test addresses');
+ db.prepare("UPDATE clients SET data=json_set(data,'$.address','') WHERE id='c-two'").run();
+ const missingAddress=await api(matchUrl(previousPhone),undefined,cookies.head);assert.equal(missingAddress.status,200,missingAddress.text);assert.equal(missingAddress.data.matches[0].address,null);assert.equal(missingAddress.data.matches[0].orderAddress,'Purchase street 12','Keep an order address available when the client address is empty');
  const linkAsHead={action:'linkIncomingClient',incomingId:matchedIncoming,clientId:'c-two',lookupPhone:previousPhone};
  const clientBeforeMatch=db.prepare("SELECT data FROM clients WHERE id='c-two'").get().data;
  for(const bad of [{...linkAsHead,lookupPhone:'0002'},{...linkAsHead,lookupPhone:'+79990000001'},{...linkAsHead,clientId:'c-one'}])assert.equal((await api('/api/crm',bad,cookies.head)).status,400,'Client and exact lookup phone must match');
