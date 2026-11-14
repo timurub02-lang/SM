@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {sessionEmployee,trustedOrigin,cookieToken} from '@/lib/auth';
 import {db} from '@/lib/db';
-import {initPhone,incomingCallTarget} from '@/lib/phone-store';
+import {initPhone} from '@/lib/phone-store';
 import {hasOktellLink} from '@/lib/oktell-link';
 import {manualOktellOutcome} from '@/lib/oktell-call-outcome';
 import {clientPhones} from '@/lib/client-call-targets';
@@ -29,8 +29,7 @@ export async function POST(req:Request){
    if((mode==='client'&&!b.clientId)||(mode==='order'&&!b.orderId)||(mode==='incoming'&&!b.incomingId))throw Object.assign(Error('Выберите клиента, заказ или обращение'),{status:400});
    let number:string,clientId:string|null=null;
    try{
-    if(mode==='incoming'){number=await incomingCallTarget(db(),a,b.incomingId!);clientId=(await db().prepare('SELECT client_id FROM incoming_calls WHERE id=?').bind(b.incomingId).first<{client_id:string|null}>())?.client_id||null;}
-    else{const result=await clientPhones(a,mode==='order'?{mode,orderId:b.orderId}:{mode,clientId:b.clientId});clientId=result.clientId;const selected=b.phoneKey?result.phones.find(p=>p.key===b.phoneKey):result.phones[0];if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');number=selected.number;}
+    const result=await clientPhones(a,mode==='incoming'?{mode,incomingId:b.incomingId}:mode==='order'?{mode,orderId:b.orderId}:{mode,clientId:b.clientId});clientId=result.clientId||null;const selected=b.phoneKey?result.phones.find(p=>p.key===b.phoneKey):result.phones[0];if(!selected)throw Error('Выбранный номер недоступен. Обновите список номеров');number=selected.number;
    }catch(e){throw Object.assign(e instanceof Error?e:Error('Нет доступа к номеру клиента'),{status:403});}
    await initPhone(db());const callId=crypto.randomUUID().replaceAll('-','');
    await db().batch([db().prepare("INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status,detail) VALUES(?,?,?,?,?,?,?,'preparing',?)").bind(callId,clientId,mode==='order'?b.orderId:null,a.id,a.name,'',new Date().toISOString(),'Oktell / МТС · звонок клиенту'),...(mode==='incoming'?[db().prepare('INSERT INTO phone_call_incoming(call_id,incoming_id) VALUES(?,?)').bind(callId,b.incomingId)]:[])]);

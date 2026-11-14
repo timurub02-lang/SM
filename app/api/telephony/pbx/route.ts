@@ -4,7 +4,7 @@ import {mkdir,writeFile,link,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {z} from 'zod';
 import {db} from '@/lib/db';
-import {incomingCallTarget,initPhone,type PhoneCall} from '@/lib/phone-store';
+import {initPhone,type PhoneCall} from '@/lib/phone-store';
 import {phoneAccount,phoneRoles} from '@/lib/phone-accounts';
 import {clientPhones} from '@/lib/client-call-targets';
 export const dynamic='force-dynamic';
@@ -23,7 +23,7 @@ export async function GET(req:Request){
  const employee=await db().prepare('SELECT e.data FROM employees e JOIN auth_accounts a ON a.employee_id=e.id WHERE e.id=? AND a.enabled=1').bind(target.actor_id).first<{data:string}>();
  if(!employee||!phoneRoles.includes(JSON.parse(employee.data).role))return Response.json({error:'Account disabled'},{status:403});
  const incoming=await db().prepare('SELECT incoming_id FROM phone_call_incoming WHERE call_id=?').bind(id).first<{incoming_id:string}>();
- if(incoming){try{if(await incomingCallTarget(db(),JSON.parse(employee.data),incoming.incoming_id)!==target.destination)throw Error('Changed destination');}catch{return Response.json({error:'Обращение изменилось или больше недоступно. Обновите данные'},{status:403});}}
+ if(incoming){try{if(!(await clientPhones(JSON.parse(employee.data),{mode:'incoming',incomingId:incoming.incoming_id})).phones.some(p=>p.number===target.destination))throw Error('Changed destination');}catch{return Response.json({error:'Обращение изменилось или больше недоступно. Обновите данные'},{status:403});}}
  else if(target.client_id||target.order_id){
   try{
    const current=await clientPhones(JSON.parse(employee.data),target.order_id?{mode:'order',orderId:target.order_id}:{mode:'client',clientId:target.client_id!});
