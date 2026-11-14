@@ -1,3 +1,4 @@
+import {isEmil} from '@/lib/partner-cash';
 import {courierBalance} from '@/lib/courier';
 import {authenticated} from '@/lib/api-auth';
 import {personalAuth} from '@/lib/auth';
@@ -15,6 +16,7 @@ async function handle(req:Request){
   const p:any=req.method==='GET'?null:await req.json();
   const actor=await employee(p?.actorId||new URL(req.url).searchParams.get('actorId')||'');
   if(!actor||!hasCash(actor.role)||actor.accessEnabled===false)return Response.json({error:'Касса недоступна'},{status:403});
+  if(isEmil(actor)&&req.method!=='GET')return Response.json({error:'Касса партнёра пополняется только по реестрам СДЭК'},{status:403});
   if(actor.cashDisabled){if(req.method!=='GET')return Response.json({error:'Касса отключена'},{status:403});return Response.json({cashDisabled:true,balance:0,operations:[],recipients:[]},{headers:{'Cache-Control':'no-store'}});}
   await initCash();const d=db();
   const query=new URL(req.url).searchParams;
@@ -49,7 +51,7 @@ async function handle(req:Request){
     if(input.date>today)throw Error('Дата операции не может быть в будущем');
     if(input.kind==='transfer'&&input.purpose!=='Перевод другому сотруднику')throw Error('Выберите назначение платежа');
     const recipient=input.kind==='transfer'?await employee(input.recipient||''):input.kind==='add'?actor:null;
-    if(input.kind==='transfer'&&(!recipient||!hasCash(recipient.role)||recipient.id===actor.id||recipient.accessEnabled===false||recipient.cashDisabled))throw Error('Выберите другого сотрудника с кассой');
+    if(input.kind==='transfer'&&(!recipient||!hasCash(recipient.role)||recipient.id===actor.id||recipient.accessEnabled===false||recipient.cashDisabled||isEmil(recipient)))throw Error('Выберите другого сотрудника с кассой');
     const sender=input.kind==='add'?null:actor;const now=new Date().toISOString();
     const old=await d.prepare('SELECT * FROM cash_operations WHERE id=?').bind(input.id).first<any>();
     if(old){if(old.actor!==actor.id||old.kind!==input.kind||old.amount!==input.amount||old.purpose!==input.purpose||old.date!==input.date||old.recipient!==(recipient?.id||null))throw Error('Операция уже сохранена с другими данными');}
@@ -62,7 +64,7 @@ async function handle(req:Request){
   const balance=await d.prepare('SELECT balance FROM cash_balances WHERE employee=?').bind(actor.id).first<{balance:number}>();
   const rows=await d.prepare('SELECT * FROM cash_operations WHERE sender=? OR recipient=? ORDER BY created_at DESC,id DESC').bind(actor.id,actor.id).all();
   const staff=await d.prepare("SELECT id,data FROM employees WHERE json_extract(data,'$.role') IN ('admin','department_head','chief_logistic','purchasing')"+(personalAuth()?" AND EXISTS(SELECT 1 FROM auth_accounts a WHERE a.employee_id=employees.id AND a.enabled=1)":"")+" ORDER BY id").all<{id:string;data:string}>();
-  return Response.json({balance:balance?.balance||0,operations:rows.results,recipients:staff.results.map(r=>JSON.parse(r.data) as Employee).filter(e=>e.id!==actor.id&&e.accessEnabled!==false&&!e.cashDisabled).map(e=>({id:e.id,name:e.name,login:e.login}))},{headers:{'Cache-Control':'no-store'}});
+  return Response.json({balance:balance?.balance||0,operations:rows.results,recipients:staff.results.map(r=>JSON.parse(r.data) as Employee).filter(e=>e.id!==actor.id&&e.accessEnabled!==false&&!e.cashDisabled&&!isEmil(e)).map(e=>({id:e.id,name:e.name,login:e.login}))},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(i=>i.message).join('; '):e instanceof Error?e.message:'Не удалось сохранить операцию'},{status:400});}
 }
 export const GET=authenticated(handle);
