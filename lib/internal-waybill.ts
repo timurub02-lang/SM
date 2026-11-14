@@ -1,3 +1,4 @@
+import {courierRecalledAtWarehouse} from './courier.ts';
 import {packingStage,type Order,type Client,type Employee} from './crm.ts';
 
 export function internalWaybill(order:Order,client:Client,manager?:Employee,callbacks?:{printBoth?:boolean;phones:string[];departments:Record<string,string>}){
@@ -25,3 +26,5 @@ export function courierCheatsheet(order:Order,client:Client,manager?:Employee,co
   amount:order.items.reduce((sum,item)=>sum+item.quantity*Math.round(item.price*100),0)/100};
 }
 export type CourierCheatsheetData=ReturnType<typeof courierCheatsheet>;
+
+export const canDownloadCourierCheatsheet=(order:Order)=>order.delivery==='moscow_courier'&&(['packing','phone','shipping','pickup','redeemed','returned'].includes(order.status)||!!order.courier||order.status==='rework'&&courierRecalledAtWarehouse(order));
