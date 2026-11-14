@@ -14,3 +14,6 @@ assert.equal(clientAssignment(lifted,'op',at).assignedUntil,'2026-11-15T15:00:00
 assert.equal(applyRetention(lifted,[{...old,blacklistedAt:'2026-11-15T00:00:00Z'}],Date.parse('2026-11-16')).sheet,'ЧС');
 assert.deepEqual(changeClientSheet(before,before,'К','admin',allowed,at),{});
 console.log('Admin sheet changes preserve history and 24-hour assignment');
+const pv={...before,...changeClientSheet(before,before,'ПВ','admin',allowed,at)};
+assert.equal(applyRetention(pv,[],Date.parse(at)).sheet,'ПВ');
+assert.equal(applyRetention(pv,[{...old,pv:false,redeemedAt:'2026-11-15T00:00:00Z'}],Date.parse('2026-11-16')).sheet,'К');
