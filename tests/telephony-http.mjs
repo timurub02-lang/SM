@@ -205,10 +205,10 @@ try{
  assert.equal((await incoming('invalid')).status,400);
  const first='b'.repeat(32);
  assert.equal((await incoming(first,'8 (999) 000-00-03')).status,200);
- let rows=(await state('admin')).incoming;assert.equal(rows.find(i=>i.id===first).assigneeId,'admin','Last actual caller, not owner');
+ let rows=(await state('admin')).incoming;assert.equal(rows.find(i=>i.id===first).assigneeId,'one','Owned incoming goes to owner, not covering admin');
  const original=db.prepare('SELECT at FROM incoming_calls WHERE id=?').get(first).at;
  assert.equal((await incoming(first,'+79999999999')).status,200);assert.equal(db.prepare('SELECT at FROM incoming_calls WHERE id=?').get(first).at,original);
- assert.equal((await state('one')).incoming.length,0);
+ assert.equal((await state('one')).incoming.length,1);
  assert.ok((await state('head')).incoming.some(i=>i.id===first),'Head sees department client even when admin called');
  assert.ok(!(await state('head2')).incoming.some(i=>i.id===first));
  const headKnownCallback=await api('/api/telephony',{mode:'incoming',incomingId:first},cookies.head);assert.equal(headKnownCallback.status,200,headKnownCallback.text);assert.equal((await api('/api/telephony',{mode:'incoming',incomingId:first},cookies.head2)).status,400,'Another department cannot call through the incoming');
@@ -318,7 +318,8 @@ try{
  const newRequest=(await state('two')).incoming.find(i=>i.id===newCaller);assert.ok(newRequest.clientId);assert.equal(newRequest.assigneeId,'two');assert.ok(!newRequest.closedAt);
  const newClient=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(newRequest.clientId).data);assert.equal(newClient.phone,'+79997775544');assert.equal(newClient.owner,'two');assert.equal(newClient.baseType,'J');assert.ok(newClient.trialUntil);
  assert.equal((await api('/api/crm',create,cookies.admin)).status,400,'No repeated creation');
- const moved=await api('/api/crm',{action:'assignIncoming',incomingId:newCaller,operatorId:'one'},cookies.head2);assert.equal(moved.status,200,moved.text);
+ assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:newCaller,operatorId:'one'},cookies.head2)).status,400,'Head cannot replace the owner of a newly created client');
+ const moved=await api('/api/crm',{action:'assignIncoming',incomingId:newCaller,operatorId:'one'},cookies.admin);assert.equal(moved.status,200,moved.text);
  assert.equal((await state('one')).incoming.find(i=>i.id===newCaller).assigneeId,'one');
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(newRequest.clientId).data).owner,'one');
  assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:other,operatorId:'two'},cookies.admin)).status,400,'Active order blocks reassignment');
@@ -469,9 +470,10 @@ try{
  assert.equal((await api('/api/crm',transfer,cookies.head2)).status,400,'Another head cannot transfer a private request');
  for(const comment of ['', '   ', 'a'.repeat(1901)])assert.equal((await api('/api/crm',{...transfer,comment},cookies.head)).status,400);
  assert.equal((await api('/api/crm',{...transfer,operatorId:'head2'},cookies.head)).status,400);
- const handedResult=await api('/api/crm',transfer,cookies.head);assert.equal(handedResult.status,200,handedResult.text);
+ assert.equal((await api('/api/crm',transfer,cookies.head)).status,400,'Head cannot replace the owner with another operator');assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:handed,operatorId:'two'},cookies.head)).status,400,'Legacy assignment cannot bypass owner protection');
+ const handedResult=await api('/api/crm',transfer,cookies.admin);assert.equal(handedResult.status,200,handedResult.text);
  const recipient=await state('two'),received=recipient.incoming.find(i=>i.id===handed);
- assert.equal(received.assigneeId,'two');assert.equal(received.handoff.comment,transfer.comment);assert.equal(received.handoff.by,'head');assert.ok(!received.closedAt);assert.equal(received.hasActiveOrder,true);
+ assert.equal(received.assigneeId,'two');assert.equal(received.handoff.comment,transfer.comment);assert.equal(received.handoff.by,'admin');assert.ok(!received.closedAt);assert.equal(received.hasActiveOrder,true);
  assert.ok(!recipient.clients.some(c=>c.id===handoffClient.id),'Handoff does not expose the client card');
  assert.ok(!recipient.orders.some(o=>o.id===handoffOrder.id),'Handoff does not grant access to another operator order');
  assert.equal(db.prepare('SELECT data FROM clients WHERE id=?').get(handoffClient.id).data,handoffClientBefore);
@@ -551,8 +553,10 @@ try{
  // Incoming order creation keeps ownership and closes only after successful creation.
  const createClient={id:'incoming-create-client',name:'Incoming create client',phone:'+79990000551',owner:'two',city:'',address:'',source:'Test',createdAt:new Date().toISOString(),version:1};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(createClient.id,createClient.phone,JSON.stringify(createClient));
- const createIncoming='ed'.repeat(16);await incoming(createIncoming,'79990000551');
- assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:createIncoming,operatorId:'one',comment:'Substitute operator'},cookies.head2)).status,200);
+ db.prepare("INSERT INTO phone_calls(id,client_id,actor_id,actor_name,caller_number,started_at,status,detail,claimed_at) VALUES(?,?,'head2','Test head2','',?,'no_answer','',?)").run('d6'.repeat(16),createClient.id,new Date().toISOString(),new Date().toISOString());
+ const createIncoming='ed'.repeat(16);await incoming(createIncoming,'79990000551');assert.equal(db.prepare('SELECT assignee_id FROM incoming_calls WHERE id=?').get(createIncoming).assignee_id,'two','Gray incoming stays with owner after head coverage');
+ assert.equal((await api('/api/crm',{action:'assignIncoming',incomingId:createIncoming,operatorId:'one'},cookies.head2)).status,400,'Legacy gray assignment cannot change owner');
+ assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:createIncoming,operatorId:'one',comment:'Substitute operator'},cookies.admin)).status,200);
  const formPath='/api/incoming-order-client?'+new URLSearchParams({incomingId:createIncoming});
  const form=await api(formPath,undefined,cookies.one);assert.equal(form.status,200,form.text);assert.equal(form.data.client.owner,'two');assert.equal(form.data.client.phone,'');assert.ok(!form.text.includes('79990000551'));
  assert.equal((await api(formPath,undefined,cookies.head0)).status,400,'Other head cannot inspect a private delegated client');
@@ -563,6 +567,9 @@ try{
  const closedCreation=db.prepare('SELECT closed_at,order_id,reason FROM incoming_calls WHERE id=?').get(createIncoming);assert.ok(closedCreation.closed_at);assert.equal(closedCreation.order_id,made.id);assert.ok(closedCreation.reason.includes(made.id));
  assert.equal((await api('/api/crm',makeOrder,cookies.one)).status,400,'Retry cannot create a second order');assert.equal(db.prepare('SELECT count(*) n FROM orders WHERE client_id=?').get(createClient.id).n,1);
  assert.ok(db.prepare('SELECT data FROM events WHERE order_id=?').all(made.id).some(r=>JSON.parse(r.data).actorId==='one'&&JSON.parse(r.data).text.includes(made.id)),'Audit keeps actual creator and created order number');
+ const headOwned={...createClient,id:'incoming-head-owned',phone:'+79990000558'};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(headOwned.id,headOwned.phone,JSON.stringify(headOwned));
+ const headOwnedIncoming='d5'.repeat(16);await incoming(headOwnedIncoming,'79990000558');
+ const headCreated=await api('/api/crm',{...makeOrder,clientId:headOwned.id,incomingId:headOwnedIncoming},cookies.head2);assert.equal(headCreated.status,200,headCreated.text);assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE client_id=?').get(headOwned.id).data).manager,'two');assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(headOwned.id).data).owner,'two');assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(headOwnedIncoming).closed_at,'Head can process owned incoming without delegation');
  // A free client assigned through an incoming can be reviewed without claiming, then claimed by creating an order.
  const freeWork={...createClient,id:'incoming-free-work',phone:'+79990000559',name:'Free incoming client',owner:'',address:'History address'};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(freeWork.id,freeWork.phone,JSON.stringify(freeWork));
@@ -570,22 +577,33 @@ try{
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(freePast.id,freeWork.id,JSON.stringify(freePast));
  db.prepare('INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)').run('free-history-event',freeWork.id,freePast.id,new Date().toISOString(),JSON.stringify({id:'free-history-event',at:new Date().toISOString(),actor:'Test',text:'Contact +79990000559'}));
  const freeWorkIncoming='d9'.repeat(16);await incoming(freeWorkIncoming,'79990000559');
+ const freeCall='d8'.repeat(16);db.prepare("INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status,detail,recording) VALUES(?,?,?,'two','Test two','79990000559',?,'completed','Called +79990000559',1)").run(freeCall,freeWork.id,freePast.id,new Date().toISOString());writeFileSync(join(dir,'recordings',freeCall+'.wav'),'synthetic-incoming-audio');
+ const sharedCard=await api('/api/incoming-order-client?'+new URLSearchParams({incomingId:freeWorkIncoming,view:'card'}),undefined,cookies.head);assert.equal(sharedCard.status,200,sharedCard.text);assert.equal(sharedCard.data.clients[0].id,freeWork.id);assert.equal(sharedCard.data.historyRemote,true);assert.ok(sharedCard.data.orders.some(o=>o.id===freePast.id));assert.ok(!sharedCard.text.includes('79990000559'));
+
  const sharedHistory=await api('/api/incoming-order-client?'+new URLSearchParams({incomingId:freeWorkIncoming,view:'history'}),undefined,cookies.head);assert.equal(sharedHistory.status,200,sharedHistory.text);assert.equal(sharedHistory.data.canCreateOrder,false);assert.equal(sharedHistory.data.client.owner,'');assert.ok(sharedHistory.data.orders.some(o=>o.id===freePast.id));assert.ok(!sharedHistory.text.includes('79990000559'));assert.equal((await api('/api/incoming-order-client?'+new URLSearchParams({incomingId:freeWorkIncoming}),undefined,cookies.head)).status,400,'Unassigned shared client must be transferred before order creation');
  assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:freeWorkIncoming,operatorId:'one',comment:'Handle free client'},cookies.head)).status,200);
  const freeHistoryPath='/api/incoming-order-client?'+new URLSearchParams({incomingId:freeWorkIncoming,view:'history'});
  let fh=await api(freeHistoryPath,undefined,cookies.one);assert.equal(fh.status,200,fh.text);assert.equal(fh.data.client.owner,'');assert.equal(fh.data.managerLogin,'one');assert.equal(fh.data.client.phone,'');assert.equal(fh.data.client.address,'History address');assert.ok(fh.data.events.some(e=>e.id==='free-history-event'));assert.ok(fh.data.orders.some(o=>o.id===freePast.id));assert.ok(!fh.text.includes('79990000559'));
  assert.equal((await api(freeHistoryPath,undefined,cookies.two)).status,400,'Unassigned operator cannot inspect history');
+ const freeCardPath='/api/incoming-order-client?'+new URLSearchParams({incomingId:freeWorkIncoming,view:'card'}),freeHistoryQuery=new URLSearchParams({clientId:freeWork.id,incomingId:freeWorkIncoming}),freeRecordingPath='/api/call-history/recording?'+new URLSearchParams({id:freeCall,incomingId:freeWorkIncoming});
+ assert.equal((await api(freeCardPath,undefined,cookies.one)).status,200);assert.equal((await api(freeCardPath,undefined,cookies.two)).status,400);
+ const freeEvents=await api('/api/crm/history?'+freeHistoryQuery,undefined,cookies.one);assert.equal(freeEvents.status,200,freeEvents.text);assert.ok(freeEvents.data.rows.some(e=>e.id==='free-history-event'));assert.ok(!freeEvents.text.includes('79990000559'));
+ assert.equal((await api('/api/crm/history?'+freeHistoryQuery+'&legacy=1',undefined,cookies.one)).status,200);assert.equal((await api('/api/crm/history?'+freeHistoryQuery,undefined,cookies.two)).status,403);
+ const freeCalls=await api('/api/call-history?'+freeHistoryQuery,undefined,cookies.one);assert.equal(freeCalls.status,200,freeCalls.text);assert.ok(freeCalls.data.calls.some(c=>c.id===freeCall));assert.ok(!freeCalls.text.includes('79990000559'));assert.equal((await api('/api/call-history?clientId='+freeWork.id,undefined,cookies.one)).status,403,'Incoming read grant does not expand ordinary client rights');assert.equal((await api('/api/call-history?'+freeHistoryQuery,undefined,cookies.two)).status,403);
+ assert.equal((await api(freeRecordingPath,undefined,cookies.one)).status,200);assert.equal((await api(freeRecordingPath,undefined,cookies.two)).status,403);assert.equal((await api('/api/call-history',{id:freeCall,commentId:crypto.randomUUID(),text:'Not allowed'},cookies.one)).status,403,'Read-only incoming does not grant call editing');
+
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(freeWork.id).data).owner,'','Reading/cancelling does not claim client');
  const freeMade=await api('/api/crm',{...makeOrder,clientId:freeWork.id,incomingId:freeWorkIncoming},cookies.one);assert.equal(freeMade.status,200,freeMade.text);
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(freeWork.id).data).owner,'one');assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE client_id=? AND id<>?').get(freeWork.id,freePast.id).data).manager,'one');assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(freeWorkIncoming).closed_at);
  assert.equal((await api(freeHistoryPath,undefined,cookies.one)).status,400,'Closed incoming revokes narrow history access');
+ assert.equal((await api('/api/crm/history?'+freeHistoryQuery,undefined,cookies.one)).status,403);assert.equal((await api('/api/call-history?'+freeHistoryQuery,undefined,cookies.one)).status,403);assert.equal((await api(freeRecordingPath,undefined,cookies.one)).status,403,'Closed incoming revokes recording grant');
  // Delegated operator requests edits; logistics approves; the owner edits and returns to the original stage.
  const editClient={...createClient,id:'incoming-edit-client',phone:'+79990000552'};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(editClient.id,editClient.phone,JSON.stringify(editClient));
  const editOrder={id:'incoming-edit-order',clientId:editClient.id,manager:'two',logistic:'logistic',status:'packing',items:[{name:'Item',quantity:1,price:100}],comment:'',reason:'',contact:'none',due:'',round:1,extra:false,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),version:1};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(editOrder.id,editClient.id,JSON.stringify(editOrder));
  const editIncoming='ec'.repeat(16);await incoming(editIncoming,'79990000552');db.prepare("UPDATE incoming_calls SET assignee_id='head2',department_id='2',shared_queue=0 WHERE id=?").run(editIncoming);
- assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:editIncoming,operatorId:'one',comment:'Ask for address correction'},cookies.head2)).status,200);
+ assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:editIncoming,operatorId:'one',comment:'Ask for address correction'},cookies.admin)).status,200);
  const editSnapshot=()=>{const r=db.prepare('SELECT data,version FROM orders WHERE id=?').get(editOrder.id);return {...JSON.parse(r.data),version:r.version};};
  let er=await api('/api/crm',{action:'requestOrderEdit',id:editOrder.id,version:editSnapshot().version,incomingId:editIncoming,reason:'Correct street'},cookies.one);assert.equal(er.status,200,er.text);assert.equal(editSnapshot().status,'packing');assert.equal(editSnapshot().editRequest.status,'pending');assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(editIncoming).closed_at);
  let edit=editSnapshot();assert.equal((await api('/api/crm',{action:'resolveOrderEdit',id:edit.id,version:edit.version,requestId:edit.editRequest.id,decision:'edit'},cookies.two)).status,400,'Operator cannot approve their request');
@@ -609,14 +627,15 @@ try{
  const buyout=JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(so.id).data);assert.equal(buyout.result,'to_return');assert.equal(buyout.pendingEnrollment,false);assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(returnIncoming).closed_at);assert.ok((await state('redemption')).tasks.some(t=>t.orderId===so.id&&t.title.includes('возврат')));
  assert.equal((await api('/api/crm',{action:'resolveShipmentRequest',kind:'return',id:so.id,version:so.version,requestId:so.shipmentReturn.id,decision:'done',reason:'Attempted return'},cookies.logistic)).status,400,'CDEK return is handled by redemption');
  sr=await api('/api/crm',{action:'resolveShipmentRequest',kind:'return',id:so.id,version:so.version,requestId:so.shipmentReturn.id,decision:'done',reason:'CDEK received the return request'},cookies.redemption);assert.equal(sr.status,200,sr.text);assert.equal(sentSnapshot().status,'shipping','Acknowledging a carrier request is not physical return');
- const manualSent='e9'.repeat(16);await incoming(manualSent,'79990000553');assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:manualSent,operatorId:'one',comment:'Owner is absent'},cookies.head2)).status,200);await incoming('e8'.repeat(16),'79990000553');assert.equal(db.prepare('SELECT assignee_id FROM incoming_calls WHERE id=?').get(manualSent).assignee_id,'one','New ingress must not override an explicit handoff');
+ const manualSent='e9'.repeat(16);await incoming(manualSent,'79990000553');assert.equal((await api('/api/crm',{action:'transferIncoming',incomingId:manualSent,operatorId:'one',comment:'Owner is absent'},cookies.admin)).status,200);await incoming('e8'.repeat(16),'79990000553');assert.equal(db.prepare('SELECT assignee_id FROM incoming_calls WHERE id=?').get(manualSent).assignee_id,'one','New ingress must not override an explicit handoff');
  console.log('Sent incoming: CDEK owner routing, manual handoff preserved, carrier-specific urgent tasks, return queue, operator result notices and no physical status/content changes passed.');
  // Date/comment information updates the same buyout row atomically with incoming closure.
  const infoClient={...createClient,id:'incoming-info-client',phone:'+79990000554',owner:'one'};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(infoClient.id,infoClient.phone,JSON.stringify(infoClient));
  const moscowDay=n=>new Date(Date.now()+10800000+n*86400000).toISOString().slice(0,10),infoOrder={...sentOrder,id:'incoming-info-order',clientId:infoClient.id,manager:'one',testOnly:true,cdekStorageUntil:moscowDay(3)};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(infoOrder.id,infoClient.id,JSON.stringify(infoOrder));
  const infoSnapshot=()=>{const r=db.prepare('SELECT data,version FROM orders WHERE id=?').get(infoOrder.id);return {...JSON.parse(r.data),version:r.version};};
- const firstInfo='e7'.repeat(16);await incoming(firstInfo,'79990000554');
+ db.prepare("INSERT INTO phone_calls(id,client_id,actor_id,actor_name,caller_number,started_at,status,detail,claimed_at) VALUES(?,?,'head','Test head','',?,'no_answer','',?)").run('d7'.repeat(16),infoClient.id,new Date().toISOString(),new Date().toISOString());
+ const firstInfo='e7'.repeat(16);await incoming(firstInfo,'79990000554');assert.equal(db.prepare('SELECT assignee_id FROM incoming_calls WHERE id=?').get(firstInfo).assignee_id,'one','Head callback never takes routing from owner');
  let ir=await api('/api/crm',{action:'incomingBuyoutInfo',id:infoOrder.id,version:infoSnapshot().version,incomingId:firstInfo,mode:'comment',reason:'Call before delivery'},cookies.one);assert.equal(ir.status,200,ir.text);
  let infoBuyout=JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data);assert.equal(infoBuyout.result,undefined,'A comment on a new row must not invent a result');assert.equal(infoBuyout.resultDate,undefined);assert.equal(infoBuyout.comments.at(-1).text,'Call before delivery');
  const dateInfo='e6'.repeat(16);await incoming(dateInfo,'79990000554');

@@ -5,7 +5,7 @@ import {initIncoming} from '@/lib/incoming';
 import {readCrmHistory} from '@/lib/crm-history';
 import {z} from 'zod';
 export const dynamic='force-dynamic';
-const schema=z.object({clientId:z.string().min(1).max(100).optional(),orderId:z.string().min(1).max(100).optional(),employeeId:z.string().min(1).max(100).optional(),page:z.coerce.number().int().min(0).max(100000).default(0),legacy:z.enum(['1']).optional()}).refine(q=>(!!q.clientId!==!!q.employeeId)&&(!q.orderId||!!q.clientId)).refine(q=>!q.legacy||!!q.clientId&&!q.orderId);
+const schema=z.object({incomingId:z.string().min(1).max(100).optional(),clientId:z.string().min(1).max(100).optional(),orderId:z.string().min(1).max(100).optional(),employeeId:z.string().min(1).max(100).optional(),page:z.coerce.number().int().min(0).max(100000).default(0),legacy:z.enum(['1']).optional()}).refine(q=>(!!q.clientId!==!!q.employeeId)&&(!q.orderId||!!q.clientId)).refine(q=>!q.legacy||!!q.clientId&&!q.orderId).refine(q=>!q.incomingId||!!q.clientId&&!q.employeeId);
 export const GET=authenticated(async request=>{
  const user=await getChatGPTUser();if(!user?.employee)return Response.json({error:'Требуется вход'},{status:401});
  const parsed=schema.safeParse(Object.fromEntries(new URL(request.url).searchParams));

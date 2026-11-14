@@ -1,3 +1,4 @@
+import {canReadIncomingClient} from '@/lib/incoming';
 import {employeeCallJournal} from '@/lib/employee-call-journal';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -7,15 +8,16 @@ import {z} from 'zod';
 export const dynamic='force-dynamic';
 export const GET=authenticated(async req=>{
  const e=(await getChatGPTUser())?.employee,url=new URL(req.url),clientId=url.searchParams.get('clientId')||undefined,orderId=url.searchParams.get('orderId')||undefined;
- const employeeId=url.searchParams.get('employeeId');
+ const employeeId=url.searchParams.get('employeeId'),incomingId=url.searchParams.get('incomingId');
  if(employeeId){if(!e||e.role!=='admin')return Response.json({error:'Журнал сотрудников доступен администратору'},{status:403});return Response.json({calls:await employeeCallJournal(db(),e,employeeId)},{headers:{'Cache-Control':'no-store'}});}
- if(!e||!!clientId===!!orderId||!await phoneScope(db(),e,{clientId,orderId}))return Response.json({error:'История звонков недоступна'},{status:403});
+ if(!e||!!clientId===!!orderId||!(incomingId?!!clientId&&await canReadIncomingClient(db(),e,incomingId,clientId):await phoneScope(db(),e,{clientId,orderId})))return Response.json({error:'История звонков недоступна'},{status:403});
  await initPhone(db());
  const before=Number(url.searchParams.get('before')||Number.MAX_SAFE_INTEGER);if(!Number.isSafeInteger(before)||before<1)return Response.json({error:'Неверная страница'},{status:400});
  const rows=(await db().prepare(`SELECT c.*,a.auto_kind,a.auto_reason,a.analyzed_at,a.manual_kind,a.manual_name,a.manual_at FROM phone_calls c LEFT JOIN phone_call_analysis a ON a.call_id=c.id WHERE ${orderId?'order_id':'client_id'}=? AND seq<? ORDER BY seq DESC LIMIT 51`).bind(orderId||clientId!,before).all()).results as (PhoneCall&{seq:number})[];
  const ids=rows.slice(0,50).map(c=>c.id);
  const comments=ids.length?(await db().prepare(`SELECT id,call_id,actor_name,text,at FROM phone_call_comments WHERE call_id IN (${ids.map(()=>'?').join(',')}) ORDER BY at,id`).bind(...ids).all()).results:[];
- const calls=rows.slice(0,50).map(c=>{const {claimed_at,provider_at,...safe}=displayPhoneCall(c);return {...safe,recording:!!c.recording,comments:comments.filter(n=>n.call_id===c.id)};});
+ const hide=['operator','department_head'].includes(e.role),mask=(text:string)=>hide?String(text||'').replace(/(?<!\d)(?:\+?7|8)(?:[\s().-]*\d){10}(?!\d)/g,'[телефон]'):text;
+ const calls=rows.slice(0,50).map(c=>{const {claimed_at,provider_at,...safe}=displayPhoneCall(c);return {...safe,caller_number:hide?'':safe.caller_number,detail:mask(safe.detail),recording:!!c.recording,comments:comments.filter(n=>n.call_id===c.id).map(n=>({...n,text:mask(String(n.text))}))};});
  return Response.json({calls,next:rows.length>50?rows[49].seq:null},{headers:{'Cache-Control':'no-store'}});
 });
 export const PATCH=authenticated(async req=>{
