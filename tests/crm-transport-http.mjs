@@ -116,7 +116,21 @@ try{
    assert.deepEqual(page.clients,expected.slice(0,50));assert.equal(page.total,expected.length);
   }
  }
- if(process.env.CRM_SPLIT_READS==='1'){assert.equal((await get('/api/crm?part=bootstrap',adminCookie)).data.splitReads,undefined);assert.equal((await get('/api/crm?part=card&type=client&id=c-000',adminCookie)).status,403);}
+ if(process.env.CRM_SPLIT_READS==='1'){assert.equal((await get('/api/crm?part=bootstrap',adminCookie)).data.splitReads,undefined);assert.equal((await get('/api/crm?part=card&type=client&id=c-000',adminCookie)).status,200);}
+ // A free incoming client is absent from the working snapshot, but admin can load its full card.
+ const free={id:'free-incoming',name:'Synthetic free client',phone:'+79990000991',owner:'',city:'',address:'Fixture address',source:'Fixture',createdAt:now,version:1};
+ database.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(free.id,free.phone,JSON.stringify(free));
+ const before=database.prepare('SELECT data,version FROM clients WHERE id=?').get(free.id);
+ const working=(await get('/api/crm?transport=compact-v1',adminCookie)).data;assert.ok(!working.clients.some(c=>c.id===free.id));
+ const cardPath='/api/crm?part=card&type=client&id='+free.id;
+ const freeCard=await get(cardPath,adminCookie);assert.equal(freeCard.status,200);assert.equal(freeCard.data.clients.length,1);assert.equal(freeCard.data.clients[0].name,free.name);assert.equal(freeCard.data.clients[0].phone,free.phone);assert.equal(freeCard.data.clients[0].owner,'');
+ const adminOrder=await get('/api/crm?part=card&type=order&id=o-c-060',adminCookie);assert.equal(adminOrder.status,200);assert.ok(adminOrder.data.orders.some(o=>o.id==='o-c-060'));
+ assert.equal((await get('/api/crm?part=card&type=client&id=missing-client',adminCookie)).status,404);
+ assert.equal((await get('/api/crm?part=card&type=order&id=missing-order',adminCookie)).status,404);
+ assert.equal((await get('/api/crm?part=card&type=invalid&id=x',adminCookie)).status,400);
+ assert.equal((await fetch(base+cardPath)).status,401);
+ assert.equal((await get(cardPath,cookies[0])).status,process.env.CRM_SPLIT_READS==='1'?404:403);
+ assert.deepEqual(database.prepare('SELECT data,version FROM clients WHERE id=?').get(free.id),before,'Reading a card does not claim/edit the client');
  console.log('HTTP transport: compact/full parity, role scopes, server pages/search, remote history, deltas, bounded save, reminders, version conflicts and worker fallback passed');
 }catch(error){console.error(logs);throw error;}finally{
  if(server){server.kill();await once(server,'exit');}database.close();rmSync(dir,{recursive:true,force:true});
