@@ -14,7 +14,7 @@ const command=z.discriminatedUnion('action',[
  z.object({action:z.literal('complete'),id:z.string().uuid()}).strict(),
 ]);
 export async function GET(req:Request){
- const actor=await sessionEmployee(req.headers);if(actor?.role!=='admin')return Response.json({error:'Нет доступа'},{status:403});
+ const actor=await sessionEmployee(req.headers);if(actor?.impersonation||actor?.role!=='admin')return Response.json({error:'Нет доступа'},{status:403});
  try{
   const d=db();await initOktellDelivery(d);
   const jobs=(await d.prepare('SELECT j.*,COUNT(i.client_id) total FROM oktell_deliveries j LEFT JOIN oktell_delivery_items i ON i.job_id=j.id GROUP BY j.id ORDER BY j.created_at DESC LIMIT 20').all()).results.map((r:any)=>({...r,selection:JSON.parse(r.selection)}));
@@ -26,7 +26,7 @@ export async function GET(req:Request){
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось прочитать загрузки'},{status:502});}
 }
 export async function POST(req:Request){
- const actor=await sessionEmployee(req.headers);if(actor?.role!=='admin'||!trustedOrigin(req.headers))return Response.json({error:'Нет доступа'},{status:403});
+ const actor=await sessionEmployee(req.headers);if(actor?.impersonation||actor?.role!=='admin'||!trustedOrigin(req.headers))return Response.json({error:'Нет доступа'},{status:403});
  try{
   const raw=await readLimitedText(req,16000);if(raw.length>4000)return Response.json({error:'Слишком большой запрос'},{status:413});
   const b=command.parse(JSON.parse(raw)),d=db();

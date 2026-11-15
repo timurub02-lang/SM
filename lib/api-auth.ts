@@ -1,3 +1,4 @@
+import {impersonationBlocksPhone} from './impersonation';
 import {sharedIncomingClientAccess} from './incoming';
 import {readLimitedText,BodyTooLarge} from './request-body';
 import {personalAuth,sessionEmployee,trustedOrigin} from './auth';
@@ -16,6 +17,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    const write=!['GET','HEAD'].includes(req.method);
    if(write&&!trustedOrigin(req.headers))return Response.json({error:'Запрос отклонён'},{status:403});
    const url=new URL(req.url);let body:any;
+   if(impersonationBlocksPhone(employee,url.pathname))return Response.json({error:'В режиме входа под сотрудником телефония отключена'},{status:403});
    if(write){const raw=await readLimitedText(req,6000000);if(raw.length>1500000)throw new BodyTooLarge('Слишком большой запрос');body=JSON.parse(raw);}
    if(!mayCallEndpoint(employee,url,req.method,body))return Response.json({error:'Недостаточно прав'},{status:403});
    if((body?.actorId&&body.actorId!==employee.id)||(url.searchParams.has('actorId')&&url.searchParams.get('actorId')!==employee.id))return Response.json({error:'Нельзя действовать от имени другого сотрудника'},{status:403});
@@ -36,7 +38,10 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    }
    url.searchParams.set('actorId',employee.id);
    if(body)body.actorId=employee.id;
+   const auditId=write&&employee.impersonation?crypto.randomUUID():null;
+   if(auditId)await db().prepare('INSERT INTO auth_impersonation_audit(id,impersonation_id,admin_id,target_id,at,kind,method,path,action,entity_id) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(auditId,employee.impersonation!.id,employee.impersonation!.adminId,employee.id,Date.now(),'request',req.method,url.pathname,typeof body?.action==='string'?body.action.slice(0,100):null,typeof (body?.id||body?.orderId||body?.clientId)==='string'?String(body.id||body.orderId||body.clientId).slice(0,100):null).run();
    const response=await handler(new Request(url,{method:req.method,headers:req.headers,signal:req.signal,...(write?{body:JSON.stringify(body)}:{})}));
+   if(auditId)await db().prepare('UPDATE auth_impersonation_audit SET status=? WHERE id=?').bind(response.status,auditId).run().catch(console.error);
    response.headers.set('Cache-Control','no-store');
    return response;
   }catch(error){return Response.json({error:error instanceof BodyTooLarge?error.message:'Не удалось выполнить запрос'},{status:error instanceof BodyTooLarge?413:400});}

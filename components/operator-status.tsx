@@ -1,4 +1,5 @@
 'use client';
+import {useImpersonationSession} from './impersonation-session';
 import {useEffect,useState,useRef} from 'react';
 import {Check,Pause,LogOut,ChevronDown,Headphones,Coffee,Utensils} from 'lucide-react';
 import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '@/components/ui/dropdown-menu';
@@ -6,7 +7,8 @@ import {OktellPhonePanel,useOktellPhone} from './oktell-phone';
 import {toast} from 'sonner';
 type Status={state:'ready'|'break'|'finished'|'busy'|'offline'|'unavailable';checkedAt:string;hasLine:boolean|null;busy:boolean;login:string};
 const labels={offline:'Работа не начата',unavailable:'Телефон Oktell не подключён',ready:'Готов',break:'Перерыв',finished:'Работа завершена',busy:'Занят · разговор или обработка'};
-export default function OperatorStatus({actorId}:{actorId:string}){
+export default function OperatorStatus({actorId}:{actorId:string}){const mode=useImpersonationSession();return mode?<p className="notice">В режиме входа под сотрудником звонки и управление его телефонным статусом отключены.</p>:<ConnectedOperatorStatus actorId={actorId}/>;}
+function ConnectedOperatorStatus({actorId}:{actorId:string}){
  const native=useOktellPhone();
  const [status,setStatus]=useState<Status|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false);
  const seq=useRef(0),sending=useRef(false);

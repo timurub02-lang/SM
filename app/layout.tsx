@@ -1,3 +1,6 @@
+import {headers} from 'next/headers';
+import {impersonationStatus} from '@/lib/auth';
+import {ImpersonationSession} from '@/components/impersonation-session';
 import type { Metadata } from "next";
 import "./globals.css";
 import "./macos.css";
@@ -16,14 +19,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const mode=await impersonationStatus(new Headers(await headers()));
   return (
     <html lang="ru" suppressHydrationWarning>
-      <body className="antialiased"><CrmThemeProvider>{children}</CrmThemeProvider></body>
+      <body className="antialiased"><CrmThemeProvider><ImpersonationSession mode={mode}>{children}</ImpersonationSession></CrmThemeProvider></body>
     </html>
   );
 }

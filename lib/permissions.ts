@@ -1,3 +1,4 @@
+import {impersonationBlocksPhone} from './impersonation.ts';
 import {canEditMoscowOrderDetails,canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
 import {canOperatorAmendMissed,canOperatorReachClient,canLogisticEditBasket,canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
@@ -89,6 +90,7 @@ export function warehouseReadOnly(role:Employee['role']){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;
+ if(impersonationBlocksPhone(e,path))return false;
  if(path==='/api/base-search')return method==='GET'&&['admin','department_head','logistic','chief_logistic'].includes(e.role);
  if(path==='/api/sk-client-link')return method==='GET'&&!['courier','purchasing'].includes(e.role);
  if(path==='/api/crm/history')return method==='GET'&&!['courier','purchasing'].includes(e.role);

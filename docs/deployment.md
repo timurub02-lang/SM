@@ -333,3 +333,11 @@ the same payroll membership, while showing the original registry date.
 Existing receipts without `receivedAt` and frozen/paid payroll snapshots retain
 their allocation; no historical data migration is performed. The normal installer
 backup and release verification apply; no new service or configuration is needed.
+
+## Administrator employee sessions
+
+Administrators with a valid personal session can enter an enabled, non-test employee account from the top-right button in the employee card. A session-bound `auth_impersonations` row selects the effective employee; it never deletes/replaces/extends the administrator's or employee's existing login sessions. Returning removes only that row. The original administrator must remain enabled and retain the admin role; the target's current enabled account and rights are checked on every request. A disabled/deleted target fails closed while the original session can still return through the persistent banner. Nested switches are rejected. Unsaved forms should be finished before switching; the browser reloads the workspace.
+
+Phone providers are not mounted in this mode. Legacy telephony, native Oktell connection/call/result APIs, operator-status control and native delivery control reject the impersonating session server-side. The real employee's sessions and phone remain unchanged. Only an administrator's own unfinished call blocks entering this mode; no call is disconnected by switching. Use synthetic phone bridges for tests, never real calls.
+
+`auth_impersonation_audit` records entry, return/logout and mutating authenticated API requests with the real administrator, effective employee, operation/entity and response status. It does not store request bodies, passwords or session tokens. An attempted request is recorded before executing its handler; a missing status means its completion was not confirmed. These additive auth tables require no phone service or installer changes. The feature requires a compatible web runtime; before a manual rollback to a pre-feature runtime, end employee modes using the current compatible runtime; older runtimes do not implement this mode. The standard release tests exercise independent employee sessions, phone isolation, effective data rights, revocation, auditing and recovery.
