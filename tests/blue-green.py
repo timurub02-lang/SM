@@ -1,4 +1,4 @@
-import importlib.util,json,pathlib,tempfile,unittest
+import contextlib,importlib.util,io,json,pathlib,tempfile,unittest
 from unittest.mock import patch,MagicMock
 root=pathlib.Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('deploy',root/'scripts/deploy-crm.py');d=importlib.util.module_from_spec(spec);spec.loader.exec_module(d)
@@ -25,6 +25,31 @@ class BlueGreen(unittest.TestCase):
         with patch.object(d,'process_identity',return_value=[45,'other-birth','boot']),patch.object(d.subprocess,'run') as run:
             self.assertTrue(d.reap_slots());self.assertEqual(len(run.call_args_list),4)
             self.assertEqual(list(d.slots()['slots']),['blue'])
+    def test_current_release_does_not_report_a_pending_update_for_live_connections(self):
+        release={'tag_name':'crm-'+'a'*40}
+        with patch.object(d,'recover_slots'),patch.object(d,'reap_slots',return_value=False) as reap,patch.object(d,'get',return_value=json.dumps(release).encode()),patch.object(d,'idle') as idle,contextlib.redirect_stdout(io.StringIO()) as output:
+            d.run()
+        reap.assert_called_once();idle.assert_not_called()
+        self.assertEqual(output.getvalue(),'Already current: '+'a'*40+'\n')
+    def test_active_call_defers_before_drain_or_download(self):
+        release={'tag_name':'crm-'+'b'*40}
+        with patch.object(d,'recover_slots'),patch.object(d,'reap_slots') as reap,patch.object(d,'get',side_effect=[json.dumps(release).encode(),json.dumps({'sha':'b'*40}).encode()]) as get,patch.object(d,'idle',return_value=False),contextlib.redirect_stdout(io.StringIO()) as output:
+            d.run()
+        reap.assert_not_called();self.assertEqual(get.call_count,2)
+        self.assertIn('Active call; update deferred',output.getvalue())
+    def test_private_router_uses_its_own_workers_and_never_reloads_public_nginx(self):
+        config=self.base/'router.conf';config.write_text('fixture')
+        pid=self.base/'router.pid';pid.write_text('55');upstream=self.base/'router-upstream.conf'
+        response=MagicMock();response.status=200;response.headers={'X-SM-Release':self.old.name};response.read.return_value=b'<html>'
+        with patch.object(d,'ROUTER_CONFIG',config),patch.object(d,'ROUTER_PID',pid),patch.object(d,'ROUTER_UPSTREAM',upstream),patch.object(d.pathlib.Path,'read_text',side_effect=['55','56']),patch.object(d,'process_identity',return_value=[56,'birth','boot']):
+            self.assertEqual(d.nginx_workers(),[[56,'birth','boot']])
+        with patch.object(d,'ROUTER_CONFIG',config),patch.object(d,'ROUTER_UPSTREAM',upstream),patch.object(d.subprocess,'run') as run,patch.object(d.urllib.request,'urlopen') as open:
+            open.return_value.__enter__.return_value=response
+            d.route_slot('blue',{'release':self.old.name})
+            self.assertEqual(run.call_args_list[0].args[0],['nginx','-t','-c',str(config)])
+            self.assertEqual(run.call_args_list[1].args[0],['systemctl','reload','sm-crm-router'])
+            self.assertIn(':3097/login',open.call_args.args[0])
+        self.assertIn('127.0.0.1:3000',upstream.read_text())
     def test_cleanup_keeps_release_in_live_slot_even_outside_history(self):
         older=self.release('c');extra=self.release('d');self.state['slots']['green']={'release':extra.name}
         d.write_json(self.base/'blue-green.json',self.state)
