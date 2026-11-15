@@ -16,12 +16,40 @@ for(const e of [sender,other,head,admin])await d.prepare('INSERT INTO employees(
 assert.equal(skSender([{...sender,skLogin:'СКП_Ирина Соломатина'}],'user@test.invalid','СКП_Ирина Соломатина',true)?.id,'op');
 assert.equal(skSender([{...sender,skLogin:'СКП_Ирина Соломатина'}],'user@test.invalid','СКП_Ирина Соломатина',false),undefined);
 assert.equal(skSender([sender,{...other,skLogin:sender.skLogin}],sender.skLogin),undefined);
-const input={callId:'1',leadId:'10',email:'op@test.invalid',userName:'СКП_Оператор',userNameUnique:true,name:'Test Client',phone:'89990000001',city:'',address:'New address',comment:'SK comment'};
+const input={callId:'1',projectId:'12345',leadId:'10',email:'op@test.invalid',userName:'СКП_Оператор',userNameUnique:true,name:'Test Client',phone:'89990000001',city:'',address:'New address',comment:'SK comment'};
 const r=await acceptSkOrder(d,input);assert.equal(r.state,'imported');assert.equal(r.orderId,'SK-1');
 const client=JSON.parse((await d.prepare('SELECT data FROM clients').first()).data);assert.equal(client.owner,'op');assert.equal(client.sheet,'К');assert.equal(client.address,'New address');assert.equal(client.phone,'+79990000001');
 const o=JSON.parse((await d.prepare('SELECT data FROM orders').first()).data);assert.equal(o.skLeadId,input.leadId);assert.equal(o.status,'draft');assert.equal(o.manager,'op');assert.equal(o.items.length,0);
 assert.equal((await acceptSkOrder(d,input)).orderId,r.orderId);assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,1);
+// Separate calls, normalized phone and simultaneous attempts must be silent terminal duplicates.
+const beforeDuplicate=(await d.prepare('SELECT data,version FROM clients').first());
+const duplicates=await Promise.all(['101','102'].map(callId=>acceptSkOrder(d,{...input,callId,phone:'+79990000001'})));
+assert.deepEqual(duplicates.map(r=>r.state),['duplicate','duplicate']);
+assert.deepEqual(await d.prepare('SELECT data,version FROM clients').first(),beforeDuplicate);
+assert.equal((await d.prepare("SELECT count(*) n FROM sk_order_transfers WHERE state='pending'").first()).n,0);
+assert.equal((await acceptSkOrder(d,{...input,callId:'101'},undefined,'2030-01-01T00:00:00Z')).state,'duplicate','blocked call cannot replay after cooldown');
+const t='2030-01-01T10:00:00Z';
+const noProject={...input,callId:'201',projectId:null,phone:'+79990000201'};
+assert.equal((await acceptSkOrder(d,noProject,undefined,t)).state,'pending');
+assert.equal(await d.prepare("SELECT id FROM clients WHERE phone='+79990000201'").first(),null);
+assert.equal((await acceptSkOrder(d,{...noProject,callId:'202'},undefined,'2030-01-01T10:09:59Z')).state,'duplicate');
+assert.equal((await d.prepare("SELECT reason FROM sk_order_transfers WHERE id='201'").first()).reason,'Создан не из Проекта');
+const noProjectApproved=await acceptSkOrder(d,noProject,admin,t);
+assert.equal(noProjectApproved.state,'imported');
+assert.equal(JSON.parse((await d.prepare('SELECT data FROM orders WHERE id=?').bind(noProjectApproved.orderId).first()).data).skWithoutProject,true);
+assert.equal((await acceptSkOrder(d,{...noProject,callId:'203'},undefined,'2030-01-01T10:10:00Z')).state,'pending','ten minutes expire without extending on blocked attempts');
+await d.prepare("DELETE FROM orders WHERE client_id='C-SK-201'").run();
+await d.prepare("DELETE FROM clients WHERE id='C-SK-201'").run();
+await d.prepare("DELETE FROM sk_order_transfers WHERE id IN ('201','202','203')").run();
 await d.prepare('UPDATE clients SET data=json_set(data,\'$.owner\',\'other\'),version=version+1').run();
+const concurrent=await Promise.all(['301','302'].map(callId=>acceptSkOrder(d,{...input,callId,phone:'+79990000301'})));
+assert.deepEqual(concurrent.map(r=>r.state).sort(),['duplicate','imported']);
+assert.equal((await d.prepare("SELECT count(*) n FROM clients WHERE phone='+79990000301'").first()).n,1);
+const concurrentClient=(await d.prepare("SELECT id FROM clients WHERE phone='+79990000301'").first()).id;
+assert.equal((await d.prepare('SELECT count(*) n FROM orders WHERE client_id=?').bind(concurrentClient).first()).n,1);
+await d.prepare('DELETE FROM orders WHERE client_id=?').bind(concurrentClient).run();
+await d.prepare('DELETE FROM clients WHERE id=?').bind(concurrentClient).run();
+await d.prepare('DELETE FROM sk_order_cooldowns').run();
 const conflict={...input,callId:'2',address:'Different address'};assert.equal((await acceptSkOrder(d,conflict)).state,'pending');assert.equal((await d.prepare('SELECT count(*) n FROM orders').first()).n,1);
 assert.match((await d.prepare("SELECT reason FROM sk_order_transfers WHERE id='2'").first()).reason,/other/);
 await assert.rejects(acceptSkOrder(d,conflict,sender),/Решение/);assert.equal(skMayDecide({...head,department:'1'},sender,other),false);
@@ -39,7 +67,7 @@ const request=async(url,opts)=>{const p=new URL(url).pathname;let value;
 if(p==='/oauth/token')value={access_token:'test'};
 else if(p==='/api/v2/users')value={data:[{id:7,email:'op@test.invalid',name:'СКП_Оператор'}]};
 else if(p==='/api/reports/calls_total.json'){const b=JSON.parse(opts.body);assert.deepEqual(b.filter.results_ids,[123]);assert.equal(b.start_time,Date.parse('2026-10-21T09:00:00Z')/1000);value={data:[{id:5,scenario_result:{id:123},comment:'call'}],total_pages:1};}
-else if(p==='/api/v2/calls/5')value={id:5,result_id:123,ended_at:'2026-10-21 09:10:00',user_id:7,lead_id:11,direction:'in',phone:'79990000999',source:'79990000005'};
+else if(p==='/api/v2/calls/5')value={id:5,result_id:123,call_project_id:12345,ended_at:'2026-10-21 09:10:00',user_id:7,lead_id:11,direction:'in',phone:'79990000999',source:'79990000005'};
 else if(p==='/api/v2/leads/11')value={id:11,name:'New',address:'Address',city:'City',lead_phones:['+79990000005']};
 else throw Error(p);return Response.json(value);};
 assert.equal((await syncSkOrders(d,request,now,async()=>{})).imported,1);
@@ -49,7 +77,7 @@ assert.equal((await syncSkOrders(d,request,now,async()=>{})).imported,0);
 const phoneReviewRequest=async(url,opts)=>{
  const p=new URL(url).pathname;
  if(p==='/api/reports/calls_total.json')return Response.json({data:[8,9].map(id=>({id,scenario_result:{id:123}})),total_pages:1});
- if(['/api/v2/calls/8','/api/v2/calls/9'].includes(p)){const id=Number(p.split('/').at(-1));return Response.json({id,result_id:123,ended_at:'2026-10-21 09:10:00',user_id:7,lead_id:id,direction:'in',phone:'79990000999',source:'79990000009'});}
+ if(['/api/v2/calls/8','/api/v2/calls/9'].includes(p)){const id=Number(p.split('/').at(-1));return Response.json({id,result_id:123,call_project_id:12345,ended_at:'2026-10-21 09:10:00',user_id:7,lead_id:id,direction:'in',phone:'79990000999',source:'79990000009'});}
  if(p==='/api/v2/leads/8')return Response.json({id:8,name:'Ambiguous',lead_phones:['+79990000081','+79990000082']});
  if(p==='/api/v2/leads/9')return Response.json({id:9,name:'Verified',phones:'+79990000009'});
  return request(url,opts);
