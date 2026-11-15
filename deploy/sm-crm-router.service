@@ -1,0 +1,22 @@
+[Unit]
+Description=Private CRM publication router (no phone tunnels)
+After=network.target
+Before=nginx.service sm-crm-deploy.service
+
+[Service]
+Type=forking
+PIDFile=/run/sm-crm-router/nginx.pid
+RuntimeDirectory=sm-crm-router
+RuntimeDirectoryMode=0755
+ExecStartPre=/usr/sbin/nginx -t -c /etc/nginx/sm-crm-router/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/nginx/sm-crm-router/nginx.conf
+ExecReload=/usr/sbin/nginx -c /etc/nginx/sm-crm-router/nginx.conf -s reload
+KillSignal=SIGQUIT
+KillMode=mixed
+TimeoutStopSec=infinity
+SendSIGKILL=no
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
