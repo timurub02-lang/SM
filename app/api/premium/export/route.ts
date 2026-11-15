@@ -11,13 +11,13 @@ export const GET=authenticated(async(req:Request)=>{
  try{
   const q=new URL(req.url).searchParams,period=q.get('period')||'',calendar=premiumPeriods.find(p=>p.id===period);
   if(!calendar)return Response.json({error:'Выберите расчётный период'},{status:400});
-  if(q.has('department')&&!/^[1-5]$/.test(q.get('department')!))throw Error('Неверный отдел');
-  const background=await legacyBackgroundExport(req,'premium',period+(q.get('department')?'@'+q.get('department'):''));if(background)return background;
+  if(q.has('scopeDepartment')&&!/^[1-5]$/.test(q.get('scopeDepartment')!))throw Error('Неверный отдел');
+  const background=await legacyBackgroundExport(req,'premium',period+(q.get('scopeDepartment')?'@'+q.get('scopeDepartment'):''));if(background)return background;
   const s=await readPremiumState(period),actor=s.employees.find(e=>e.id===q.get('actorId'));
   if(!actor||!['admin','department_head'].includes(actor.role))return Response.json({error:'Недостаточно прав'},{status:403});
   if(!s.ledger)return Response.json({error:'Ведомость ещё не загружена'},{status:400});
   const ledger={...s.ledger,periods:{...s.ledger.periods,[period]:s.ledger.periods[period]||{status:'open' as const,signatures:{}}}};
-  const book=await premiumWorkbook(actor,period,calendar.label,ledger.periods[period],ledgerRows(ledger,period,s.orders,s.employees,s.adjustments),periodOrders(ledger,period,s.orders,s.employees),q.get('department')||undefined);
+  const book=await premiumWorkbook(actor,period,calendar.label,ledger.periods[period],ledgerRows(ledger,period,s.orders,s.employees,s.adjustments),periodOrders(ledger,period,s.orders,s.employees),q.get('scopeDepartment')||undefined);
   return new Response(new Uint8Array(await book.xlsx.writeBuffer()),{headers:{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':`attachment; filename="premium-${period}-${actor.role==='admin'?'all':'department'}.xlsx"`,'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось создать Excel'},{status:400});}
 });
