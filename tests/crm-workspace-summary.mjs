@@ -37,7 +37,7 @@ for(const at of [now,now+2,now+86400000])for(const employee of staff){
  assert.equal(summary.mine.reworkOrders,state.orders.filter(o=>mineIds.has(o.clientId)&&o.status==='rework').length);
  assert.equal(summary.mine.scheduledCalls,scheduledCalls(state.orders,employee,staff).filter(o=>mineIds.has(o.clientId)).length);
  const scoped=employee.role==='operator'?state.orders.filter(o=>o.manager===employee.id):departmentOrders(state.orders,staff,employee),clients=new Map(state.clients.map(c=>[c.id,c]));
- const visible=scoped.filter(o=>showOrderInList(o,clients.get(o.clientId),employee.role)&&clients.has(o.clientId));
+ const visible=scoped.filter(o=>showOrderInList(o,clients.get(o.clientId),employee.role,at)&&clients.has(o.clientId));
  assert.equal(summary.orders.all,visible.length);
  for(const group of orderDisplayGroups){assert.equal(summary.orders.groups[group.id],visible.filter(o=>orderDisplayGroup(o).id===group.id).length);comparisons++;}
  assert.equal(summary.orders.eligibleSent,visible.filter(o=>orderGroup(o).id==='sent'&&eligibleForRedemption(o,state.redemptionStatuses)).length);

@@ -1,3 +1,4 @@
+import {courierWarehouseReturn} from './courier.ts';
 import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {statuses,orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
@@ -33,13 +34,26 @@ export function paidOrderArchived(order:Order,now=Date.now()){
  return !Number.isFinite(at)||at<=paidArchiveStartedAt||now>=at+48*3600000;
 }
 
+export function returnedOrderHidden(order:Order,role:Employee['role'],now=Date.now()){
+ if(order.status!=='returned'&&!(courierWarehouseReturn(order)&&['logistic','chief_logistic'].includes(role)))return false;
+ if(!['logistic','chief_logistic'].includes(role))return true;
+ const at=Date.parse(order.warehouseReturnedAt||'');
+ return Number.isFinite(at)&&now>=at+48*3600000;
+}
+
+export function operationalOrderHidden(order:Order,role:Employee['role'],now=Date.now()){
+ if(paidOrderArchived(order,now)||returnedOrderHidden(order,role,now))return true;
+ // A courier parcel still needs physical warehouse receipt before logistics can archive it.
+ if(courierWarehouseReturn(order)&&['logistic','chief_logistic'].includes(role))return false;
+ const at=Date.parse(order.cancelledAt||order.updatedAt||'');
+ return order.status==='refused'&&Number.isFinite(at)&&now>=at+24*3600000;
+}
+
 // Only the operational list is pruned; payroll history retains its original membership.
 export function showOrderInList(order:Order,client:Client|undefined,role:Employee["role"],now=Date.now()){
- if(paidOrderArchived(order,now))return false;
+ if(operationalOrderHidden(order,role,now))return false;
  if(order.status==='rework'&&['operator','department_head'].includes(role))return false;
  const group=orderDisplayGroup(order).id;
- // A rejected review remains visible so the operator can find its cancellation reason after release.
- if(group==='cancelled'&&order.blacklistedAt)return true;
- const hideUnassigned=(group==="cancelled"||group==="premium_paid"&&!!order.legacyLv?.paymentPendingReview&&order.premiumStage?.status!=="paid")&&["admin","operator","department_head"].includes(role);
+ const hideUnassigned=(group==="premium_paid"&&!!order.legacyLv?.paymentPendingReview&&order.premiumStage?.status!=="paid")&&["admin","operator","department_head"].includes(role);
  return !hideUnassigned||!!client?.owner&&client.owner===order.manager;
 }

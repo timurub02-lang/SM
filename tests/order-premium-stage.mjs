@@ -27,12 +27,12 @@ assert.equal(paidOrder.premiumStage.status,'paid');
 const cancelled={status:'refused',manager:'original',cancelledAt:'2026-10-28T10:00:00Z',cancellationAuthor:{id:'original',name:'Operator'}};
 const saved=JSON.stringify(cancelled);
 for(const role of ['admin','operator','department_head']){
- assert.equal(showOrderInList(cancelled,{owner:'original'},role),true);
+ assert.equal(showOrderInList(cancelled,{owner:'original'},role),false);
  assert.equal(showOrderInList(cancelled,{owner:''},role),false);
  assert.equal(showOrderInList(cancelled,{owner:'other'},role),false);
 }
-assert.equal(showOrderInList(cancelled,{owner:''},'logistic'),true);
-assert.equal(showOrderInList({...cancelled,status:'returned'},{owner:''},'admin'),true);
+assert.equal(showOrderInList(cancelled,{owner:''},'logistic'),false);
+assert.equal(showOrderInList({...cancelled,status:'returned'},{owner:''},'admin'),false);
 assert.equal(showOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},'admin'),true);
 assert.equal(JSON.stringify(cancelled),saved);
 assert.equal(orderGroup(cancelled).id,'cancelled');
@@ -75,3 +75,30 @@ for(const [view,delivery] of [['orders','moscow_courier'],['moscow','moscow_cour
 }
 assert.equal(JSON.stringify(fresh),savedPaid);
 console.log('Paid order archive: immediate historical hide, 48h boundary, all roles, orders/Moscow/Post, no data mutation passed');
+
+const {returnedOrderHidden}=await import('../lib/order-premium-stage.ts');
+const returned={status:'returned',warehouseReturnedAt:'2026-11-16T10:00:00Z'};
+const returnDeadline=Date.parse(returned.warehouseReturnedAt)+48*3600000;
+for(const delivery of ['cdek_pickup','cdek_courier','moscow_courier','russian_post']){
+ for(const role of ['admin','operator','department_head'])assert.equal(returnedOrderHidden({...returned,delivery},role,returnDeadline-1),true);
+ for(const role of ['logistic','chief_logistic']){
+  assert.equal(returnedOrderHidden({...returned,delivery},role,returnDeadline-1),false);
+  assert.equal(returnedOrderHidden({...returned,delivery},role,returnDeadline),true);
+  assert.equal(returnedOrderHidden({...returned,delivery,warehouseReturnedAt:undefined},role,returnDeadline),false);
+ }
+}
+assert.equal(returnedOrderHidden({status:'rework'},'operator',returnDeadline),false,'clarification is not warehouse return');
+assert.equal(returnedOrderHidden({status:'refused',delivery:'moscow_courier',courier:{acceptedAt:'2026-11-15'}},'admin',returnDeadline),false);
+assert.equal(orderDisplayGroup(returned).id,'returned','history status unchanged');
+console.log('Returned orders: roles, all delivery methods, exact 48-hour boundary and history passed');
+
+const {operationalOrderHidden}=await import('../lib/order-premium-stage.ts');
+const cancelDeadline=Date.parse(cancelled.cancelledAt)+24*3600000;
+for(const role of ['admin','operator','department_head','logistic','chief_logistic','courier'])for(const owner of ['','original','other'])for(const blacklistedAt of [undefined,cancelled.cancelledAt]){
+ const o={...cancelled,blacklistedAt};
+ assert.equal(showOrderInList(o,{owner},role,cancelDeadline-1),true);
+ assert.equal(showOrderInList(o,{owner},role,cancelDeadline),false);
+ assert.equal(operationalOrderHidden(o,role,cancelDeadline),true);
+}
+assert.equal(operationalOrderHidden({...cancelled,delivery:'moscow_courier',courier:{acceptedAt:cancelled.cancelledAt}},'logistic',cancelDeadline),false);
+console.log('Cancelled orders: visible 24 hours regardless of ownership/blacklist; warehouse receipt preserved');
