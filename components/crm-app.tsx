@@ -266,6 +266,7 @@ export default function Page(){
   try{
    if(splitMode.current===null){
     const initial=await bootstrapReader.current!.read();if(!initial)return false;
+    bootstrapReader.current!.invalidate();
     splitMode.current=initial.splitReads===true;setSplitReads(splitMode.current);setPreparedSummaries(initial.preparedSummaries===true);
     setPersonalAuth(initial.personalAuth===true);if(initial.currentEmployeeId)setActor(initial.currentEmployeeId);
     setState(initial);setReady(true);

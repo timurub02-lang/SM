@@ -7,6 +7,7 @@ const component=readFileSync('components/crm-app.tsx','utf8');
 assert.match(component,/bootstrapReader\.current=new SnapshotReader\("\/api\/crm\?part=bootstrap"\)/);
 assert.match(component,/const initial=await bootstrapReader\.current!\.read\(\);if\(!initial\)return false/);
 assert.match(component,/bootstrapReader\.current\?\.invalidate\(\)/);
+assert.match(component,/bootstrapReader\.current!\.invalidate\(\);\s+splitMode\.current=/,'Do not retain a second full initial snapshot after it is applied');
 assert.doesNotMatch(component,/fetch\(['"]\/api\/crm\?part=bootstrap/);
 
 for(const splitReads of [false,true]){
