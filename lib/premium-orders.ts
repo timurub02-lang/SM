@@ -1,6 +1,6 @@
 import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {type Order,type Employee} from './crm.ts';
-import {isCdekOrder,premiumRemittance} from './cdek-remittance.ts';
+import {isCdekOrder,premiumRemittance,remittanceAccountingDate} from './cdek-remittance.ts';
 import {seesOrder} from './permissions.ts';
 
 export function premiumOrders(orders:Order[],employee:Employee,staff:Employee[]):{order:Order;date:string;amount:number;registry:string;periodId?:string}[]{
@@ -12,7 +12,7 @@ export function premiumOrders(orders:Order[],employee:Employee,staff:Employee[])
    if(!receipt)return [];
    const r=receipt;
    if(r.amountCents<=0||r.collectedCents<=0||!/^\d{4}-\d{2}-\d{2}$/.test(r.paymentDate))return [];
-   return [{order,date:r.paymentDate,amount:r.amountCents/100,registry:r.registry}];
+   return [{order,date:remittanceAccountingDate(r),amount:r.amountCents/100,registry:r.registry}];
   }
   if(!['moscow_courier','russian_post'].includes(order.delivery||'')||!order.paymentReceivedAt)return [];
   const timestamp=Date.parse(order.paymentReceivedAt),amount=order.paymentReceipt?.amount??order.paymentReceivedAmount;

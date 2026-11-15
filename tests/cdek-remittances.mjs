@@ -4,7 +4,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {openDatabase} from '../server/sqlite.ts';
 import {registryPayments,applyCdekRegistries,syncCdekRemittances} from '../lib/cdek-remittance-sync.ts';
-import {cdekMoneyLabel} from '../lib/cdek-remittance.ts';
+import {cdekMoneyLabel,remittanceAccountingDate} from '../lib/cdek-remittance.ts';
+import {periodOrders,applyPremiumStages,freezePeriod,signPeriod,payPeriod,ledgerRows} from '../lib/premium-ledger.ts';
+import {orderDisplayGroup} from '../lib/order-premium-stage.ts';
 const folder=mkdtempSync(join(tmpdir(),'cdek-remittances-')),db=openDatabase(join(folder,'test.sqlite'));
 const at='2026-10-29T08:00:00Z';
 const registry=(number='R1',amount=90,date='2026-10-28',tracking='123')=>({registry_number:number,payment_date:date,orders:[{cdek_number:tracking,payment_sum:100,transfer_sum:amount,basis_type:'ORDER'}]});
@@ -57,6 +59,36 @@ try{
  await assert.rejects(applyCdekRegistries(db,1,answer(registry('R4',90,'2026-10-28','race')),at));assert.equal((await row('race')).cdekRemittances,undefined);
  await db.prepare('DROP TRIGGER test_failure').run();
 
+
+ // Calendar cutoff applies even while the administrator has not frozen the old sheet.
+ const beforeCutoff='2026-11-24T20:59:59.999Z',afterCutoff='2026-11-24T21:00:00.000Z';
+ for(const [id,time] of [['boundary-before',beforeCutoff],['boundary-after',afterCutoff]]){
+  await fixture(id,{legacyLv:{track:id}});
+  await applyCdekRegistries(db,1,answer(registry(id,90,'2026-11-03',id)),time);
+ }
+ const boundaryOrders=[await row('boundary-before'),await row('boundary-after')];
+ const boundaryStaff=[{id:'operator',login:'synthetic',name:'Synthetic',role:'operator',department:'a',bonus:10},{id:'head',role:'department_head',name:'Head',department:'a',leaderPremium:{model:'salary_bonus',fixedPerPeriod:0,links:[]}}];
+ let boundaryLedger={revision:'test',activePeriod:'2026-11-2',initialPeriod:'2026-11-2',historyReconciled:true,periods:{'2026-11-2':{status:'open',signatures:{}}}};
+ const boundaryGroups=l=>applyPremiumStages(l,boundaryOrders,boundaryStaff).map(o=>orderDisplayGroup(o).id);
+ assert.equal(remittanceAccountingDate(boundaryOrders[0].cdekRemittances[0]),'2026-11-24');
+ assert.equal(remittanceAccountingDate(boundaryOrders[1].cdekRemittances[0]),'2026-11-25');
+ assert.deepEqual(boundaryGroups(boundaryLedger),['accrued','paid']);
+ assert.deepEqual(periodOrders(boundaryLedger,'2026-11-2',boundaryOrders,boundaryStaff).map(o=>o.id),['boundary-before']);
+ assert.equal(ledgerRows(boundaryLedger,'2026-11-2',boundaryOrders,boundaryStaff,{}).find(r=>r.employeeId==='operator').volume,100);
+ boundaryLedger=freezePeriod(boundaryLedger,'2026-11-2',boundaryOrders,boundaryStaff,{},'admin','2026-11-30T12:00:00Z');
+ const boundarySnapshot=JSON.stringify(boundaryLedger.periods['2026-11-2'].orders);
+ boundaryLedger=signPeriod(boundaryLedger,'2026-11-2',boundaryStaff[1],'2026-11-30T12:01:00Z');
+ assert.deepEqual(boundaryGroups(boundaryLedger),['accrued','paid']);
+ boundaryLedger=payPeriod(boundaryLedger,'2026-11-2','admin','2026-12-01T12:00:00Z');
+ assert.equal(boundaryLedger.activePeriod,'2026-12-1');
+ assert.deepEqual(boundaryGroups(boundaryLedger),['premium_paid','accrued']);
+ assert.equal(ledgerRows(boundaryLedger,'2026-12-1',boundaryOrders,boundaryStaff,{}).find(r=>r.employeeId==='operator').volume,100);
+ assert.equal(JSON.stringify(boundaryLedger.periods['2026-11-2'].orders),boundarySnapshot);
+ await applyCdekRegistries(db,1,answer(registry('boundary-after',90,'2026-11-03','boundary-after')),'2026-12-10T12:00:00Z');
+ assert.equal((await row('boundary-after')).cdekRemittances[0].receivedAt,afterCutoff,'Replay preserves first acceptance');
+ assert.equal((await row('boundary-after')).cdekRemittances[0].paymentDate,'2026-11-03','Original registry date remains visible');
+ assert.equal(remittanceAccountingDate({paymentDate:'2026-11-03'}),'2026-11-03','Existing historical receipts are not reassigned');
+ await assert.rejects(applyCdekRegistries(db,1,answer(),'invalid-time'));
 
  const missingCount=async()=>Number((await db.prepare("SELECT COUNT(*) n FROM cdek_unmatched_remittances WHERE tracking='missing-track'").first()).n);
  const missingReceipt=answer(registry('MISSING',90,'2026-10-28','missing-track'));
@@ -148,5 +180,13 @@ await historyFixture('90002');await db.prepare("INSERT INTO settings(id,data) VA
  for(const status of [401,403])await retryCase('Authentication failure '+status,()=>Response.json({}, {status}),1,true);
  await retryCase('Invalid registry data is not retried',()=>Response.json({unexpected:'shape'}),1,true);
  await retryCase('Explicit abort is not retried',()=>{throw new DOMException('cancelled','AbortError');},1,true);
+ await fixture('midnight-response',{legacyLv:{track:'midnight-response'}});
+ await db.prepare("UPDATE settings SET data='{}' WHERE id='cdek-registry-sync-1'").run();
+ await syncCdekRemittances(db,async url=>{
+  if(new URL(url).pathname.endsWith('/token'))return Response.json({access_token:'synthetic'});
+  await new Promise(resolve=>setTimeout(resolve,25));
+  return Response.json(answer(registry('MIDNIGHT',90,'2026-11-03','midnight-response')));
+ },Date.parse('2026-11-24T20:59:59.999Z'));
+ assert.equal(remittanceAccountingDate((await row('midnight-response')).cdekRemittances[0]),'2026-11-25','Response received after midnight uses the new day, not request start');
  console.log('CDEK remittances: positive-only, replay, duplicate conflicts, identity, dry run, CAS, atomic audit and polling passed.');
 }finally{db.close();rmSync(folder,{recursive:true,force:true});}

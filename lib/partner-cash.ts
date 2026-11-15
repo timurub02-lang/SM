@@ -3,6 +3,7 @@ import type {Employee,Order} from './crm.ts';
 import type {PayrollOrder,PayrollRow} from './premium-ledger.ts';
 import {premiumRemittance} from './cdek-remittance.ts';
 export const isEmil=(e:Pick<Employee,'login'>)=>e.login==='A_Emil';
+export const partnerPremiumStatus=(cutoff:string,closed:boolean,now=Date.now())=>closed||now>Date.parse(cutoff+'T23:59:59.999+03:00')?'Рассчитано':'Ещё идёт';
 export type PartnerExpense={id:string;name:string;date:string;amount:number;at:string;by:string;removedAt?:string;removedBy?:string};
 export type PartnerSettings={revision:string;taxRate:number|null;communication:number;bank:number;minutePrice?:number;minutes?:PartnerMinutes;expenses?:PartnerExpense[];productUnitPrice?:number;productPrices?:Record<string,number>};
 export const defaultPartnerSettings:PartnerSettings={revision:'',taxRate:null,communication:0,bank:0};

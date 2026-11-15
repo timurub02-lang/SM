@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {partnerRegistries,partnerCalculation,defaultPartnerSettings,isEmil} from '../lib/partner-cash.ts';
+import {partnerPremiumStatus,partnerRegistries,partnerCalculation,defaultPartnerSettings,isEmil} from '../lib/partner-cash.ts';
 const member={id:'LV-1',externalId:'1',department:'5'};
 const receipt={registry:'10',paymentDate:'2026-11-12',collectedCents:1130000,amountCents:767670};
 const order={id:'LV-1',items:[{name:'Товар',quantity:2}],cdekRemittances:[receipt,{...receipt,registry:'11'}]};
@@ -32,3 +32,9 @@ const metered=partnerCalculation([member],[order],payroll,{...settings,minutePri
 assert.equal(metered.communication,Math.round(settings.communication*100)+35400);
 assert.equal(partnerCalculation([member],[order],payroll,{...settings,minutePrice:1}).remaining,null);
 assert.equal(partnerCalculation([member],[order],payroll,{...settings,minutePrice:1,minutes:{...minutes,missing:['missing']}}).remaining,null);
+
+assert.equal(partnerPremiumStatus('2026-11-24',false,Date.parse('2026-11-24T23:59:59.999+03:00')),'Ещё идёт');
+assert.equal(partnerPremiumStatus('2026-11-24',false,Date.parse('2026-11-25T00:00:00+03:00')),'Рассчитано');
+assert.equal(partnerPremiumStatus('2026-11-24',false,Date.parse('2026-12-01T12:00:00+03:00')),'Рассчитано');
+assert.equal(partnerPremiumStatus('2026-12-08',false,Date.parse('2026-12-02T12:00:00+03:00')),'Ещё идёт');
+assert.equal(partnerPremiumStatus('2026-11-24',true,Date.parse('2026-11-15T12:00:00+03:00')),'Рассчитано');
