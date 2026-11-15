@@ -73,6 +73,10 @@ try{
   d.prepare("UPDATE orders SET data=json_set(data,'$.comment',?),version=version+1 WHERE id='shared'").run('updated '+role);
   const delta=await call(role,'?transport=compact-v1',{headers:{'If-None-Match':etag}});assert.equal(delta.status,200,delta.text);assert.equal(delta.data.kind,'crm-delta');
   const decoded=decodeCrmSnapshot(delta.data,full.data),fresh=await call(role,'?transport=compact-v1&comparison=direct');assert.deepEqual(decoded,fresh.data);assert.equal(decoded.orders.find(o=>o.id==='shared').comment,'updated '+role);
+  const bootBefore=forwarded,bootstrap=await call(role,'?part=bootstrap');
+  assert.equal(bootstrap.status,200,bootstrap.text);assert.equal(forwarded,bootBefore+1,'Initial read must be isolated too');
+  const directBoot=await call(role,'?transport=compact-v1&comparison=direct');assert.deepEqual(bootstrap.data,directBoot.data,'Bootstrap retains all current role-specific data');
+  const compressed=await call(role,'?part=bootstrap',{headers:{'Accept-Encoding':'br'}});assert.equal(compressed.headers.get('content-encoding'),'br');assert.deepEqual(compressed.data,bootstrap.data,'HTTP fetch decodes the streaming response unchanged');
   checks.push(role+': exact full parity, masks, 304 and decoded delta');
  }
  for(const role of ['operator','department_head']){
@@ -87,7 +91,7 @@ try{
  intercept=()=>d.prepare("UPDATE auth_accounts SET enabled=0 WHERE employee_id='admin'").run();const revoked=await call('admin');assert.equal(revoked.status,401,revoked.text);assert.equal(revoked.data.orders,undefined);d.prepare("UPDATE auth_accounts SET enabled=1 WHERE employee_id='admin'").run();
  intercept=()=>d.prepare("UPDATE employees SET data=json_set(data,'$.role','operator'),version=version+1 WHERE id='admin'").run();const downgraded=await call('admin');assert.equal(downgraded.status,403,downgraded.text);assert.equal(downgraded.data.orders,undefined);d.prepare("UPDATE employees SET data=json_set(data,'$.role','admin'),version=version+1 WHERE id='admin'").run();
  checks.push('account disabled and role downgraded after primary auth rejected by fresh worker auth');
- await stop(worker);worker=undefined;assert.equal((await call('admin')).status,503);
+ await stop(worker);worker=undefined;assert.equal((await call('admin')).status,503);assert.equal((await call('admin','?part=bootstrap')).status,503,'Do not fall back to heavy initial computation on the primary');
  const before=forwarded,op=await call('operator','?list=orders&view=orders&filter=all');assert.equal(op.status,200,op.text);
  const version=d.prepare("SELECT version FROM orders WHERE id='draft'").get().version;
  const saved=await call('operator','/api/crm',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'comment',id:'draft',version,text:'Synthetic save with worker stopped',responseMode:'entity-patch-v2'})});assert.equal(saved.status,200,saved.text);assert.ok(saved.data.entityPatch);assert.equal(d.prepare("SELECT version FROM orders WHERE id='draft'").get().version,version+1);assert.equal(forwarded,before);

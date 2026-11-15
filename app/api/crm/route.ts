@@ -183,7 +183,7 @@ async function handleGET(request:Request){
   const state=await timing.measure('snapshot',()=>responseState(user,false,'',!!list||part==='bootstrap'||params.get('transport')==='compact-v1','',list?.success?list.data.list:part==='tasks'?'tasks':'',scoped,part!=='context'));
   if(split&&part==='tasks')return timing.finish(Response.json({tasks:state.tasks,reminders:state.reminders,incoming:state.incoming,callOrders:[...scheduledCalls(state.orders,user.employee!,state.employees),...state.orders.filter(o=>courierDoorRefusal(o)&&!scheduledCalls([o],user.employee!,state.employees).length)],maintenanceHealthy:await maintenanceHealthy(db())}));
   if(split&&part==='context')return timing.finish(Response.json(compactCrmState(state)));
-  if(part==='bootstrap')return timing.finish(Response.json(compactCrmState(state)));
+  if(part==='bootstrap')return timing.finish(await conditionalJson(request,compactCrmState(state)));
 
   if(list?.success){
    if(!user.employee||['courier','purchasing','redemption'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});

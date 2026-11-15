@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
-import {gzipSync} from 'node:zlib';
+import {gzipSync,brotliDecompressSync} from 'node:zlib';
 import {proxyLegacySnapshot,legacySnapshotRequest} from '../lib/crm-legacy-proxy.ts';
 
 const url='http://127.0.0.1:39999/api/crm?transport=compact-v1';
@@ -32,8 +32,18 @@ try{
  assert.equal(received.length,0);
  for(const role of ['admin','logistic','chief_logistic','redemption','courier']){
   const response=await proxyLegacySnapshot(request('&actorId='+actor.id,{headers:{Cookie:'__Host-sm-session=synthetic-only','If-None-Match':'W/"synthetic-v1"','Accept-Encoding':'br','Authorization':'must-not-forward','oai-authenticated-user-id':'must-not-forward'}}),{...actor,role});
-  assert.equal(response.status,200);assert.equal((await response.json()).orders[0].premiumStage.status,'paid');
+  assert.equal(response.status,200);assert.equal(response.headers.get('content-encoding'),'br');assert.equal(JSON.parse(brotliDecompressSync(new Uint8Array(await response.arrayBuffer()))).orders[0].premiumStage.status,'paid');
   const last=received.at(-1);assert.equal(last.method,'GET');assert.equal(last.headers.cookie,'__Host-sm-session=synthetic-only');assert.equal(last.headers['if-none-match'],'W/"synthetic-v1"');assert.equal(last.headers['accept-encoding'],'identity');assert.equal(last.headers.authorization,undefined);assert.equal(last.headers['oai-authenticated-user-id'],undefined);
+ }
+ const bootstrap=new Request(url.replace('?transport=compact-v1','?part=bootstrap'),{headers:{'Accept-Encoding':'br',Cookie:'__Host-sm-session=synthetic-only'}});
+ assert.equal(legacySnapshotRequest(bootstrap),true);
+ const boot=await proxyLegacySnapshot(bootstrap,actor);assert.equal(boot.status,200);assert.equal(boot.headers.get('content-encoding'),'br');
+ assert.equal(JSON.parse(brotliDecompressSync(new Uint8Array(await boot.arrayBuffer()))).orders[0].id,'o1');
+ assert.equal(received.at(-1).url,'/api/crm?part=bootstrap');
+ for(const suffix of ['&part=bootstrap','&list=orders','&transport=compact-v1','&actorId=other'])assert.equal(await proxyLegacySnapshot(new Request(bootstrap.url+suffix),actor),null);
+ for(const encoding of ['identity','gzip','br;q=0','br;q=0.1,gzip;q=1']){
+  const fallback=await proxyLegacySnapshot(new Request(bootstrap.url,{headers:{'Accept-Encoding':encoding}}),actor);
+  assert.equal(fallback.headers.get('content-encoding'),null);assert.equal((await fallback.json()).orders[0].id,'o1');
  }
  mode='304';let response=await proxyLegacySnapshot(request(),actor);assert.equal(response.status,304);assert.equal(await response.text(),'');assert.equal(response.headers.get('etag'),'W/"synthetic-v1"');
  mode='delta';response=await proxyLegacySnapshot(request(),actor);assert.equal((await response.json()).kind,'crm-delta');
