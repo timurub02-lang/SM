@@ -452,3 +452,10 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .partner-cash .partner-layout .partner-row-actions{gap:6px}.partner-cash .partner-layout .partner-payment-status{font-size:12px;line-height:1.4}
 .partner-cash .partner-details .premium-panel{border:0;padding:0;background:transparent}
 .partner-cash .partner-details .premium-heading{flex-wrap:wrap}
+
+/* Cash details share the premium navigation; actions stay on their own row. */
+.premium-heading-details{grid-template-columns:auto minmax(0,1fr)}
+.premium-heading-details .order-status-tabs,.partner-details .premium-heading-details .tabs-line{width:100%}
+.premium-heading-details .premium-details-first{margin-left:auto}
+.premium-heading-details .premium-actions-slot{grid-column:1/-1}
+.premium-heading-details .premium-actions-slot:empty{display:none}
