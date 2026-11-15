@@ -5,7 +5,7 @@ import {Tabs,TabsList,TabsTrigger} from '@/components/ui/tabs';
 import {PremiumStatistics} from '@/components/premium-statistics';
 import {PremiumArchive} from '@/components/premium-archive';
 import {PremiumPayroll} from '@/components/premium-payroll';
-import {useEffect,useState} from 'react';
+import {useEffect,useState,type ReactNode} from 'react';
 import {isCdekOrder} from '@/lib/cdek-remittance';
 import {premiumOrders} from '@/lib/premium-orders';
 import {premiumPeriods,periodForReceipt,currentPremiumPeriod} from '@/lib/premium-periods';
@@ -13,9 +13,9 @@ import {money,departments,deliveryLabels,type Order,type Employee,type Client} f
 import {Table,TableHeader,TableBody,TableRow,TableHead,TableCell} from '@/components/ui/table';
 
 const dateLabel=(date:string)=>date.split('-').reverse().join('.');
-export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload,onCashPayroll,fixedDepartment}:{fixedDepartment?:string;onCashPayroll?:(value:CashPayroll|null)=>void;orders:Order[];employee:Employee;employees:Employee[];clients:Client[];onOpen:(id:string)=>void;onReload:()=>Promise<unknown>}){
+export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload,onCashPayroll,fixedDepartment,extraViews}:{extraViews?:{id:string;label:string;content:ReactNode}[];fixedDepartment?:string;onCashPayroll?:(value:CashPayroll|null)=>void;orders:Order[];employee:Employee;employees:Employee[];clients:Client[];onOpen:(id:string)=>void;onReload:()=>Promise<unknown>}){
  const [actionsTarget,setActionsTarget]=useState<HTMLDivElement|null>(null);
- const [view,setView]=useState<'calculation'|'orders'|'employees'|'archive'|'statistics'>('calculation');
+ const [view,setView]=useState<string>('calculation');
  const [current]=useState(()=>currentPremiumPeriod(new Date(Date.now()+3*3600000).toISOString().slice(0,10)));
  const [periodId,setPeriodId]=useState(current?.id||'unassigned'),[query,setQuery]=useState(''),[operator,setOperator]=useState(''),[group,setGroup]=useState(fixedDepartment||'all');
  const [activePeriod,setActivePeriod]=useState('');
@@ -54,10 +54,10 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  const staff=new Map(employees.map(e=>[e.id,e]));
  const rows=selected.filter(r=>(employee.role!=='admin'||group==='all'||staff.get(r.order.manager)?.department===group)&&(!operator||r.order.manager===operator)&&[r.order.id,names.get(r.order.clientId),staff.get(r.order.manager)?.name,staff.get(r.order.manager)?.login,r.registry].join(' ').toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')));
  return <section className="stack table-panel cash-panel premium-panel" aria-label="Премия">
-  <div className="premium-heading"><h2>Премия</h2>
-  <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники'],['archive','Архив'],['statistics','Статистика']] as const).filter(([id])=>employee.role!=='operator'||!['employees','statistics'].includes(id)).map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}</TabsList></Tabs><div className="premium-actions-slot" ref={setActionsTarget}>{view==='orders'&&<div className="premium-actions premium-order-actions"><label className="premium-search"><div><Search size={17} aria-hidden="true"/><input type="search" aria-label="Поиск заказов премии" placeholder={employee.role==='operator'?'Номер заказа или клиент':'Заказ, клиент, оператор, реестр'} value={query} onChange={e=>setQuery(e.target.value)}/></div></label><button className="secondary" onClick={()=>{setQuery('');setOperator('');}}>Сбросить поиск</button>{employee.role==='admin'&&!fixedDepartment&&<select aria-label="Отдел заказов премии" value={group} onChange={e=>{setGroup(e.target.value);setOperator('');}}><option value="all">Все отделы</option>{Object.entries(departments).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>}{employee.role!=='operator'&&<select aria-label="Оператор премии" value={operator} onChange={e=>setOperator(e.target.value)}><option value="">Все операторы</option>{[...new Set(selected.map(r=>r.order.manager))].map(id=><option key={id} value={id}>{staff.get(id)?.name||id}</option>)}</select>}</div>}</div></div>
+  <div className={extraViews?"premium-heading premium-heading-details":"premium-heading"}><h2>Премия</h2>
+  <Tabs value={view} onValueChange={value=>setView(value as typeof view)} className="order-status-tabs"><TabsList className="tabs-line" aria-label="Разделы премии">{([['calculation','Расчёт выплат'],['orders','Заказы'],['employees','Сотрудники'],['archive','Архив'],['statistics','Статистика']] as const).filter(([id])=>employee.role!=='operator'||!['employees','statistics'].includes(id)).map(([id,label])=><TabsTrigger key={id} value={id}>{label}</TabsTrigger>)}{extraViews?.map((tab,index)=><TabsTrigger className={index===0?"premium-details-first":undefined} key={tab.id} value={tab.id}>{tab.label}</TabsTrigger>)}</TabsList></Tabs><div className="premium-actions-slot" ref={setActionsTarget}>{view==='orders'&&<div className="premium-actions premium-order-actions"><label className="premium-search"><div><Search size={17} aria-hidden="true"/><input type="search" aria-label="Поиск заказов премии" placeholder={employee.role==='operator'?'Номер заказа или клиент':'Заказ, клиент, оператор, реестр'} value={query} onChange={e=>setQuery(e.target.value)}/></div></label><button className="secondary" onClick={()=>{setQuery('');setOperator('');}}>Сбросить поиск</button>{employee.role==='admin'&&!fixedDepartment&&<select aria-label="Отдел заказов премии" value={group} onChange={e=>{setGroup(e.target.value);setOperator('');}}><option value="all">Все отделы</option>{Object.entries(departments).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>}{employee.role!=='operator'&&<select aria-label="Оператор премии" value={operator} onChange={e=>setOperator(e.target.value)}><option value="">Все операторы</option>{[...new Set(selected.map(r=>r.order.manager))].map(id=><option key={id} value={id}>{staff.get(id)?.name||id}</option>)}</select>}</div>}</div></div>
   {preparedWarning&&<p role="status" className="notice">{preparedWarning}</p>}
-  {view==='statistics'?<PremiumStatistics employee={employee} fixedDepartment={fixedDepartment}/>:view==='archive'?<PremiumArchive fixedDepartment={fixedDepartment} actionsTarget={actionsTarget} employee={employee} employees={employees} orders={orders} onOpen={onOpen} onReload={onReload}/>:<>
+  {extraViews?.find(tab=>tab.id===view)?.content??(view==='statistics'?<PremiumStatistics employee={employee} fixedDepartment={fixedDepartment}/>:view==='archive'?<PremiumArchive fixedDepartment={fixedDepartment} actionsTarget={actionsTarget} employee={employee} employees={employees} orders={orders} onOpen={onOpen} onReload={onReload}/>:<>
   {view==='calculation'&&<>
   <p className="premium-current-period">Текущий расчётный период: <strong>{period?.label||"Загрузка…"}</strong>{period&&` · ${counts.get(period.id)||0} заказов`}</p>
   {periodError&&<p role="alert">{periodError} <button onClick={()=>setPeriodRetry(n=>n+1)}>Повторить загрузку</button></p>}{period?<div className="premium-dates"><span>Поступления: {dateLabel(period.from)} — {dateLabel(period.cutoff)}</span><strong>Выплата: {dateLabel(period.payout)}</strong>{period.payout!==period.nominal&&<span>перенесена с {dateLabel(period.nominal)}</span>}</div>:activePeriod?<p role="alert">Для этих дат нужно добавить производственный календарь.</p>:null}
@@ -70,7 +70,7 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
   {!rows.length&&<div className="empty"><h3>Нет подтверждённых заказов</h3><p>{selected.length?'Измените поиск или оператора.':'В текущем периоде пока нет подтверждённых поступлений. Прошлые выплаты находятся в архиве.'}</p></div>}
   </>}
   {(view==='calculation'||view==='employees')&&period&&<PremiumPayroll fixedDepartment={fixedDepartment} actionsTarget={actionsTarget} key={employee.id+period.id} orders={orders} employee={employee} employees={employees} period={period.id} view={view} group={group} onGroupChange={setGroup} onReload={onReload} onPeriodChange={id=>{setPeriodId(id);setActivePeriod(id);}}/>}
- </>}
+ </>)}
  </section>;
 }
 
