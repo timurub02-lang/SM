@@ -20,8 +20,8 @@ async function call(id,path,body,options={}){
 try{
  d.exec('PRAGMA journal_mode=WAL');d.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of authSchema)d.exec(sql);
  const expires=Date.now()+3600000;
- for(const [id,role] of [['admin','admin'],['admin2','admin'],['one','operator'],['two','operator']]){
-  const e={id,name:id,login:id,role,department:'1',alias:'',salary:0,bonus:0,version:1,oktell:{requested:true,status:'linked',userId:'native-'+id,login:'native-'+id}};
+ for(const [id,role] of [['admin','admin'],['admin2','admin'],['one','operator'],['two','operator'],['head','department_head'],['foreign-head','department_head'],['empty-head','department_head'],['logistic','logistic']]){
+  const e={id,name:id,login:id,role,department:id==='two'||id==='foreign-head'?'2':id==='empty-head'?'':'1',alias:'',salary:0,bonus:0,version:1,oktell:{requested:true,status:'linked',userId:'native-'+id,login:'native-'+id}};
   d.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify(e));d.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,'synthetic-only');
   const token=randomBytes(32).toString('hex');sessions[id]='__Host-sm-session='+token;d.prepare('INSERT INTO auth_sessions VALUES(?,?,?)').run(tokenHash(token),id,expires);
  }
@@ -46,6 +46,27 @@ try{
  d.prepare("INSERT INTO auth_test_accounts VALUES('two')").run();assert.equal((await call('admin',switchPath,{...start,employeeId:'two'})).status,409);d.prepare("DELETE FROM auth_test_accounts WHERE employee_id='two'").run();
  const sessionsBefore=d.prepare('SELECT * FROM auth_sessions ORDER BY token_hash').all();
  const employeeBefore=(await call('one','/api/auth/me')).data;assert.equal((await call('one','/api/oktell-phone')).status,200);
+ for(const employeeId of ['two','admin','admin2','foreign-head','logistic','missing'])assert.equal((await call('head',switchPath,{action:'start',employeeId})).status,403,'Head cannot enter '+employeeId);
+ assert.equal((await call('empty-head',switchPath,start)).status,403,'A head without a department cannot enter operators');
+ assert.equal((await call('head',switchPath,start)).status,200);
+ assert.equal((await call('head','/api/auth/me')).data.employee.id,'one');
+ assert.equal((await call('head','/api/telephony',{mode:'echo'})).status,403);
+ assert.equal((await call('one','/api/oktell-phone')).status,200,'Real operator phone remains available during head entry');
+ const headPage=await call('head','/api/crm?list=orders&view=orders&filter=all');assert.deepEqual(headPage.data.rows.map(o=>o.id),['o-one']);
+ assert.equal((await call('head','/api/crm',{action:'comment',id:'o-one',version:headPage.data.rows[0].version,text:'Synthetic delegated head edit'})).status,200);
+ assert.ok(d.prepare("SELECT id FROM auth_impersonation_audit WHERE admin_id='head' AND target_id='one' AND kind='request' AND status=200").get());
+ d.prepare("UPDATE employees SET data=json_set(data,'$.department','2') WHERE id='one'").run();
+ assert.equal((await call('head','/api/auth/me')).status,401,'A transferred operator is immediately inaccessible');
+ assert.ok((await call('head','/login')).data.includes('Вернуться в кабинет руководителя'));
+ assert.equal((await call('head',switchPath,{action:'stop'})).status,200);assert.equal((await call('head','/api/auth/me')).data.employee.id,'head');
+ d.prepare("UPDATE employees SET data=json_set(data,'$.department','1') WHERE id='one'").run();
+ for(const [who,field,value] of [['head','department','2'],['one','role','department_head'],['head','role','operator']]){
+  assert.equal((await call('head',switchPath,start)).status,200);
+  d.prepare('UPDATE employees SET data=json_set(data,?,?) WHERE id=?').run('$.'+field,value,who);
+  assert.equal((await call('head','/api/auth/me')).status,401,'Current head/target scope must be rechecked');
+  assert.equal((await call('head',switchPath,{action:'stop'})).status,200);
+  d.prepare('UPDATE employees SET data=json_set(data,?,?) WHERE id=?').run('$.'+field,field==='department'?'1':who==='head'?'department_head':'operator',who);
+ }
  const ownCall=await call('admin','/api/telephony',{mode:'echo'});assert.equal(ownCall.status,200,JSON.stringify(ownCall));
  assert.equal((await call('admin',switchPath,start)).status,409,'An administrator cannot switch during their own call');
  d.prepare("UPDATE phone_calls SET actor_id='one',status='connected' WHERE id=?").run(ownCall.data.callId);
