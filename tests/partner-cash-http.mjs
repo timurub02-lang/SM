@@ -36,7 +36,7 @@ try{
  const path='/api/partner-cash?period='+period;
  assert.equal((await call(path)).status,401);
  for(const id of ['head','operator'])assert.equal((await call(path,cookies[id])).status,403);
- const before=await call(path,cookies.admin);assert.equal(before.status,200);assert.equal(before.data.remaining,null);
+ const before=await call(path,cookies.admin);assert.equal(before.status,200);assert.equal(before.data.remaining,null);assert.deepEqual(before.data.payroll,[row],"Partner premium tab uses the stored department A payroll");
  const form={revision:'',taxRate:7,communication:100,bank:50};
  assert.equal((await call(path,cookies.A_Emil,form)).status,403);
  assert.equal((await call(path,cookies.admin,{...form,taxRate:101})).status,400);

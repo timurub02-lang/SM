@@ -435,3 +435,10 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .partner-cash .partner-actions button{white-space:nowrap}
 .partner-payment-status span{white-space:nowrap}
 @media(max-width:800px){.partner-cash .partner-expenses{table-layout:auto}.partner-expenses th:nth-child(n){width:auto}.partner-payment{flex-basis:100%}}
+
+.partner-layout th:nth-child(1){width:22%}.partner-layout th:nth-child(2){width:17%}.partner-layout th:nth-child(3){width:14%}.partner-layout th:nth-child(4){width:47%}
+.partner-cash .partner-layout input{font-size:13px;min-height:30px;height:30px;padding:4px 7px;border:1px solid var(--border);border-radius:6px;width:100%;max-width:180px}
+.partner-parameter{display:flex;align-items:center;gap:6px}.partner-parameter small{white-space:nowrap}
+.partner-row-actions{display:flex;flex-direction:column;gap:3px}.partner-row-actions .partner-payment-status{font-size:11px;color:var(--muted-foreground)}
+.partner-save{align-self:flex-start}.partner-details{margin-top:16px}.partner-details [data-slot=tabs-content]{padding-top:16px;min-width:0}.partner-details .tabs-line{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:4px;width:fit-content}
+.partner-cash .partner-details td:first-child{white-space:normal;overflow-wrap:anywhere}
