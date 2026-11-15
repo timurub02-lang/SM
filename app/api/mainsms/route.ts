@@ -1,3 +1,4 @@
+import {journalAuthor} from '@/lib/journal-author';
 import {smsDelivery} from '@/lib/sms-delivery';
 import {readLimitedText} from '@/lib/request-body';
 import {isLogistic} from '@/lib/crm';
@@ -81,7 +82,7 @@ async function handlePOST(req:Request){
  const claimed=await db().prepare("UPDATE settings SET data=json_set(data,'$.state','sending','$.sentAt',?) WHERE id=? AND json_extract(data,'$.state')='preview'").bind(Date.now(),key).run();if(!claimed.meta.changes)throw Error('Отправка уже началась');
  let message='Результат SMS неизвестен. Проверьте кабинет MainSMS перед повторной отправкой.',success=false;
  try{const result=await mainSmsCall(c,'send',{recipients:ticket.phone,message:ticket.text,...(ticket.sender?{sender:ticket.sender}:{})});success=true;message='SMS принято MainSMS к отправке';await db().prepare("UPDATE settings SET data=json_set(data,'$.state','accepted','$.messageIds',json(?)) WHERE id=?").bind(JSON.stringify(result.messages_id||[]),key).run();}catch(error){const rejected=error instanceof MainSmsRejection;if(rejected)message=error.message;await db().prepare("UPDATE settings SET data=json_set(data,'$.state',?,'$.deliveryReason',?) WHERE id=?").bind(rejected?'rejected':'unknown',rejected?message:null,key).run();}
- const at=new Date().toISOString(),event={id:crypto.randomUUID(),orderId:o.id,clientId:o.clientId,at,actor:e.login,actorId:e.id,text:message+' · '+ticket.text};await db().prepare('INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)').bind(event.id,o.clientId,o.id,at,JSON.stringify(event)).run();return Response.json({message},{status:success?200:409});
+ const at=new Date().toISOString(),event={id:crypto.randomUUID(),orderId:o.id,clientId:o.clientId,at,...journalAuthor(e.login,e.id),text:message+' · '+ticket.text};await db().prepare('INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)').bind(event.id,o.clientId,o.id,at,JSON.stringify(event)).run();return Response.json({message},{status:success?200:409});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте заполнение полей':e instanceof Error?e.message:'Ошибка SMS'},{status:400});}
 }
 

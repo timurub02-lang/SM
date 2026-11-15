@@ -1,3 +1,4 @@
+import {journalAuthor} from '@/lib/journal-author';
 import {cdekToken} from '@/lib/cdek';
 import {shipmentResult} from '@/lib/cdek-shipment';
 import {redemptionDayCounts} from '@/lib/redemption-day-counts';
@@ -61,6 +62,6 @@ export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=a
  }else if(p.operation==='heads'){
   if(e.role!=='redemption')throw Error('Переключатель доступен сотруднику выкупа');
   const cfg=await redemptionConfig(d);await d.prepare("INSERT INTO settings(id,data) VALUES('redemption-config',?) ON CONFLICT(id) DO UPDATE SET data=json_set(settings.data,'$.headsAll',json_extract(excluded.data,'$.headsAll'))").bind(JSON.stringify({...cfg,headsAll:!!p.value})).run();
- }else if(p.operation==='courier'){await confirmReplacementCourier(d,e,p.callId);}else {await editRedemption(d,e,p);}
+ }else if(p.operation==='courier'){await confirmReplacementCourier(d,e,p.callId);}else {await editRedemption(d,{...e,name:journalAuthor(e.name,e.id).actor},p);}
  return Response.json({ok:true});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка сохранения'},{status:400});}});

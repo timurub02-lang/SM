@@ -1,3 +1,4 @@
+import {journalAuthor} from '@/lib/journal-author';
 import {changeClientSheet} from '@/lib/client-sheet-change';
 import {canReceiveWarehouseReturn,legacyReturnItems} from '@/lib/warehouse-return';
 import {readPaidHistory} from '@/lib/premium-paid-history';
@@ -217,7 +218,7 @@ async function handlePOST(request:Request){
  const employee=s.employees.find(x=>x.id===p.actorId);const actor=`${user.displayName}${employee?` · от имени ${employee.name}`:""}`;
  if(user.employee)authorizeCrm(user.employee,p,s);
  else if(employee?.role==="department_head")authorizeCrm(employee,p,s);
- const ev=(clientId:string,orderId:string,text:string):Event=>({id:id("EV-"),clientId,orderId,at:now,actor,actorId:employee?.id,text});
+ const ev=(clientId:string,orderId:string,text:string):Event=>({id:id("EV-"),clientId,orderId,at:now,...journalAuthor(actor,employee?.id),text});
  const eventSQL=(e:Event)=>d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e));
  const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
  const assignedUntil=()=>"";

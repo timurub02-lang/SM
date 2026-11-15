@@ -1,3 +1,4 @@
+import {journalAuthor} from './journal-author.ts';
 import {z} from 'zod';
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Employee,State} from './crm.ts';
@@ -33,7 +34,7 @@ export async function saveClientWork(d:Db,s:State,e:Employee,input:any,at=new Da
  statements.push(d.prepare(`UPDATE client_reminders SET completed_at=?,resolution='done' WHERE employee_id=? AND client_id=? AND completed_at IS NULL AND (julianday(due)<=julianday(?) OR id=?) AND ${guard}`).bind(at,e.id,c.id,at,old?JSON.parse(old.data).reminderId||'':'',...args));
  if(reminderId)statements.push(d.prepare(`INSERT INTO client_reminders(id,employee_id,client_id,due,text,created_at) SELECT ?,?,?,?,?,? WHERE ${guard}`).bind(reminderId,e.id,c.id,p.due,'Перезвон клиенту',at,...args));
  const text='Работа с клиентом: '+clientWorkLabels[p.outcome]+(p.outcome==='callback'?' · '+new Date(p.due!).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК':'');
- const event={id:mutation,clientId:c.id,orderId:'',at,actor:e.name,actorId:e.id,text};
+ const event={id:mutation,clientId:c.id,orderId:'',at,...journalAuthor(e.name,e.id),text};
  statements.push(d.prepare(`INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,'',?,? WHERE ${guard}`).bind(mutation,c.id,at,JSON.stringify(event),...args));
  const result=await d.batch(statements);if(!result[0].meta.changes&&!result[1].meta.changes)throw Error('Результат или закрепление изменились. Обновите карточку');
 }

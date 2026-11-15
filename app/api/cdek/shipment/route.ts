@@ -1,3 +1,4 @@
+import {journalAuthor} from '@/lib/journal-author';
 import {readLimitedText} from '@/lib/request-body';
 import {cdekPrintStatus} from "@/lib/cdek-print-status";
 import {replacementPhone} from '@/lib/phone-replacement';
@@ -78,7 +79,7 @@ async function handlePOST(req:Request){
    if(data.entity?.uuid!==uuid||data.entity?.number!==c.order.id)throw Error('СДЭК вернул другое отправление');
    const latest=[...(data.entity?.statuses||[])].filter((s:any)=>!s.deleted&&Number.isFinite(Date.parse(s.date_time))).sort((a:any,b:any)=>Date.parse(b.date_time)-Date.parse(a.date_time))[0];
    if(latest?.code!=='CREATED')throw Error('СДЭК разрешает удалять только отправление в статусе «Создан», до движения посылки на складе. Текущий статус: '+(latest?.code||'неизвестен'));
-   const shipment:Shipment={...c.shipment,state:'deleting',error:undefined,deletion:{at:new Date().toISOString(),reason:p.reason,actor:c.actor.login,previousRequests:(data.requests||[]).filter((r:any)=>r.type==='DELETE').map(deletionRequestKey)}};
+   const shipment:Shipment={...c.shipment,state:'deleting',error:undefined,deletion:{at:new Date().toISOString(),reason:p.reason,actor:journalAuthor(c.actor.login,c.actor.id).actor,previousRequests:(data.requests||[]).filter((r:any)=>r.type==='DELETE').map(deletionRequestKey)}};
    const pending=JSON.stringify(shipment);
    const lock=await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)').bind(pending,c.key,c.record!.data,c.order.id,c.order.version).run();
    if(!lock.meta.changes)throw Error('Отправление изменилось. Обновите карточку');
@@ -132,7 +133,7 @@ async function handlePOST(req:Request){
     if(!shipment.uuid&&shipment.state==='pending')shipment.state='unknown';
    }catch{shipment.state='unknown';shipment.error='Ответ СДЭК не получен. Повторная отправка заблокирована, чтобы не создать дубль. Укажите UUID из кабинета СДЭК для проверки.';}
    await save(shipment,pending);
-   await d.prepare('INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)').bind(shipment.attempt,c.order.clientId,c.order.id,new Date().toISOString(),JSON.stringify({id:shipment.attempt,clientId:c.order.clientId,orderId:c.order.id,at:new Date().toISOString(),actor:c.actor.login,text:`Выгрузка в СДЭК · ${shipment.account} · ${shipment.state}${shipment.uuid?` · ${shipment.uuid}`:''}`})).run();
+   await d.prepare('INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)').bind(shipment.attempt,c.order.clientId,c.order.id,new Date().toISOString(),JSON.stringify({id:shipment.attempt,clientId:c.order.clientId,orderId:c.order.id,at:new Date().toISOString(),actor:journalAuthor(c.actor.login,c.actor.id).actor,text:`Выгрузка в СДЭК · ${shipment.account} · ${shipment.state}${shipment.uuid?` · ${shipment.uuid}`:''}`})).run();
    return reply({shipment});
   }
   if(!c.shipment)throw Error('Сначала выгрузите заказ в СДЭК');const shipment={...c.shipment};const api=await apiFor(shipment.slot);

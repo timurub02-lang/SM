@@ -46,7 +46,7 @@ export async function readCrmHistory(d:ActivityDb,actor:Employee,q:HistoryQuery)
   clauses.push(`c.id IS NOT NULL AND ((e.order_id='' AND ${journalClient}) OR EXISTS(SELECT 1 FROM orders j WHERE j.id=e.order_id AND ${journalOrder}))`);
   if(journalClient.includes('?'))args.push(owners);if(journalOrder.includes('?'))args.push(owners);
   const suffix=' · от имени '+e.name;
-  clauses.push("(json_extract(e.data,'$.actorId')=? OR (COALESCE(json_extract(e.data,'$.actorId'),'')='' AND (json_extract(e.data,'$.actor')=? OR substr(json_extract(e.data,'$.actor'),-length(?))=?)))");args.push(e.id,e.login,suffix,suffix);
+  clauses.push("(json_extract(e.data,'$.delegatedById')=? OR json_extract(e.data,'$.actorId')=? OR (COALESCE(json_extract(e.data,'$.actorId'),'')='' AND (json_extract(e.data,'$.actor')=? OR substr(json_extract(e.data,'$.actor'),-length(?))=?)))");args.push(e.id,e.id,e.login,suffix,suffix);
  }
  let source='events',sourceArgs:unknown[]=[];
  if(q.clientId&&await d.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redemption_history'").first()){

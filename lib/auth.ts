@@ -31,7 +31,7 @@ export async function sessionEmployee(h:Headers,allowTestAccount=false):Promise<
  if(mode.expires_at<=Date.now())return null;
  const row=await db().prepare('SELECT e.data,e.version FROM employees e JOIN auth_accounts a ON a.employee_id=e.id LEFT JOIN auth_test_accounts t ON t.employee_id=e.id WHERE e.id=? AND a.enabled=1 AND t.employee_id IS NULL').bind(mode.target_id).first<{data:string;version:number}>();
  if(!row||!mayImpersonate(owner.employee,JSON.parse(row.data)))return null;
- return {...JSON.parse(row.data),version:row.version,impersonation:{id:mode.id,adminId:owner.employee.id,adminName:owner.employee.name}};
+ return {...JSON.parse(row.data),version:row.version,impersonation:{id:mode.id,adminId:owner.employee.id,adminName:owner.employee.name,ownerRole:owner.employee.role}};
 }
 
 export function trustedOrigin(h:Headers){
