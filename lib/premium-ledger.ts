@@ -34,6 +34,19 @@ export function periodOrders(ledger:PremiumLedger,periodId:string,orders:Order[]
   return {id:r.order.id,externalId:orderKey(r.order),employeeId:r.order.manager,login:e?.login||'',department:e?.department||'',amount:premiumRemittance(r.order)?premiumRemittance(r.order)!.collectedCents/100:r.amount};
  });
 }
+export function payrollSigners(departments:string[],employees:Employee[]){
+ return departments.flatMap(department=>employees.filter(e=>e.role==='department_head'&&e.department===department&&(department==='5'?e.login==='A_Emil':!!e.leaderPremium)).map(e=>({id:e.id,name:e.name,department})));
+}
+export function partnerSigner(ledger:PremiumLedger|null,employees:Employee[]){
+ if(!ledger)return null;
+ const emil=employees.find(e=>e.login==='A_Emil'&&e.role==='department_head'&&e.department==='5');if(!emil)return ledger;
+ const next=structuredClone(ledger);
+ for(const p of Object.values(next.periods))if(p.status!=='paid'&&p.signers?.some(s=>s.department==='5'&&s.id!==emil.id)){
+  for(const signer of p.signers.filter(s=>s.department==='5'))delete p.signatures[signer.id];
+  p.signers=p.signers.filter(s=>s.department!=='5').concat({id:emil.id,name:emil.name,department:'5'});
+ }
+ return next;
+}
 export function departmentSigned(p:PayrollPeriod,department:string){return !!p.signers?.some(s=>s.department===department&&p.signatures[s.id]);}
 export function ledgerRows(ledger:PremiumLedger,period:string,orders:Order[],employees:Employee[],adjustments:Record<string,PremiumSaved>):PayrollRow[]{
  const p=ledger.periods[period];if(!p)return [];
@@ -79,7 +92,8 @@ export function freezePeriod(ledger:PremiumLedger,period:string,orders:Order[],e
  const paid=new Set(Object.values(ledger.periods).filter(v=>v.status==='paid').flatMap(v=>(v.orders||[]).map(o=>o.externalId)));
  if(membership.some(o=>paid.has(o.externalId)))throw Error('Заказ уже оплачен в другой ведомости');
  const departments=[...new Set(rows.map(r=>r.department))];
- const signers=departments.map(department=>{const heads=employees.filter(e=>e.role==='department_head'&&e.department===department&&e.leaderPremium);if(heads.length!==1)throw Error('Не определён единственный руководитель отдела '+department);return {id:heads[0].id,name:heads[0].name,department};});
+ const signers=payrollSigners(departments,employees);
+ if(departments.some(d=>signers.filter(s=>s.department===d).length!==1))throw Error('Не определён единственный подписант отдела');
  if(!signers.length)throw Error('В ведомости нет получателей');
  const frozen:PayrollPeriod={...p,status:'frozen',rows,orders:membership,signers,signatures:{},frozenAt:at,frozenBy:actor,knownReceipts:p.knownReceipts??premiumOrders(orders,admin,employees).map(r=>orderKey(r.order))};
  return {...ledger,revision:crypto.randomUUID(),periods:{...ledger.periods,[period]:frozen}};

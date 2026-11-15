@@ -13,7 +13,7 @@ export async function savePremiumLedger(state:Awaited<ReturnType<typeof readPrem
  if(paid)await initCash();
  const partnerAccount=paid?await d.prepare("SELECT data FROM settings WHERE id='partner-cash-account'").first<{data:string}>():null;
  const partnerDraft=partnerAccount?await d.prepare('SELECT data FROM settings WHERE id=?').bind('partner-cash:'+period).first<{data:string}>():null;
- const partnerSettings:PartnerSettings=partnerDraft?JSON.parse(partnerDraft.data):{...defaultPartnerSettings,taxRate:partnerAccount?JSON.parse(partnerAccount.data).taxRate:null};
+ const partnerSettings:PartnerSettings=partnerDraft?JSON.parse(partnerDraft.data):{...defaultPartnerSettings,taxRate:partnerAccount?JSON.parse(partnerAccount.data).taxRate:null,bank:partnerAccount?JSON.parse(partnerAccount.data).bank??0:0};
  const partnerReport=partnerAccount?partnerCalculation(next.periods[period].orders||[],state.orders,next.periods[period].rows||[],partnerSettings):null;
  if(partnerReport&&partnerReport.remaining===null)throw Error('Заполните налог и проверьте товары в кассе Эмиля перед закрытием периода');
  const partnerGuard=partnerAccount?" AND EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?":paid?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account')":'';
