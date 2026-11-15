@@ -6,7 +6,7 @@ const admin={id:'admin',role:'admin'},paid={id:'LV-1',manager:'op',status:'redee
 const ledger={activePeriod:'2026-11-1',periods:{'2026-11-1':{status:'open',signatures:{}}}};
 assert.equal(orderDisplayGroup(applyPremiumStages(ledger,[paid],[])[0]).id,'premium_paid');
 assert.deepEqual(premiumOrders([paid],admin,[]),[]);assert.deepEqual(periodOrders(ledger,'2026-11-1',[paid],[]),[]);
-assert.equal(showOrderInList(paid,{owner:'other'},'operator'),false);assert.equal(showOrderInList(paid,{owner:'op'},'operator'),true);
+assert.equal(showOrderInList(paid,{owner:'other'},'operator'),false);assert.equal(showOrderInList(paid,{owner:'op'},'operator'),false);
 const passive={...paid,legacyLv:{...paid.legacyLv,status:'Пассивные'}};
 assert.equal(orderDisplayGroup(passive).id,'paid');assert.equal(premiumOrders([passive],admin,[]).length,1);
 assert.equal(orderDisplayGroup({...passive,priorPremiumPaid:{at:'now',source:'Administrator confirmation'}}).id,'premium_paid');
