@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createPhoneCall} from '../lib/phone-store.ts';
 import {impersonationBlocksPhone} from '../lib/impersonation.ts';
 import {mayCallEndpoint} from '../lib/permissions.ts';
 import {hasOktellLink} from '../lib/oktell-link.ts';
@@ -13,3 +14,5 @@ for(const path of ['/api/telephony','/api/telephony/numbers','/api/oktell-phone'
 assert.equal(mayCallEndpoint(mode,new URL('https://test/api/crm'),'GET',{}),mayCallEndpoint(actor,new URL('https://test/api/crm'),'GET',{}));
 assert.equal(impersonationBlocksPhone(mode,'/api/call-history'),false,'History remains available with normal role rights');
 console.log('Impersonation disables phone routes and native link without changing the employee or ordinary data rights');
+
+await assert.rejects(createPhoneCall({prepare:()=>assert.fail('No database operations are permitted'),batch:()=>assert.fail('No writes are permitted')},{actor:mode,id:'synthetic',clientId:null,orderId:null,echo:true}),/звонки отключены/,'The shared grant constructor rejects the mode even if a route check was bypassed');

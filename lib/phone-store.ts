@@ -39,6 +39,7 @@ export async function replacePhonePool(d:ActivityDb,count:number,version:number,
  if(!r[0].meta.changes)throw Error('Недостаточно новых номеров или список уже изменился. Обновите данные.');
 }
 export async function createPhoneCall(d:ActivityDb,input:{id:string;clientId:string|null;orderId:string|null;actor:Employee;echo:boolean;destination?:string;sipUser?:string;incomingId?:string}){
+ if(input.actor.impersonation)throw Error('В режиме входа под сотрудником звонки отключены');
  const {id,clientId,orderId,actor,echo}=input,now=new Date().toISOString();
  // One INSERT selects the least recently used active number; concurrent calls cannot select stale state.
  const writes=[d.prepare(`INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status)
