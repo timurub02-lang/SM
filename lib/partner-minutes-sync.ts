@@ -5,10 +5,10 @@ import type {Employee} from './crm';
 import type {PremiumPeriod} from './premium-periods';
 import type {PartnerMinutes} from './partner-minutes';
 export async function readPartnerMinutes(calendar:PremiumPeriod,d:ActivityDb,fetcher:typeof fetch=fetch,wait:(ms:number)=>Promise<void>=ms=>new Promise(resolve=>setTimeout(resolve,ms))):Promise<PartnerMinutes>{
- const read=async(id:string)=>{const row=await d.prepare('SELECT data FROM settings WHERE id=?').bind(id).first<{data:string}>();return row?JSON.parse(row.data):null;};
+ const read=async(id:string)=>{const row=await d.prepare('SELECT data FROM settings WHERE id=?').bind(id).first() as {data:string}|null;return row?JSON.parse(row.data):null;};
  const credentials=await read('skorozvon') as SkCredentials|null,mapping=await read('activity-sk-map') as Record<string,number>|null;
  if(!credentials||!mapping)throw Error('Скорозвон не подключён или сотрудники не сопоставлены');
- const employees=(await d.prepare('SELECT data FROM employees').all<{data:string}>()).results.map(r=>JSON.parse(r.data) as Employee).filter(e=>e.role==='operator'&&e.department==='5');
+ const employees=((await d.prepare('SELECT data FROM employees').all()).results as {data:string}[]).map(r=>JSON.parse(r.data) as Employee).filter(e=>e.role==='operator'&&e.department==='5');
  const rows=employees.filter(e=>Number.isInteger(mapping[e.id])).map(e=>({employeeId:e.id,login:e.login,billed:0,seconds:0}));
  const reverse=new Map(rows.map(r=>[mapping[r.employeeId],r]));
  if(reverse.size!==rows.length)throw Error('Повторяющиеся связи операторов со Скорозвоном');
