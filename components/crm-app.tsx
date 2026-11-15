@@ -139,11 +139,13 @@ export default function Page(){
  const [state,setState]=useState<State>(()=>seed());
  const reader=useRef<SnapshotReader<State&{personalAuth?:boolean;currentEmployeeId?:string}>|null>(null);
  if(!reader.current)reader.current=new SnapshotReader("/api/crm?transport=compact-v1",undefined,decodeCrmSnapshot);
+ const bootstrapReader=useRef<SnapshotReader<State&{splitReads?:boolean;preparedSummaries?:boolean;personalAuth?:boolean;currentEmployeeId?:string}>|null>(null);
+ if(!bootstrapReader.current)bootstrapReader.current=new SnapshotReader("/api/crm?part=bootstrap");
  const writing=useRef(false);
  const splitMode=useRef<boolean|null>(null),workspaceEpoch=useRef(0),pendingParts=useRef(new Map<string,Promise<boolean>>());
  const [preparedSummaries,setPreparedSummaries]=useState(false);
  const [splitReads,setSplitReads]=useState(false),[workspaceRevision,setWorkspaceRevision]=useState(0),[contextReady,setContextReady]=useState(false),[tasksReady,setTasksReady]=useState(false),[tasksError,setTasksError]=useState('');
- useEffect(()=>()=>reader.current?.invalidate(),[]);const [ready,setReady]=useState(false);const [loadError,setLoadError]=useState("");const [busy,setBusy]=useState(false);
+ useEffect(()=>()=>{reader.current?.invalidate();bootstrapReader.current?.invalidate();},[]);const [ready,setReady]=useState(false);const [loadError,setLoadError]=useState("");const [busy,setBusy]=useState(false);
  const [baseSettingsOpen,setBaseSettingsOpen]=useState(false);
  const [baseJournalOpen,setBaseJournalOpen]=useState(false);
  const [redemptionSettingsOpen,setRedemptionSettingsOpen]=useState(false);
@@ -263,7 +265,7 @@ export default function Page(){
   if(writing.current)return false;
   try{
    if(splitMode.current===null){
-    const initial=await readJsonResponse<State&{splitReads?:boolean;preparedSummaries?:boolean;personalAuth?:boolean;currentEmployeeId?:string}>(await fetch('/api/crm?part=bootstrap',{cache:'no-store'}));
+    const initial=await bootstrapReader.current!.read();if(!initial)return false;
     splitMode.current=initial.splitReads===true;setSplitReads(splitMode.current);setPreparedSummaries(initial.preparedSummaries===true);
     setPersonalAuth(initial.personalAuth===true);if(initial.currentEmployeeId)setActor(initial.currentEmployeeId);
     setState(initial);setReady(true);
