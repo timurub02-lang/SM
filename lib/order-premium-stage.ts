@@ -40,6 +40,6 @@ export function showOrderInList(order:Order,client:Client|undefined,role:Employe
  const group=orderDisplayGroup(order).id;
  // A rejected review remains visible so the operator can find its cancellation reason after release.
  if(group==='cancelled'&&order.blacklistedAt)return true;
- const hideUnassigned=group==="cancelled"&&["admin","operator","department_head"].includes(role);
+ const hideUnassigned=(group==="cancelled"||group==="premium_paid"&&!!order.legacyLv?.paymentPendingReview&&order.premiumStage?.status!=="paid")&&["admin","operator","department_head"].includes(role);
  return !hideUnassigned||!!client?.owner&&client.owner===order.manager;
 }
