@@ -57,6 +57,19 @@ try{
  await assert.rejects(applyCdekRegistries(db,1,answer(registry('R4',90,'2026-10-28','race')),at));assert.equal((await row('race')).cdekRemittances,undefined);
  await db.prepare('DROP TRIGGER test_failure').run();
 
+
+ const missingCount=async()=>Number((await db.prepare("SELECT COUNT(*) n FROM cdek_unmatched_remittances WHERE tracking='missing-track'").first()).n);
+ const missingReceipt=answer(registry('MISSING',90,'2026-10-28','missing-track'));
+ const beforeOrders=(await db.prepare('SELECT COUNT(*) n FROM orders').first()).n;
+ await applyCdekRegistries(db,1,missingReceipt,at,true);assert.equal(await missingCount(),0,'Dry run does not save missing receipts');
+ assert.equal((await applyCdekRegistries(db,1,missingReceipt,at)).unmatched,1);assert.equal(await missingCount(),1);
+ await applyCdekRegistries(db,1,missingReceipt,at);assert.equal(await missingCount(),1,'Repeated response is not duplicated');
+ await applyCdekRegistries(db,1,answer(registry('MISSING2',80,'2026-10-29','missing-track')),at);assert.equal(await missingCount(),2,'Separate evidence retained');
+ assert.equal((await db.prepare('SELECT COUNT(*) n FROM orders').first()).n,beforeOrders,'Unknown receipt does not create an order');
+ await fixture('new-match',{legacyLv:{track:'missing-track'}});
+ assert.equal((await applyCdekRegistries(db,1,missingReceipt,at)).added,1);assert.equal(await missingCount(),1,'Only matched receipt is removed');
+ await applyCdekRegistries(db,1,answer(registry('MISSING2',80,'2026-10-29','missing-track')),at);assert.equal(await missingCount(),0);
+ assert.equal((await row('new-match')).cdekRemittances.length,2);assert.match(cdekMoneyLabel(await row('new-match')),/требуется проверка/);
  async function historyFixture(key,tracking=key){
   const client={id:'history-'+key,owner:'other-operator',assignedUntil:'2027-01-01',legacyOrderHistory:[{externalId:key,status:'paid'}]};
   await db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(client.id,'+7999'+key,JSON.stringify(client)).run();
