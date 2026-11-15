@@ -32,7 +32,7 @@ for(const role of ['admin','operator','department_head']){
  assert.equal(showOrderInList(cancelled,{owner:'other'},role),false);
 }
 assert.equal(showOrderInList(cancelled,{owner:''},'logistic'),true);
-assert.equal(showOrderInList({...cancelled,status:'returned'},{owner:''},'admin'),true);
+assert.equal(showOrderInList({...cancelled,status:'returned'},{owner:''},'admin'),false);
 assert.equal(showOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},'admin'),true);
 assert.equal(JSON.stringify(cancelled),saved);
 assert.equal(orderGroup(cancelled).id,'cancelled');
@@ -75,3 +75,19 @@ for(const [view,delivery] of [['orders','moscow_courier'],['moscow','moscow_cour
 }
 assert.equal(JSON.stringify(fresh),savedPaid);
 console.log('Paid order archive: immediate historical hide, 48h boundary, all roles, orders/Moscow/Post, no data mutation passed');
+
+const {returnedOrderHidden}=await import('../lib/order-premium-stage.ts');
+const returned={status:'returned',warehouseReturnedAt:'2026-11-16T10:00:00Z'};
+const returnDeadline=Date.parse(returned.warehouseReturnedAt)+48*3600000;
+for(const delivery of ['cdek_pickup','cdek_courier','moscow_courier','russian_post']){
+ for(const role of ['admin','operator','department_head'])assert.equal(returnedOrderHidden({...returned,delivery},role,returnDeadline-1),true);
+ for(const role of ['logistic','chief_logistic']){
+  assert.equal(returnedOrderHidden({...returned,delivery},role,returnDeadline-1),false);
+  assert.equal(returnedOrderHidden({...returned,delivery},role,returnDeadline),true);
+  assert.equal(returnedOrderHidden({...returned,delivery,warehouseReturnedAt:undefined},role,returnDeadline),false);
+ }
+}
+assert.equal(returnedOrderHidden({status:'rework'},'operator',returnDeadline),false,'clarification is not warehouse return');
+assert.equal(returnedOrderHidden({status:'refused',delivery:'moscow_courier',courier:{acceptedAt:'2026-11-15'}},'admin',returnDeadline),true);
+assert.equal(orderDisplayGroup(returned).id,'returned','history status unchanged');
+console.log('Returned orders: roles, all delivery methods, exact 48-hour boundary and history passed');

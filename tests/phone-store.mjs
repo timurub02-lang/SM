@@ -3,7 +3,7 @@ import {openDatabase} from '../server/sqlite.ts';
 import {addCallComment,initPhone,createPhoneCall,replacePhonePool,normalizeOutgoingNumber,phoneScope,displayPhoneCall} from '../lib/phone-store.ts';
 const d=openDatabase(':memory:');
 try{
- await d.batch(['CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(sql=>d.prepare(sql)));
+ await d.batch(['CREATE TABLE auth_accounts(employee_id TEXT,enabled INTEGER)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(sql=>d.prepare(sql)));
  const staff=[{id:'admin',role:'admin',name:'Admin'},{id:'one',role:'operator',name:'One',department:'1'},{id:'two',role:'operator',name:'Two',department:'2'},{id:'head',role:'department_head',department:'1'},{id:'courier',role:'courier'}];
  for(const e of staff)await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
  const client={id:'client',owner:'one'};await d.prepare('INSERT INTO clients VALUES(?,?)').bind(client.id,JSON.stringify(client)).run();
@@ -33,6 +33,19 @@ try{
  for(const id of ['two','courier'])assert.equal(await phoneScope(d,staff.find(e=>e.id===id),{clientId:'client'}),false);
  await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify({...client,owner:'two'}),'client').run();
  assert.equal(await phoneScope(d,staff[1],{clientId:'client'}),false);assert.equal(await phoneScope(d,staff[1],{orderId:'order'}),true);
+ // A visible returned order must not grant a head calls to its now-free client.
+ await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify({...client,owner:''}),'client').run();
+ for(const status of ['returned','redeemed','refused','shipping']){
+  await d.prepare('UPDATE orders SET data=? WHERE id=?').bind(JSON.stringify({id:'order',clientId:'client',manager:'one',status}),'order').run();
+  assert.equal(await phoneScope(d,staff[3],{orderId:'order'}),false,status);
+  assert.equal(await phoneScope(d,staff[3],{clientId:'client'}),false,status);
+ }
+ await d.prepare("INSERT INTO incoming_calls(id,client_id,at,phone,called_number,shared_queue) VALUES('incoming','client','2026-11-16','79990000000','',1)").run();
+ for(const scope of [{orderId:'order'},{clientId:'client'}])assert.equal(await phoneScope(d,staff[3],scope),true,'shared incoming exception');
+ await d.prepare("UPDATE incoming_calls SET closed_at='2026-11-16' WHERE id='incoming'").run();
+ assert.equal(await phoneScope(d,staff[3],{orderId:'order'}),false,'closed incoming does not grant calls');
+ await d.prepare('UPDATE clients SET data=? WHERE id=?').bind(JSON.stringify(client),'client').run();
+ assert.equal(await phoneScope(d,staff[3],{orderId:'order'}),true,'own department retained');
  assert.equal(displayPhoneCall({...calls[0],started_at:'2026-01-01',status:'dialing'},Date.now()).status,'unknown');
  const noteId=crypto.randomUUID();
  await addCallComment(d,staff[1],calls[0].id,'  Клиент ждёт завтра  ',noteId);

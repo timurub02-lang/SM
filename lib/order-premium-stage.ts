@@ -1,3 +1,4 @@
+import {courierWarehouseReturn} from './courier.ts';
 import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {statuses,orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
@@ -33,9 +34,16 @@ export function paidOrderArchived(order:Order,now=Date.now()){
  return !Number.isFinite(at)||at<=paidArchiveStartedAt||now>=at+48*3600000;
 }
 
+export function returnedOrderHidden(order:Order,role:Employee['role'],now=Date.now()){
+ if(!courierWarehouseReturn(order))return false;
+ if(!['logistic','chief_logistic'].includes(role))return true;
+ const at=Date.parse(order.warehouseReturnedAt||'');
+ return Number.isFinite(at)&&now>=at+48*3600000;
+}
+
 // Only the operational list is pruned; payroll history retains its original membership.
 export function showOrderInList(order:Order,client:Client|undefined,role:Employee["role"],now=Date.now()){
- if(paidOrderArchived(order,now))return false;
+ if(paidOrderArchived(order,now)||returnedOrderHidden(order,role,now))return false;
  if(order.status==='rework'&&['operator','department_head'].includes(role))return false;
  const group=orderDisplayGroup(order).id;
  // A rejected review remains visible so the operator can find its cancellation reason after release.
