@@ -1,3 +1,4 @@
+import {minutesFinal} from '@/lib/partner-minutes';
 import {partnerExpense} from '@/lib/partner-expense';
 import {readPartnerMinutes} from '@/lib/partner-minutes-sync';
 import {partnerAccountView} from '@/lib/partner-account';
@@ -32,7 +33,7 @@ async function handle(req:Request){
   const bodyInput=req.method==='POST'?await req.json():null;
   if(bodyInput&&typeof bodyInput==='object'&&'action' in bodyInput&&bodyInput.action==='refresh_minutes'){
    if(ledger.periods[period].status==='paid')return handle(new Request(req.url,{headers:req.headers}));
-   if(settings.minutes&&Date.now()-Date.parse(settings.minutes.updatedAt)<300000)return handle(new Request(req.url,{headers:req.headers}));
+   if(minutesFinal(calendar,settings.minutes))return handle(new Request(req.url,{headers:req.headers}));
    const settlements=await d.prepare("SELECT data FROM settings WHERE id='partner-settlements'").first<{data:string}>();
    if(settlements&&JSON.parse(settlements.data).entries.some((e:{period:string;action:string})=>e.period===period&&e.action==='pay'))throw Error('По периоду начаты выплаты; минуты защищены от изменений');
    const minutes=await readPartnerMinutes(calendar,d);
