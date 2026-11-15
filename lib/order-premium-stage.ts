@@ -1,5 +1,5 @@
 import {legacyPremiumPaid} from './legacy-premium-paid.ts';
-import {orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
+import {statuses,orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
 export type OrderPremiumStage={status:'accrued'|'paid';periodId:string;paidAt?:string};
 const transferred={id:'transferred',label:'Передан'};
@@ -17,6 +17,10 @@ export function orderDisplayGroup(order:Order){
  // Imported LV labels are provisional: they do not enter the paid payroll ledger.
  if(order.status==='redeemed'&&(order.legacyLv?.paymentPendingReview||legacyPremiumPaid(order)))return paid;
  return orderGroup(order);
+}
+
+export function orderCurrentStatusLabel(order:Order){
+ return order.status==='redeemed'?orderDisplayGroup(order).label:statuses[order.status];
 }
 
 // Only the operational list is pruned; payroll history retains its original membership.

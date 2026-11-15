@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {orderDisplayGroup,orderDisplayGroups,showOrderInList} from '../lib/order-premium-stage.ts';
+import {orderCurrentStatusLabel,orderDisplayGroup,orderDisplayGroups,showOrderInList} from '../lib/order-premium-stage.ts';
 import {orderGroup,closedOrderCallBlocked} from '../lib/crm.ts';
 assert.deepEqual(orderDisplayGroups.slice(orderDisplayGroups.findIndex(g=>g.id==='paid'),orderDisplayGroups.findIndex(g=>g.id==='paid')+3).map(g=>g.label),['Оплачен','Начислено','Выплачено']);
 const order={status:'redeemed'};
@@ -48,3 +48,8 @@ assert.equal(showOrderInList({status:'rework',manager:'original'},{owner:'origin
 
 assert.equal(showOrderInList(paidOrder,{owner:'original'},'admin'),true);
 assert.equal(showOrderInList(paidOrder,{owner:'other'},'admin'),false);
+
+assert.equal(orderCurrentStatusLabel({status:'redeemed'}),'Оплачен');
+assert.equal(orderCurrentStatusLabel({status:'redeemed',premiumStage:{status:'accrued',periodId:'2026-11-1'}}),'Начислено');
+assert.equal(orderCurrentStatusLabel({status:'redeemed',premiumStage:{status:'paid',periodId:'2026-11-1'}}),'Выплачено');
+assert.equal(orderCurrentStatusLabel({status:'extra'}),'Доп. подтверждение');
