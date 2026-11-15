@@ -29,7 +29,7 @@ import {OrderCancellationNotice} from "@/components/order-cancellation";
 import {basketAmount,isBasketTotal,withBasketTotal} from "@/lib/basket-total";
 import {OperatorPremiumPayout} from "@/components/operator-premium-payout";
 import {premiumPeriods} from "@/lib/premium-periods";
-import {orderCurrentStatusLabel,orderDisplayGroup,orderDisplayGroups,showOrderInList} from "@/lib/order-premium-stage";
+import {paidOrderArchived,orderCurrentStatusLabel,orderDisplayGroup,orderDisplayGroups,showOrderInList} from "@/lib/order-premium-stage";
 import {results as buyoutResults} from '@/lib/redemption';
 import {canEditOrderRedemption,eligibleForRedemption,compareRedemptionPriority} from '@/lib/redemption-priority';
 import {deliveryEstimate} from '@/lib/delivery-estimate';
@@ -388,7 +388,7 @@ export default function Page(){
  const canViewPermissions=employee.role==="admin";
  const permissionView=view==="orders"&&filter==="permissions"&&canViewPermissions;
  const scopedOrders=useMemo(()=>employee.role==="operator"?state.orders.filter(o=>o.manager===actor):employee.role==="department_head"?departmentOrders(state.orders,state.employees,employee):state.orders,[employee,actor,state.orders,state.employees]);
- const visibleOrders=useMemo(()=>view==="orders"?scopedOrders.filter(o=>showOrderInList(o,clientsById.get(o.clientId),employee.role)):scopedOrders,[view,scopedOrders,clientsById,employee.role]);
+ const visibleOrders=useMemo(()=>view==="orders"?scopedOrders.filter(o=>showOrderInList(o,clientsById.get(o.clientId),employee.role,reminderNow)):["moscow","post","shipping"].includes(view)?scopedOrders.filter(o=>!paidOrderArchived(o,reminderNow)):scopedOrders,[view,scopedOrders,clientsById,employee.role,reminderNow]);
  const prioritizeRedemption=view==="orders"&&filter==="sent";
  const redemptionStatuses=state.redemptionStatuses||[];
  const awaitingBuyoutOperator=useMemo(()=>new Set(Object.entries(state.redemptionResults||{}).filter(([,r])=>r.awaitingOperator).map(([id])=>id)),[state.redemptionResults]);

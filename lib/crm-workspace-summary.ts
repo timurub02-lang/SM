@@ -29,7 +29,7 @@ export function buildWorkspaceSummary(state:State,employee:Employee,now=Date.now
  const activeClients=new Set<string>(),transitClients=new Set<string>();
  for(const order of state.orders){const group=orderGroup(order).id;if(['new','accepted','sent'].includes(group))activeClients.add(order.clientId);if(group==='sent')transitClients.add(order.clientId);}
  const scoped=employee.role==='operator'?state.orders.filter(o=>o.manager===employee.id):employee.role==='department_head'?departmentOrders(state.orders,state.employees,employee):state.orders;
- const visible=scoped.filter(o=>clients.has(o.clientId)&&showOrderInList(o,clients.get(o.clientId),employee.role));
+ const visible=scoped.filter(o=>clients.has(o.clientId)&&showOrderInList(o,clients.get(o.clientId),employee.role,now));
  const groups=Object.fromEntries(orderDisplayGroups.map(g=>[g.id,0])),rework:Record<string,number>={};
  for(const order of visible)groups[orderDisplayGroup(order).id]++;
  for(const order of scoped.filter(o=>o.status==='rework')){const key=reworkStage(order,now,state.settings.orderPolicy);rework[key]=(rework[key]||0)+1;}
@@ -39,6 +39,7 @@ export function buildWorkspaceSummary(state:State,employee:Employee,now=Date.now
  const reminders=new Map<string,NonNullable<State['clientReminders']>>();for(const row of state.clientReminders||[]){const rows=reminders.get(row.clientId)||[];rows.push(row);reminders.set(row.clientId,rows);}
  const day=new Date(now+10800000).toISOString().slice(0,10);add(day);
  for(const client of mine){const group=clientWorkStatus(client,workMap.get(client.id),reminders.get(client.id)||[],now,activeClients.has(client.id)).group;if(group==='needed'||group==='planned'||group==='done')work[group]++;add(client.id+':'+group+':'+Number(clientRetentionExpiring(client,activeClients.has(client.id),now,state.retentionPreview?.[client.id]))+':'+Number(now-Date.parse(client.createdAt)<86400000));}
+ for(const order of visible)add('visible:'+order.id);
  for(const order of scoped)add(order.id+':'+(order.status==='rework'?reworkStage(order,now,state.settings.orderPolicy):'')+':'+Number(!!order.due&&Date.parse(order.due)<=now));
  return {
   mine:{all:mine.length,withoutOrders:mine.filter(c=>!activeClients.has(c.id)).length,inTransit:mine.filter(c=>transitClients.has(c.id)).length,expires:mine.filter(c=>clientRetentionExpiring(c,activeClients.has(c.id),now,state.retentionPreview?.[c.id])).length,reworkOrders:state.orders.filter(o=>mineIds.has(o.clientId)&&o.status==='rework').length,scheduledCalls:scheduledCalls(state.orders,employee,state.employees).filter(o=>mineIds.has(o.clientId)).length},

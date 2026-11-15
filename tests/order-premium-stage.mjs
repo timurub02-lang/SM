@@ -16,7 +16,7 @@ console.log('Financial tabs preserve order lifecycle and call restrictions');
 
 const paidOrder={status:'redeemed',manager:'original',premiumStage:{status:'paid',periodId:'2026-10-2'}};
 for(const role of ['operator','department_head']){
- assert.equal(showOrderInList(paidOrder,{owner:'original'},role),true);
+ assert.equal(showOrderInList(paidOrder,{owner:'original'},role),false);
  for(const client of [{owner:''},{owner:'other'},undefined])assert.equal(showOrderInList(paidOrder,client,role),false);
  assert.equal(showOrderInList({...paidOrder,premiumStage:{status:'accrued',periodId:'2026-10-2'}},{owner:''},role),true);
  assert.equal(showOrderInList({...paidOrder,premiumStage:undefined},{owner:''},role),true);
@@ -46,10 +46,32 @@ assert.equal(cdekMoneyLabel({...imported,importedPayment:undefined}),'');
 for(const role of ['operator','department_head'])assert.equal(showOrderInList({status:'rework',manager:'original'},{owner:'original'},role),false);
 assert.equal(showOrderInList({status:'rework',manager:'original'},{owner:'original'},'admin'),true);
 
-assert.equal(showOrderInList(paidOrder,{owner:'original'},'admin'),true);
+assert.equal(showOrderInList(paidOrder,{owner:'original'},'admin'),false);
 assert.equal(showOrderInList(paidOrder,{owner:'other'},'admin'),false);
 
 assert.equal(orderCurrentStatusLabel({status:'redeemed'}),'Оплачен');
 assert.equal(orderCurrentStatusLabel({status:'redeemed',premiumStage:{status:'accrued',periodId:'2026-11-1'}}),'Начислено');
 assert.equal(orderCurrentStatusLabel({status:'redeemed',premiumStage:{status:'paid',periodId:'2026-11-1'}}),'Выплачено');
 assert.equal(orderCurrentStatusLabel({status:'extra'}),'Доп. подтверждение');
+
+const {paidOrderArchived}=await import('../lib/order-premium-stage.ts');
+const {filteredOrderList}=await import('../lib/crm-order-list.ts');
+const paidAt='2026-11-20T12:00:00Z',deadline=Date.parse(paidAt)+48*3600000;
+const fresh={...paidOrder,id:'paid-delay',clientId:'client',createdAt:paidAt,items:[],delivery:'moscow_courier',priorPremiumPaid:{at:'2026-11-01T00:00:00Z'},premiumStage:{status:'paid',periodId:'2026-11-2',paidAt}};
+const savedPaid=JSON.stringify(fresh);
+for(const role of ['admin','operator','department_head','logistic','chief_logistic']){
+ assert.equal(showOrderInList(fresh,{owner:''},role,deadline-1),true);
+ assert.equal(showOrderInList(fresh,{owner:'original'},role,deadline),false);
+}
+assert.equal(paidOrderArchived({...fresh,premiumStage:{status:'accrued',periodId:'2026-11-2'}},deadline),false);
+assert.equal(paidOrderArchived({...fresh,status:'returned'},deadline),false);
+assert.equal(paidOrderArchived({...fresh,premiumStage:{status:'paid',periodId:'2026-11-1',paidAt:'2026-11-15T20:00:00Z'}},Date.parse('2026-11-15T21:31:00Z')),true);
+for(const [view,delivery] of [['orders','moscow_courier'],['moscow','moscow_courier'],['post','russian_post']]){
+ const state={clients:[{id:'client',name:'Client',phone:'',city:'',owner:'original'}],employees:[],orders:[{...fresh,delivery}],settings:{orderPolicy:{}}};
+ const q={view,filter:'all',query:'',showNextPremium:false};
+ assert.equal(filteredOrderList(state,{id:'admin',role:'admin'},q,deadline-1).length,1);
+ assert.equal(filteredOrderList(state,{id:'admin',role:'admin'},q,deadline).length,0);
+ assert.equal(state.orders.length,1);
+}
+assert.equal(JSON.stringify(fresh),savedPaid);
+console.log('Paid order archive: immediate historical hide, 48h boundary, all roles, orders/Moscow/Post, no data mutation passed');
