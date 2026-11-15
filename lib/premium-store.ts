@@ -1,3 +1,4 @@
+import {premiumPeriods} from './premium-periods';
 import {partnerCalculation,defaultPartnerSettings,type PartnerSettings} from './partner-cash';
 import {readPremiumStateFrom} from './premium-read';
 import {db} from './db';
@@ -15,7 +16,8 @@ export async function savePremiumLedger(state:Awaited<ReturnType<typeof readPrem
  const partnerDraft=partnerAccount?await d.prepare('SELECT data FROM settings WHERE id=?').bind('partner-cash:'+period).first<{data:string}>():null;
  const partnerSettings:PartnerSettings=partnerDraft?JSON.parse(partnerDraft.data):{...defaultPartnerSettings,taxRate:partnerAccount?JSON.parse(partnerAccount.data).taxRate:null,bank:partnerAccount?JSON.parse(partnerAccount.data).bank??0:0};
  const partnerReport=partnerAccount?partnerCalculation(next.periods[period].orders||[],state.orders,next.periods[period].rows||[],partnerSettings):null;
- if(partnerReport&&partnerReport.remaining===null)throw Error('Заполните налог и проверьте товары в кассе Эмиля перед закрытием периода');
+ if(partnerReport&&partnerReport.remaining===null)throw Error('Заполните налог и проверьте товары и минуты СК в кассе Эмиля перед закрытием периода');
+ if(partnerReport&&(partnerSettings.minutePrice??0)>0&&Date.parse(partnerSettings.minutes?.through||'')<Date.parse(premiumPeriods.find(p=>p.id===period)!.cutoff+'T23:59:59+03:00'))throw Error('Обновите минуты СК за весь период в кассе Эмиля перед закрытием');
  const partnerGuard=partnerAccount?" AND EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?":paid?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account')":'';
  const partnerGuardValues=partnerAccount?[partnerAccount.data,'partner-cash:'+period,partnerDraft?.data||'']:[];
  const serialized=JSON.stringify(next);
