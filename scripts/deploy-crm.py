@@ -161,11 +161,11 @@ def activate(target,previous,state):
 
 def run(rollback=None):
     recover_slots()
-    if not reap_slots() and not rollback:print('Previous Nginx connections are draining; update deferred');return
     state=json.loads((BASE/'deploy-state.json').read_text());previous=current()
     if (BASE/'deploy-paused').exists() and not rollback:print('Automatic deployment is paused');return
     if not NAME.fullmatch(previous.name):raise RuntimeError('Legacy publication detected; reconcile source before resuming')
     if rollback:
+        reap_slots()
         if rollback not in state['history'] or not NAME.fullmatch(rollback):raise ValueError('Choose an available rollback release')
         target=BASE/'releases'/rollback
         if target==previous:print('Already current');return
@@ -176,9 +176,12 @@ def run(rollback=None):
     tag=release.get('tag_name','')
     if release.get('draft') or release.get('prerelease') or not re.fullmatch(r'crm-[0-9a-f]{40}',tag):raise ValueError('Not a production CRM release')
     sha=tag[4:];name='gh-'+sha
-    if previous.name==name:print('Already current: '+sha);return
+    if previous.name==name:
+        reap_slots()
+        print('Already current: '+sha);return
     if json.loads(get(API+'/commits/main'))['sha']!=sha:print('Waiting for the latest main build');return
     if not idle():print('Active call; update deferred');return
+    if not reap_slots():print('Previous CRM requests are draining; update deferred');return
     if shutil.disk_usage(BASE).free<1024**3:raise RuntimeError('Need at least 1 GiB free')
     assets={a['name']:a for a in release['assets']}
     def asset(name,limit):
@@ -218,6 +221,10 @@ SLOTS={'blue':(3000,3101),'green':(3002,3102)}
 UPSTREAM=pathlib.Path('/etc/nginx/conf.d/sm-crm-upstream.conf')
 NGINX_PID=pathlib.Path('/run/nginx.pid')
 PROBE_PORT=3099
+ROUTER_CONFIG=pathlib.Path('/etc/nginx/sm-crm-router/nginx.conf')
+ROUTER_UPSTREAM=pathlib.Path('/etc/nginx/sm-crm-router/upstream.conf')
+ROUTER_PID=pathlib.Path('/run/sm-crm-router/nginx.pid')
+ROUTER_PROBE_PORT=3097
 
 def slots():
     path=BASE/'blue-green.json'
@@ -263,22 +270,23 @@ def process_identity(pid):
     except FileNotFoundError:return None
 
 def nginx_workers():
-    master=int(NGINX_PID.read_text())
+    master=int((ROUTER_PID if ROUTER_CONFIG.is_file() else NGINX_PID).read_text())
     children=pathlib.Path('/proc/'+str(master)+'/task/'+str(master)+'/children').read_text().split()
     return [identity for pid in children if (identity:=process_identity(pid))]
 
 def route_slot(name,slot):
     port=SLOTS[name][0];release=slot['release']
-    atomic_text(UPSTREAM, 'upstream sm_crm_web { server 127.0.0.1:'+str(port)+'; }\n'
-        'server { listen 127.0.0.1:'+str(PROBE_PORT)+'; server_name localhost;\n'
+    router=ROUTER_CONFIG.is_file();probe=ROUTER_PROBE_PORT if router else PROBE_PORT
+    atomic_text(ROUTER_UPSTREAM if router else UPSTREAM, 'upstream sm_crm_web { server 127.0.0.1:'+str(port)+'; }\n'
+        'server { listen 127.0.0.1:'+str(probe)+'; server_name localhost;\n'
         ' location / { proxy_pass http://sm_crm_web; proxy_set_header Host crm.smanalytics.ru;\n'
         ' add_header X-SM-Release "'+release+'" always; }\n}\n')
-    subprocess.run(['nginx','-t'],check=True,capture_output=True)
-    subprocess.run(['systemctl','reload','nginx'],check=True)
+    subprocess.run(['nginx','-t']+(['-c',str(ROUTER_CONFIG)] if router else []),check=True,capture_output=True)
+    subprocess.run(['systemctl','reload','sm-crm-router' if router else 'nginx'],check=True)
     # A successful signal is not proof that new workers loaded this generation.
     for _ in range(30):
         try:
-            with urllib.request.urlopen('http://127.0.0.1:'+str(PROBE_PORT)+'/login',timeout=3) as response:
+            with urllib.request.urlopen('http://127.0.0.1:'+str(probe)+'/login',timeout=3) as response:
                 if response.status==200 and response.headers.get('X-SM-Release')==release and b'<html' in response.read(1024*1024):return
         except Exception:pass
         time.sleep(.2)
@@ -322,7 +330,7 @@ def reap_slots():
     if not state or not state.get('draining'):return True
     drain=state['draining']
     # Include old Nginx workers: buffered uploads may not yet have an upstream socket.
-    # shortcut: long-lived phone WebSockets defer reuse of this slot; never truncate them.
+    # With sm-crm-router these are CRM-only workers; the public phone proxy is never reloaded here.
     if any(process_identity(identity[0])==identity for identity in drain['workers']):return False
     name=drain['slot']
     if name==state['active']:raise RuntimeError('Refusing to stop active slot')
