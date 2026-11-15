@@ -13,7 +13,7 @@ export async function partnerAccountView(period:string){
  const settlements:PartnerSettlements=stored?JSON.parse(stored.data):emptySettlements;
  const emil=state.employees.find(isEmil);if(!emil)throw Error('Не найдена касса Эмиля');
  await initCash();
- const cash=await d.prepare('SELECT id,amount,accepted_at,recipient FROM cash_operations WHERE sender=?').bind(emil.id).all<{id:string;amount:number;accepted_at:string|null;recipient:string|null}>();
+ const cash=await d.prepare('SELECT id,amount,accepted_at,recipient,sender FROM cash_operations WHERE sender=? OR recipient=?').bind(emil.id,emil.id).all<{id:string;amount:number;accepted_at:string|null;recipient:string|null;sender:string|null}>();
  const accepted=new Set(cash.results.filter(r=>r.accepted_at).map(r=>r.id));
  const obligations:ReturnType<typeof partnerObligations>=[];let transferred=0,taxReserve:number|null=0,opening=settlements.opening;
  for(const id of Object.keys(state.ledger.periods).filter(id=>id>=config.startPeriod&&id<=period).sort()){
@@ -27,11 +27,11 @@ export async function partnerAccountView(period:string){
   transferred+=report.transferred;
   const reserve=rows.find(r=>r.kind==='tax')!.remaining;taxReserve=taxReserve===null||reserve===null?null:taxReserve+reserve;
   const ids=new Set(settlements.entries.filter(e=>e.period===id&&e.action==='pay').map(e=>e.id));
-  const spent=cash.results.filter(r=>ids.has(r.id)||r.id==='premium:'+id+':'+emil.id).reduce((sum,r)=>sum+r.amount,0);
+  const spent=cash.results.filter(r=>ids.has(r.id)||r.id==='premium:'+id+':'+emil.id||r.id.startsWith('partner-expense:'+id+':')).reduce((sum,r)=>sum+(r.sender===emil.id?r.amount:-r.amount),0);
   if(id<period)opening+=report.transferred-spent;
  }
  const selectedIds=new Set(settlements.entries.filter(e=>e.period>=config.startPeriod&&e.period<=period&&e.action==='pay').map(e=>e.id));
- const spent=cash.results.filter(r=>selectedIds.has(r.id)||Object.keys(state.ledger!.periods).some(id=>id>=config.startPeriod&&id<=period&&r.id==='premium:'+id+':'+emil.id)).reduce((sum,r)=>sum+r.amount,0);
+ const spent=cash.results.filter(r=>selectedIds.has(r.id)||Object.keys(state.ledger!.periods).some(id=>id>=config.startPeriod&&id<=period&&(r.id==='premium:'+id+':'+emil.id||r.id.startsWith('partner-expense:'+id+':')))).reduce((sum,r)=>sum+(r.sender===emil.id?r.amount:-r.amount),0);
  const balance=settlements.opening+transferred-spent;
  return {costVersions:JSON.stringify(costRows.results.map(r=>[r.id,r.data])),state,account,stored,settlements,emil,opening,obligations,balance,taxReserve,available:taxReserve===null?null:balance-taxReserve,administrators:state.employees.filter(e=>e.role==='admin'&&!e.cashDisabled).map(e=>({id:e.id,name:e.name})),config};
 }

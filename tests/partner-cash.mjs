@@ -27,3 +27,8 @@ const groups=partnerRegistries([groupedReceipt,{...groupedReceipt,order:'two',ta
 assert.equal(groups.length,3);assert.equal(groups[0].tax,null);
 const combined=groups.find(g=>g.orders.length===2);assert.equal(combined.collected,20000);assert.equal(combined.transferred,18000);assert.equal(combined.tax,1401);
 assert.equal(partnerCalculation([member],[order],payroll,{...settings,productUnitPrice:125.5}).products[0].price,125.5);
+const minutes={updatedAt:'2026-11-15T12:00:00Z',through:'2026-11-15T12:00:00Z',missing:[],rows:[{employeeId:'op',login:'op',billed:354,seconds:15097}]};
+const metered=partnerCalculation([member],[order],payroll,{...settings,minutePrice:1,minutes});
+assert.equal(metered.communication,Math.round(settings.communication*100)+35400);
+assert.equal(partnerCalculation([member],[order],payroll,{...settings,minutePrice:1}).remaining,null);
+assert.equal(partnerCalculation([member],[order],payroll,{...settings,minutePrice:1,minutes:{...minutes,missing:['missing']}}).remaining,null);

@@ -81,5 +81,18 @@ try{
  assert.equal((await settle('pay','share1',1)).status,200);
  const after=(await call(currentPath,cookies.admin)).data;assert.equal(after.remaining,loss.data.remaining,'Old debts do not reduce new profit');
  assert.equal(after.obligations.find(r=>r.period===period&&r.kind==='goods').pending,40000);
+ const expenseId=crypto.randomUUID(),expenseBefore=(await call(currentPath,cookies.admin)).data;
+ const expenseBody={action:'expense_add',id:expenseId,period:next,revision:expenseBefore.settings.revision,name:'Вода',amount:123.45,date:'2026-11-10'};
+ assert.equal((await call(currentPath,cookies.operator,expenseBody)).status,403);
+ assert.equal((await call(currentPath,cookies.A_Emil,{...expenseBody,date:'2026-10-01'})).status,400);
+ const expenseAdded=await call(currentPath,cookies.A_Emil,expenseBody);assert.equal(expenseAdded.status,200,JSON.stringify(expenseAdded.data));
+ assert.equal(expenseAdded.data.accountBalance,expenseBefore.accountBalance-12345);
+ assert.equal(expenseAdded.data.remaining,expenseBefore.remaining-12345);
+ assert.equal(expenseAdded.data.accountRemaining,expenseBefore.accountRemaining-12345);
+ assert.equal((await call(currentPath,cookies.A_Emil,expenseBody)).data.accountBalance,expenseAdded.data.accountBalance);
+ const removeBody={action:'expense_remove',id:expenseId,period:next,revision:expenseAdded.data.settings.revision};
+ const removed=await call(currentPath,cookies.A_Emil,removeBody);assert.equal(removed.status,200,JSON.stringify(removed.data));assert.equal(removed.data.accountBalance,expenseBefore.accountBalance);assert.equal(removed.data.remaining,expenseBefore.remaining);
+ assert.equal((await call(currentPath,cookies.A_Emil,removeBody)).data.accountBalance,expenseBefore.accountBalance);
+ assert.equal((await call(path,cookies.admin,{...expenseBody,id:crypto.randomUUID(),period,date:'2026-11-01'})).status,400);
  console.log('Partner HTTP: access, cash vs estimates, Emil signature, payroll once, partial payment, acceptance, retry, debt carry and unchanged future profit passed');
 }catch(e){console.error(logs);throw e;}finally{if(server&&server.exitCode===null){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

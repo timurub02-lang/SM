@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {readPartnerMinutes} from '../lib/partner-minutes-sync.ts';
+const d=openDatabase(':memory:');
+await d.prepare('CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)').run();
+await d.prepare('CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)').run();
+for(const [id,data] of Object.entries({skorozvon:{login:'test',apiKey:'test',clientId:'test',clientSecret:'test'},'activity-sk-map':{op:7}}))await d.prepare('INSERT INTO settings VALUES(?,?)').bind(id,JSON.stringify(data)).run();
+for(const e of [{id:'op',login:'A_test',role:'operator',department:'5'},{id:'missing',login:'A_missing',role:'operator',department:'5'},{id:'other',role:'operator',department:'4'}])await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
+const period={from:'2026-01-01',cutoff:'2026-01-09'};
+const call={id:'1',user:{id:7},duration:121,durations:{billed:3}};
+let rows=[call,{id:'2',user:{id:8}}],total=2;
+const request=async(url,init)=>url.endsWith('/oauth/token')?Response.json({access_token:'fixture'}):(assert.equal(JSON.parse(init.body).end_time,Math.floor(Date.parse('2026-01-09T23:59:59+03:00')/1000)),Response.json({data:rows,total,total_pages:1}));
+const result=await readPartnerMinutes(period,d,request,async()=>{});
+assert.deepEqual(result.rows,[{employeeId:'op',login:'A_test',billed:3,seconds:121}]);assert.deepEqual(result.missing,['A_missing']);
+rows=[call,call];await assert.rejects(readPartnerMinutes(period,d,request,async()=>{}),/Повтор/);
+rows=[{...call,durations:{}}];total=1;await assert.rejects(readPartnerMinutes(period,d,request,async()=>{}),/не указал/);
+rows=[call];total=2;await assert.rejects(readPartnerMinutes(period,d,request,async()=>{}),/не все/);
+d.close();console.log('SK minutes: billed vs actual, department scope, missing mapping, duplicates and incomplete report passed');

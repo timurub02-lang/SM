@@ -1,8 +1,10 @@
+import {communicationCents,type PartnerMinutes} from './partner-minutes.ts';
 import type {Employee,Order} from './crm.ts';
 import type {PayrollOrder,PayrollRow} from './premium-ledger.ts';
 import {premiumRemittance} from './cdek-remittance.ts';
 export const isEmil=(e:Pick<Employee,'login'>)=>e.login==='A_Emil';
-export type PartnerSettings={revision:string;taxRate:number|null;communication:number;bank:number;productUnitPrice?:number;productPrices?:Record<string,number>};
+export type PartnerExpense={id:string;name:string;date:string;amount:number;at:string;by:string;removedAt?:string;removedBy?:string};
+export type PartnerSettings={revision:string;taxRate:number|null;communication:number;bank:number;minutePrice?:number;minutes?:PartnerMinutes;expenses?:PartnerExpense[];productUnitPrice?:number;productPrices?:Record<string,number>};
 export const defaultPartnerSettings:PartnerSettings={revision:'',taxRate:null,communication:0,bank:0};
 export function partnerCalculation(members:PayrollOrder[],orders:Order[],payroll:PayrollRow[],settings:PartnerSettings){
  const byId=new Map(orders.map(o=>[o.id,o]));
@@ -28,10 +30,11 @@ export function partnerCalculation(members:PayrollOrder[],orders:Order[],payroll
  const goods=[...products.values()].reduce((s,r)=>s+r.total,0);
  const normal=payroll.filter(r=>r.department==='5'&&!r.input.sz);
  const premium=normal.some(r=>r.payout===null)?null:normal.reduce((s,r)=>s+Math.round(r.payout!*100),0);
- const balance=tax===null?null:transferred-tax-Math.round((settings.communication+settings.bank)*100)-goods;
+ const communication=communicationCents(settings),expenses=(settings.expenses||[]).filter(e=>!e.removedAt).reduce((sum,e)=>sum+e.amount,0);
+ const balance=tax===null||communication===null?null:transferred-tax-communication-Math.round(settings.bank*100)-goods-expenses;
  const remaining=balance===null||premium===null||missingProducts?null:balance-premium;
  const share=remaining===null?null:Math.floor(remaining/2);
- return {receipts,products:[...products.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru')),orderCount:seen.size,missingProducts,collected,transferred,tax,goods,premium,balance,remaining,ourShare:share,partnerShare:remaining===null?null:remaining-share!};
+ return {receipts,products:[...products.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru')),expenses,communication,orderCount:seen.size,missingProducts,collected,transferred,tax,goods,premium,balance,remaining,ourShare:share,partnerShare:remaining===null?null:remaining-share!};
 }
 
 export function partnerRegistries(receipts:(Omit<ReturnType<typeof partnerCalculation>['receipts'][number],'slot'>&{slot?:number})[]){
