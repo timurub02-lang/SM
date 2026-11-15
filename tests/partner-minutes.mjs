@@ -1,3 +1,4 @@
+import {minutesFinal} from '../lib/partner-minutes.ts';
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
 import {readPartnerMinutes} from '../lib/partner-minutes-sync.ts';
@@ -16,3 +17,11 @@ rows=[call,call];await assert.rejects(readPartnerMinutes(period,d,request,async(
 rows=[{...call,durations:{}}];total=1;await assert.rejects(readPartnerMinutes(period,d,request,async()=>{}),/не указал/);
 rows=[call];total=2;await assert.rejects(readPartnerMinutes(period,d,request,async()=>{}),/не все/);
 d.close();console.log('SK minutes: billed vs actual, department scope, missing mapping, duplicates and incomplete report passed');
+
+const end=Date.parse(period.cutoff+'T23:59:59+03:00');
+const complete={...result,missing:[],through:new Date(end).toISOString()};
+assert.equal(minutesFinal(period,complete,end-1000),false);
+assert.equal(minutesFinal(period,complete,end+1000),true);
+assert.equal(minutesFinal(period,result,end+1000),false);
+assert.equal(minutesFinal(period,{...complete,through:new Date(end-1000).toISOString()},end+1000),false);
+assert.equal(minutesFinal(period,undefined,end+1000),false);
