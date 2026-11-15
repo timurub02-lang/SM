@@ -1,3 +1,4 @@
+import {initCdekUnmatched,saveCdekUnmatched,resolveCdekUnmatched} from './cdek-unmatched.ts';
 import {initCdekHistoryRecovery,recoverCdekHistory} from './cdek-history-recovery.ts';
 import {z} from 'zod';
 import {cdekToken} from './cdek.ts';
@@ -24,6 +25,7 @@ export function registryPayments(data:unknown,slot:number):CdekRemittance[]{
 export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new Date().toISOString(),dryRun=false,allowedIds?:Set<string>){
  const payments=registryPayments(data,slot);
  await initCdekHistoryRecovery(d);
+ await initCdekUnmatched(d);
  const rows=(await d.prepare(`SELECT o.id,o.data,o.version,s.data shipment FROM orders o LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id WHERE (json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') OR (json_extract(o.data,'$.delivery') IS NULL AND json_extract(o.data,'$.cdekHistoryRecovery') IS NOT NULL))`).all()).results;
  const byTracking=new Map<string,{id:string;data:string;version:number;shipment:string|null;order:Order;slot?:number}[]>();
  for(const row of rows){
@@ -41,16 +43,17 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
   if(candidates.length>1){result.ambiguous++;continue;}
   if(!candidates.length&&!allowedIds){
    const recovery=await recoverCdekHistory(d,tracking,receipts,at,dryRun);
-   if(recovery.status==='created'){result.recovered++;result.orderIds.push(recovery.id);if(recovery.conflict)result.conflicts++;else result.added++;continue;}
-   if(recovery.status==='archived'){result.archived++;continue;}
+   if(recovery.status==='created'){if(!dryRun)await resolveCdekUnmatched(d,receipts);result.recovered++;result.orderIds.push(recovery.id);if(recovery.conflict)result.conflicts++;else result.added++;continue;}
+   if(recovery.status==='archived'){if(!dryRun)await resolveCdekUnmatched(d,receipts);result.archived++;continue;}
    if(recovery.status==='ambiguous'){result.ambiguous++;continue;}
    if(recovery.status==='race'){result.races++;continue;}
+   if(!dryRun)await saveCdekUnmatched(d,receipts,at);
   }
   const row=candidates[0];
   if(!row||row.slot&&row.slot!==slot||row.order.status!=='redeemed'||row.order.testOnly||allowedIds&&!allowedIds.has(row.id)){result.unmatched++;continue;}
   const previous:CdekRemittance[]=row.order.cdekRemittances||[];
   const next=[...previous];for(const receipt of receipts)if(!next.some(x=>sameRemittance(x,receipt)))next.push(receipt);
-  if(next.length===previous.length){result.unchanged++;continue;}
+  if(next.length===previous.length){if(!dryRun)await resolveCdekUnmatched(d,receipts);result.unchanged++;continue;}
   const conflict=hasRemittanceConflict({cdekRemittances:next});
   const mutation=crypto.randomUUID(),text=conflict?'СДЭК: несколько положительных перечислений по заказу — требуется проверка администратора':`СДЭК: деньги получены, реестр №${next[0].registry}, дата перечисления ${next[0].paymentDate}${next.length>1?' · дубль сохранён без повторного начисления':''}`;
   if(!dryRun){
@@ -62,6 +65,7 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
    ]);
    if(!batch[0].meta.changes){result.races++;continue;}
   }
+  if(!dryRun)await resolveCdekUnmatched(d,receipts);
   result.orderIds.push(row.id);if(conflict)result.conflicts++;else result.added++;
  }
  return result;

@@ -51,6 +51,7 @@ jobs:
         run: |
           node tests/run-units.mjs
           node tests/exports-http.mjs
+          node tests/cdek-unmatched-http.mjs
           node --experimental-strip-types tests/crm-events-http.mjs
             node --experimental-strip-types tests/crm-workspace-http.mjs
             node --experimental-strip-types tests/crm-summaries-http.mjs
@@ -62,6 +63,7 @@ jobs:
           node --experimental-strip-types tests/postal-form-http.mjs
           node --experimental-strip-types tests/cdek-delete-http.mjs
           node --experimental-strip-types tests/cdek-remittances.mjs
+          node --experimental-strip-types tests/employee-role-label.mjs
           node --experimental-strip-types tests/legacy-premium-paid.mjs
           node --experimental-strip-types tests/leader-premium-edit.mjs
           node --experimental-strip-types tests/premium-departments.mjs
