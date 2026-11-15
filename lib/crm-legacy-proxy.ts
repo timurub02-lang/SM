@@ -40,7 +40,7 @@ export async function proxyLegacySnapshot(request:Request,employee?:Employee,sen
    output.set('Content-Encoding','br');output.set('Vary','Cookie, Accept-Encoding');
    const etag=output.get('ETag');if(etag&&!etag.startsWith('W/'))output.set('ETag','W/'+etag);
    // Compress while forwarding, without buffering/parsing the full snapshot on the web worker.
-   const stream=pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),createBrotliCompress({params:{[constants.BROTLI_PARAM_QUALITY]:1}}),()=>{});
+   const stream=pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),createBrotliCompress({params:{[constants.BROTLI_PARAM_QUALITY]:4}}),()=>{});
    return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>,{status:response.status,headers:output});
   }
   return new Response(response.body,{status:response.status,headers:output});
