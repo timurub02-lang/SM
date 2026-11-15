@@ -60,8 +60,11 @@ try{
  delete process.env.CRM_LEGACY_SNAPSHOT_WORKER;mode='slow';process.env.CRM_LEGACY_SNAPSHOT_TIMEOUT_MS='100';
  assert.equal((await proxyLegacySnapshot(request(),actor)).status,503,'timeout must not fall back to main computation');
  const abort=new AbortController();abort.abort();assert.equal((await proxyLegacySnapshot(request('',{signal:abort.signal}),actor)).status,503);
- mode='stream';response=await proxyLegacySnapshot(request(),actor);assert.equal(response.status,200);await assert.rejects(()=>response.text(),'deadline still applies after headers');
- process.env.CRM_LEGACY_SNAPSHOT_TIMEOUT_MS='30000';const active=new AbortController();response=await proxyLegacySnapshot(request('',{signal:active.signal}),actor);active.abort();await assert.rejects(()=>response.text(),'client abort cancels streaming body');
+ for(const headers of [{},{'Accept-Encoding':'br'}]){
+  process.env.CRM_LEGACY_SNAPSHOT_TIMEOUT_MS='100';mode='stream';response=await proxyLegacySnapshot(request('',{headers}),actor);assert.equal(response.status,200);await assert.rejects(()=>response.text(),'deadline still applies after headers, including compression');
+  process.env.CRM_LEGACY_SNAPSHOT_TIMEOUT_MS='30000';const active=new AbortController();response=await proxyLegacySnapshot(request('',{signal:active.signal,headers}),actor);active.abort();await assert.rejects(()=>response.text(),'client abort cancels streaming body, including compression');
+ }
+
  server.closeAllConnections();await new Promise(resolve=>server.close(resolve));server=undefined;
  assert.equal((await proxyLegacySnapshot(request(),actor)).status,503,'worker down must not fall back');
  console.log('PASS legacy snapshot proxy: default-off, role/route isolation, transport, compression, redirects, timeout and worker failure');
