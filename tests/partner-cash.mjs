@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {partnerCalculation,defaultPartnerSettings,isEmil} from '../lib/partner-cash.ts';
+import {partnerRegistries,partnerCalculation,defaultPartnerSettings,isEmil} from '../lib/partner-cash.ts';
 const member={id:'LV-1',externalId:'1',department:'5'};
 const receipt={registry:'10',paymentDate:'2026-11-12',collectedCents:1130000,amountCents:767670};
 const order={id:'LV-1',items:[{name:'Товар',quantity:2}],cdekRemittances:[receipt,{...receipt,registry:'11'}]};
@@ -21,3 +21,9 @@ const priced=partnerCalculation([member],[order],payroll,{...settings,productPri
 assert.equal(priced.products.find(p=>p.name===order.items[0].name).price,125.50);
 assert.equal(priced.goods,priced.products.reduce((sum,p)=>sum+p.total,0));
 assert.equal(priced.remaining,priced.transferred-priced.tax-15000-priced.goods-priced.premium);
+
+const groupedReceipt={order:'one',slot:1,registry:'123',date:'2026-11-12',collected:10000,transferred:9000,tax:700};
+const groups=partnerRegistries([groupedReceipt,{...groupedReceipt,order:'two',tax:701},{...groupedReceipt,slot:2,order:'three'},{...groupedReceipt,date:'2026-11-13',order:'four',tax:null}]);
+assert.equal(groups.length,3);assert.equal(groups[0].tax,null);
+const combined=groups.find(g=>g.orders.length===2);assert.equal(combined.collected,20000);assert.equal(combined.transferred,18000);assert.equal(combined.tax,1401);
+assert.equal(partnerCalculation([member],[order],payroll,{...settings,productUnitPrice:125.5}).products[0].price,125.5);

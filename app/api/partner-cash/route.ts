@@ -1,3 +1,5 @@
+import {partnerAccountView} from '@/lib/partner-account';
+import {partnerPayment} from '@/lib/partner-payment';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
@@ -21,19 +23,23 @@ async function handle(req:Request){
   const calendar=premiumPeriods.find(p=>p.id===period);
   if(!calendar||!ledger.periods[period])throw Error('Период не найден');
   const account=await d.prepare("SELECT data FROM settings WHERE id='partner-cash-account'").first<{data:string}>();
-  const accountData=account?JSON.parse(account.data) as {startPeriod:string;taxRate:number|null}:null;
+  const accountData=account?JSON.parse(account.data) as {startPeriod:string;taxRate:number|null;bank?:number}:null;
   const key='partner-cash:'+period;
   const old=await d.prepare('SELECT data FROM settings WHERE id=?').bind(key).first<{data:string}>();
-  let settings:PartnerSettings=old?JSON.parse(old.data):{...defaultPartnerSettings,taxRate:accountData?.taxRate??null};
+  let settings:PartnerSettings=old?JSON.parse(old.data):{...defaultPartnerSettings,taxRate:accountData?.taxRate??null,bank:accountData?.bank??0};
+  const bodyInput=req.method==='POST'?await req.json():null;
+  if(bodyInput&&typeof bodyInput==='object'&&'action' in bodyInput){await partnerPayment(actor,bodyInput);return handle(new Request(req.url,{headers:req.headers}));}
   if(req.method==='POST'){
    if(actor.role!=='admin')return Response.json({error:'Настройки изменяет администратор'},{status:403});
+   const settlements=await d.prepare("SELECT data FROM settings WHERE id='partner-settlements'").first<{data:string}>();
+   if(settlements&&JSON.parse(settlements.data).entries.some((e:{period:string;action:string})=>e.period===period&&e.action==='pay'))return Response.json({error:'По периоду уже начаты выплаты. Расходы защищены от изменений.'},{status:409});
    if(ledger.periods[period].status==='paid')return Response.json({error:'Период уже выплачен'},{status:409});
-   const body=z.object({revision:z.string(),taxRate:z.number().finite().min(0).max(100).nullable(),communication:z.number().finite().min(0).max(100000000),bank:z.number().finite().min(0).max(100000000),productPrices:z.record(z.string().min(1).max(500),z.number().finite().min(0).max(100000000).multipleOf(0.01)).optional()}).parse(await req.json());
+   const body=z.object({revision:z.string(),taxRate:z.number().finite().min(0).max(100).nullable(),communication:z.number().finite().min(0).max(100000000),bank:z.number().finite().min(0).max(100000000),productUnitPrice:z.number().finite().min(0).max(100000000).multipleOf(0.01).optional(),productPrices:z.record(z.string().min(1).max(500),z.number().finite().min(0).max(100000000).multipleOf(0.01)).optional()}).parse(bodyInput);
    if(body.revision!==settings.revision)return Response.json({error:'Данные изменились. Обновите окно.'},{status:409});
    settings={...body,revision:crypto.randomUUID()};const data=JSON.stringify(settings);
-   const guard="EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id='partner-cash-account'),'')=?";
-   const change=old?d.prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND '+guard).bind(data,key,old.data,initial!.data,account?.data||''):d.prepare('INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE '+guard).bind(key,data,initial!.data,account?.data||'');
-   const accountValue=JSON.stringify({startPeriod:accountData?.startPeriod||ledger.activePeriod,taxRate:settings.taxRate});
+   const guard="EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id='partner-cash-account'),'')=? AND COALESCE((SELECT data FROM settings WHERE id='partner-settlements'),'')=?";
+   const change=old?d.prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND '+guard).bind(data,key,old.data,initial!.data,account?.data||'',settlements?.data||''):d.prepare('INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE '+guard).bind(key,data,initial!.data,account?.data||'',settlements?.data||'');
+   const accountValue=JSON.stringify({startPeriod:accountData?.startPeriod||ledger.activePeriod,taxRate:settings.taxRate,bank:settings.bank});
    const [result]=await d.batch([change,d.prepare("INSERT INTO settings(id,data) SELECT 'partner-cash-account',? WHERE EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(accountValue,key,data)]);
    if(!result.meta.changes)return Response.json({error:'Данные изменились. Обновите окно.'},{status:409});
   }
@@ -41,14 +47,8 @@ async function handle(req:Request){
   const frozen=await d.prepare('SELECT data FROM settings WHERE id=?').bind('partner-cash-closed:'+period).first<{data:string}>();
   const calculation=frozen?JSON.parse(frozen.data) as ReturnType<typeof partnerCalculation>:partnerCalculation(periodOrders(state.ledger!,period,state.orders,state.employees),state.orders,ledgerRows(state.ledger!,period,state.orders,state.employees,state.adjustments),settings);
   if(frozen)settings=JSON.parse(frozen.data).settings;
-  const startPeriod=accountData?.startPeriod||ledger.activePeriod;
-  let opening:number|null=0;
-  for(const id of Object.keys(ledger.periods).filter(id=>id>=startPeriod&&id<period)){
-   const closed=await d.prepare('SELECT data FROM settings WHERE id=?').bind('partner-cash-closed:'+id).first<{data:string}>();
-   const previous=closed?JSON.parse(closed.data) as ReturnType<typeof partnerCalculation>:null;
-   if(previous?.remaining==null){opening=null;break;}opening+=previous.remaining;
-  }
-  return Response.json({period,calendar,opening,startPeriod,accountBalance:opening===null||calculation.balance===null?null:opening+calculation.balance,accountRemaining:opening===null||calculation.remaining===null?null:opening+calculation.remaining,periods:Object.keys(ledger.periods).sort().reverse().map(id=>({id,label:premiumPeriods.find(p=>p.id===id)?.label||id})),settings,editable:actor.role==='admin'&&ledger.periods[period].status!=='paid',...calculation},{headers:{'Cache-Control':'no-store'}});
+  const view=await partnerAccountView(period);const opening=view.opening,startPeriod=view.config.startPeriod;
+  return Response.json({period,calendar,opening,startPeriod,accountBalance:view.balance,accountRemaining:view.available===null?null:view.available-view.obligations.filter(r=>r.kind!=='tax'&&!r.kind.startsWith('share')).reduce((n,r)=>n+(r.remaining||0),0)-(ledger.periods[period].status==='paid'?0:calculation.premium||0),taxReserve:view.taxReserve,available:view.available,settlementRevision:view.settlements.revision,initialBalance:view.settlements.opening,canSetOpening:actor.role==='admin'&&!view.settlements.entries.length,obligations:view.obligations.filter(r=>r.period===period||(r.remaining||0)>0||r.pending>0),administrators:view.administrators,settlements:view.settlements.entries,closed:ledger.periods[period].status==='paid',periods:Object.keys(ledger.periods).sort().reverse().map(id=>({id,label:premiumPeriods.find(p=>p.id===id)?.label||id})),settings,editable:actor.role==='admin'&&ledger.periods[period].status!=='paid'&&!view.settlements.entries.some(e=>e.period===period&&e.action==='pay'),...calculation},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте налог и расходы':e instanceof Error?e.message:'Ошибка кассы'},{status:400});}
 }
 export const GET=authenticated(handle);export const POST=authenticated(handle);

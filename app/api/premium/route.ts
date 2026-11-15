@@ -1,3 +1,4 @@
+import {payrollSigners} from '@/lib/premium-ledger';
 import {readPreparedFinancialPeriod} from '@/lib/crm-financial-projection';
 import {readPremiumState} from '@/lib/premium-store';
 import {departmentSigned,ledgerRows,periodOrders,payrollVisible,ledgerKey,type PremiumLedger} from '@/lib/premium-ledger';
@@ -55,7 +56,7 @@ async function handle(req:Request){
   const adjustments=Object.fromEntries(rows.filter(r=>allowed.has(r.id.slice(prefix.length))).map(r=>[r.id.slice(prefix.length),JSON.parse(r.data)]));
   const fresh=await readPremiumState(period),p=fresh.ledger?.periods[period];
   const payroll=p?ledgerRows(fresh.ledger!,period,fresh.orders,fresh.employees,fresh.adjustments).filter(r=>payrollVisible(actor,r)):null;
-  const requiredSigners=p?.status==='open'?[...new Set(ledgerRows(fresh.ledger!,period,fresh.orders,fresh.employees,fresh.adjustments).map(r=>r.department))].flatMap(department=>fresh.employees.filter(e=>e.role==='department_head'&&e.department===department&&e.leaderPremium).map(e=>({id:e.id,name:e.name,department}))):p?.signers||[];
+  const requiredSigners=p?.status==='open'?payrollSigners([...new Set(ledgerRows(fresh.ledger!,period,fresh.orders,fresh.employees,fresh.adjustments).map(r=>r.department))],fresh.employees):p?.signers||[];
   const lifecycle=p?{status:p.status,revision:fresh.ledger!.revision,activePeriod:fresh.ledger!.activePeriod,source:p.source,signers:requiredSigners.filter(e=>actor.role==='admin'||e.department===actor.department),signedIds:Object.keys(p.signatures),administrativeIds:Object.entries(p.signatures).filter(([id,signature])=>signature.by!==id).map(([id])=>id),allSigned:!!p.signers?.length&&p.signers.every(e=>!!p.signatures[e.id]),frozenAt:p.frozenAt,paidAt:p.paidAt}:null;
   const periodCounts=Object.fromEntries(Object.keys(fresh.ledger?.periods||{}).map(id=>[id,periodOrders(fresh.ledger!,id,fresh.orders,fresh.employees).filter(r=>!r.historyOnly&&payrollVisible(actor,r)).length]));
   const departmentCounts:Record<string,number>={};for(const r of fresh.ledger?periodOrders(fresh.ledger,period,fresh.orders,fresh.employees):[]){if(!r.historyOnly&&payrollVisible(actor,r))departmentCounts[r.department]=(departmentCounts[r.department]||0)+1;}

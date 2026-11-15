@@ -10,6 +10,7 @@ export const POST=authenticated(async(req:Request)=>{
   const body=z.object({period:z.string(),revision:z.string(),action:z.enum(['freeze','sign','pay','reopen']),department:z.string().min(1).optional()}).parse(await req.json());
   const s=await readPremiumState(body.period),actor=s.employees.find(e=>e.id===new URL(req.url).searchParams.get('actorId'));
   if(!actor||(body.action==='sign'?actor.role!=='department_head':body.action==='reopen'?actor.role!=='admin'&&(actor.role!=='department_head'||!body.department||body.department!==actor.department):actor.role!=='admin'))return Response.json({error:'Недостаточно прав'},{status:403});
+  if(body.action==='reopen'&&actor.role!=='admin'&&actor.department==='5'&&actor.login!=='A_Emil')return Response.json({error:'Подпись отдела А снимает Эмиль'},{status:403});
   if(!s.ledger)throw Error('Сначала загрузите и сверьте исходную ведомость');
   if(s.ledger.revision!==body.revision)return Response.json({error:'Ведомость изменилась. Обновите расчёт.'},{status:409});
   if(body.action==='freeze')throw Error('Отдельная фиксация не нужна. Сначала руководители подписывают расчёт, затем администратор закрывает период.');
