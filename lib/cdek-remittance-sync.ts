@@ -23,6 +23,7 @@ export function registryPayments(data:unknown,slot:number):CdekRemittance[]{
  return result;
 }
 export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new Date().toISOString(),dryRun=false,allowedIds?:Set<string>){
+ if(!Number.isFinite(Date.parse(at)))throw Error('Некорректное время получения реестра');
  const payments=registryPayments(data,slot);
  await initCdekHistoryRecovery(d);
  await initCdekUnmatched(d);
@@ -42,7 +43,7 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
   const candidates=byTracking.get(tracking)||[];
   if(candidates.length>1){result.ambiguous++;continue;}
   if(!candidates.length&&!allowedIds){
-   const recovery=await recoverCdekHistory(d,tracking,receipts,at,dryRun);
+   const recovery=await recoverCdekHistory(d,tracking,receipts.map(r=>({...r,receivedAt:at})),at,dryRun);
    if(recovery.status==='created'){if(!dryRun)await resolveCdekUnmatched(d,receipts);result.recovered++;result.orderIds.push(recovery.id);if(recovery.conflict)result.conflicts++;else result.added++;continue;}
    if(recovery.status==='archived'){if(!dryRun)await resolveCdekUnmatched(d,receipts);result.archived++;continue;}
    if(recovery.status==='ambiguous'){result.ambiguous++;continue;}
@@ -52,7 +53,7 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
   const row=candidates[0];
   if(!row||row.slot&&row.slot!==slot||row.order.status!=='redeemed'||row.order.testOnly||allowedIds&&!allowedIds.has(row.id)){result.unmatched++;continue;}
   const previous:CdekRemittance[]=row.order.cdekRemittances||[];
-  const next=[...previous];for(const receipt of receipts)if(!next.some(x=>sameRemittance(x,receipt)))next.push(receipt);
+  const next=[...previous];for(const receipt of receipts)if(!next.some(x=>sameRemittance(x,receipt)))next.push({...receipt,receivedAt:at});
   if(next.length===previous.length){if(!dryRun)await resolveCdekUnmatched(d,receipts);result.unchanged++;continue;}
   const conflict=hasRemittanceConflict({cdekRemittances:next});
   const mutation=crypto.randomUUID(),text=conflict?'СДЭК: несколько положительных перечислений по заказу — требуется проверка администратора':`СДЭК: деньги получены, реестр №${next[0].registry}, дата перечисления ${next[0].paymentDate}${next.length>1?' · дубль сохранён без повторного начисления':''}`;

@@ -1,5 +1,5 @@
 import type {Order} from './crm.ts';
-export type CdekRemittance={slot:number;registry:string;tracking:string;paymentDate:string;amountCents:number;collectedCents:number};
+export type CdekRemittance={slot:number;registry:string;tracking:string;paymentDate:string;receivedAt?:string;amountCents:number;collectedCents:number};
 export const isCdekOrder=(o:Pick<Order,'delivery'|'cdekHistoryRecovery'>)=>(!o.delivery&&!!o.cdekHistoryRecovery)||['cdek_pickup','cdek_courier'].includes(o.delivery||'');
 // Keep the first recorded receipt/date so later duplicates cannot move an order between periods.
 export function premiumRemittance(o:Pick<Order,'cdekRemittances'>){
@@ -17,3 +17,8 @@ export function cdekMoneyLabel(o:Order){
  return 'Оплачен · ожидается приём денег';
 }
 export function sameRemittance(a:CdekRemittance,b:CdekRemittance){return a.slot===b.slot&&a.registry===b.registry&&a.tracking===b.tracking&&a.paymentDate===b.paymentDate&&a.amountCents===b.amountCents&&a.collectedCents===b.collectedCents;}
+
+// Older receipts retain their historical allocation; new evidence uses the Moscow day of acceptance.
+export function remittanceAccountingDate(r:CdekRemittance){
+ return r.receivedAt?new Date(Date.parse(r.receivedAt)+3*3600000).toISOString().slice(0,10):r.paymentDate;
+}

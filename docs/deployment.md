@@ -319,3 +319,17 @@ while the admin workspace keeps its existing snapshot path. This includes free
 incoming clients absent from the working-client list. Reads use the existing scoped
 client state without reconciliation; they do not claim clients or change orders.
 Other roles retain their existing card access checks. No migration or new worker.
+
+## CDEK receipt calendar cutoff
+
+Newly accepted order remittances retain `receivedAt` alongside the provider's
+original `paymentDate`. Payroll membership uses the Moscow calendar day of that
+acceptance: evidence accepted after a period cutoff belongs to the following
+period, even while the previous sheet remains open for signing/payment. It stays
+in «Оплачен» until that following period becomes active. Replays retain the first
+accepted receipt and cannot move it between periods. The partner cash report uses
+the same payroll membership, while showing the original registry date.
+
+Existing receipts without `receivedAt` and frozen/paid payroll snapshots retain
+their allocation; no historical data migration is performed. The normal installer
+backup and release verification apply; no new service or configuration is needed.

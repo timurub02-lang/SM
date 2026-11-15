@@ -59,7 +59,7 @@ export function ledgerRows(ledger:PremiumLedger,period:string,orders:Order[],emp
  const eligible=periodOrders(ledger,period,orders,employees),ids=new Set(eligible.map(o=>o.id));
  // Feed selected membership to the existing percentage calculation, including late receipts.
  const cutoff=premiumPeriods.find(p=>p.id===period)!.cutoff;
- const selected=orders.filter(o=>ids.has(o.id)).map(o=>({...o,cdekRemittances:o.cdekRemittances?.map(r=>({...r,paymentDate:cutoff})),paymentReceivedAt:o.paymentReceivedAt?cutoff+'T12:00:00Z':undefined}));
+ const selected=orders.filter(o=>ids.has(o.id)).map(o=>({...o,cdekRemittances:o.cdekRemittances?.map(r=>({...r,paymentDate:cutoff,receivedAt:undefined})),paymentReceivedAt:o.paymentReceivedAt?cutoff+'T12:00:00Z':undefined}));
  return premiumCalculation(selected,admin,employees,period,adjustments).rows.map(rowFromCalculation);
 }
 export function nextPremiumPreview(ledger:PremiumLedger|null,orders:Order[],employees:Employee[]){
