@@ -421,3 +421,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .order-top-actions:empty{display:none}
 .order-top-actions>.order-quick-bar,.order-top-actions .order-quick-buttons{display:contents}
 .order-top-actions>.order-quick-bar>small,.order-top-actions>.order-quick-bar>.field{flex-basis:100%}
+
+.partner-period{display:flex;align-items:center;gap:12px;font-size:18px;flex-wrap:wrap}.partner-period select{width:auto;max-width:100%;flex:0 1 auto}.partner-period-info{font-size:14px}.partner-total{font-weight:700}.partner-cash td input[type=number]{width:130px;max-width:100%}

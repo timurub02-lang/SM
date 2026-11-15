@@ -16,3 +16,8 @@ console.log('Partner settlement: gross tax, net receipts, duplicates, leader pre
 
 assert.equal(partnerCalculation([{...member,historyOnly:true}],[order],[],settings).orderCount,0);
 assert.equal(partnerCalculation([member],[{...order,items:[{name:'ИТОГО',quantity:1},{name:'Товар',quantity:2}]}],payroll,settings).goods,60000);
+
+const priced=partnerCalculation([member],[order],payroll,{...settings,productPrices:{[order.items[0].name]:125.50}});
+assert.equal(priced.products.find(p=>p.name===order.items[0].name).price,125.50);
+assert.equal(priced.goods,priced.products.reduce((sum,p)=>sum+p.total,0));
+assert.equal(priced.remaining,priced.transferred-priced.tax-15000-priced.goods-priced.premium);
