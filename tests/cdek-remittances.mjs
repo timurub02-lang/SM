@@ -180,5 +180,13 @@ await historyFixture('90002');await db.prepare("INSERT INTO settings(id,data) VA
  for(const status of [401,403])await retryCase('Authentication failure '+status,()=>Response.json({}, {status}),1,true);
  await retryCase('Invalid registry data is not retried',()=>Response.json({unexpected:'shape'}),1,true);
  await retryCase('Explicit abort is not retried',()=>{throw new DOMException('cancelled','AbortError');},1,true);
+ await fixture('midnight-response',{legacyLv:{track:'midnight-response'}});
+ await db.prepare("UPDATE settings SET data='{}' WHERE id='cdek-registry-sync-1'").run();
+ await syncCdekRemittances(db,async url=>{
+  if(new URL(url).pathname.endsWith('/token'))return Response.json({access_token:'synthetic'});
+  await new Promise(resolve=>setTimeout(resolve,25));
+  return Response.json(answer(registry('MIDNIGHT',90,'2026-11-03','midnight-response')));
+ },Date.parse('2026-11-24T20:59:59.999Z'));
+ assert.equal(remittanceAccountingDate((await row('midnight-response')).cdekRemittances[0]),'2026-11-25','Response received after midnight uses the new day, not request start');
  console.log('CDEK remittances: positive-only, replay, duplicate conflicts, identity, dry run, CAS, atomic audit and polling passed.');
 }finally{db.close();rmSync(folder,{recursive:true,force:true});}

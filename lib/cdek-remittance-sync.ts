@@ -73,6 +73,7 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
 }
 const datePlus=(s:string,n:number)=>new Date(Date.parse(s)+n*86400000).toISOString().slice(0,10);
 export async function syncCdekRemittances(d:Db,request:typeof fetch=fetch,now=Date.now()){
+ const started=performance.now();
  const today=new Date(now+3*3600000).toISOString().slice(0,10),at=new Date(now).toISOString();
  const accounts=(await d.prepare("SELECT id,data FROM settings WHERE id GLOB 'cdek-[1-4]'").all()).results;
  const totals={checked:0,added:0,conflicts:0,failed:0};
@@ -109,7 +110,7 @@ export async function syncCdekRemittances(d:Db,request:typeof fetch=fetch,now=Da
      if(!attempt&&[502,503,504].includes(response.status)){await new Promise(r=>setTimeout(r,500));continue;}
      throw Error(`СДЭК: реестры недоступны (${response.status})`);
     }
-    const result=await applyCdekRegistries(d,slot,data,at);
+    const result=await applyCdekRegistries(d,slot,data,new Date(now+Math.floor(performance.now()-started)).toISOString());
     totals.checked++;totals.added+=result.added;totals.conflicts+=result.conflicts;
     if(result.races)throw Error('Заказы изменились во время сверки, будет повтор');
     if(date===today)state.todayCheckedAt=at;
