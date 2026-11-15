@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createPhoneCall} from '../lib/phone-store.ts';
-import {impersonationBlocksPhone} from '../lib/impersonation.ts';
+import {mayImpersonate,impersonationBlocksPhone} from '../lib/impersonation.ts';
 import {mayCallEndpoint} from '../lib/permissions.ts';
 import {hasOktellLink} from '../lib/oktell-link.ts';
 const actor={id:'operator',role:'operator',oktell:{requested:true,status:'linked',userId:'native-id',login:'native-login'}};
@@ -16,3 +16,10 @@ assert.equal(impersonationBlocksPhone(mode,'/api/call-history'),false,'History r
 console.log('Impersonation disables phone routes and native link without changing the employee or ordinary data rights');
 
 await assert.rejects(createPhoneCall({prepare:()=>assert.fail('No database operations are permitted'),batch:()=>assert.fail('No writes are permitted')},{actor:mode,id:'synthetic',clientId:null,orderId:null,echo:true}),/звонки отключены/,'The shared grant constructor rejects the mode even if a route check was bypassed');
+
+const head={id:'head',role:'department_head',department:'1'},own={id:'one',role:'operator',department:'1'};
+assert.equal(mayImpersonate(head,own),true);
+for(const target of [{...own,department:'2'},{...own,department:undefined},{...own,role:'department_head'},{...own,role:'admin'},{...own,role:'logistic'},head])assert.equal(mayImpersonate(head,target),false);
+for(const owner of [{...head,department:undefined},{...head,department:''},{...head,role:'operator'},{...head,role:'logistic'}])assert.equal(mayImpersonate(owner,own),false);
+assert.equal(mayImpersonate({id:'admin',role:'admin'},{...own,department:'2'}),true);
+console.log('Head entry scope: only own-department operators; no empty department, other role, foreign department or self');

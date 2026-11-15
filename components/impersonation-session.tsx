@@ -1,7 +1,7 @@
 'use client';
 import {createContext,useContext,useState,type ReactNode} from 'react';
 import {toast} from 'sonner';
-type Mode={id:string;name:string;adminName:string}|null;
+type Mode={id:string;name:string;adminName:string;ownerRole?:string}|null;
 const Context=createContext<Mode>(null);
 export const useImpersonationSession=()=>useContext(Context);
 async function switchSession(body:{action:'start';employeeId:string}|{action:'stop'}){
@@ -16,5 +16,7 @@ export function EnterEmployeeButton({employeeId,disabled=false}:{employeeId:stri
 }
 export function ImpersonationSession({mode,children}:{mode:Mode;children:ReactNode}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
- return <Context.Provider value={mode}>{mode&&<aside className="impersonation-banner" aria-label="Вход под сотрудником"><div><strong>Вы работаете как {mode.name}</strong><span>Звонки отключены · Администратор: {mode.adminName}</span>{error&&<p role="alert">{error}</p>}</div><button type="button" className="secondary" disabled={busy} onClick={async()=>{setBusy(true);setError('');try{await switchSession({action:'stop'});}catch(error){setError(error instanceof Error?error.message:'Не удалось вернуться');setBusy(false);}}}>{busy?'Возвращаемся…':'Вернуться в администратора'}</button></aside>}{children}</Context.Provider>;
+ const ownerRole=mode?.ownerRole||'admin',ownerLabel=ownerRole==='admin'?'Администратор':ownerRole==='department_head'?'Руководитель':'Пользователь';
+ const returnLabel=ownerRole==='admin'?'Вернуться в администратора':ownerRole==='department_head'?'Вернуться в кабинет руководителя':'Вернуться в свой кабинет';
+ return <Context.Provider value={mode}>{mode&&<aside className="impersonation-banner" aria-label="Вход под сотрудником"><div><strong>Вы работаете как {mode.name}</strong><span>Звонки отключены · {ownerLabel}: {mode.adminName}</span>{error&&<p role="alert">{error}</p>}</div><button type="button" className="secondary" disabled={busy} onClick={async()=>{setBusy(true);setError('');try{await switchSession({action:'stop'});}catch(error){setError(error instanceof Error?error.message:'Не удалось вернуться');setBusy(false);}}}>{busy?'Возвращаемся…':returnLabel}</button></aside>}{children}</Context.Provider>;
 }

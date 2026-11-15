@@ -1,3 +1,4 @@
+import {mayImpersonate} from './impersonation';
 import {authSchema} from './auth-schema';
 import {db} from './db';
 import {newToken,tokenHash,verifyPassword} from './auth-crypto';
@@ -21,15 +22,15 @@ export async function impersonationStatus(h:Headers){
  if(!personalAuth())return null;
  const owner=await sessionOwner(h);if(!owner)return null;
  const mode=await db().prepare('SELECT i.id,i.target_id,e.data FROM auth_impersonations i LEFT JOIN employees e ON e.id=i.target_id WHERE i.session_hash=?').bind(owner.hash).first<{id:string;target_id:string;data:string|null}>();
- return mode?{id:mode.id,name:mode.data?JSON.parse(mode.data).name:'Сотрудник',adminName:owner.employee.name}:null;
+ return mode?{id:mode.id,name:mode.data?JSON.parse(mode.data).name:'Сотрудник',adminName:owner.employee.name,ownerRole:owner.employee.role}:null;
 }
 export async function sessionEmployee(h:Headers,allowTestAccount=false):Promise<(Employee&{testOnly?:boolean})|null>{
  const owner=await sessionOwner(h,allowTestAccount);if(!owner)return null;
  const mode=await db().prepare('SELECT id,target_id,expires_at FROM auth_impersonations WHERE session_hash=?').bind(owner.hash).first<{id:string;target_id:string;expires_at:number}>();
  if(!mode)return owner.employee;
- if(owner.employee.role!=='admin'||mode.expires_at<=Date.now())return null;
+ if(mode.expires_at<=Date.now())return null;
  const row=await db().prepare('SELECT e.data,e.version FROM employees e JOIN auth_accounts a ON a.employee_id=e.id LEFT JOIN auth_test_accounts t ON t.employee_id=e.id WHERE e.id=? AND a.enabled=1 AND t.employee_id IS NULL').bind(mode.target_id).first<{data:string;version:number}>();
- if(!row)return null;
+ if(!row||!mayImpersonate(owner.employee,JSON.parse(row.data)))return null;
  return {...JSON.parse(row.data),version:row.version,impersonation:{id:mode.id,adminId:owner.employee.id,adminName:owner.employee.name}};
 }
 
