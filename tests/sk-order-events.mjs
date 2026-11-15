@@ -11,7 +11,7 @@ import {workspaceVersions} from '../lib/crm-workspace-clock.ts';
 const secret='synthetic-webhook-key-'.repeat(3),folder=mkdtempSync(join(tmpdir(),'crm-sk-events-')),path=join(folder,'test.sqlite');
 let d=openDatabase(path),now=Date.now(),unfinished=new Set(),reports=0,providerCalls=0;
 const config={enabled:true,enabledAt:new Date(now-3600000).toISOString(),resultIds:[123]};
-const event=id=>({type:'call_result',call:{id,result_id:123},call_result:{result_id:123,comment:'fixture'}});
+const event=id=>({type:'call_result',call:{id,result_id:123},call_result:{result_id:123,call_project_id:12345,comment:'fixture'}});
 const request=(body=event(1),headers={})=>new Request('https://fixture.invalid/api/sk-order-events',{method:'POST',headers:{authorization:'Bearer '+secret,'content-type':'application/json','idempotency-key':'fixture-'+body?.call?.id,...headers},body:typeof body==='string'?body:JSON.stringify(body)});
 const put=async(id,value)=>d.prepare('INSERT INTO settings(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').bind(id,JSON.stringify(value)).run();
 const api=async(url,init)=>{
@@ -19,7 +19,7 @@ const api=async(url,init)=>{
  if(u.pathname==='/oauth/token')return Response.json({access_token:'fixture'});
  if(u.pathname==='/api/v2/users')return Response.json([{id:7,name:'Operator',email:'fixture@example.invalid'}]);
  if(u.pathname==='/api/reports/calls_total.json'){reports++;return Response.json({data:[{id:900,scenario_result:{id:123},comment:'late result'}],total_pages:1});}
- if(u.pathname.startsWith('/api/v2/calls/'))return Response.json({id,result_id:123,user_id:7,lead_id:id,started_at:new Date(now-(id===901?7200000:10000)).toISOString(),ended_at:unfinished.has(id)?null:new Date(now).toISOString(),direction:'out',phone:'+7999'+String(id).padStart(7,'0')});
+ if(u.pathname.startsWith('/api/v2/calls/'))return Response.json({id,result_id:123,call_project_id:12345,user_id:7,lead_id:id,started_at:new Date(now-(id===901?7200000:10000)).toISOString(),ended_at:unfinished.has(id)?null:new Date(now).toISOString(),direction:'out',phone:'+7999'+String(id).padStart(7,'0')});
  if(u.pathname.startsWith('/api/v2/leads/'))return Response.json({id,name:'Synthetic '+id,address:'Fixture address',lead_phones:['+7999'+String(id).padStart(7,'0')]});
  throw Error('Unexpected provider path');
 };
@@ -39,7 +39,7 @@ try{
  await initSkOrderEvents(d);assert.equal((await d.prepare('SELECT COUNT(*) n FROM sk_order_events').first()).n,0);
  assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,200);assert.equal((await receiveSkOrderEvent(d,request(),secret)).status,200);
  assert.equal((await d.prepare('SELECT COUNT(*) n FROM sk_order_events').first()).n,1);
- assert.equal((await receiveSkOrderEvent(d,request({...event(9999),call_result:{result_id:123,comment:'x'.repeat(4000)}}),secret)).status,200);
+ assert.equal((await receiveSkOrderEvent(d,request({...event(9999),call_result:{result_id:123,call_project_id:12345,comment:'x'.repeat(4000)}}),secret)).status,200);
  assert.equal((await d.prepare("SELECT length(comment) n FROM sk_order_events WHERE call_id='9999'").first()).n,3000,'long comments use the same truncation as the original importer');
  await d.prepare("DELETE FROM sk_order_events WHERE call_id='9999'").run();
  assert.equal((await receiveSkOrderEvent(d,request(event(2),{'idempotency-key':'fixture-1'}),secret)).status,409);

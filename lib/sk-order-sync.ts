@@ -86,8 +86,8 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
     const phone=skClientPhone(call,lead);
     if(!phone){review.set(String(call.id),{callId:String(call.id),leadId:String(lead.id),reason:'В карточке СК нет однозначного телефона клиента'});pending++;return false;}
     review.delete(String(call.id));
-    const input:SkOrderInput={callId:String(call.id),leadId:String(lead.id),email:user.email||'',userName:user.name||'',userNameUnique:users.filter(u=>String(u.name||'').trim().toLowerCase().replace(/\s+/g,' ')===String(user.name||'').trim().toLowerCase().replace(/\s+/g,' ')).length===1,name:typeof lead.name==='string'?lead.name:'',phone,address:typeof lead.address==='string'?lead.address:'',city:typeof lead.city==='string'?lead.city:'',comment:typeof row.comment==='string'?row.comment:''};
-    stage='apply';const r=await acceptSkOrder(d,input,undefined,at);r.state==='imported'?imported++:pending++;
+    const input:SkOrderInput={callId:String(call.id),leadId:String(lead.id),projectId:/^[1-9]\d*$/.test(String(call.call_project_id))?String(call.call_project_id):null,email:user.email||'',userName:user.name||'',userNameUnique:users.filter(u=>String(u.name||'').trim().toLowerCase().replace(/\s+/g,' ')===String(user.name||'').trim().toLowerCase().replace(/\s+/g,' ')).length===1,name:typeof lead.name==='string'?lead.name:'',phone,address:typeof lead.address==='string'?lead.address:'',city:typeof lead.city==='string'?lead.city:'',comment:typeof row.comment==='string'?row.comment:''};
+    stage='apply';const r=await acceptSkOrder(d,input,undefined,at);if(r.state==='imported')imported++;else if(r.state==='pending')pending++;
     return true;
   }
   if(eventsOnly){
