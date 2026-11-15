@@ -1,4 +1,4 @@
-import {minutesFinal} from '../lib/partner-minutes.ts';
+import {minutesFinal,communicationCents,unmappedPartnerLogins} from '../lib/partner-minutes.ts';
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
 import {readPartnerMinutes} from '../lib/partner-minutes-sync.ts';
@@ -29,3 +29,11 @@ assert.equal(minutesFinal(period,complete,end+1000),true);
 assert.equal(minutesFinal(period,result,end+1000),false);
 assert.equal(minutesFinal(period,{...complete,through:new Date(end-1000).toISOString()},end+1000),false);
 assert.equal(minutesFinal(period,undefined,end+1000),false);
+
+const excluded='AR_Morozova_Galina_Nikolaevna_08_26';
+assert.deepEqual(unmappedPartnerLogins([excluded,'A_missing']),['A_missing']);
+const withoutMapping={...complete,missing:[excluded]};
+assert.equal(communicationCents({communication:0,minutePrice:2,minutes:withoutMapping}),600);
+assert.equal(minutesFinal(period,withoutMapping,end+1000),true);
+assert.equal(communicationCents({communication:0,minutePrice:2,minutes:{...complete,missing:['A_missing']}}),null);
+assert.equal(communicationCents({communication:0,minutePrice:2,minutes:{...complete,rows:[{employeeId:'galina',login:excluded,billed:5,seconds:200}]}}),1000);
