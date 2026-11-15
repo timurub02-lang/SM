@@ -28,7 +28,7 @@ async function handle(req:Request){
   if(req.method==='POST'){
    if(actor.role!=='admin')return Response.json({error:'Настройки изменяет администратор'},{status:403});
    if(ledger.periods[period].status==='paid')return Response.json({error:'Период уже выплачен'},{status:409});
-   const body=z.object({revision:z.string(),taxRate:z.number().finite().min(0).max(100).nullable(),communication:z.number().finite().min(0).max(100000000),bank:z.number().finite().min(0).max(100000000)}).parse(await req.json());
+   const body=z.object({revision:z.string(),taxRate:z.number().finite().min(0).max(100).nullable(),communication:z.number().finite().min(0).max(100000000),bank:z.number().finite().min(0).max(100000000),productPrices:z.record(z.string().min(1).max(500),z.number().finite().min(0).max(100000000).multipleOf(0.01)).optional()}).parse(await req.json());
    if(body.revision!==settings.revision)return Response.json({error:'Данные изменились. Обновите окно.'},{status:409});
    settings={...body,revision:crypto.randomUUID()};const data=JSON.stringify(settings);
    const guard="EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id='partner-cash-account'),'')=?";

@@ -42,6 +42,11 @@ try{
  assert.equal((await call(path,cookies.admin,{...form,taxRate:101})).status,400);
  const saved=await call(path,cookies.admin,form);assert.equal(saved.status,200,JSON.stringify(saved.data));assert.equal(saved.data.receipts.length,1);assert.equal(saved.data.accountRemaining,563570);
  assert.equal((await call(path,cookies.admin,form)).status,409);
+ const product=saved.data.products[0].name;
+ assert.equal((await call(path,cookies.admin,{...form,revision:saved.data.settings.revision,productPrices:{[product]:-1}})).status,400);
+ const priced=await call(path,cookies.admin,{...form,revision:saved.data.settings.revision,productPrices:{[product]:125.50}});assert.equal(priced.status,200);assert.equal(priced.data.goods,25100);assert.equal(priced.data.remaining,598470);
+ const restored=await call(path,cookies.admin,{...form,revision:priced.data.settings.revision,productPrices:{[product]:300}});assert.equal(restored.status,200);assert.equal(restored.data.goods,60000);
+ assert.equal((await call(path,cookies.admin)).data.settings.productPrices[product],300);
  assert.equal((await call(path,cookies.A_Emil)).data.editable,false);
  assert.equal((await call('/api/cash',cookies.A_Emil,{action:'create'})).status,403);
  assert(!(await call('/api/cash',cookies.admin)).data.recipients.some(e=>e.id==='A_Emil'));
