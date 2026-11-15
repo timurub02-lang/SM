@@ -1,11 +1,15 @@
+import {Readable,pipeline} from 'node:stream';
+import {createBrotliCompress,constants} from 'node:zlib';
+import {acceptsBrotli} from './conditional-json.ts';
 import type {Employee} from './crm.ts';
 
 const roles=new Set(['admin','logistic','chief_logistic','redemption','courier']);
 export const legacySnapshotWorker=()=>process.env.CRM_RUNTIME==='miran'&&process.env.CRM_LEGACY_SNAPSHOT_WORKER==='1';
 export function legacySnapshotRequest(request:Request){
  const url=new URL(request.url),params=url.searchParams;
- return request.method==='GET'&&url.pathname==='/api/crm'&&params.get('transport')==='compact-v1'&&
-  [...params.keys()].every(key=>['transport','actorId'].includes(key)&&params.getAll(key).length===1);
+ const bootstrap=params.get('part')==='bootstrap'&&!params.has('transport');
+ return request.method==='GET'&&url.pathname==='/api/crm'&&(bootstrap||params.get('transport')==='compact-v1'&&!params.has('part'))&&
+  [...params.keys()].every(key=>[bootstrap?'part':'transport','actorId'].includes(key)&&params.getAll(key).length===1);
 }
 const unavailable=()=>Response.json({error:'Рабочие данные временно недоступны. Повторите загрузку.'},{status:503,headers:{'Cache-Control':'no-store'}});
 
@@ -32,6 +36,13 @@ export async function proxyLegacySnapshot(request:Request,employee?:Employee,sen
   // Fetch may decompress an upstream response. Never forward its encoded length/encoding.
   const output=new Headers({'Cache-Control':'private, no-store'});
   for(const key of ['etag','vary','content-type','server-timing']){const value=response.headers.get(key);if(value)output.set(key,value);}
+  if(response.ok&&response.body&&acceptsBrotli(request)){
+   output.set('Content-Encoding','br');output.set('Vary','Cookie, Accept-Encoding');
+   const etag=output.get('ETag');if(etag&&!etag.startsWith('W/'))output.set('ETag','W/'+etag);
+   // Compress while forwarding, without buffering/parsing the full snapshot on the web worker.
+   const stream=pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),createBrotliCompress({params:{[constants.BROTLI_PARAM_QUALITY]:1}}),()=>{});
+   return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>,{status:response.status,headers:output});
+  }
   return new Response(response.body,{status:response.status,headers:output});
  }catch{return unavailable();}
 }

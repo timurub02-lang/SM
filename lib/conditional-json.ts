@@ -2,8 +2,7 @@ import {createHash} from 'node:crypto';
 import {brotliCompress,constants} from 'node:zlib';
 import {promisify} from 'node:util';
 const compress=promisify(brotliCompress);
-export async function conditionalJson(request:Request,value:unknown){
- const body=JSON.stringify(value);
+export function acceptsBrotli(request:Request){
  const encodings=(request.headers.get('accept-encoding')||'').toLowerCase().split(',').map(part=>{
   const [name,...params]=part.trim().split(';');
   const quality=params.map(p=>p.trim()).find(p=>p.startsWith('q='));
@@ -11,7 +10,11 @@ export async function conditionalJson(request:Request,value:unknown){
   return {name,q:Number.isFinite(q)&&q>=0&&q<=1?q:0};
  });
  const br=encodings.find(e=>e.name==='br')?.q||0;
- const brotli=process.env.CRM_RUNTIME==='miran'&&body.length>=1024&&br>0&&!encodings.some(e=>e.q>br);
+ return process.env.CRM_RUNTIME==='miran'&&br>0&&!encodings.some(e=>e.q>br);
+}
+export async function conditionalJson(request:Request,value:unknown){
+ const body=JSON.stringify(value);
+ const brotli=body.length>=1024&&acceptsBrotli(request);
  const etag='"'+createHash('sha256').update(body).digest('base64url')+(brotli?'.br1':'')+'"';
  const headers=new Headers({'ETag':etag,'Cache-Control':'private, no-store','Vary':'Cookie, Accept-Encoding','Content-Type':'application/json; charset=utf-8'});
  if(brotli)headers.set('Content-Encoding','br');
