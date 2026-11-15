@@ -1,3 +1,4 @@
+import {journalIdentity} from './journal-author';
 import {impersonationBlocksPhone} from './impersonation';
 import {sharedIncomingClientAccess} from './incoming';
 import {readLimitedText,BodyTooLarge} from './request-body';
@@ -40,7 +41,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    if(body)body.actorId=employee.id;
    const auditId=write&&employee.impersonation?crypto.randomUUID():null;
    if(auditId)await db().prepare('INSERT INTO auth_impersonation_audit(id,impersonation_id,admin_id,target_id,at,kind,method,path,action,entity_id) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(auditId,employee.impersonation!.id,employee.impersonation!.adminId,employee.id,Date.now(),'request',req.method,url.pathname,typeof body?.action==='string'?body.action.slice(0,100):null,typeof (body?.id||body?.orderId||body?.clientId)==='string'?String(body.id||body.orderId||body.clientId).slice(0,100):null).run();
-   const response=await handler(new Request(url,{method:req.method,headers:req.headers,signal:req.signal,...(write?{body:JSON.stringify(body)}:{})}));
+   const response=await journalIdentity.run(employee,()=>handler(new Request(url,{method:req.method,headers:req.headers,signal:req.signal,...(write?{body:JSON.stringify(body)}:{})})));
    if(auditId)await db().prepare('UPDATE auth_impersonation_audit SET status=? WHERE id=?').bind(response.status,auditId).run().catch(console.error);
    response.headers.set('Cache-Control','no-store');
    return response;

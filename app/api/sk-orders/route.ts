@@ -1,3 +1,4 @@
+import {journalAuthor} from '@/lib/journal-author';
 import {z} from 'zod';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -19,7 +20,7 @@ export const POST=authenticated(async req=>{
  const input:SkOrderInput=JSON.parse(row.data),sender=skSender(staff,input.email,input.userName,input.userNameUnique),client=await skClient(d,input.phone),owner=staff.find(e=>e.id===client?.owner);
  if(!skMayDecide(actor,sender,owner))return Response.json({error:'Решение доступно только администратору'},{status:403});
  if(p.action==='approve'){const result=await acceptSkOrder(d,input,actor);if(result.state!=='imported')throw Error(result.reason||'Проверьте ФИО сотрудника СК');return Response.json(result);}
- const event={id:'SK-REJECT-'+p.id,clientId:client?.id||'',orderId:'',at:new Date().toISOString(),actor:actor.name,actorId:actor.id,text:'Отклонена заявка из Скорозвона · звонок '+p.id};
+ const event={id:'SK-REJECT-'+p.id,clientId:client?.id||'',orderId:'',at:new Date().toISOString(),...journalAuthor(actor.name,actor.id),text:'Отклонена заявка из Скорозвона · звонок '+p.id};
  const results=await d.batch([d.prepare("UPDATE sk_order_transfers SET state='rejected',decided_by=? WHERE id=? AND state='pending'").bind(actor.id,p.id),d.prepare("INSERT OR IGNORE INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sk_order_transfers WHERE id=? AND state='rejected' AND decided_by=?)").bind(event.id,event.clientId,'',event.at,JSON.stringify(event),p.id,actor.id)]);if(!results[0].meta.changes)throw Error('Заявка уже обработана');return Response.json({state:'rejected'});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка обработки заявки'},{status:400});}
 });

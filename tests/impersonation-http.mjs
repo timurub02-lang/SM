@@ -89,6 +89,18 @@ try{
  const edit=await call('admin','/api/crm',{action:'comment',id:'o-one',version:ownPage.data.rows[0].version,text:'Synthetic administrator edit'});assert.equal(edit.status,200,JSON.stringify(edit));
  const employeePage=await call('one',listPath);assert.equal(employeePage.status,200);assert.deepEqual(employeePage.data.rows.map(o=>o.id),['o-one']);
  assert.equal((await call('one','/api/crm',{action:'comment',id:'o-one',version:employeePage.data.rows[0].version,text:'Synthetic employee edit'})).status,200,'The real employee can still edit their order after the administrator');
+ const journal=(await call('one','/api/crm/history?clientId=c-one')).data;
+ for(const [text,actor,delegatedById] of [
+  ['Synthetic delegated head edit','РК head от имени оператора one','head'],
+  ['Synthetic administrator edit','Администратор admin от имени оператора one','admin'],
+ ]){
+  const event=journal.rows.find(e=>e.text.includes(text));assert.ok(event,JSON.stringify(journal));
+  assert.equal(event.actor,actor);assert.equal(event.actorId,'one');assert.equal(event.delegatedById,delegatedById);
+ }
+ const ownEvent=journal.rows.find(e=>e.text.includes('Synthetic employee edit'));
+ assert.ok(ownEvent);assert.equal(ownEvent.delegatedById,undefined);assert.ok(!ownEvent.actor.includes('РК ')&&!ownEvent.actor.includes('Администратор '),'Concurrent real operator work has no delegated author');
+ const headJournal=(await call('head','/api/crm/history?employeeId=head')).data;
+ assert.ok(headJournal.rows.some(e=>e.text.includes('Synthetic delegated head edit')),'Head journal includes their delegated edits');
  const reminder=await call('admin','/api/crm',{action:'readReminder',id:'synthetic-missing-reminder'});assert.equal(reminder.status,200,JSON.stringify(reminder));
  const audit=d.prepare("SELECT * FROM auth_impersonation_audit WHERE kind='request'").all();assert.ok(audit.some(r=>r.admin_id==='admin'&&r.target_id==='one'&&r.action==='readReminder'&&r.status===200));
  assert.deepEqual(d.prepare('SELECT * FROM auth_sessions ORDER BY token_hash').all(),sessionsBefore,'No session is deleted, replaced or extended');
