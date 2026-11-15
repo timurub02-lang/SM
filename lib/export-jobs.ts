@@ -16,7 +16,7 @@ export function initExportJobs(d:ActivityDb){
  ]).then(()=>{}).catch(error=>{initialized.delete(d);throw error;});initialized.set(d,pending);return pending;
 }
 export async function queueExport(d:ActivityDb,actor:Employee,kind:ExportKind,parameter:string,key:string,now=Date.now()):Promise<ExportJob>{
- if(!mayExport(actor,kind)||!/^[\w:-]{1,160}$/.test(key)||!(kind==='base'?/^[MJ]$/:/^\d{4}-\d{2}-[12]$/).test(parameter))throw Error('Выгрузка недоступна');
+ if(!mayExport(actor,kind)||!/^[\w:-]{1,160}$/.test(key)||!(kind==='base'?/^[MJ]$/:/^\d{4}-\d{2}-[12](?:@[1-5])?$/).test(parameter))throw Error('Выгрузка недоступна');
  await initExportJobs(d);const scope=exportScope(actor),id=crypto.randomUUID();
  // Retries with one request key cannot silently change parameters or permissions.
  await d.prepare("INSERT OR IGNORE INTO crm_export_jobs(id,actor_id,scope,kind,parameter,request_key,created_at,updated_at,expires_at) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM crm_export_jobs WHERE actor_id=? AND state IN ('pending','running') AND expires_at>?)<5 AND (SELECT COUNT(*) FROM crm_export_jobs WHERE state IN ('pending','running') AND expires_at>?)<50 AND (SELECT COUNT(*) FROM crm_export_jobs WHERE expires_at>?)<100").bind(id,actor.id,scope,kind,parameter,key,now,now,now+exportLifetime,actor.id,now,now,now).run();

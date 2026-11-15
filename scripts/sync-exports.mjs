@@ -28,10 +28,11 @@ try{
   temp=exportFile(job.id,job.claim,true);
   if(job.kind==='base')await baseWorkbook(snapshot,job.parameter,temp);
   else{
-   const calendar=premiumPeriods.find(p=>p.id===job.parameter),s=await readPremiumStateFrom(snapshot,job.parameter);
+   const [period,department]=job.parameter.split('@');
+   const calendar=premiumPeriods.find(p=>p.id===period),s=await readPremiumStateFrom(snapshot,period);
    if(!calendar||!s.ledger)throw Error('Premium unavailable');
-   const ledger={...s.ledger,periods:{...s.ledger.periods,[job.parameter]:s.ledger.periods[job.parameter]||{status:'open',signatures:{}}}};
-   const book=await premiumWorkbook(actor,job.parameter,calendar.label,ledger.periods[job.parameter],ledgerRows(ledger,job.parameter,s.orders,s.employees,s.adjustments),periodOrders(ledger,job.parameter,s.orders,s.employees));
+   const ledger={...s.ledger,periods:{...s.ledger.periods,[period]:s.ledger.periods[period]||{status:'open',signatures:{}}}};
+   const book=await premiumWorkbook(actor,period,calendar.label,ledger.periods[period],ledgerRows(ledger,period,s.orders,s.employees,s.adjustments),periodOrders(ledger,period,s.orders,s.employees),department);
    await book.xlsx.writeFile(temp);
   }
   await snapshot.prepare('COMMIT').run();snapshot.close();snapshot=undefined;
