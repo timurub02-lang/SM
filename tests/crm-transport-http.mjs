@@ -37,7 +37,7 @@ try{
  const now=new Date().toISOString();
  for(let i=0;i<112;i++){
   const id='c-'+String(i).padStart(3,'0'),owner=i<61?'one':'two';
-  const c={id,name:'Иван '+i,phone:'+7999'+String(i).padStart(7,'0'),city:'Москва',address:'Тест',source:'Fixture',owner,assignedUntil:new Date(Date.now()+86400000).toISOString(),assignmentStartedAt:now,createdAt:now,version:1,legacyOrderHistory:[{externalId:'legacy-'+id,source:'LV',status:'paid',createdAt:now,amount:1,items:[]}],importFields:{private:'test'}};
+  const c={id,name:'Иван '+i,phone:'+7999'+String(i).padStart(7,'0'),city:'Москва',address:'Тест',source:'Fixture',owner,assignedUntil:new Date(Date.now()+86400000).toISOString(),assignmentStartedAt:now,createdAt:now,version:1,legacyOrderHistory:[{externalId:'legacy-'+id,source:'LV',status:'paid',createdAt:now,amount:1,items:[]}],importFields:{private:'test'},baseImport:{sourceRows:[{raw:'Synthetic audit field'}]}};
   database.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(id,c.phone,JSON.stringify(c));
   const o={id:'o-'+id,clientId:id,manager:owner,logistic:'',status:'draft',items:[{name:'Test',quantity:1,price:1}],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:now,updatedAt:now,version:1};
   database.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,id,JSON.stringify(o));
@@ -50,7 +50,7 @@ try{
  database.prepare("INSERT INTO settings VALUES('crm-maintenance-health',?)").run(JSON.stringify({ok:true,at:now}));
  const first=await get('/api/crm?transport=compact-v1');assert.equal(first.status,200);
  assert.deepEqual(first.data,compactCrmState(full.data),'read-only compact projection preserves all non-history behavior');
- assert.equal(first.data.events.length,0);assert.ok(first.data.clients.every(c=>!c.legacyOrderHistory&&!c.importFields));
+ assert.equal(first.data.events.length,0);assert.ok(first.data.clients.every(c=>!c.legacyOrderHistory&&!c.importFields&&!c.baseImport));
  if(process.env.CRM_SPLIT_READS==='1'){
   for(const part of ['bootstrap','context','tasks'])assert.equal((await fetch(base+'/api/crm?part='+part)).status,401);
   const boot=(await get('/api/crm?part=bootstrap')).data;assert.equal(boot.splitReads,true);assert.equal(boot.orders.length+boot.clients.length+boot.events.length,0);assert.equal(boot.employees.length,1);assert.ok(Buffer.byteLength(JSON.stringify(boot))<16384);
@@ -62,7 +62,7 @@ try{
  }else assert.equal((await get('/api/crm?part=bootstrap')).data.splitReads,undefined,'disabled flag keeps the existing snapshot');
  const page0=await get('/api/crm?list=orders&view=orders&filter=all&page=0'),page1=await get('/api/crm?list=orders&view=orders&filter=all&page=1');
  assert.equal(page0.status,200);assert.equal(page0.data.total,61);assert.equal(page0.data.rows.length,50);assert.equal(page1.data.rows.length,11);assert.equal(new Set([...page0.data.rows,...page1.data.rows].map(o=>o.id)).size,61);
- assert.ok(page0.data.clients.every(c=>c.owner==='one'&&!c.legacyOrderHistory&&!c.importFields));
+ assert.ok(page0.data.clients.every(c=>c.owner==='one'&&!c.legacyOrderHistory&&!c.importFields&&!c.baseImport));
  assert.equal((await get('/api/crm?list=orders&view=orders&filter=all&page=-1')).status,400);
  assert.equal((await get('/api/crm?list=orders&view=orders&filter=all&query=o-c-060')).data.total,1);
  assert.equal((await get('/api/crm?list=mine&view=mine&filter=all&page=1')).data.clients.length,11);
