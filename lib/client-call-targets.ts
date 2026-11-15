@@ -3,6 +3,7 @@ import {closedOrderCallBlocked,operatorCallBlocked,type Employee,type Order} fro
 import {db} from './db';
 import {phoneScope,normalizeOutgoingNumber,incomingCallTarget} from './phone-store';
 export async function clientPhones(actor:Employee,p:{mode:string;clientId?:string;orderId?:string;incomingId?:string}){
+ if(actor.impersonation)throw Error('В режиме входа под сотрудником звонки отключены');
  if(!['client','order','incoming'].includes(p.mode))throw Error('Выберите клиента, заказ или обращение');
  const incomingNumber=p.mode==='incoming'?await incomingCallTarget(db(),actor,p.incomingId!):null;
  if(p.mode!=='incoming'&&!await phoneScope(db(),actor,p))throw Error('Нет доступа к этому клиенту или заказу');

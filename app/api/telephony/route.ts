@@ -14,7 +14,7 @@ const input=z.discriminatedUnion('mode',[
  z.object({mode:z.literal('order'),orderId:z.string().min(1),phoneKey:z.string().max(64).optional()})
 ]);
 function config(){return {phone:process.env.CRM_PHONE_TEST_NUMBER||'',callerId:process.env.CRM_PHONE_CALLER_ID||''};}
-async function allowed(){const user=await getChatGPTUser();return process.env.CRM_PHONE_STAFF_ENABLED==='1'&&!!user?.employee&&phoneRoles.includes(user.employee.role);}
+async function allowed(){const user=await getChatGPTUser();return process.env.CRM_PHONE_STAFF_ENABLED==='1'&&!!user?.employee&&!user.employee.impersonation&&phoneRoles.includes(user.employee.role);}
 export const GET=authenticated(async(req:Request)=>{
  if(!await allowed())return Response.json({error:'Телефония недоступна для этой роли'},{status:403});
  const url=new URL(req.url);

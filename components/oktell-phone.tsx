@@ -1,4 +1,5 @@
 'use client';
+import {useImpersonationSession} from './impersonation-session';
 import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
 import {Phone,PhoneOff,Headphones,Mic,MicOff} from 'lucide-react';
@@ -15,7 +16,8 @@ async function bounded<T>(work:Promise<T>,message:string,ms=15000):Promise<T>{
 }
 const Context=createContext<PhoneState|null>(null);
 export const useOktellPhone=()=>useContext(Context);
-export function OktellPhone({children}:{children:ReactNode}){
+export function OktellPhone({children}:{children:ReactNode}){const mode=useImpersonationSession();return mode?<Context.Provider value={null}>{children}</Context.Provider>:<ConnectedOktellPhone>{children}</ConnectedOktellPhone>;}
+function ConnectedOktellPhone({children}:{children:ReactNode}){
  const route=useRef<Route|null>(null),[routeBusy,setRouteBusy]=useState(false);
  function acquire(value:Route){if(route.current)return false;route.current=value;setRouteBusy(true);return true;}
  function release(value:Route){if(route.current===value){route.current=null;setRouteBusy(false);}}
