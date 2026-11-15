@@ -1,10 +1,10 @@
 import {departments,type Employee} from './crm';
 import {payrollVisible,type PayrollRow,type PayrollOrder,type PayrollPeriod} from './premium-ledger';
 
-export async function premiumWorkbook(actor:Employee,period:string,label:string,entry:PayrollPeriod,allRows:PayrollRow[],allOrders:PayrollOrder[]){
+export async function premiumWorkbook(actor:Employee,period:string,label:string,entry:PayrollPeriod,allRows:PayrollRow[],allOrders:PayrollOrder[],department?:string){
  if(!['admin','department_head'].includes(actor.role))throw Error('Выгрузка недоступна');
  const {default:ExcelJS}=await import('exceljs');
- const rows=allRows.filter(r=>payrollVisible(actor,r)),orders=allOrders.filter(r=>!r.historyOnly&&payrollVisible(actor,r)),historyOrders=allOrders.filter(r=>r.historyOnly&&payrollVisible(actor,r));
+ const rows=allRows.filter(r=>payrollVisible(actor,r)&&(!department||r.department===department)),orders=allOrders.filter(r=>!r.historyOnly&&payrollVisible(actor,r)&&(!department||r.department===department)),historyOrders=allOrders.filter(r=>r.historyOnly&&payrollVisible(actor,r)&&(!department||r.department===department));
  const groups=[...new Set([...rows.map(r=>r.department),...orders.map(r=>r.department)])].sort();
  const book=new ExcelJS.Workbook();book.creator='СМ CRM';
  const status=entry.status==='paid'?'Выплачено':entry.status==='frozen'?'Зафиксировано':'Предварительный расчёт';

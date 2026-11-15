@@ -34,6 +34,13 @@ try{
   for(const sheet of original.worksheets){const actual=book.getWorksheet(sheet.name);assert.deepEqual(actual.getSheetValues(),sheet.getSheetValues(),'every value survives the streaming export');assert.equal(actual.columns[0]?.width,sheet.columns[0]?.width);}
  }
  const premium=await queueExport(d,head,'premium','2026-11-1','premium');assert.equal((await run()).code,0);assert.equal((await authorizedExport(d,head,premium.id)).state,'ready');
+ const input={salary:0,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:false,firstHalfBonus:null};
+ const payroll=[{id:'deptA',login:'DEPARTMENT_A',name:'Department A',department:'5'},{id:'foreign',login:'FOREIGN_DEPARTMENT',name:'Foreign',department:'1'}].map(r=>({...r,role:'operator',rate:5,volume:1000,commission:50,salary:0,input,result:50,payout:50}));
+ await d.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").bind(JSON.stringify({revision:'scope',activePeriod:'2026-11-1',initialPeriod:'2026-11-1',periods:{'2026-11-1':{status:'paid',rows:payroll,orders:[],signatures:{}}}})).run();
+ const scoped=await queueExport(d,admin,'premium','2026-11-1@5','scoped');assert.equal((await run()).code,0);
+ const scopedDone=await authorizedExport(d,admin,scoped.id);assert.equal(scopedDone.state,'ready');
+ const scopedBook=new ExcelJS.Workbook();await scopedBook.xlsx.readFile(join(dir,'files',scoped.id+'.'+scopedDone.claim+'.xlsx'));
+ const values=JSON.stringify(scopedBook.worksheets.map(s=>s.getSheetValues()));assert.match(values,/DEPARTMENT_A/);assert.doesNotMatch(values,/FOREIGN_DEPARTMENT/);
  const revoked=await queueExport(d,admin,'base','J','revoked');await d.prepare('UPDATE auth_accounts SET enabled=0 WHERE employee_id=?').bind(admin.id).run();assert.equal((await run()).code,1);assert.equal((await authorizedExport(d,admin,revoked.id)).state,'failed');
  assert.ok(readdirSync(join(dir,'files')).every(name=>!name.endsWith('.tmp')));
  console.log('Export worker: concurrent processes, XLSX parity, premium rendering, revoked account and temp cleanup passed');

@@ -13,7 +13,8 @@ export const POST=authenticated(async req=>{
  if(!body||typeof body!=='object')return Response.json({error:'Неверные параметры'},{status:400});
  const kind=body.kind as ExportKind;
  if(!['base','premium'].includes(kind)||!mayExport(actor,kind))return Response.json({error:'Недостаточно прав'},{status:403});
- if(typeof body.parameter!=='string'||typeof body.requestKey!=='string'||kind==='premium'&&!premiumPeriods.some(p=>p.id===body.parameter))return Response.json({error:'Неверные параметры'},{status:400});
+ if(typeof body.parameter!=='string'||typeof body.requestKey!=='string'||kind==='premium'&&!premiumPeriods.some(p=>p.id===body.parameter!.toString().split('@')[0]))return Response.json({error:'Неверные параметры'},{status:400});
+ if(kind==='premium'&&body.parameter.includes('@')&&!/^\d{4}-\d{2}-[12]@[1-5]$/.test(body.parameter))return Response.json({error:'Неверный отдел'},{status:400});
  if(!await exportWorkerHealthy(db()))return Response.json({error:'Исполнитель выгрузок недоступен. Повторите позже.'},{status:503});
  try{const job=await queueExport(db(),actor,kind,body.parameter,body.requestKey);return Response.json({id:job.id,state:job.state},{status:202});}
  catch(error){return Response.json({error:error instanceof Error?error.message:'Не удалось создать выгрузку'},{status:400});}

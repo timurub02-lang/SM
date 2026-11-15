@@ -37,6 +37,8 @@ try{
  assert.equal((await (await post('a',request)).json()).id,job.id);
  assert.equal((await get('b','id='+job.id)).status,404);assert.equal((await get('a','id='+job.id+'&download=1')).status,409);
  await worker();r=await get('a','id='+job.id+'&download=1');assert.equal(r.status,200);assert.match(r.headers.get('content-type'),/spreadsheetml/);assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0,2).toString(),'PK');
+ const scopedResponse=await post('a',{kind:'premium',parameter:'2026-11-1@5',requestKey:'department-A'});assert.equal(scopedResponse.status,202);const scoped=await scopedResponse.json();await worker();assert.equal((await get('a','id='+scoped.id+'&download=1')).status,200);
+ assert.equal((await post('a',{kind:'premium',parameter:'2026-11-1@all',requestKey:'bad-scope'})).status,400);
  const premium=await (await post('h',{kind:'premium',parameter:'2026-11-1',requestKey:'premium'})).json();await worker();assert.equal((await get('h','id='+premium.id+'&download=1')).status,200);
  d.prepare("UPDATE employees SET data=json_set(data,'$.department','2') WHERE id='h'").run();assert.equal((await get('h','id='+premium.id)).status,404);
  d.prepare("UPDATE auth_accounts SET enabled=0 WHERE employee_id='a'").run();assert.equal((await get('a','id='+job.id+'&download=1')).status,401);

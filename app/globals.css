@@ -442,3 +442,13 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .partner-row-actions{display:flex;flex-direction:column;gap:3px}.partner-row-actions .partner-payment-status{font-size:11px;color:var(--muted-foreground)}
 .partner-save{align-self:flex-start}.partner-details{margin-top:16px}.partner-details [data-slot=tabs-content]{padding-top:16px;min-width:0}.partner-details .tabs-line{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:4px;width:fit-content}
 .partner-cash .partner-details td:first-child{white-space:normal;overflow-wrap:anywhere}
+/* Partner expense controls stay separate from the embedded premium tables. */
+.partner-cash .partner-layout{font-size:14px;background:var(--card);border:1px solid var(--border);border-radius:10px}
+.partner-cash .partner-layout th{background:var(--muted);font-size:12px;color:var(--muted-foreground);padding:12px;text-align:left}
+.partner-cash .partner-layout td{padding:10px 12px;vertical-align:middle;border-bottom:1px solid var(--border)}
+.partner-layout th:nth-child(1){width:23%}.partner-layout th:nth-child(2){width:16%}.partner-layout th:nth-child(3){width:17%}.partner-layout th:nth-child(4){width:44%}
+.partner-cash .partner-layout td:nth-child(3){font-weight:600;font-variant-numeric:tabular-nums}
+.partner-cash .partner-layout input{height:36px;min-height:36px;background:var(--background);font-size:14px}
+.partner-cash .partner-layout .partner-row-actions{gap:6px}.partner-cash .partner-layout .partner-payment-status{font-size:12px;line-height:1.4}
+.partner-cash .partner-details .premium-panel{border:0;padding:0;background:transparent}
+.partner-cash .partner-details .premium-heading{flex-wrap:wrap}
