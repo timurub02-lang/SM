@@ -87,3 +87,12 @@ for(const role of ['operator','department_head'])for(const sort of ['stageDate',
 }
 assert.equal(filteredOrderList(state,employee,{...query,filter:'sent'},now)[0].id,'SENT-7','default view keeps pending-operator priority');
 console.log('Sent 15/25: all column directions, both roles, eligibility priority and default pending priority passed');
+
+// Search ignores the selected status, but keeps section and ownership boundaries.
+for(const [view,status,delivery] of [['rework','rework','cdek_courier'],['confirm','confirm','cdek_courier'],['check','check','cdek_courier'],['shipping','shipping','cdek_courier'],['moscow','shipping','moscow_courier'],['post','shipping','russian_post']]){
+ const scoped={...seed(),employees:[employee],clients:[{id:'one',name:'Иван',phone:'',city:'',owner:employee.id}]};
+ scoped.orders=[{...order,status,delivery,id:'MATCH-1'},{...order,status,delivery,id:'MATCH-foreign',manager:'other'},{...order,status:'draft',delivery,id:'MATCH-outside'}];
+ const q={view,filter:view==='check'?'zvd':'nonmatching-status',query:'MATCH',showNextPremium:false};
+ assert.deepEqual(filteredOrderList(scoped,employee,q,now).map(o=>o.id),['MATCH-1'],view+' searches other statuses, not other sections or operators');
+ assert.equal(filteredOrderList(scoped,employee,{...q,query:'   '},now).length,0,view+' restores the status filter for an empty search');
+}
