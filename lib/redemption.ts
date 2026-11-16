@@ -13,6 +13,11 @@ export function redemptionNdCount(row:any,day:string){const entry=row.days?.[day
 export function compareRedemptionRows(a:any,b:any,tab:string,day:string){return Number(tab==='returns'&&returnConfirmedToday(a,day))-Number(tab==='returns'&&returnConfirmedToday(b,day))||Number(tab==='confirm'&&dateConfirmedToday(a,day))-Number(tab==='confirm'&&dateConfirmedToday(b,day))||Number(awaitingOperator(a))-Number(awaitingOperator(b))||Number(['delivered','to_return','returned'].includes(a.result))-Number(['delivered','to_return','returned'].includes(b.result))||(tab==='work'?(a.result==='none'?redemptionNdCount(a,day):0)-(b.result==='none'?redemptionNdCount(b,day):0):0);}
 export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
+export function redemptionDateLimit(day:string,storageUntil='',action=''){
+ const [year,month,date]=day.split('-').map(Number),last=new Date(Date.UTC(year,month+1,0)).getUTCDate();
+ const limit=new Date(Date.UTC(year,month,Math.min(date,last))).toISOString().slice(0,10);
+ return storageUntil&&action!=='po'&&storageUntil<limit?storageUntil:limit;
+}
 export function operatorReturnDeadline(storageUntil:string,now=new Date()){
  const limit=internalDeadline(now.toISOString(),48);
  return validDate(storageUntil||'')?[limit,storageUntil+'T20:59:59.999Z'].sort()[0]:limit;
@@ -154,10 +159,10 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(p.result==='returned'){if(typeof p.returnWaybill!=='string'||!p.returnWaybill.trim()||p.returnWaybill.trim().length>100)throw Error('Укажите номер возвратной накладной (до 100 символов)');Object.assign(next,{returnWaybill:p.returnWaybill.trim(),returnConfirmedAt:at});}
   if((awaitingOperator(row)||incoming)&&p.action==='po'&&p.responsibilityConfirmed!==true)throw Error('Подтвердите, что клиент точно выкупит заказ после окончания срока хранения');
   let date='';if(p.result==='date'){
-   if(!row.storageUntil&&(p.action!=='po'||incoming))throw Error('СДЭК пока не передал срок хранения');
+   if(!row.storageUntil&&!['date','work'].includes(p.action)&&(p.action!=='po'||incoming))throw Error('СДЭК пока не передал срок хранения');
    date=p.action==='refusal'?day:p.date;
    if(incoming&&p.action==='po'&&date<=row.storageUntil)throw Error('Под ответственность выберите дату после срока хранения');
-   if(!validDate(date||'')||date<day||p.action!=='po'&&date>row.storageUntil)throw Error('Дата должна быть не раньше сегодня и не позже СХ');
+   if(!validDate(date||'')||date<day||date>redemptionDateLimit(day,row.storageUntil,p.action))throw Error('Дата должна быть не раньше сегодня, не дальше одного месяца и в пределах СХ (кроме «Под ответственность»)');
   }
   if(p.action==='refusal'&&p.result==='date'){
    const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(row.manager).first();

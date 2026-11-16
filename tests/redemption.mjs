@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {redemptionConfig,redemptionNdCount,compareRedemptionRows,redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+import {redemptionDateLimit,redemptionConfig,redemptionNdCount,compareRedemptionRows,redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
 assert.equal(redemptionDayAuthor({author:'Иван',lastDay:'2026-10-18'},'2026-10-19'),'');
 assert.equal(redemptionDayAuthor({author:'Мария',lastDay:'2026-10-19'},'2026-10-19'),'Мария');
 assert.equal(redemptionDayAuthor({author:'API',lastDay:'2026-10-19'},'2026-10-19'),'API');
@@ -29,8 +29,21 @@ try{
  assert(canSeeRedemption(op,await row(),false));assert(canSeeRedemption(head,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),false));assert(canSeeRedemption({...head,department:'2'},await row(),true));assert(!canSeeRedemption({...op,id:'other'},await row(),true));
  async function edit(actor,p,t=now){await editRedemption(d,actor,{id:'o',version:(await row()).version,comment:'Комментарий к действию',...p},t);}
  await assert.rejects(edit(admin,{operation:'storage',date:'2026-10-18'}),/автоматически/);
- await assert.rejects(edit(admin,{action:'date',result:'date',date:'2026-10-20'}),/срок хранения/);
+ const missingStorageData=(await d.prepare("SELECT data FROM redemption_entries WHERE order_id='o'").first()).data;
+ for(const actor of [admin,buyer,op,head])for(const action of ['date','work']){
+  await edit(actor,{action,result:'date',date:'2026-11-15',replaceConfirmed:true});assert.equal((await row()).resultDate,'2026-11-15');
+  for(const date of ['2026-10-14','2026-11-16','2027-10-17','2026-02-30'])await assert.rejects(edit(actor,{action,result:'date',date,replaceConfirmed:true}),/Дата/);
+ }
+ await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(missingStorageData).run();
+ await assert.rejects(edit(buyer,{operation:'return_operator',reason:'Отработать отказ'}),/срок хранения/);
+ assert.equal(redemptionDateLimit('2026-11-16'),'2026-12-16');
+ assert.equal(redemptionDateLimit('2026-01-31'),'2026-02-28');
+ assert.equal(redemptionDateLimit('2028-01-31'),'2028-02-29');
+ assert.equal(redemptionDateLimit('2026-12-31'),'2027-01-31');
+ assert.equal(redemptionDateLimit('2026-10-15','2026-10-18','date'),'2026-10-18');
+ assert.equal(redemptionDateLimit('2026-10-15','2026-10-18','po'),'2026-11-15');
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?) WHERE id='o'").bind('2026-10-18').run();
+ await assert.rejects(edit(buyer,{action:'po',result:'date',date:'2026-11-16'}),/Дата/);
  assert(allowedResults('refusal',await row(),'operator','2026-10-15').includes('date'));
  assert.equal(refusalRetryDate('2026-10-15'),'2026-10-19');assert.equal(refusalRetryDate('2026-10-16'),'2026-10-20');assert.equal(refusalRetryDate('2026-10-19'),'2026-10-21');
  assert.deepEqual(allowedResults('po',await row(),'operator','2026-10-15'),['date']);
