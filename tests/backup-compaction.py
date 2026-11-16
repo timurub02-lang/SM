@@ -134,6 +134,8 @@ class Compaction(unittest.TestCase):
         p = self.database('real.sqlite')
         (self.root / 'linked.sqlite').symlink_to(p)
         os.link(p, self.root / 'hard.sqlite')
+        self.database('pinned-link.sqlite')
+        (self.root / 'pinned-link.sqlite.keep').symlink_to(self.root / 'missing-marker-target')
         self.assertEqual(self.run_policy(True)['eligible'], [])
 
     def test_threshold_warning_and_policy_validation(self):

@@ -46,7 +46,8 @@ def eligible(path, root, cutoff, keep):
     s = path.lstat()
     if not stat.S_ISREG(s.st_mode) or s.st_nlink != 1 or s.st_mtime >= cutoff:
         return False
-    if path.name == 'deploy-latest.sqlite' or path.name in keep or pathlib.Path(str(path) + '.keep').exists():
+    marker = pathlib.Path(str(path) + '.keep')
+    if path.name == 'deploy-latest.sqlite' or path.name in keep or marker.exists() or marker.is_symlink():
         return False
     for suffix in ('-wal', '-journal'):
         sidecar = pathlib.Path(str(path) + suffix)
