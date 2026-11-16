@@ -730,6 +730,13 @@ async function handlePOST(request:Request){
    if(p.action==="markPackingWaybill")next.deliveryReset.waybill=false;
   }
   if(next.deliveryReset&&!next.deliveryReset.calculation&&!next.deliveryReset.waybill)delete next.deliveryReset;
+  if(p.action==='updateOrder'&&p.pickupPoint!==undefined){
+   if(!canSelectOrderPickupPoint(next,employee,s.employees))throw Error("Выбор ПВЗ недоступен");
+   const choice=z.object({code:z.string().trim().min(1).max(50),selectionId:z.string().uuid()}).parse(p.pickupPoint);
+   const cache=await d.prepare("SELECT data FROM settings WHERE id=?").bind("cdek-pickup-options-"+o.id).first<{data:string}>();
+   next.cdekPickupPoint={...selectedCachedPickupPoint(next,cache?JSON.parse(cache.data):null,choice.code,choice.selectionId,Date.now()),by:employee.id,selectedAt:now};delete next.cdekTariff;
+   text+=" · выбран ПВЗ получателя: "+next.cdekPickupPoint.address+" · "+choice.code;
+  }
   if(p.action==='updateOrder'&&p.operatorFollowup===true){
    const message=z.string().trim().max(3000).parse(p.logisticMessage||'');
    next={...next,...operatorFollowup(employee,o,next,message,now,s.employees)};
