@@ -49,7 +49,7 @@ export function buyoutStatsByDay(rows:ReturnType<typeof operatorStats>){
  for(const row of rows)for(const order of row.orderLists.redeemed){
   const day=moscowDate.format(new Date(order.redeemedAt!));
   let result=days.get(day);
-  if(!result){result={...row,id:day,login:day,department:'',buyoutCount:0,buyoutAmount:0,buyoutCdek:0,buyoutPost:0,buyoutMoscow:0,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}};days.set(day,result);}
+  if(!result){result={...row,id:day,login:day,department:'',created:0,inWork:0,amount:0,average:0,cancelled:0,confirmed:0,awaitingShipment:0,sent:0,buyoutCount:0,buyoutAmount:0,buyoutCdek:0,buyoutPost:0,buyoutMoscow:0,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}};days.set(day,result);}
   result.buyoutCount++;result.buyoutAmount=(Math.round(result.buyoutAmount*100)+Math.round(total(order)*100))/100;
   if(order.delivery==='cdek_pickup'||order.delivery==='cdek_courier')result.buyoutCdek++;
   if(order.delivery==='russian_post')result.buyoutPost++;
