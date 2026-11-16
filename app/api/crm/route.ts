@@ -1,3 +1,4 @@
+import {acknowledgeCashNotice} from '@/lib/cash-notifications';
 import {canEditOrderRecipientName,nextExtraConfirmationAt} from '@/lib/crm';
 import {reportPostalBuyout,resolvePostalBuyout,postalBuyoutPending} from '@/lib/postal-buyout-report';
 import {journalAuthor} from '@/lib/journal-author';
@@ -235,8 +236,11 @@ async function handlePOST(request:Request){
   if(!employee)throw Error("Требуется сотрудник");
   const reminderId=z.string().max(500).parse(p.id);
   if(p.acknowledge===true){
+   if(reminderId.startsWith('cash:'))await acknowledgeCashNotice(d,employee,reminderId,now);
+   else {
    if(employee.role!=='department_head'||!scheduledCalls(s.orders,employee,s.employees).some(o=>`call:${o.id}:${o.due}`===reminderId&&Date.parse(o.due)>Date.parse(now)))throw Error('Ознакомление доступно руководителю для будущего звонка своего отдела');
    await d.prepare("UPDATE reminders SET data=json_set(data,'$.acknowledgedAt',?),read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,now,employee.id,reminderId).run();
+   }
   }else await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,reminderId).run();
  }else if(p.action==="createIncomingClient"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Создать клиента могут администратор и руководители');

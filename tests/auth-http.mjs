@@ -566,6 +566,18 @@ try{
  assert.equal(afterInvalidReasons.balance,beforeInvalidReasons.balance,'Invalid reasons must not change the balance');
  assert.equal(afterInvalidReasons.operations.length,beforeInvalidReasons.operations.length,'Invalid reasons must not create any receipt or expense');
  const expenseHistory=await call('/api/cash?employeeId='+cashHead.e.id,{cookie:cookies.admin});assert.ok(expenseHistory.data.operations.some(o=>o.id===customExpense.operation.id&&o.purpose==='Ремонт принтера'));
+ const cashNoticeId='cash:'+customExpense.operation.id+':created';
+ let cashNotices=(await call('/api/crm',{cookie:cookies.admin})).data.reminders;
+ assert.ok(cashNotices.some(r=>r.id===cashNoticeId&&r.kind==='cash-change'));
+ assert.ok(!(await call('/api/crm',{cookie:cashHead.cookie})).data.reminders.some(r=>r.id===cashNoticeId),'Cash notices are admin-only');
+ assert.equal((await call('/api/crm',{cookie:cashHead.cookie,body:{action:'readReminder',id:cashNoticeId,acknowledge:true}})).status,400);
+ assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'readReminder',id:cashNoticeId}})).status,200);
+ assert.ok((await call('/api/crm',{cookie:cookies.admin})).data.reminders.some(r=>r.id===cashNoticeId),'Opening never acknowledges cash');
+ const cashBeforeAck=JSON.stringify(db.prepare('SELECT * FROM cash_operations ORDER BY id').all());
+ assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'readReminder',id:cashNoticeId,acknowledge:true}})).status,200);
+ for(let i=0;i<2;i++)assert.ok(!(await call('/api/crm',{cookie:cookies.admin})).data.reminders.some(r=>r.id===cashNoticeId),'Cash acknowledgement persists');
+ assert.equal(JSON.stringify(db.prepare('SELECT * FROM cash_operations ORDER BY id').all()),cashBeforeAck,'Acknowledgement does not modify cash');
+
  console.log('Cash purposes: all ten choices, custom text, trimming, history, empty/long text validation and idempotent retries passed.');
  console.log('Cash: delivery receipts, private balances, pending transfers, confirmation, retries, insufficient funds and concurrent spending passed.');
  console.log('Chief logistics and courier: scoped employee management, no role escalation, logistics access and courier isolation passed.');
