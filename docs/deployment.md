@@ -359,3 +359,7 @@ Mutable provider pagination can miss members, so an unsuccessful scan is only a
 lack of confirmation, never proof that a contact is absent. Existing unresolved
 no-project transfers encountered by reconciliation are also checked. No new timer,
 service, external writes or manual database migration is required.
+
+## Pickup point before operator handoff
+
+Draft and operator-rework CDEK pickup orders require a selected recipient PVZ before handoff. Operators select an active point from a scoped server lookup; the server verifies its lookup ID, expiry and saved address/items before saving. Logistics receive the same point prefilled for calculation and may change it. Address or parcel-item changes invalidate the earlier selection. Existing confirmed/sent orders are not moved or edited by rollout. The additive JSON selection needs no schema migration; rollback leaves it stored but older code ignores the new handoff requirement. Search filters the loaded point list locally and retains COD restrictions and the selected point.

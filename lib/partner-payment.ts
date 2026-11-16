@@ -1,3 +1,4 @@
+import {productCostsGuard} from './warehouse-cost';
 import {z} from 'zod';
 import {db} from './db';
 import {partnerAccountView} from './partner-account';
@@ -36,7 +37,8 @@ export async function partnerPayment(actor:Employee,body:unknown){
  }
  const raw=JSON.stringify(next),guard="(SELECT json_group_array(json_array(id,data)) FROM (SELECT id,data FROM settings WHERE id LIKE 'cdek-bank-registry:%' ORDER BY id))=? AND COALESCE((SELECT data FROM settings WHERE id='partner-settlements'),'')=? AND EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id='partner-cash-account'),'')=? AND (SELECT json_group_array(json_array(id,data)) FROM (SELECT id,data FROM settings WHERE id LIKE 'partner-cash:%' ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,data)) FROM (SELECT id,data FROM settings WHERE id LIKE ? ORDER BY id))=?";
  const args=[v.bankRevision,v.stored?.data||'',v.state.raw,v.account?.data||'',v.costVersions,v.state.orderVersions,v.state.staffVersions,'premium-draft:'+v.state.ledger!.activePeriod+':%',v.state.draftVersions];
- const update=d.prepare("INSERT INTO settings(id,data) SELECT 'partner-settlements',? WHERE "+guard+" ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(raw,...args);
+ const update=d.prepare("INSERT INTO settings(id,data) SELECT 'partner-settlements',? WHERE "+guard+" AND "+productCostsGuard+" ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(raw,...args,v.catalogRevision);
  const movements=entry?.action==='pay'?[d.prepare("INSERT INTO cash_operations(id,kind,sender,recipient,amount,purpose,date,created_at,accepted_at,actor,sender_name,recipient_name) SELECT ?,?,?,?,?,?,?,?,NULL,?,?,? WHERE EXISTS(SELECT 1 FROM settings WHERE id='partner-settlements' AND data=?)").bind(entry.id,entry.recipient?'transfer':'spend',v.emil.id,entry.recipient??null,entry.amount,purpose,date,at,actor.id,v.emil.name,recipientName,raw)]:[];
- const [result]=await d.batch([update,...movements]);if(!result.meta.changes)throw Error('Данные изменились. Обновите кассу');
+ const lockCosts=entry?.action==='pay'&&!v.settlements.entries.some(e=>e.period===b.period&&e.action==='pay')?[d.prepare("INSERT INTO settings(id,data) SELECT ?,? WHERE EXISTS(SELECT 1 FROM settings WHERE id='partner-settlements' AND data=?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind('partner-cash:'+b.period,JSON.stringify({...v.periodSettings[b.period],revision:crypto.randomUUID()}),raw)]:[];
+ const [result]=await d.batch([update,...lockCosts,...movements]);if(!result.meta.changes)throw Error('Данные изменились. Обновите кассу');
 }

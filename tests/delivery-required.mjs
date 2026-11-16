@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {validateTransition,deliverySchema} from '../lib/crm.ts';
-const base={createdAt:new Date().toISOString(),status:'draft',address:'101000, Москва, ул. Тестовая, дом 1',items:[{name:'Product',quantity:1,price:1}]};
+const base={cdekTariff:{deliveryPoint:{code:'TEST',address:'Тестовый ПВЗ',workTime:''}},createdAt:new Date().toISOString(),status:'draft',address:'101000, Москва, ул. Тестовая, дом 1',items:[{name:'Product',quantity:1,price:1}]};
 for(const [status,extra,to] of [['draft',false,'confirm'],['rework',false,'confirm'],['rework',true,'extra']]){
  const order={...base,status,extra};
  for(const delivery of ['',undefined,['cdek_pickup','russian_post']])assert.throws(()=>validateTransition({...order,delivery},to,{name:'Тестовый Клиент'},''),/доставки/);

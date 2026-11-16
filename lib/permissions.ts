@@ -1,4 +1,5 @@
 import {visibleOrderHistoryText} from './order-change-history.ts';
+import {canSelectOrderPickupPoint} from './order-pickup-point.ts';
 import {canEditOrderRecipientName} from './crm.ts';
 import {impersonationBlocksPhone} from './impersonation.ts';
 import {canEditMoscowOrderDetails,canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
@@ -61,6 +62,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='resolveOrderEdit')return allow(isLogistic(e.role));
  if(p.action==='completeOrderEdit')return allow(['operator','department_head'].includes(e.role));
  if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
+ if(p.action==='selectOrderPickupPoint')return allow(canSelectOrderPickupPoint(order,e,s.employees));
  if(p.action==='reportPostalBuyout')return allow(order.delivery==='russian_post'&&['shipping','pickup'].includes(order.status)&&(e.role==='operator'&&order.manager===e.id||e.role==='department_head'&&isDepartmentOrder(e,order,s.employees)));
  if(p.action==='keepPostalSent')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
  if(p.action==='savePostalTracking')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
@@ -99,7 +101,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/base-search')return method==='GET'&&['admin','department_head','logistic','chief_logistic'].includes(e.role);
  if(path==='/api/sk-client-link')return method==='GET'&&!['courier','purchasing'].includes(e.role);
  if(path==='/api/crm/history')return method==='GET'&&!['courier','purchasing'].includes(e.role);
- if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&method==='GET'&&!url.searchParams.has('points');
+ if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&(method==='GET'&&!url.searchParams.has('points')||method==='POST'&&p?.action==='saveCost');
  if(path==='/api/redemption')return ['GET','POST'].includes(method)&&['admin','operator','department_head','redemption'].includes(e.role);if(e.role==='admin')return true;
  if(path==='/api/partner-cash')return ['GET','POST'].includes(method)&&e.login==='A_Emil';
  if(path==='/api/operator-statistics')return method==='GET'&&e.role==='department_head';
@@ -122,6 +124,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/activity')return method==='GET'&&e.role==='department_head'&&!!e.department;
  if(e.role==='courier')return path==='/api/crm'&&(method==='GET'||method==='POST'&&['courierOutcome','courierAccept','courierWorkflow','contact','readReminder'].includes(p?.action));
  if(path==='/api/crm')return true; // Object-level rules are applied inside the CRM handler.
+ if(path==='/api/cdek/pickup-points')return method==='GET'&&['operator','department_head'].includes(e.role)&&url.searchParams.has('orderId');
  if(path==='/api/cdek/routing')return method==='GET'&&isLogistic(e.role)&&url.searchParams.has('orderId');
  if(path==='/api/cdek'||path==='/api/cdek/status-mapping')return method==='GET'&&isLogistic(e.role);
  if(path==='/api/callback-phones'||path==='/api/postal-form')return method==='GET'&&isLogistic(e.role);
