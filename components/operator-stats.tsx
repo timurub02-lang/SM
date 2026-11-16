@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState} from 'react';
 import {Tabs,TabsList,TabsTrigger} from './ui/tabs';
+import {ShipmentStats} from './shipment-stats';
 import {BaseStats} from './base-stats';
 import {Switch} from './ui/switch';
 import {BarChart3} from 'lucide-react';
@@ -10,7 +11,7 @@ import {money,statuses,departments,type Order,type State,type Employee} from '..
 export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;actor:Employee;onOpenOrder:(id:string)=>void;detailOpen:boolean}){
  const [section,setSection]=useState('created');
  const [byDay,setByDay]=useState(false);
- const daily=section==='buyouts'&&byDay;
+ const daily=(section==='buyouts'||section==='shipped')&&byDay;
  const [department,setDepartment]=useState(''),[showAll,setShowAll]=useState(false);
  const [summary,setSummary]=useState<ReturnType<typeof operatorStatsSummary>>([]),[summaryError,setSummaryError]=useState(''),[summaryLoading,setSummaryLoading]=useState(false);
  const [sort,setSort]=useState<{key:StatsSortKey;ascending:boolean}>({key:'created',ascending:false});
@@ -18,11 +19,11 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  const visible=open&&!detailOpen;
  const summaryMode=actor.role==='department_head'&&showAll;
  useEffect(()=>{
-  if(!visible||!summaryMode)return;
+  if(!visible||!summaryMode||section==='shipped')return;
   const controller=new AbortController();setSummaryLoading(true);setSummaryError('');setSummary([]);
   fetch(`/api/operator-statistics?actorId=${encodeURIComponent(actor.id)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&groupBy=${daily?'day':'operator'}&department=${encodeURIComponent(department)}`,{signal:controller.signal}).then(async response=>{const data=await response.json() as {rows:ReturnType<typeof operatorStatsSummary>;error?:string};if(!response.ok)throw Error(data.error||'Не удалось загрузить статистику');return data.rows;}).then(rows=>{if(!controller.signal.aborted)setSummary(rows);}).catch(error=>{if(!controller.signal.aborted)setSummaryError(error.message);}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});
   return ()=>controller.abort();
- },[visible,summaryMode,from,to,actor.id,daily,department]);
+ },[visible,summaryMode,from,to,actor.id,daily,department,section]);
  if(!['admin','department_head','operator'].includes(actor.role))return null;
  const sourceRows=!visible?[]:summaryMode?summary.map(row=>({...row,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}})):operatorStats(state,actor,from,to);
  const filtered=sourceRows.filter(r=>!department||summaryMode&&daily||r.department===department);
@@ -44,19 +45,20 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  return <>
   <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today);setTo(today);setOpen(true);}} title="Статистика операторов"><BarChart3 size={18}/>Статистика</button>
   <Dialog open={visible} onOpenChange={setOpen}>{visible&&<DialogContent className="form-dialog operator-stats-dialog">
-   <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>{section==='base'?'Закреплённые клиенты операторов и отделов.':section==='buyouts'?'По дате выкупа, включая перенесённые заказы ЛВ. Даты — по Москве.':'Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.'}</DialogDescription></DialogHeader>
+   <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>{section==='shipped'?'Заказы по дате отправки и их текущий выкуп. Даты — по Москве.':section==='base'?'Закреплённые клиенты операторов и отделов.':section==='buyouts'?'По дате выкупа, включая перенесённые заказы ЛВ. Даты — по Москве.':'Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.'}</DialogDescription></DialogHeader>
    <div className="stack">
-    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики"><TabsTrigger value="created">Созданные заказы</TabsTrigger><TabsTrigger value="buyouts">Выкупы</TabsTrigger>{actor.role==='admin'&&<TabsTrigger value="base">База</TabsTrigger>}</TabsList></Tabs>
+    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики"><TabsTrigger value="created">Созданные заказы</TabsTrigger><TabsTrigger value="buyouts">Выкупы</TabsTrigger><TabsTrigger value="shipped">Отправленные</TabsTrigger>{actor.role==='admin'&&<TabsTrigger value="base">База</TabsTrigger>}</TabsList></Tabs>
     {section==='base'?actor.role==='admin'&&<BaseStats actorId={actor.id}/>:<>
     <div className="stats-period">
      <label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
      <label>По дату<input aria-label="Конец периода" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
      <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today.slice(0,7)+"-01");setTo(today);}}>За месяц</button>
-     {section==='buyouts'&&<button className="secondary" aria-pressed={byDay} onClick={()=>{setByDay(!byDay);setSort({key:!byDay?'login':'buyoutCount',ascending:false});}}>По дням</button>}
+     {(section==='buyouts'||section==='shipped')&&<button className="secondary" aria-pressed={byDay} onClick={()=>{setByDay(!byDay);setSort({key:!byDay?'login':'buyoutCount',ascending:false});}}>По дням</button>}
      {(actor.role==='admin'||summaryMode)&&<div className="stats-departments" role="group" aria-label="Отделы"><button className="secondary" aria-pressed={!department} onClick={()=>setDepartment('')}>Все отделы</button>{Object.entries(departments).map(([id,name])=><button className="secondary" key={id} aria-pressed={department===id} onClick={()=>setDepartment(id)}>{name}</button>)}</div>}
      {actor.role==='department_head'&&<label className="stats-all-switch"><Switch aria-label="Показать все отделы" checked={showAll} onCheckedChange={checked=>{setShowAll(checked);setDepartment('');}}/>Показать все отделы</label>}
     </div>
     {summaryMode&&<p className="muted">Общая сводка: только показатели, без доступа к заказам.</p>}
+    {section==='shipped'?(invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<ShipmentStats state={state} actor={actor} from={from} to={to} department={department} byDay={byDay} summaryMode={summaryMode} metric={metric}/>):<>
     {summaryMode&&summaryLoading?<p role="status">Загрузка статистики отделов…</p>:summaryMode&&summaryError?<p role="alert">{summaryError}</p>:invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<div className="stats-results"><div className="stats-table-wrap"><table className="stats-table">{colgroup}{headers}
      {section==='buyouts'?<><tbody>{rows.map(r=><tr key={r.id}><td>{daily?r.login.split('-').reverse().join('.'):r.login}</td>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(r[key]):r[key],r.orderLists.redeemed.filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label)}</td>)}</tr>)}</tbody><tfoot><tr><th>Итого</th>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(rows.reduce((n,r)=>n+Math.round(r[key]*100),0)/100):rows.reduce((n,r)=>n+r[key],0),rows.flatMap(r=>r.orderLists.redeemed).filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label+' — итого')}</td>)}</tr></tfoot></>:<><tbody>{rows.map(r=><tr key={r.id}>
       <td title={r.login}>{r.login}</td><td>{metric(r.created,r.orderLists.created,"Создано заказов")}</td>
@@ -74,6 +76,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
      </tr></tfoot></>}
     </table></div>{!rows.length&&<p>{section==='buyouts'?'За выбранный период нет выкупленных заказов.':'За выбранный период нет созданных заказов.'}</p>}</div>}
     {section==='buyouts'?<p className="muted">Учитываются выкупы за выбранные даты независимо от даты создания заказа. Без известной даты выкупа заказ в статистику не входит. Нажмите на показатель, чтобы посмотреть доступные вам заказы.</p>:<p className="muted">В работе — ещё не подтверждены и не отменены. Сортировка — нажатием на заголовок. Подтверждено — логистом. Ожидают отправки — подтверждены, ещё не отправлены и не отменены. Средний чек и сумма включают все созданные заказы, в том числе отменённые. Подтверждение и отправка учитываются независимо: отправленный заказ остаётся в подтверждённых. Доставка — СДЭК, Почта России и курьер. {!summaryMode&&'Нажмите на показатель, чтобы открыть входящие в него заказы.'}</p>}
+    </>}
     </>}
    </div>
   </DialogContent>}</Dialog>
