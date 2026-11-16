@@ -888,3 +888,8 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 
 /* Incoming actions share dimensions; their colors still describe the action. */
 :is(.incoming-card-body,.incoming-order-actions,.incoming-action-dialog) button:is(.primary,.secondary){display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;width:fit-content;max-width:100%;box-sizing:border-box;min-height:40px;padding:8px 14px;border-width:1px;border-style:solid;border-radius:10px;font-family:inherit;font-size:14px;font-weight:400;line-height:22px;letter-spacing:normal;white-space:normal;text-align:center;gap:8px}
+
+/* The live call dock spans the header instead of squeezing the client name. */
+.client-profile-dialog.has-header-call>[data-slot=dialog-header].has-call-dock{grid-template-columns:minmax(0,1fr)}
+.client-profile-dialog>[data-slot=dialog-header].has-call-dock>.call-route-buttons.card-header-call{display:none}
+.client-profile-dialog>[data-slot=dialog-header].has-call-dock>.browser-call-dock{grid-column:1/-1;grid-row:3;min-width:0;max-width:100%;box-sizing:border-box}
