@@ -15,7 +15,8 @@ import time
 
 ROOT = pathlib.Path('/srv/crm/backups')
 POLICY = pathlib.Path('/etc/sm-crm-backup-policy.json')
-REFERENCE_ROOTS = ('/usr/local/sbin', '/usr/local/bin', '/var/lib/sm-crm/imports', '/var/lib/sm-crm/ops')
+REFERENCE_ROOTS = ('/usr/local/sbin', '/usr/local/bin', '/etc/systemd/system', '/run/systemd/transient',
+                   '/etc/cron.d', '/srv/crm/releases', '/var/lib/sm-crm/imports', '/var/lib/sm-crm/ops')
 CHUNK = 1024 * 1024
 
 
@@ -182,6 +183,8 @@ if __name__ == '__main__':
     with open('/run/lock/sm-crm-backup-compaction.lock', 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         result = run(ROOT, json.loads(POLICY.read_text()), args.apply)
-        print(json.dumps(result))
+        print(json.dumps(result if not args.apply else {
+            'eligibleCount': len(result['eligible']), 'compactedCount': len(result['compacted']),
+            'backupBytes': result['backupBytes'], 'freeBytes': result['freeBytes'], 'warnings': result['warnings']}))
         if result['warnings']:
             raise SystemExit(2)

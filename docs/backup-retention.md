@@ -16,8 +16,8 @@ Only ordinary single-link `.sqlite` files immediately under `/srv/crm/backups`
 are eligible, after at least 48 hours without changes. Subdirectories, daily,
 imports, live databases, recordings, releases and `deploy-latest.sqlite` are
 outside this operation. A sibling `<name>.sqlite.keep` marker or a basename
-in `keep_names` protects a checkpoint. References in local administrator and
-saved import scripts also protect a filename; dynamically constructed names
+in `keep_names` protects a checkpoint. References in installed release code,
+service/cron definitions, administrator and saved import scripts also protect a filename; dynamically constructed names
 must be pinned explicitly. Inspect the proposed list before initial activation.
 
 The process refuses nonempty SQLite WAL/journal files, open descriptors/mappings,
