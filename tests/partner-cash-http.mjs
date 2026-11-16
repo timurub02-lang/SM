@@ -119,9 +119,12 @@ try{
  const openLedger={...ledger,revision:'cost-lock',periods:{[period]:{...ledger.periods[period],status:'frozen'}}};
  db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(JSON.stringify(openLedger));
  db.prepare("UPDATE orders SET data=? WHERE id='LV-1'").run(JSON.stringify(order));
+ db.prepare("UPDATE settings SET data=json_set(data,'$.amount',json('null')) WHERE id='warehouse-cost:product'").run();
+ const fresh=await call(path,cookies.admin,{revision:'',taxRate:0,communication:0,bank:1});assert.equal(fresh.status,200,JSON.stringify(fresh.data));
+ const firstPay=await call(path,cookies.A_Emil,{action:'pay',id:crypto.randomUUID(),revision:fresh.data.settlementRevision,period,kind:'bank',amount:1});assert.equal(firstPay.status,200,JSON.stringify(firstPay.data));
  db.prepare("UPDATE settings SET data=json_set(data,'$.amount',300) WHERE id='warehouse-cost:product'").run();
- const fresh=await call(path,cookies.admin,{revision:'',taxRate:0,communication:0,bank:0});assert.equal(fresh.status,200,JSON.stringify(fresh.data));
- const firstPay=await call(path,cookies.A_Emil,{action:'pay',id:crypto.randomUUID(),revision:fresh.data.settlementRevision,period,kind:'goods',amount:1,recipient:'admin'});assert.equal(firstPay.status,200,JSON.stringify(firstPay.data));
+ const filled=await call(path,cookies.A_Emil);assert.equal(filled.data.goods,60000,'Missing cost remains fillable after paying another expense');
+ const goodsPay=await call(path,cookies.A_Emil,{action:'pay',id:crypto.randomUUID(),revision:filled.data.settlementRevision,period,kind:'goods',amount:1,recipient:'admin'});assert.equal(goodsPay.status,200,JSON.stringify(goodsPay.data));
  db.prepare("UPDATE settings SET data=json_set(data,'$.amount',999) WHERE id='warehouse-cost:product'").run();
  const locked=await call(path,cookies.A_Emil);assert.equal(locked.status,200);assert.equal(locked.data.goods,60000,'Started payments keep their original warehouse prices');
  assert.equal(locked.data.settings.warehouseProductPrices,undefined,'Internal catalog snapshot is not exposed');

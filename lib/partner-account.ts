@@ -28,7 +28,7 @@ export async function partnerAccountView(period:string){
   const bank=await readPartnerBank(d,s.ledger!,id,s.orders,s.employees);
   if(bankRevision!==undefined&&bankRevision!==bank.revision)throw Error('Реестры изменились. Обновите кассу');bankRevision=bank.revision;
   const report:ReturnType<typeof partnerCalculation>=frozen?JSON.parse(frozen.data):partnerCalculation(periodOrders(s.ledger!,id,s.orders,s.employees),s.orders,ledgerRows(s.ledger!,id,s.orders,s.employees,s.adjustments),settings,bank,catalog.prices);
-  periodSettings[id]={...settings,warehouseProductPrices:settings.warehouseProductPrices||Object.fromEntries(report.products.map(p=>[costName(p.name),p.price]))};
+  periodSettings[id]={...settings,warehouseProductPrices:Object.fromEntries(report.products.filter(p=>p.price!==null).map(p=>[costName(p.name),p.price]))};
   if(frozen)settings=JSON.parse(frozen.data).settings;
   const rows=partnerObligations(id,report,settings,settlements,accepted,s.ledger!.periods[id].status==='paid');obligations.push(...rows);
   transferred+=report.transferred;
