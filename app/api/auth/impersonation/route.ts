@@ -22,9 +22,9 @@ export async function POST(req:Request){
    const target=await db().prepare('SELECT data FROM employees WHERE id=?').bind(body.employeeId).first<{data:string}>();
    if(!target||!mayImpersonate(owner.employee,JSON.parse(target.data)))return Response.json({error:'Можно войти только под оператором своего отдела'},{status:403});
   }
-  // Only the session owner's own call can delay switching; never touch the target's sessions or phone.
+  // Preparation expires after two minutes; PBX calls have a 30-minute hard limit plus reporting grace.
   const phoneTable=await db().prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='phone_calls'").first();
-  if(phoneTable&&await db().prepare("SELECT id FROM phone_calls WHERE actor_id=? AND ended_at IS NULL AND status IN ('preparing','dialing','connected') LIMIT 1").bind(owner.employee.id).first())return Response.json({error:'Сначала завершите свой текущий звонок'},{status:409});
+  if(phoneTable&&await db().prepare("SELECT id FROM phone_calls WHERE actor_id=? AND ended_at IS NULL AND ((status='preparing' AND julianday(started_at)>julianday('now','-2 minutes')) OR (status IN ('dialing','connected') AND julianday(started_at)>julianday('now','-32 minutes'))) LIMIT 1").bind(owner.employee.id).first())return Response.json({error:'Сначала завершите свой текущий звонок'},{status:409});
   const id=crypto.randomUUID(),now=Date.now();
   const result=await db().batch([
    db().prepare('DELETE FROM auth_impersonations WHERE expires_at<=?').bind(now),

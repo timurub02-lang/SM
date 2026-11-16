@@ -69,6 +69,16 @@ try{
  }
  const ownCall=await call('admin','/api/telephony',{mode:'echo'});assert.equal(ownCall.status,200,JSON.stringify(ownCall));
  assert.equal((await call('admin',switchPath,start)).status,409,'An administrator cannot switch during their own call');
+ const originalCall=d.prepare('SELECT * FROM phone_calls WHERE id=?').get(ownCall.data.callId);
+ for(const [status,minutes,expected] of [['preparing',1,409],['preparing',3,200],['dialing',10,409],['connected',31,409],['connected',33,200],['preparing',5*24*60,200]]){
+  const started=new Date(Date.now()-minutes*60000).toISOString();
+  d.prepare('UPDATE phone_calls SET status=?,started_at=? WHERE id=?').run(status,started,ownCall.data.callId);
+  assert.equal((await call('admin',switchPath,start)).status,expected,'Call guard: '+status+' '+minutes+' minutes');
+  if(expected===200)assert.equal((await call('admin',switchPath,{action:'stop'})).status,200);
+  const unchanged=d.prepare('SELECT status,started_at,ended_at FROM phone_calls WHERE id=?').get(ownCall.data.callId);
+  assert.deepEqual({...unchanged},{status,started_at:started,ended_at:null},'Switching must not edit call history');
+ }
+ d.prepare('UPDATE phone_calls SET started_at=? WHERE id=?').run(originalCall.started_at,ownCall.data.callId);
  d.prepare("UPDATE phone_calls SET actor_id='one',status='connected' WHERE id=?").run(ownCall.data.callId);
  assert.equal((await call('admin',switchPath,start)).status,200);
  assert.equal((await call('admin','/api/auth/me')).data.employee.id,'one');assert.equal((await call('admin','/api/auth/me')).data.impersonation.adminId,'admin');
