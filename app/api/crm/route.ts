@@ -1,3 +1,4 @@
+import {canEditOrderRecipientName} from '@/lib/crm';
 import {journalAuthor} from '@/lib/journal-author';
 import {changeClientSheet} from '@/lib/client-sheet-change';
 import {canReceiveWarehouseReturn,legacyReturnItems} from '@/lib/warehouse-return';
@@ -423,19 +424,21 @@ async function handlePOST(request:Request){
   const created=ev(c.id,o.id,(sourceIncoming?"Создан заказ "+o.id+" из входящего · "+sourceIncoming.id+" · Оформление":"Создан заказ · Оформление")+(addressWarnings.length?" · адрес проверен вручную, создание подтверждено несмотря на предупреждение: "+addressWarnings.map(w=>w.message).join(" "):"")+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":""));
   const workStatements=await orderClientWorkStatements(d,c.id,manager,o.id,now);
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)"+(sourceIncoming?" AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_at IS NULL AND spam=0 AND client_id=? AND assignee_id IS ? AND department_id=? AND shared_queue=?) AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=? AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))":"")).bind(o.id,c.id,json(o),c.id,c.version,...(sourceIncoming?[sourceIncoming.id,c.id,sourceIncoming.assignee_id,sourceIncoming.department_id,sourceIncoming.shared_queue||0,c.id]:[])),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(created.id,c.id,o.id,now,json(created),o.id),...(sourceIncoming?[incomingCloseStatement(d,sourceIncoming.id,employee!.id,now,'Оформлен новый заказ '+o.id,o.id,o.id)]:[]),...workStatements]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message=sourceIncoming?"Создан заказ "+o.id+", входящее закрыто":"Заказ создан";
- }else if(p.action==='updateMoscowDetails'){
+ }else if(['updateMoscowDetails','updateRecipientName'].includes(p.action)){
   const o=s.orders.find(o=>o.id===p.id),c=o&&s.clients.find(c=>c.id===o.clientId);
-  if(!employee||!o||!c||!canEditMoscowOrderDetails(employee,o))throw Error('Изменение данных получателя доступно логистам в активном заказе Курьера Москва');
+  const nameOnly=p.action==='updateRecipientName';
+  if(nameOnly&&o&&await d.prepare("SELECT 1 FROM settings WHERE id=? AND json_extract(data,'$.state') IN ('sending','pending','ready','unknown','deleting')").bind('cdek-shipment-'+o.id).first())throw Error('Выгрузка в СДЭК уже начата. Изменение ФИО недоступно');
+  if(!employee||!o||!c||!(nameOnly?canEditOrderRecipientName(employee,o):canEditMoscowOrderDetails(employee,o)))throw Error(nameOnly?'ФИО может изменить логист до отправки заказа':'Изменение данных получателя доступно логистам в активном заказе Курьера Москва');
   if(!orderDataEditingEnabled(employee.role,o.status,s.settings.orderPolicy))throw Error('Редактирование данных логистом выключено в настройках');
-  const name=z.string().trim().min(1,'Укажите ФИО получателя').max(200).parse(p.name),address=z.string().trim().min(1,'Укажите адрес').max(500).parse(p.address),addressParts=addressPartsSchema.parse(p.addressParts);
-  const logisticComment=z.string().trim().max(3000).parse(p.logisticComment),clientVersion=z.number().int().positive().parse(p.clientVersion);
-  const warnings=orderAddressWarnings(address,addressParts);
+  const name=z.string().trim().min(1,'Укажите ФИО получателя').max(200).parse(p.name),address=nameOnly?(o.address??c.address):z.string().trim().min(1,'Укажите адрес').max(500).parse(p.address),addressParts=nameOnly?o.addressParts:addressPartsSchema.parse(p.addressParts);
+  const logisticComment=nameOnly?o.logisticComment:z.string().trim().max(3000).parse(p.logisticComment),clientVersion=z.number().int().positive().parse(p.clientVersion);
+  const warnings=nameOnly?[]:orderAddressWarnings(address,addressParts);
   if(warnings.length&&p.addressConfirmed!==true)throw Error('Проверьте адрес и подтвердите сохранение вручную: '+warnings.map(w=>w.message).join(' '));
-  const mutation=id('M-'),next={...o,address,addressParts,logisticComment,updatedAt:now,_mutation:mutation};
-  const clientPatch={...clientAddressFromOrder(next),name,updatedAt:now};
-  const e=ev(c.id,o.id,'Логист уточнил данные получателя Курьера Москва'+(name!==c.name?' · ФИО: '+c.name+' → '+name:'')+(address!==o.address?' · адрес: '+(o.address||c.address)+' → '+address:'')+(logisticComment!==o.logisticComment?' · комментарий: '+(logisticComment||'удалён'):'')+(warnings.length?' · адрес проверен вручную':''));
+  const mutation=id('M-'),next={...o,...(nameOnly?{}:{address,addressParts,logisticComment}),updatedAt:now,_mutation:mutation};
+  const clientPatch={...(nameOnly?{}:clientAddressFromOrder(next)),name,updatedAt:now};
+  const e=ev(c.id,o.id,(nameOnly?'Логист изменил ФИО клиента':'Логист уточнил данные получателя Курьера Москва')+(name!==c.name?' · ФИО: '+c.name+' → '+name:'')+(!nameOnly&&address!==o.address?' · адрес: '+(o.address||c.address)+' → '+address:'')+(!nameOnly&&logisticComment!==o.logisticComment?' · комментарий: '+(logisticComment||'удалён'):'')+(warnings.length?' · адрес проверен вручную':''));
   const result=await d.batch([
-   d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)").bind(json(next),o.id,p.version,c.id,clientVersion),
+   d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?) AND (?=0 OR NOT EXISTS(SELECT 1 FROM settings WHERE id=? AND json_extract(data,'$.state') IN ('sending','pending','ready','unknown','deleting')))").bind(json(next),o.id,p.version,c.id,clientVersion,nameOnly?1:0,'cdek-shipment-'+o.id),
    d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(clientPatch),c.id,o.id,mutation),
    d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,mutation)
   ]);

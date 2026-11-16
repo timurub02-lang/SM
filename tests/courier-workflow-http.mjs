@@ -331,6 +331,36 @@ try{
  }
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...beforePolicy,delivery:'russian_post'}),editableMoscow);await act(editableMoscow,'logistic',details(),400);
  console.log('Moscow recipient edits: logistics/chief/admin, courier visibility, client/order CAS, audit, policy and terminal/other-delivery guards; basket, money and courier state unchanged.');
+ // Logistics can correct the shared client's name before dispatch, including confirmation.
+ const nameOrder=await create(),nameClientId=order(nameOrder).clientId;
+ const nameClient=()=>db.prepare('SELECT data,version FROM clients WHERE id=?').get(nameClientId);
+ const rename=(name='Corrected recipient')=>({action:'updateRecipientName',responseMode:'entity-patch',clientVersion:nameClient().version,name});
+ const originalNameOrder=order(nameOrder);
+ for(const delivery of ['', 'cdek_pickup','cdek_courier','russian_post','moscow_courier'])for(const status of ['confirm','extra','packing','phone']){
+  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...originalNameOrder,delivery,status}),nameOrder);
+  await call('logistic'); // Initialize the existing stage timers before capturing optimistic versions.
+  const before=order(nameOrder),clientBefore=JSON.parse(nameClient().data),name='Corrected '+delivery+' '+status;
+  const response=await act(nameOrder,status==='extra'?'chief':'logistic',{...rename(name),address:'Injected address',items:[],delivery:'russian_post'});
+  assert.equal(response.entityPatch.state.clients.find(c=>c.id===nameClientId).name,name);
+  const after=order(nameOrder);assert.deepEqual(after.items,before.items);assert.equal(after.delivery,before.delivery);assert.equal(after.status,before.status);assert.equal(after.address,before.address);
+  assert.equal(JSON.parse(nameClient().data).address,clientBefore.address,'Name-only edits preserve client address');
+ }
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...originalNameOrder,delivery:'cdek_pickup',status:'confirm'}),nameOrder);
+ for(const actor of ['operator','head','courier','stranger'])await act(nameOrder,actor,rename(),['courier','stranger'].includes(actor)?403:400);
+ const beforeNameConflict=order(nameOrder),beforeClientConflict=nameClient();
+ await act(nameOrder,'logistic',{...rename(),clientVersion:nameClient().version+100},400);assert.deepEqual(order(nameOrder),beforeNameConflict);
+ await act(nameOrder,'logistic',{...rename(),version:order(nameOrder).version+100},400);assert.deepEqual(nameClient(),beforeClientConflict);
+ for(const name of ['', '   ', 'X'.repeat(201)])await act(nameOrder,'logistic',rename(name),400);
+ db.prepare("INSERT OR REPLACE INTO settings VALUES('order-policy',?)").run(JSON.stringify({revision:'name-test',policy:{...defaultOrderPolicy,logisticDetailsEdit:false}}));
+ await act(nameOrder,'logistic',rename(),400);db.prepare("DELETE FROM settings WHERE id='order-policy'").run();
+ for(const blocked of [{status:'shipping'},{status:'pickup'},{status:'redeemed'},{status:'returned'},{status:'refused'},{status:'check'},{shippedAt:new Date().toISOString()},...['sending','pending','ready','unknown','deleting'].map(shipmentState=>({shipmentState})),{courier:{id:'courier'}}]){
+  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...originalNameOrder,status:'packing',...blocked}),nameOrder);
+  if(blocked.shipmentState)db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+nameOrder,JSON.stringify({state:blocked.shipmentState,number:blocked.shipmentState==='ready'?'SYNTHETIC':undefined}));
+  await act(nameOrder,'logistic',rename(),400);
+  db.prepare('DELETE FROM settings WHERE id=?').run('cdek-shipment-'+nameOrder);
+ }
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Логист изменил ФИО клиента%' ").get(nameOrder).n,20);
+ console.log('Recipient name: all delivery methods, confirmation/reconfirmation/packing, chief logistic, optimistic conflicts, validation, policy, unchanged address/basket and dispatched-order guards passed.');
  const handoverId=await create();await assembled(handoverId);await act(handoverId,'courier',{action:'courierAccept',confirmed:true});await act(handoverId,'courier',{action:'courierWorkflow',operation:'confirm'});
  await act(handoverId,'courier',{action:'courierWorkflow',operation:'handoverMoney',confirmed:true},400);
  await act(handoverId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});

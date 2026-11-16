@@ -1,3 +1,4 @@
+import {canEditOrderRecipientName} from './crm.ts';
 import {impersonationBlocksPhone} from './impersonation.ts';
 import {canEditMoscowOrderDetails,canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
@@ -60,6 +61,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='completeOrderEdit')return allow(['operator','department_head'].includes(e.role));
  if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
  if(p.action==='savePostalTracking')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
+ if(p.action==='updateRecipientName')return allow(canEditOrderRecipientName(e,order));
  if(p.action==='updateMoscowDetails')return allow(canEditMoscowOrderDetails(e,order));
  if(p.action==='updateLogisticComment')return allow(isLogistic(e.role));
  if(p.action==='updateOrder'&&p.operatorFollowup===true)return allow(canOperatorAmendMissed(e,order,s.employees));
