@@ -10,5 +10,5 @@ export function skOrderReview(projectId:string|null|undefined,sender:Employee|un
   projectId===null?'Создан не из Проекта':null,
   client&&['ЧС','ПВ'].includes(clientSheet(client))?'Клиент находится на листе '+clientSheet(client):null,
  ].filter((reason):reason is string=>!!reason);
- return {ownerLabel,activeOrderIds,reasons};
+ return {ownerLabel,ownerIsSender:!!client?.owner&&client.owner===sender?.id,activeOrderIds,reasons};
 }

@@ -126,3 +126,9 @@ assert.match(review.reasons[0],/Иван Иванов/);
 assert.ok(review.reasons.includes('Создан не из Проекта'));
 assert.equal(skOrderReview('project',{id:'owner'},reviewClient,reviewOwner,[]).ownerLabel,review.ownerLabel);
 assert.deepEqual(skOrderReview('project',{id:'sender'},undefined,undefined,[]).reasons,[]);
+
+assert.equal(review.ownerIsSender,false);
+const ownReview=skOrderReview('project',{id:'owner'},{...reviewClient,sheet:'К'},reviewOwner,[{id:'SK-124',clientId:'review',status:'shipping'}]);
+assert.equal(ownReview.ownerIsSender,true);
+assert.deepEqual(ownReview.reasons,['Есть действующие заказы: SK-124 — Отправлен']);
+assert.equal(skOrderReview('project',undefined,reviewClient,reviewOwner,[]).ownerIsSender,false);
