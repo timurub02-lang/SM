@@ -1,3 +1,4 @@
+import {readPartnerBank} from './partner-bank';
 import {premiumPeriods} from './premium-periods';
 import {partnerCalculation,defaultPartnerSettings,type PartnerSettings} from './partner-cash';
 import {readPremiumStateFrom} from './premium-read';
@@ -15,11 +16,12 @@ export async function savePremiumLedger(state:Awaited<ReturnType<typeof readPrem
  const partnerAccount=paid?await d.prepare("SELECT data FROM settings WHERE id='partner-cash-account'").first<{data:string}>():null;
  const partnerDraft=partnerAccount?await d.prepare('SELECT data FROM settings WHERE id=?').bind('partner-cash:'+period).first<{data:string}>():null;
  const partnerSettings:PartnerSettings=partnerDraft?JSON.parse(partnerDraft.data):{...defaultPartnerSettings,taxRate:partnerAccount?JSON.parse(partnerAccount.data).taxRate:null,bank:partnerAccount?JSON.parse(partnerAccount.data).bank??0:0};
- const partnerReport=partnerAccount?partnerCalculation(next.periods[period].orders||[],state.orders,next.periods[period].rows||[],partnerSettings):null;
+ const bank=partnerAccount?await readPartnerBank(d,state.ledger!,period,state.orders,state.employees):undefined;
+ const partnerReport=partnerAccount?partnerCalculation(next.periods[period].orders||[],state.orders,next.periods[period].rows||[],partnerSettings,bank):null;
  if(partnerReport&&partnerReport.remaining===null)throw Error('Заполните налог и проверьте товары и минуты СК в кассе Эмиля перед закрытием периода');
  if(partnerReport&&(partnerSettings.minutePrice??0)>0&&Date.parse(partnerSettings.minutes?.through||'')<Date.parse(premiumPeriods.find(p=>p.id===period)!.cutoff+'T23:59:59+03:00'))throw Error('Обновите минуты СК за весь период в кассе Эмиля перед закрытием');
- const partnerGuard=partnerAccount?" AND EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?":paid?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account')":'';
- const partnerGuardValues=partnerAccount?[partnerAccount.data,'partner-cash:'+period,partnerDraft?.data||'']:[];
+ const partnerGuard=partnerAccount?" AND EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account' AND data=?) AND COALESCE((SELECT data FROM settings WHERE id=?),'')=? AND (SELECT json_group_array(json_array(id,data)) FROM (SELECT id,data FROM settings WHERE id LIKE 'cdek-bank-registry:%' ORDER BY id))=?":paid?" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='partner-cash-account')":'';
+ const partnerGuardValues=partnerAccount?[partnerAccount.data,'partner-cash:'+period,partnerDraft?.data||'',bank!.revision]:[];
  const serialized=JSON.stringify(next);
  const update=d.prepare("UPDATE settings SET data=? WHERE id=? AND data=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=? AND (SELECT json_group_array(json_array(id,data)) FROM (SELECT id,data FROM settings WHERE id LIKE ? ORDER BY id))=?"+partnerGuard).bind(serialized,ledgerKey,state.raw,state.staffVersions,state.orderVersions,'premium-draft:'+period+':%',state.draftVersions,...partnerGuardValues);
  // A cash failure rolls back the ledger too; a lost CAS cannot create spends.

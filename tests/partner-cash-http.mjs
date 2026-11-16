@@ -41,6 +41,13 @@ try{
  assert.equal((await call(path,cookies.A_Emil,form)).status,403);
  assert.equal((await call(path,cookies.admin,{...form,taxRate:101})).status,400);
  const saved=await call(path,cookies.admin,form);assert.equal(saved.status,200,JSON.stringify(saved.data));assert.equal(saved.data.receipts.length,1);assert.equal(saved.data.accountRemaining,563570);
+ const bankKey='cdek-bank-registry:'+JSON.stringify([1,'1','2026-11-09']);
+ const bankRegistry={slot:1,registry:'1',date:'2026-11-09',receivedAt:'2026-11-10T12:00:00Z',rows:[{tracking:'100',basis:'ORDER',collected:1130000,transferred:767670},{tracking:'returned',basis:'ORDER',collected:0,transferred:-12345}]};
+ db.prepare('INSERT INTO settings VALUES(?,?)').run(bankKey,JSON.stringify(bankRegistry));
+ const withFee=await call(path,cookies.A_Emil);assert.equal(withFee.status,200,JSON.stringify(withFee.data));assert.equal(withFee.data.transferred,755325);assert.equal(withFee.data.accountBalance,755325);assert.equal(withFee.data.remaining,551225);assert.equal(withFee.data.tax,79100);assert.equal(withFee.data.receipts.length,2);assert.equal(withFee.data.orderCount,1);
+ assert.deepEqual(withFee.data.payroll,[row],'Delivery deductions do not alter payroll');
+ assert.equal((await call(path,cookies.A_Emil)).data.accountBalance,755325,'Repeated reads do not deduct twice');
+ db.prepare('DELETE FROM settings WHERE id=?').run(bankKey);
  assert.equal((await call(path,cookies.admin,form)).status,409);
  const product=saved.data.products[0].name;
  assert.equal((await call(path,cookies.admin,{...form,revision:saved.data.settings.revision,productPrices:{[product]:-1}})).status,400);
@@ -58,7 +65,9 @@ try{
  const snapshot=JSON.parse(db.prepare('SELECT data FROM settings WHERE id=?').get('partner-cash-closed:'+period).data);assert.equal(snapshot.remaining,563570);
  assert.equal((await call(path,cookies.admin,{...form,revision:saved.data.settings.revision})).status,409);
  db.prepare("UPDATE orders SET data=json_set(data,'$.items[0].quantity',99)").run();
+ db.prepare('INSERT INTO settings VALUES(?,?)').run(bankKey,JSON.stringify(bankRegistry));
  assert.equal((await call(path,cookies.admin)).data.goods,60000,'Closed goods remain frozen');
+ assert.equal((await call(path,cookies.admin)).data.transferred,767670,'New registry data cannot rewrite a previously closed cash calculation');
  const future=await call('/api/partner-cash?period='+next,cookies.admin);assert.equal(future.status,200,JSON.stringify(future.data));assert.equal(future.data.opening,717670);assert.equal(future.data.settings.taxRate,7);
  const loss=await call('/api/partner-cash?period='+next,cookies.admin,{revision:'',taxRate:7,communication:10000,bank:0});assert.equal(loss.status,200);assert.equal(loss.data.accountRemaining,-436430);
  assert.equal(db.prepare("SELECT count(*) AS n FROM cash_operations WHERE sender='A_Emil'").get().n,1,'Closing posts payroll exactly once');

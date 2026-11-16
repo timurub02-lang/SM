@@ -24,6 +24,10 @@ try{
  assert.deepEqual(registryPayments({},1),[],"CDEK returns an empty object on days with no registries");
  assert.equal(cdekMoneyLabel(await row()),'Оплачен · ожидается приём денег');
  for(const bad of [answer(registry('R0',0)),answer(registry('R0',-5)),answer({...registry('fee',8),orders:[{cdek_number:'123',payment_sum:0,transfer_sum:8}]})])assert.equal((await applyCdekRegistries(db,1,bad,at)).added,0);
+ const negativeBank=await db.prepare("SELECT data FROM settings WHERE id=?").bind('cdek-bank-registry:'+JSON.stringify([1,'R0','2026-10-28'])).first();
+ assert.equal(JSON.parse(negativeBank.data).rows[0].transferred,-500,'Negative registry rows are retained for the bank balance without marking an order paid');
+ await applyCdekRegistries(db,1,answer(registry('SCOPED',50)),at,true,new Set(['not-present']));
+ assert.equal(await db.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-bank-registry:'+JSON.stringify([1,'SCOPED','2026-10-28'])).first(),null,'Scoped order repair cannot replace a complete bank registry');
  assert.equal((await applyCdekRegistries(db,1,answer(registry()),at,true)).added,1);assert.equal((await row()).cdekRemittances,undefined);
  assert.equal((await applyCdekRegistries(db,1,answer(registry()),at)).added,1);
  const paid=await row();assert.equal(paid.cdekRemittances[0].amountCents,9000);assert.equal(paid.paymentReceivedAt,undefined);assert.equal(paid.status,'redeemed');

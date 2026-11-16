@@ -1,3 +1,4 @@
+import {readPartnerBank} from '@/lib/partner-bank';
 import {minutesFinal} from '@/lib/partner-minutes';
 import {partnerExpense} from '@/lib/partner-expense';
 import {readPartnerMinutes} from '@/lib/partner-minutes-sync';
@@ -61,7 +62,8 @@ async function handle(req:Request){
   }
   const state=await readPremiumState(period);
   const frozen=await d.prepare('SELECT data FROM settings WHERE id=?').bind('partner-cash-closed:'+period).first<{data:string}>();
-  const calculation=frozen?JSON.parse(frozen.data) as ReturnType<typeof partnerCalculation>:partnerCalculation(periodOrders(state.ledger!,period,state.orders,state.employees),state.orders,ledgerRows(state.ledger!,period,state.orders,state.employees,state.adjustments),settings);
+  const bank=await readPartnerBank(d,state.ledger!,period,state.orders,state.employees);
+  const calculation=frozen?JSON.parse(frozen.data) as ReturnType<typeof partnerCalculation>:partnerCalculation(periodOrders(state.ledger!,period,state.orders,state.employees),state.orders,ledgerRows(state.ledger!,period,state.orders,state.employees,state.adjustments),settings,bank);
   if(frozen)settings=JSON.parse(frozen.data).settings;
   const view=await partnerAccountView(period);const opening=view.opening,startPeriod=view.config.startPeriod;
   return Response.json({payroll:ledgerRows(state.ledger!,period,state.orders,state.employees,state.adjustments).filter(r=>r.department==='5').sort((a,b)=>Number(a.role==='department_head')-Number(b.role==='department_head')||a.login.localeCompare(b.login,'ru')),period,calendar,opening,startPeriod,accountBalance:view.balance,accountRemaining:view.available===null||view.obligations.some(r=>r.remaining===null)?null:view.available-view.obligations.filter(r=>r.kind!=='tax'&&!r.kind.startsWith('share')).reduce((n,r)=>n+(r.remaining||0),0)-(ledger.periods[period].status==='paid'?0:calculation.premium||0),taxReserve:view.taxReserve,available:view.available,settlementRevision:view.settlements.revision,initialBalance:view.settlements.opening,canSetOpening:actor.role==='admin'&&!view.settlements.entries.length,obligations:view.obligations.filter(r=>r.period===period||(r.remaining||0)>0||r.pending>0),administrators:view.administrators,settlements:view.settlements.entries,closed:ledger.periods[period].status==='paid',periods:Object.keys(ledger.periods).sort().reverse().map(id=>({id,label:premiumPeriods.find(p=>p.id===id)?.label||id})),settings,editable:actor.role==='admin'&&ledger.periods[period].status!=='paid'&&!view.settlements.entries.some(e=>e.period===period&&e.action==='pay'),...calculation},{headers:{'Cache-Control':'no-store'}});
