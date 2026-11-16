@@ -466,3 +466,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .admin-order-mark input{margin:0;flex-shrink:0}
 .admin-order-mark:has(input:checked){background:#e8f0ff;border-color:#9bbafa;color:#315b9c}
 .admin-order-mark:disabled,.admin-order-mark:has(input:disabled){opacity:.55;cursor:not-allowed}
+
+.logistic-list-comment{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;min-width:140px;max-width:220px;font-size:13px;color:var(--muted-foreground);background:transparent;border:0;padding:4px;cursor:pointer}
