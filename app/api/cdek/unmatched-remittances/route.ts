@@ -12,7 +12,7 @@ export const GET=authenticated(async(req:Request)=>{
  const page=Number(q.get('page')||0);
  if(!Number.isSafeInteger(page)||page<0||page>100000)return Response.json({error:'Неверная страница'},{status:400});
  await initCdekUnmatched(d);
- const total=(await d.prepare('SELECT COUNT(*) n FROM cdek_unmatched_remittances').first<{n:number}>())?.n||0;
- const rows=await d.prepare('SELECT receipt FROM cdek_unmatched_remittances ORDER BY payment_date DESC,receipt LIMIT 50 OFFSET ?').bind(page*50).all<{receipt:string}>();
+ const total=(await d.prepare('SELECT COUNT(*) n FROM cdek_unmatched_remittances WHERE payment_date >= ?').bind('2026-10-01').first<{n:number}>())?.n||0;
+ const rows=await d.prepare('SELECT receipt FROM cdek_unmatched_remittances WHERE payment_date >= ? ORDER BY payment_date DESC,receipt LIMIT 50 OFFSET ?').bind('2026-10-01',page*50).all<{receipt:string}>();
  return Response.json({total,rows:rows.results.map(r=>JSON.parse(r.receipt) as CdekRemittance)},{headers:{'Cache-Control':'no-store'}});
 });

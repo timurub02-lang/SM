@@ -18,7 +18,11 @@ try{
  assert.equal((await fetch(url)).status,401);for(const who of ['o','h','l'])assert.equal((await get(who)).status,403);
  const empty=await get('a');assert.equal(empty.status,200,await empty.clone().text());assert.deepEqual(await empty.json(),{total:0,rows:[]});
  for(let i=0;i<51;i++){const receipt={slot:1,registry:'r'+i,tracking:'t'+i,paymentDate:'2026-11-10',amountCents:9000,collectedCents:10000};d.prepare('INSERT INTO cdek_unmatched_remittances VALUES(?,?,?,?,?)').run(JSON.stringify(receipt),1,receipt.tracking,receipt.paymentDate,new Date().toISOString());}
- let result=await (await get('a')).json();assert.equal(result.total,51);assert.equal(result.rows.length,50);assert.equal((await (await get('a','?page=1')).json()).rows.length,1);
+
+ for(const date of ['2026-02-16','2026-09-30','2026-10-01']){const receipt={slot:1,registry:date,tracking:date,paymentDate:date,amountCents:9000,collectedCents:10000};d.prepare('INSERT INTO cdek_unmatched_remittances VALUES(?,?,?,?,?)').run(JSON.stringify(receipt),1,date,date,new Date().toISOString());}
+ assert.equal(d.prepare('SELECT COUNT(*) n FROM cdek_unmatched_remittances').get().n,54);
+ let result=await (await get('a')).json();assert.equal(result.total,52);assert.equal(result.rows.length,50);assert.equal((await (await get('a','?page=1')).json()).rows.length,2);
+ assert.ok(result.rows.every(r=>r.paymentDate>='2026-10-01'));assert.equal((await (await get('a','?page=1')).json()).rows.at(-1).paymentDate,'2026-10-01');
  for(const page of ['-1','NaN','1.5','100001'])assert.equal((await get('a','?page='+page)).status,400);
  assert.equal((await get('h','?actorId=a')).status,403);
  assert.equal((await fetch(url,{method:'POST',headers:{cookie:cookies.a,Origin:origin,'Content-Type':'application/json'},body:'{}'})).status,405);
