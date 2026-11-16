@@ -5,10 +5,12 @@ import {BaseStats} from './base-stats';
 import {Switch} from './ui/switch';
 import {BarChart3} from 'lucide-react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
-import {operatorStats,sortOperatorStats,type StatsSortKey, type operatorStatsSummary} from '../lib/operator-stats';
+import {buyoutStatsByDay,operatorStats,sortOperatorStats,type StatsSortKey, type operatorStatsSummary} from '../lib/operator-stats';
 import {money,statuses,departments,type Order,type State,type Employee} from '../lib/crm';
 export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;actor:Employee;onOpenOrder:(id:string)=>void;detailOpen:boolean}){
  const [section,setSection]=useState('created');
+ const [byDay,setByDay]=useState(false);
+ const daily=section==='buyouts'&&byDay;
  const [department,setDepartment]=useState(''),[showAll,setShowAll]=useState(false);
  const [summary,setSummary]=useState<ReturnType<typeof operatorStatsSummary>>([]),[summaryError,setSummaryError]=useState(''),[summaryLoading,setSummaryLoading]=useState(false);
  const [sort,setSort]=useState<{key:StatsSortKey;ascending:boolean}>({key:'created',ascending:false});
@@ -18,13 +20,15 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  useEffect(()=>{
   if(!visible||!summaryMode)return;
   const controller=new AbortController();setSummaryLoading(true);setSummaryError('');setSummary([]);
-  fetch(`/api/operator-statistics?actorId=${encodeURIComponent(actor.id)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,{signal:controller.signal}).then(async response=>{const data=await response.json() as {rows:ReturnType<typeof operatorStatsSummary>;error?:string};if(!response.ok)throw Error(data.error||'Не удалось загрузить статистику');return data.rows;}).then(rows=>{if(!controller.signal.aborted)setSummary(rows);}).catch(error=>{if(!controller.signal.aborted)setSummaryError(error.message);}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});
+  fetch(`/api/operator-statistics?actorId=${encodeURIComponent(actor.id)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&groupBy=${daily?'day':'operator'}&department=${encodeURIComponent(department)}`,{signal:controller.signal}).then(async response=>{const data=await response.json() as {rows:ReturnType<typeof operatorStatsSummary>;error?:string};if(!response.ok)throw Error(data.error||'Не удалось загрузить статистику');return data.rows;}).then(rows=>{if(!controller.signal.aborted)setSummary(rows);}).catch(error=>{if(!controller.signal.aborted)setSummaryError(error.message);}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});
   return ()=>controller.abort();
- },[visible,summaryMode,from,to,actor.id]);
+ },[visible,summaryMode,from,to,actor.id,daily,department]);
  if(!['admin','department_head','operator'].includes(actor.role))return null;
  const sourceRows=!visible?[]:summaryMode?summary.map(row=>({...row,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}})):operatorStats(state,actor,from,to);
- const invalid=!!from&&!!to&&from>to,rows=invalid||!visible?[]:sortOperatorStats(sourceRows.filter(r=>(section==='buyouts'?r.buyoutCount>0:r.created>0)&&(!department||r.department===department)),sort.key,sort.ascending);
- const columns: [StatsSortKey,string][]=section==='buyouts'?[["login","Оператор"],["buyoutCdek","СДЭК"],["buyoutPost","Почта России"],["buyoutMoscow","Курьер Москва"],["buyoutCount","Всего выкуплено"],["buyoutAmount","Сумма выкупов"]]:[["login","Оператор"],["created","Создано"],["inWork","В работе"],["average","Средний чек"],["amount","Сумма"],["cancelled","Отменено"],["confirmed","Подтверждено"],["awaitingShipment","Ожидают отправки"],["sent","Отправлено"]];
+ const filtered=sourceRows.filter(r=>!department||summaryMode&&daily||r.department===department);
+ const grouped=daily&&!summaryMode?buyoutStatsByDay(filtered):filtered;
+ const invalid=!!from&&!!to&&from>to,rows=invalid||!visible?[]:sortOperatorStats(grouped.filter(r=>section==='buyouts'?r.buyoutCount>0:r.created>0),sort.key,sort.ascending);
+ const columns: [StatsSortKey,string][]=section==='buyouts'?[["login",daily?"Дата":"Оператор"],["buyoutCdek","СДЭК"],["buyoutPost","Почта России"],["buyoutMoscow","Курьер Москва"],["buyoutCount","Всего выкуплено"],["buyoutAmount","Сумма выкупов"]]:[["login","Оператор"],["created","Создано"],["inWork","В работе"],["average","Средний чек"],["amount","Сумма"],["cancelled","Отменено"],["confirmed","Подтверждено"],["awaitingShipment","Ожидают отправки"],["sent","Отправлено"]];
  const colgroup=<colgroup><col style={{width:"28%"}}/>{Array.from({length:columns.length-1},(_,i)=><col key={i}/>)}</colgroup>;
  const headers=<thead><tr>{columns.map(([key,label])=><th key={key} aria-sort={sort.key===key?(sort.ascending?"ascending":"descending"):"none"}><button className="stats-sort" onClick={()=>setSort({key,ascending:sort.key===key?!sort.ascending:key==="login"})}>{label} <span aria-hidden="true">{sort.key===key?(sort.ascending?"↑":"↓"):"↕"}</span></button></th>)}</tr></thead>;
  function openOrder(id:string){onOpenOrder(id);}
@@ -48,12 +52,13 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
      <label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
      <label>По дату<input aria-label="Конец периода" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
      <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today.slice(0,7)+"-01");setTo(today);}}>За месяц</button>
+     {section==='buyouts'&&<button className="secondary" aria-pressed={byDay} onClick={()=>{setByDay(!byDay);setSort({key:!byDay?'login':'buyoutCount',ascending:false});}}>По дням</button>}
      {(actor.role==='admin'||summaryMode)&&<div className="stats-departments" role="group" aria-label="Отделы"><button className="secondary" aria-pressed={!department} onClick={()=>setDepartment('')}>Все отделы</button>{Object.entries(departments).map(([id,name])=><button className="secondary" key={id} aria-pressed={department===id} onClick={()=>setDepartment(id)}>{name}</button>)}</div>}
      {actor.role==='department_head'&&<label className="stats-all-switch"><Switch aria-label="Показать все отделы" checked={showAll} onCheckedChange={checked=>{setShowAll(checked);setDepartment('');}}/>Показать все отделы</label>}
     </div>
     {summaryMode&&<p className="muted">Общая сводка: только показатели, без доступа к заказам.</p>}
     {summaryMode&&summaryLoading?<p role="status">Загрузка статистики отделов…</p>:summaryMode&&summaryError?<p role="alert">{summaryError}</p>:invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<div className="stats-results"><div className="stats-table-wrap"><table className="stats-table">{colgroup}{headers}
-     {section==='buyouts'?<><tbody>{rows.map(r=><tr key={r.id}><td>{r.login}</td>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(r[key]):r[key],r.orderLists.redeemed.filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label)}</td>)}</tr>)}</tbody><tfoot><tr><th>Итого</th>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(rows.reduce((n,r)=>n+Math.round(r[key]*100),0)/100):rows.reduce((n,r)=>n+r[key],0),rows.flatMap(r=>r.orderLists.redeemed).filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label+' — итого')}</td>)}</tr></tfoot></>:<><tbody>{rows.map(r=><tr key={r.id}>
+     {section==='buyouts'?<><tbody>{rows.map(r=><tr key={r.id}><td>{daily?r.login.split('-').reverse().join('.'):r.login}</td>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(r[key]):r[key],r.orderLists.redeemed.filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label)}</td>)}</tr>)}</tbody><tfoot><tr><th>Итого</th>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(rows.reduce((n,r)=>n+Math.round(r[key]*100),0)/100):rows.reduce((n,r)=>n+r[key],0),rows.flatMap(r=>r.orderLists.redeemed).filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label+' — итого')}</td>)}</tr></tfoot></>:<><tbody>{rows.map(r=><tr key={r.id}>
       <td title={r.login}>{r.login}</td><td>{metric(r.created,r.orderLists.created,"Создано заказов")}</td>
       <td>{metric(r.inWork,r.orderLists.inWork,"В работе")}</td>
       <td>{metric(money(r.average),r.orderLists.created,"Средний чек")}</td><td>{metric(money(r.amount),r.orderLists.created,"Сумма заказов")}</td>

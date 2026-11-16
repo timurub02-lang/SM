@@ -16,5 +16,5 @@ export const GET=authenticated(async req=>{
   return Response.json({rows:baseStats(employees,counts)},{headers:{'Cache-Control':'no-store'}});
  }
  const orders=(await db().prepare('SELECT data FROM orders').all<{data:string}>()).results.map(row=>JSON.parse(row.data) as Order);
- return Response.json({rows:operatorStatsSummary({employees,orders},actor,from,to)},{headers:{'Cache-Control':'no-store'}});
+ return Response.json({rows:operatorStatsSummary({employees,orders},actor,from,to,url.searchParams.get('groupBy')==='day',url.searchParams.get('department')||'')},{headers:{'Cache-Control':'no-store'}});
 });
