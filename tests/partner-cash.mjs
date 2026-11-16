@@ -42,3 +42,5 @@ assert.equal(partnerPremiumStatus('2026-11-24',false,Date.parse('2026-11-25T00:0
 assert.equal(partnerPremiumStatus('2026-11-24',false,Date.parse('2026-12-01T12:00:00+03:00')),'Рассчитано');
 assert.equal(partnerPremiumStatus('2026-12-08',false,Date.parse('2026-12-02T12:00:00+03:00')),'Ещё идёт');
 assert.equal(partnerPremiumStatus('2026-11-24',true,Date.parse('2026-11-15T12:00:00+03:00')),'Рассчитано');
+
+assert.equal(partnerCalculation([member],[order],payroll,{...settings,warehouseProductPrices:{}},undefined,{"товар":300}).goods,60000,"Previously missing costs can be filled after another expense starts payments");

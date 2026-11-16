@@ -11,11 +11,14 @@ try{
  await d.prepare('INSERT INTO products VALUES(?,?)').bind('one',JSON.stringify({name:' Product '})).run();
  const empty=await readProductCosts(d);assert.equal(empty.prices.product,null);
  await d.prepare('INSERT INTO settings VALUES(?,?)').bind('warehouse-cost:one',JSON.stringify({amount:300,revision:'one'})).run();
- const costs=await readProductCosts(d);assert.equal(costs.prices.product,300);
+ await d.prepare("UPDATE settings SET data=json_set(data,'$.aliases',json(?)) WHERE id='warehouse-cost:one'").bind(JSON.stringify(['Legacy product'])).run();
+ const costs=await readProductCosts(d);assert.equal(costs.prices.product,300);assert.equal(costs.prices['legacy product'],300);assert.equal(costs.costs.one.aliases,undefined);
  assert.equal(await d.prepare('SELECT 1 AS ok WHERE '+productCostsGuard).bind(empty.revision).first(),null,'A price change invalidates payment/closing guards');
  assert.equal((await d.prepare('SELECT 1 AS ok WHERE '+productCostsGuard).bind(costs.revision).first()).ok,1);
  await d.prepare('UPDATE products SET data=?').bind(JSON.stringify({name:'Renamed'})).run();
  assert.equal(await d.prepare('SELECT 1 AS ok WHERE '+productCostsGuard).bind(costs.revision).first(),null,'A rename also invalidates the calculation');
+ await d.prepare('INSERT INTO products VALUES(?,?)').bind('two',JSON.stringify({name:'Legacy product'})).run();
+ await assert.rejects(readProductCosts(d),/Несколько/);
  assert.throws(()=>productCostSchema.parse({amount:1.001,revision:''}));
  assert.equal(productCostSchema.parse({amount:0,revision:''}).amount,0);
  console.log('Warehouse cost lookup, precision and payment/closing revision guards passed');

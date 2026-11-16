@@ -52,7 +52,8 @@ try{
  assert.equal((await call('/api/warehouse',{cookie:cookies.admin})).data.costs[id].amount,300);
  assert.equal((await call('/api/warehouse',{cookie:cookies.admin,body:costBody(400)})).status,409,'Stale initial form cannot overwrite');
  for(const amount of [-1,100000001,1.001])assert.equal((await call('/api/warehouse',{cookie:cookies.admin,body:costBody(amount,cost.data.cost.revision)})).status,400);
- const edited=await call('/api/warehouse',{cookie:cookies.admin,body:costBody(325.25,cost.data.cost.revision)});assert.equal(edited.status,200);
+ db.prepare("UPDATE settings SET data=json_set(data,'$.aliases',json(?)) WHERE id=?").run(JSON.stringify(['Legacy fixture']),'warehouse-cost:'+id);
+ const edited=await call('/api/warehouse',{cookie:cookies.admin,body:costBody(325.25,cost.data.cost.revision)});assert.equal(edited.status,200);assert.deepEqual(JSON.parse(db.prepare('SELECT data FROM settings WHERE id=?').get('warehouse-cost:'+id).data).aliases,['Legacy fixture'],'Cost edits preserve confirmed old product names');
  assert.equal((await call('/api/warehouse',{cookie:cookies.elena,body:costBody(500,cost.data.cost.revision)})).status,409,'Concurrent editor protected');
  for(const role of ['one','head','log','chief']){
   const view=await call('/api/warehouse',{cookie:cookies[role]});assert.equal(view.status,200);assert(!('costs' in view.data));assert(!view.text.includes('325.25'));

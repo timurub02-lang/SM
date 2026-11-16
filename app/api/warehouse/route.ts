@@ -39,7 +39,7 @@ async function handlePOST(req:Request){
    const id=z.string().min(1).max(200).parse(p.productId),cost=productCostSchema.parse(p.cost);
    if(!await db().prepare('SELECT id FROM products WHERE id=?').bind(id).first())return Response.json({error:'Товар не найден'},{status:404});
    const data=JSON.stringify({...cost,revision:crypto.randomUUID()}),key=productCostKey(id);
-   const result=cost.revision?await db().prepare("UPDATE settings SET data=? WHERE id=? AND json_extract(data,'$.revision')=?").bind(data,key,cost.revision).run():await db().prepare('INSERT OR IGNORE INTO settings(id,data) VALUES(?,?)').bind(key,data).run();
+   const result=cost.revision?await db().prepare("UPDATE settings SET data=json_set(data,'$.amount',?,'$.revision',?) WHERE id=? AND json_extract(data,'$.revision')=?").bind(cost.amount,JSON.parse(data).revision,key,cost.revision).run():await db().prepare('INSERT OR IGNORE INTO settings(id,data) VALUES(?,?)').bind(key,data).run();
    if(!result.meta.changes)return Response.json({error:'Себестоимость уже изменена. Обновите карточку.'},{status:409});
    return Response.json({ok:true,cost:JSON.parse(data)});
   }

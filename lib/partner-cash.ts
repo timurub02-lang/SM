@@ -12,7 +12,7 @@ export type PartnerSettings={revision:string;taxRate:number|null;communication:n
 export const defaultPartnerSettings:PartnerSettings={revision:'',taxRate:null,communication:0,bank:0};
 export type PartnerReceipt={order:string;slot?:number;registry:string;date:string;collected:number;transferred:number;tax:number|null;tracking?:string;basis?:string};
 export function partnerCalculation(members:PayrollOrder[],orders:Order[],payroll:PayrollRow[],settings:PartnerSettings,bank?:PartnerBank,costs:Record<string,number|null>={}){
- const prices=settings.warehouseProductPrices||costs;
+ const prices={...costs,...settings.warehouseProductPrices};
  const byId=new Map(orders.map(o=>[o.id,o]));
  const byExternal=new Map(orders.map(o=>[o.legacyLv?.orderId||o.id.replace(/^LV-/,''),o]));
  const products=new Map<string,{name:string;quantity:number;price:number|null;total:number|null;orders:string[]}>();
