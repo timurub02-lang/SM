@@ -26,7 +26,18 @@ async function initializeIncoming(d:Db){
  await d.prepare('CREATE INDEX IF NOT EXISTS incoming_open_phone ON incoming_calls(phone,closed_at)').run();
  await initProtection(d);
   await d.prepare("UPDATE incoming_calls SET assignee_id=(SELECT json_extract(c.data,'$.owner') FROM clients c WHERE c.id=incoming_calls.client_id),department_id=COALESCE((SELECT json_extract(e.data,'$.department') FROM employees e JOIN clients c ON e.id=json_extract(c.data,'$.owner') WHERE c.id=incoming_calls.client_id),''),shared_queue=0 WHERE closed_at IS NULL AND (assignee_id IS NOT (SELECT json_extract(c.data,'$.owner') FROM clients c WHERE c.id=incoming_calls.client_id) OR shared_queue<>0) AND spam=0 AND COALESCE(handoff,'')='' AND NOT EXISTS(SELECT 1 FROM employees WHERE id=incoming_calls.assignee_id AND json_extract(data,'$.role')='redemption') AND EXISTS(SELECT 1 FROM clients c JOIN employees e ON e.id=json_extract(c.data,'$.owner') JOIN auth_accounts a ON a.employee_id=e.id AND a.enabled=1 WHERE c.id=incoming_calls.client_id AND json_extract(e.data,'$.role')='operator') AND EXISTS(SELECT 1 FROM orders o WHERE o.client_id=incoming_calls.client_id AND json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(o.data,'$.status') NOT IN ('redeemed','refused','returned') AND (json_extract(o.data,'$.status') IN ('shipping','pickup') OR COALESCE(json_extract(o.data,'$.shippedAt'),'')<>'' OR COALESCE(json_extract(o.data,'$.cdekTransferredAt'),'')<>''))").run();
+ await routePaidIncomingToOwners(d);
  await d.prepare('CREATE INDEX IF NOT EXISTS incoming_assignee ON incoming_calls(assignee_id,closed_at,at)').run();
+}
+export async function routePaidIncomingToOwners(d:Db){
+ if(!await d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='phone_calls'").first())return;
+ await d.prepare(`UPDATE incoming_calls SET
+  assignee_id=(SELECT json_extract(c.data,'$.owner') FROM clients c WHERE c.id=incoming_calls.client_id),
+  department_id=COALESCE((SELECT json_extract(e.data,'$.department') FROM employees e JOIN clients c ON e.id=json_extract(c.data,'$.owner') WHERE c.id=incoming_calls.client_id),''),shared_queue=0
+  WHERE closed_at IS NULL AND spam=0 AND COALESCE(handoff,'')=''
+  AND EXISTS(SELECT 1 FROM employees a WHERE a.id=incoming_calls.assignee_id AND json_extract(a.data,'$.role') IN ('redemption','logistic','chief_logistic'))
+  AND EXISTS(SELECT 1 FROM clients c JOIN employees e ON e.id=json_extract(c.data,'$.owner') JOIN auth_accounts a ON a.employee_id=e.id AND a.enabled=1 WHERE c.id=incoming_calls.client_id AND json_extract(e.data,'$.role')='operator')
+  AND EXISTS(SELECT 1 FROM orders o WHERE o.client_id=incoming_calls.client_id AND json_extract(o.data,'$.status')='redeemed' AND o.id=COALESCE(incoming_calls.order_id,(SELECT p.order_id FROM phone_calls p WHERE p.client_id=incoming_calls.client_id AND p.claimed_at<=incoming_calls.at ORDER BY p.claimed_at DESC,p.seq DESC LIMIT 1)))`).run();
 }
 const incomingTeamRoles=(role:string)=>role==='redemption'?['redemption']:['logistic','chief_logistic'].includes(role)?['logistic','chief_logistic']:[];
 export function seesIncoming(row:Pick<Row,'client_id'|'assignee_id'|'department_id'|'shared_queue'|'spam'|'assignee_role'>,e:Employee,staff:Employee[]){
@@ -40,7 +51,7 @@ export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumbe
  const phone=normalizePhone(p.phone),called=normalizePhone(p.calledNumber);
  const client=phone?await d.prepare('SELECT c.id,c.data FROM clients c JOIN client_phone_index i ON i.client_id=c.id WHERE i.phone=?').bind(phone.slice(1)).first():null;
  const c=client?JSON.parse(client.data):null;
- const {assignee,department,shared,cdekSent,callbackOrderId}=await incomingRouting(d,client?.id||'',c,p.at);
+ const {assignee,department,shared,cdekSent,paidCallback,callbackOrderId}=await incomingRouting(d,client?.id||'',c,p.at);
  const blocked=await d.prepare("SELECT phone FROM incoming_phone_policy WHERE phone=? AND policy='block'").bind(phone).first();
  const spam=!!blocked||p.screening==='blocked'||p.screening==='failed'||decision==='block'||decision==='challenge'&&p.screening!=='passed';
  // Failed verification stays in the attempt journal and must not create or hide a request.
@@ -54,7 +65,7 @@ export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumbe
   d.prepare("INSERT OR IGNORE INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue,call_count,spam,spam_reason) SELECT ?,?,?,?,?,?,?,?,0,?,? WHERE EXISTS(SELECT 1 FROM incoming_attempts WHERE id=? AND applied=0) AND NOT EXISTS(SELECT 1 FROM incoming_calls WHERE phone=? AND closed_at IS NULL)").bind(p.id,client?.id||null,assignee?.id||null,department,p.at,phone,called,shared?1:0,spam?1:0,reason,p.id,phone),
   d.prepare("UPDATE incoming_attempts SET request_id=(SELECT id FROM incoming_calls WHERE phone=? AND closed_at IS NULL ORDER BY at,id LIMIT 1) WHERE id=? AND applied=0").bind(phone,p.id),
   d.prepare("UPDATE incoming_calls SET call_count=call_count+1,last_at=MAX(at,last_at,?),spam=MAX(spam,?),spam_reason=CASE WHEN ?=1 THEN ? ELSE spam_reason END WHERE id=(SELECT request_id FROM incoming_attempts WHERE id=? AND applied=0)").bind(p.at,spam?1:0,spam?1:0,reason,p.id),
-  ...(cdekSent?[d.prepare("UPDATE incoming_calls SET assignee_id=?,department_id=?,shared_queue=0,order_id=? WHERE id=(SELECT request_id FROM incoming_attempts WHERE id=? AND applied=0) AND closed_at IS NULL AND spam=0 AND COALESCE(handoff,'')='' AND client_id=?").bind(assignee?.id||null,department,callbackOrderId||null,p.id,client?.id)]:[]),
+  ...(cdekSent||paidCallback?[d.prepare("UPDATE incoming_calls SET assignee_id=?,department_id=?,shared_queue=0,order_id=? WHERE id=(SELECT request_id FROM incoming_attempts WHERE id=? AND applied=0) AND closed_at IS NULL AND spam=0 AND COALESCE(handoff,'')='' AND client_id=?").bind(assignee?.id||null,department,callbackOrderId||null,p.id,client?.id)]:[]),
   d.prepare('UPDATE incoming_attempts SET applied=1 WHERE id=?').bind(p.id)
  ]);
 
@@ -120,11 +131,13 @@ export async function incomingRouting(d:Db,clientId:string,c:{owner?:string}|nul
  const last=clientId?await d.prepare("SELECT actor_id,order_id FROM phone_calls WHERE client_id=? AND claimed_at<=? AND NOT EXISTS(SELECT 1 FROM phone_call_incoming p JOIN incoming_calls i ON i.id=p.incoming_id WHERE p.call_id=phone_calls.id AND i.handoff<>'') ORDER BY claimed_at DESC,seq DESC LIMIT 1").bind(clientId,at).first():null;
  const cdekSent=clientId&&!!await d.prepare("SELECT id FROM orders WHERE client_id=? AND json_extract(data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned') AND (json_extract(data,'$.status') IN ('shipping','pickup') OR COALESCE(json_extract(data,'$.shippedAt'),'')<>'' OR COALESCE(json_extract(data,'$.cdekTransferredAt'),'')<>'') LIMIT 1").bind(clientId).first();
  const buyoutCaller=last?.order_id&&eligible(last.actor_id)?.role==='redemption'&&!!await d.prepare("SELECT id FROM orders WHERE id=? AND client_id=? AND json_extract(data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(data,'$.status') IN ('shipping','pickup')").bind(last.order_id,clientId).first()?eligible(last.actor_id):undefined;
+ const paidCallback=!!last?.order_id&&!!await d.prepare("SELECT id FROM orders WHERE id=? AND client_id=? AND json_extract(data,'$.status')='redeemed'").bind(last.order_id,clientId).first();
+ const ownerCaller=c?.owner&&eligible(c.owner);
  const clientOrders=clientId&&!c?.owner?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(clientId).all()).results:[];
- const shared=!!clientId&&!c?.owner&&!clientOrders.some((r:{data:string})=>activeIncomingOrder(JSON.parse(r.data)));
- const previous=last&&eligible(last.actor_id),ownerCaller=c?.owner&&eligible(c.owner);
+ const shared=!!clientId&&(paidCallback?!ownerCaller:!c?.owner&&!clientOrders.some((r:{data:string})=>activeIncomingOrder(JSON.parse(r.data))));
+ const previous=last&&eligible(last.actor_id);
  const logisticCaller=previous&&['logistic','chief_logistic'].includes(previous.role)&&!!await d.prepare("SELECT id FROM orders WHERE client_id=? AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned') LIMIT 1").bind(clientId).first()?previous:undefined;
- const assignee=shared?undefined:cdekSent?buyoutCaller||ownerCaller||undefined:ownerCaller?logisticCaller||ownerCaller:previous||undefined;
+ const assignee=shared?undefined:paidCallback?ownerCaller||undefined:cdekSent?buyoutCaller||ownerCaller||undefined:ownerCaller?logisticCaller||ownerCaller:previous||undefined;
  const owner=staff.find(e=>e.id===c?.owner);
- return {assignee,department:owner?.department||assignee?.department||'',shared,cdekSent,callbackOrderId:buyoutCaller?last.order_id:undefined};
+ return {assignee,department:owner?.department||assignee?.department||'',shared,cdekSent,paidCallback,callbackOrderId:paidCallback||buyoutCaller?last.order_id:undefined};
 }
