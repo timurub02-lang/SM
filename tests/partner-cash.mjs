@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {partnerPremiumStatus,partnerRegistries,partnerCalculation,defaultPartnerSettings,isEmil} from '../lib/partner-cash.ts';
+import {partnerPremiumStatus,partnerRegistries,partnerCalculation as calculate,defaultPartnerSettings,isEmil} from '../lib/partner-cash.ts';
+const partnerCalculation=(members,orders,payroll,settings,bank,costs={'товар':300})=>calculate(members,orders,payroll,settings,bank,costs);
 const member={id:'LV-1',externalId:'1',department:'5'};
 const receipt={registry:'10',paymentDate:'2026-11-12',collectedCents:1130000,amountCents:767670};
 const order={id:'LV-1',items:[{name:'Товар',quantity:2}],cdekRemittances:[receipt,{...receipt,registry:'11'}]};
@@ -17,7 +18,7 @@ console.log('Partner settlement: gross tax, net receipts, duplicates, leader pre
 assert.equal(partnerCalculation([{...member,historyOnly:true}],[order],[],settings).orderCount,0);
 assert.equal(partnerCalculation([member],[{...order,items:[{name:'ИТОГО',quantity:1},{name:'Товар',quantity:2}]}],payroll,settings).goods,60000);
 
-const priced=partnerCalculation([member],[order],payroll,{...settings,productPrices:{[order.items[0].name]:125.50}});
+const priced=partnerCalculation([member],[order],payroll,settings,undefined,{'товар':125.50});
 assert.equal(priced.products.find(p=>p.name===order.items[0].name).price,125.50);
 assert.equal(priced.goods,priced.products.reduce((sum,p)=>sum+p.total,0));
 assert.equal(priced.remaining,priced.transferred-priced.tax-15000-priced.goods-priced.premium);
@@ -26,7 +27,10 @@ const groupedReceipt={order:'one',slot:1,registry:'123',date:'2026-11-12',collec
 const groups=partnerRegistries([groupedReceipt,{...groupedReceipt,order:'two',tax:701},{...groupedReceipt,slot:2,order:'three'},{...groupedReceipt,date:'2026-11-13',order:'four',tax:null}]);
 assert.equal(groups.length,3);assert.equal(groups[0].tax,null);
 const combined=groups.find(g=>g.orders.length===2);assert.equal(combined.collected,20000);assert.equal(combined.transferred,18000);assert.equal(combined.tax,1401);
-assert.equal(partnerCalculation([member],[order],payroll,{...settings,productUnitPrice:125.5}).products[0].price,125.5);
+assert.equal(partnerCalculation([member],[order],payroll,{...settings,productUnitPrice:125.5}).products[0].price,300,'Legacy manual price cannot override the warehouse');
+assert.equal(partnerCalculation([member],[order],payroll,settings,undefined,{}).goods,null);
+assert.equal(partnerCalculation([member],[order],payroll,settings,undefined,{'товар':0}).goods,0);
+assert.equal(partnerCalculation([member],[order],payroll,{...settings,warehouseProductPrices:{'товар':125.5}},undefined,{'товар':999}).goods,25100,'Payment snapshot protects prior costs');
 const minutes={updatedAt:'2026-11-15T12:00:00Z',through:'2026-11-15T12:00:00Z',missing:[],rows:[{employeeId:'op',login:'op',billed:354,seconds:15097}]};
 const metered=partnerCalculation([member],[order],payroll,{...settings,minutePrice:1,minutes});
 assert.equal(metered.communication,Math.round(settings.communication*100)+35400);

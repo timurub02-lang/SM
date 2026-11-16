@@ -22,7 +22,7 @@ const order={id:'LV-1',manager:'operator',status:'redeemed',delivery:'cdek_picku
 const ledger={activePeriod:period,periods:{[period]:{status:'open',orders:[member,other],signatures:{}}}};
 const bank=partnerBankForPeriod(ledger,period,[order],[],[registry],[],period);
 const settings={...defaultPartnerSettings,taxRate:7};
-const report=partnerCalculation([member,other],[order],[],settings,bank);
+const report=partnerCalculation([member,other],[order],[],settings,bank,{product:300});
 assert.equal(report.transferred,19233520);assert.equal(report.collected,21950000);assert.equal(report.tax,1536500);
 assert.equal(report.orderCount,1,'Unmatched registry rows never create payroll members');assert.equal(report.goods,60000);
 assert.equal(report.receipts.length,25);assert.equal(partnerRegistries(report.receipts)[0].transferred,19233520);
