@@ -38,7 +38,23 @@ export function sortOperatorStats(rows:ReturnType<typeof operatorStats>,key:Stat
  });
 }
 
-export function operatorStatsSummary(state:Pick<State,'employees'|'orders'>,actor:Employee,from:string,to:string){
+export function operatorStatsSummary(state:Pick<State,'employees'|'orders'>,actor:Employee,from:string,to:string,byDay=false,department=''){
  if(!['admin','department_head'].includes(actor.role))throw Error('Недостаточно прав');
- return operatorStats(state,{...actor,role:'admin'},from,to).map(({orderLists,...summary})=>summary);
+ const rows=operatorStats(state,{...actor,role:'admin'},from,to).filter(r=>!department||r.department===department);
+ return (byDay?buyoutStatsByDay(rows):rows).map(({orderLists,...summary})=>summary);
+}
+
+export function buyoutStatsByDay(rows:ReturnType<typeof operatorStats>){
+ const days=new Map<string,ReturnType<typeof operatorStats>[number]>();
+ for(const row of rows)for(const order of row.orderLists.redeemed){
+  const day=moscowDate.format(new Date(order.redeemedAt!));
+  let result=days.get(day);
+  if(!result){result={...row,id:day,login:day,department:'',buyoutCount:0,buyoutAmount:0,buyoutCdek:0,buyoutPost:0,buyoutMoscow:0,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}};days.set(day,result);}
+  result.buyoutCount++;result.buyoutAmount=(Math.round(result.buyoutAmount*100)+Math.round(total(order)*100))/100;
+  if(order.delivery==='cdek_pickup'||order.delivery==='cdek_courier')result.buyoutCdek++;
+  if(order.delivery==='russian_post')result.buyoutPost++;
+  if(order.delivery==='moscow_courier')result.buyoutMoscow++;
+  result.orderLists.redeemed.push(order);
+ }
+ return [...days.values()];
 }

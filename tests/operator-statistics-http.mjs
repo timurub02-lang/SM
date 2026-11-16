@@ -47,6 +47,12 @@ try{
  assert.equal((await call(path+'&actorId=admin',cookies.head)).status,403);
  assert.equal((await call('/api/operator-statistics?from=bad',cookies.head)).status,400);
  const empty=await call('/api/operator-statistics?from=2026-11-12&to=2026-11-12',cookies.head);assert.ok(JSON.parse(empty.text).rows.every(r=>r.created===0));
+ const dailyPath='/api/operator-statistics?groupBy=day&department=2&from=2026-11-11&to=2026-11-11';
+ assert.equal((await call(dailyPath,cookies.operator)).status,403);
+ const dailyResponse=await call(dailyPath,cookies.head);assert.equal(dailyResponse.status,200,dailyResponse.text);
+ const dailyRows=JSON.parse(dailyResponse.text).rows;assert.equal(dailyRows.length,1);assert.equal(dailyRows[0].login,'2026-11-11');assert.equal(dailyRows[0].buyoutCdek,1);assert.equal(dailyRows[0].buyoutAmount,12345);
+ for(const secret of ['PRIVATE-PAID','PRIVATE CLIENT','79990000001','orderLists'])assert.ok(!dailyResponse.text.includes(secret));
+ assert.equal(JSON.parse((await call(dailyPath.replace('department=2','department=1'),cookies.head)).text).rows.length,0);
  // Existing object-level access remains closed for another department's orders.
  assert.equal((await call('/api/order-access',cookies.head,{orderId:order.id})).status,403);
  console.log('Statistics HTTP: head aggregates only, dates, role and identity checks, private orders inaccessible');

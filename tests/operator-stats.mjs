@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {operatorStats,sortOperatorStats,operatorStatsSummary} from '../lib/operator-stats.ts';
+import {buyoutStatsByDay,operatorStats,sortOperatorStats,operatorStatsSummary} from '../lib/operator-stats.ts';
 const employees=[{id:'a',login:'one',role:'operator',department:'1'},{id:'b',login:'two',role:'operator',department:'2'}];
 const order=(id,amount,fields={})=>({id,manager:'a',createdAt:'2026-11-10T21:30:00Z',status:'draft',items:[{name:'Item',quantity:1,price:amount}],...fields});
 const state={employees,events:[],orders:[
@@ -89,3 +89,13 @@ assert.equal(buyoutSummary[1].buyoutAmount,1);
 for(const key of ['buyoutCount','buyoutAmount','buyoutCdek','buyoutPost','buyoutMoscow']){
  const sorted=sortOperatorStats(buyouts,key,false);assert.ok(sorted[0][key]>=sorted[1][key]);
 }
+
+const daily=buyoutStatsByDay(buyouts);
+assert.equal(daily.length,1);assert.equal(daily[0].login,'2026-11-12');
+assert.deepEqual([daily[0].buyoutCdek,daily[0].buyoutPost,daily[0].buyoutMoscow,daily[0].buyoutCount,daily[0].buyoutAmount],[1,1,1,3,3]);
+assert.equal(buyoutStatsByDay(operatorStats(state,{role:'department_head',department:'1'},'2026-11-12','2026-11-12'))[0].buyoutCount,2);
+const summaryDay=operatorStatsSummary(state,{role:'department_head',department:'1'},'2026-11-12','2026-11-12',true,'2');
+assert.equal(summaryDay[0].buyoutCount,1);assert.ok(!('orderLists' in summaryDay[0]));
+const twoDays=buyoutStatsByDay(operatorStats(state,{role:'admin'},'2026-11-11','2026-11-13'));
+assert.deepEqual(twoDays.map(r=>r.login).sort(),['2026-11-11','2026-11-12','2026-11-13']);
+assert.equal(buyoutStatsByDay([]).length,0);
