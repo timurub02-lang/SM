@@ -1,0 +1,19 @@
+[Unit]
+Description=CRM disk and backup health alerts to Telegram
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/check-sm-crm-backups
+StateDirectory=sm-crm-alerts
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=90
