@@ -15,9 +15,9 @@ assert.deepEqual(allowedResults('courier',{storageUntil:'2026-10-20'},'operator'
 assert.deepEqual(allowedResults('courier',{storageUntil:'2026-10-15'},'operator','2026-10-16'),[]);
 assert.deepEqual(allowedResults('courier',{operatorReturn:{deadline:'2026-10-16T13:00:00Z'}},'operator','2026-10-16'),[]);
 
-const returned={...row,result:'returned',returnConfirmedAt:'2026-10-16T20:59:59Z',returnWaybill:'TEST-123'};assert(inRedemptionTab(returned,'returns','2026-10-16'));assert(!inRedemptionTab(returned,'returns','2026-10-17'));assert(!inWorkday(returned,'2026-10-16'));
+const returned={...row,result:'returned',returnConfirmedAt:'2026-10-16T20:59:59Z',returnWaybill:'TEST-123'};assert(inRedemptionTab(returned,'returns','2026-10-16'));assert(inRedemptionTab(returned,'returns','2026-10-17'));assert(!inRedemptionTab({...returned,returnCheck:{state:'verified'}},'returns','2026-10-17'));assert(!inWorkday(returned,'2026-10-16'));
 
 assert(!inRedemptionTab({...row,dateVerifiedAt:'2026-10-16T20:59:59Z'},'confirm','2026-10-16'));
 assert(inWorkday({...row,dateVerifiedAt:'2026-10-16T20:59:59Z'},'2026-10-20'));
 
-assert(!inRedemptionTab({...returned,returnVerifiedAt:'2026-10-16T20:59:59Z'},'returns','2026-10-16'));
+assert(inRedemptionTab({...returned,returnVerifiedAt:'2026-10-16T20:59:59Z'},'returns','2026-10-16'));

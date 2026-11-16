@@ -3,7 +3,7 @@ import {courierWarehouseReturn} from './courier.ts';
 import {isBasketTotal} from './basket-total.ts';
 
 export function canReceiveWarehouseReturn(o:Order,role:Employee['role']){
- return ['admin','logistic','chief_logistic'].includes(role)&&courierWarehouseReturn(o)&&!o.warehouseReturnedAt&&(!o.legacyLv||o.legacyLv.trial===false&&['moscow_courier','russian_post'].includes(o.delivery||''));
+ return ['admin','logistic','chief_logistic'].includes(role)&&courierWarehouseReturn(o)&&!o.warehouseReturnedAt&&(!o.legacyLv||o.legacyLv.trial===false&&(['moscow_courier','russian_post'].includes(o.delivery||'')||!!o.cdekReturn?.verifiedAt));
 }
 export function legacyReturnItems(o:Order,products:{id:string;name:string;blocked?:boolean}[]){
  const quantities=new Map<string,number>();

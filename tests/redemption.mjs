@@ -185,8 +185,9 @@ try{
  await assert.rejects(editRedemption(d,buyer,{...verify,version:(await reported()).version},now),/сотрудник выкупа/);
  await d.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').bind(JSON.stringify({result:'returned',returnWaybill:'TEST-RETURN',returnConfirmedAt:now.toISOString()}),'client-delivered').run();
  const verifyReturn={id:'client-delivered',version:(await reported()).version,operation:'verify_return'};
- await assert.rejects(editRedemption(d,op,verifyReturn,now),/сотрудник выкупа/);
- await editRedemption(d,buyer,verifyReturn,now);assert.equal((await reported()).returnVerifiedById,buyer.id);
- await assert.rejects(editRedemption(d,buyer,{...verifyReturn,version:(await reported()).version},now),/сотрудник выкупа/);
+ await assert.rejects(editRedemption(d,buyer,verifyReturn,now),/автоматически|завершена/);
+ await editRedemption(d,buyer,{...verifyReturn,operation:'return_waybill',returnWaybill:'NEW-RETURN',comment:'Исправлен номер'},now);
+ assert.equal((await reported()).returnCheck.state,'pending');assert.equal((await reported()).returnWaybill,'NEW-RETURN');
+ await assert.rejects(editRedemption(d,op,{...verifyReturn,version:(await reported()).version,operation:'return_waybill',returnWaybill:'FORGED',comment:'Нет доступа'},now));
  console.log('Redemption: enrollment, permissions, dates, rollover, immutable archive and API delivery passed');
 }finally{d.close();}

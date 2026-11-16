@@ -10,3 +10,5 @@ assert.throws(()=>legacyReturnItems(order,[{id:'p',name:'Test',blocked:true}]),/
 assert.throws(()=>legacyReturnItems({...order,items:[{name:'Test',quantity:0}]},[{id:'p',name:'Test'}]),/количество/);
 assert.throws(()=>legacyReturnItems({...order,items:[{name:'ИТОГО',quantity:1}]},[]),/нет товаров/);
 console.log('Physical legacy returns: quantities, catalog, blocked sync, total row, roles and lifecycle passed');
+
+assert(canReceiveWarehouseReturn({...order,delivery:'cdek_pickup',cdekReturn:{verifiedAt:'2026-11-16'}},'logistic'));
