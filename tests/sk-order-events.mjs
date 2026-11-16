@@ -1,3 +1,4 @@
+import {seedSkDispatch} from './fixtures/sk-dispatch.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -27,6 +28,7 @@ const tick=()=>syncSkOrders(d,api,Date.now(),undefined,true);
 try{
  for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await d.prepare(sql).run();
  await d.prepare('INSERT INTO employees(id,data) VALUES(?,?)').bind('op',JSON.stringify({id:'op',name:'Operator',login:'op',skLogin:'Operator',role:'operator',department:'1',version:1})).run();
+ await seedSkDispatch(d,[1,2,3,4,900,...Array.from({length:10},(_,i)=>50+i),...Array.from({length:47},(_,i)=>100+i),...Array.from({length:100},(_,i)=>1000+i)].map(id=>['C-SK-'+id,'+7999'+String(id).padStart(7,'0')]));
  await put('skorozvon',{login:'fixture',apiKey:'fixture',clientId:'fixture',clientSecret:'fixture'});await put('sk-order-import',config);
  assert.equal((await receiveSkOrderEvent(d,request(),'' )).status,403);
  assert.equal((await receiveSkOrderEvent(d,request(event(1),{authorization:'Bearer wrong'}),secret)).status,403);

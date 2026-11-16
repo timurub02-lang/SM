@@ -71,7 +71,12 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
   if(!Number.isFinite(start)||!Array.isArray(config.resultIds)||!config.resultIds.length)throw Error('Настройка приёма СК некорректна');
   let pages=1,imported=0,pending=0;
   async function accept(row:{id:string|number;comment?:unknown}){
-    const prior=await d.prepare('SELECT state,reason,data FROM sk_order_transfers WHERE id=?').bind(String(row.id)).first();if(prior&&(prior.state!=='pending'||JSON.parse(prior.data).projectCheckedAt||(prior.reason?!prior.reason.includes('Создан не из Проекта'):!eventsOnly))){review.delete(String(row.id));return true;}
+    const prior=await d.prepare('SELECT state,reason,data FROM sk_order_transfers WHERE id=?').bind(String(row.id)).first();
+    if(prior){
+     // Resume a crash after saving the snapshot, but never auto-approve an existing review.
+     if(prior.state==='pending'&&!prior.reason){const r=await acceptSkOrder(d,JSON.parse(prior.data),undefined,at);if(r.state==='imported')imported++;else if(r.state==='pending')pending++;}
+     review.delete(String(row.id));return true;
+    }
     const raw=await api('/api/v2/calls/'+encodeURIComponent(row.id)),call=raw.data||raw;
     if(!config.resultIds.includes(call.result_id))return true;
     if(!call.ended_at)return false;
@@ -88,19 +93,12 @@ export async function syncSkOrders(d:Db,request:typeof fetch=fetch,now=Date.now(
     if(!phone){review.set(String(call.id),{callId:String(call.id),leadId:String(lead.id),reason:'В карточке СК нет однозначного телефона клиента'});pending++;return false;}
     review.delete(String(call.id));
     const input:SkOrderInput={callId:String(call.id),leadId:String(lead.id),projectId:/^[1-9]\d*$/.test(String(call.call_project_id))?String(call.call_project_id):null,email:user.email||'',userName:user.name||'',userNameUnique:users.filter(u=>String(u.name||'').trim().toLowerCase().replace(/\s+/g,' ')===String(user.name||'').trim().toLowerCase().replace(/\s+/g,' ')).length===1,name:typeof lead.name==='string'?lead.name:'',phone,address:typeof lead.address==='string'?lead.address:'',city:typeof lead.city==='string'?lead.city:'',comment:typeof row.comment==='string'?row.comment:''};
-    // Retrying a review uses the original call snapshot; only verified membership is additive.
-    const original:SkOrderInput=prior?JSON.parse(prior.data):input;
-    if(original.projectId===null){
-     const check=await checkSkProjectMembership(d,api,original,clock());
-     if(check.status==='pending'){
-      review.set(original.callId,{callId:original.callId,leadId:original.leadId,reason:'Проверяется участие клиента в проектах СК'});pending++;return false;
-     }
-     original.projectCheckedAt=new Date(clock()).toISOString();
-     if(check.status==='found')original.projectMembership=check.membership;
-     if(prior)await d.prepare("UPDATE sk_order_transfers SET data=? WHERE id=? AND state='pending' AND data=?").bind(JSON.stringify(original),original.callId,prior.data).run();
-    }
-    review.delete(original.callId);
-    stage='apply';const r=await acceptSkOrder(d,original,undefined,at);if(r.state==='imported')imported++;else if(r.state==='pending')pending++;
+    const check=await checkSkProjectMembership(d,input,clock());
+    input.projectCheckedAt=new Date(clock()).toISOString();
+    input.dispatchVerified=check.status==='found';
+    if(check.status==='found')input.projectMembership=check.membership;
+    review.delete(input.callId);
+    stage='apply';const r=await acceptSkOrder(d,input,undefined,at);if(r.state==='imported')imported++;else if(r.state==='pending')pending++;
     return true;
   }
   if(eventsOnly){
