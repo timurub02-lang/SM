@@ -116,5 +116,9 @@ not recoverability; isolated restores and off-host copies remain separate checks
 Before enabling the timer, test HTTPS connectivity to Telegram from the server.
 If direct access fails, keep the timer disabled until a trusted permanent route
 is configured and `--test` succeeds. Python's standard `HTTPS_PROXY` environment
-can be supplied via a protected systemd EnvironmentFile; never use an untrusted
+is honored by the installed curl transport (including `socks5h://` with remote DNS).
+Supply it via a protected systemd EnvironmentFile; never use an untrusted
 relay, expose proxy credentials in unit files, or disable TLS verification.
+curl receives the API URL/body through stdin, without credentials in arguments;
+its user configuration and HTTP redirects are disabled. No extra package is needed
+on the production host, which already uses curl for deployment checks.
