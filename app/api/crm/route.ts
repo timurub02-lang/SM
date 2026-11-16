@@ -196,11 +196,11 @@ async function handleGET(request:Request){
     if(!['operator','department_head'].includes(user.employee.role))return Response.json({error:'Список недоступен'},{status:403});
     const all=filteredClientList(compactCrmState(state),user.employee,q),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1));
     const clients=all.slice(page*50,(page+1)*50);
-    return timing.finish(await conditionalJson(request,{rows:[],clients,total:all.length,page,...(scoped?{workCounts:buildClientWorkCounts(state,user.employee,q),financialReadModel:state.financialReadModel,summaries:clientListSummaries(state,clients),employees:state.employees.map(({id,name})=>({id,name}))}:{})}));
+    return timing.finish(await conditionalJson(request,{rows:[],clients,total:all.length,page,...(scoped?{workCounts:buildClientWorkCounts(state,user.employee,q),financialReadModel:state.financialReadModel,summaries:clientListSummaries(state,clients),employees:state.employees.map(({id,name,login})=>({id,name,login}))}:{})}));
    }
    if(scoped&&preparedModelsEnabled()&&(['accrued','premium_paid'].includes(q.filter)||q.next==='1')&&(!state.financialReadModel||['pending','error'].includes(state.financialReadModel.status)))return Response.json({error:'Финансовые расчёты готовятся. Повторите загрузку.',readModel:state.financialReadModel},{status:503});
    const all=filteredOrderList(state,user.employee,{...q,manualSort:q.manualSort==='1',showNextPremium:q.next==='1'},responseStartedAt),page=Math.min(q.page,Math.max(0,Math.ceil(all.length/50)-1)),selected=all.slice(page*50,(page+1)*50),rows=scoped?await hydrateWorkspaceOrders(db(),state,selected,user.employee):selected,ids=new Set(rows.map(o=>o.clientId));
-   const response=await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page,...(scoped?{financialReadModel:state.financialReadModel,employees:state.employees.map(({id,name})=>({id,name}))}:{})});
+   const response=await conditionalJson(request,{rows,clients:compactCrmState(state).clients.filter(c=>ids.has(c.id)),total:all.length,page,...(scoped?{financialReadModel:state.financialReadModel,employees:state.employees.map(({id,name,login})=>({id,name,login}))}:{})});
    if(scoped)response.headers.set('X-CRM-Cache-Until',String(orderListNextChange(state,responseStartedAt)));
    return timing.finish(response);
   }

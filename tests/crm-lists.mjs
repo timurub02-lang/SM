@@ -96,3 +96,6 @@ for(const [view,status,delivery] of [['rework','rework','cdek_courier'],['confir
  assert.deepEqual(filteredOrderList(scoped,employee,q,now).map(o=>o.id),['MATCH-1'],view+' searches other statuses, not other sections or operators');
  assert.equal(filteredOrderList(scoped,employee,{...q,query:'   '},now).length,0,view+' restores the status filter for an empty search');
 }
+
+const managerState={...state,employees:[{id:'one',name:'Альфа',login:'Z_login'},{id:'two',name:'Яна',login:'A_login'}],orders:[{...order,id:'LOGIN-Z',manager:'one'},{...order,id:'LOGIN-A',manager:'two'}]};
+assert.deepEqual(filteredOrderList(managerState,{id:'admin',role:'admin'},{...query,filter:'all',sort:'manager',direction:'asc'},now).map(o=>o.id),['LOGIN-A','LOGIN-Z'],'Manager sorting follows displayed CRM login rather than name');
