@@ -1,3 +1,4 @@
+import {pickupPointContext} from '../lib/order-pickup-point.ts';
 import {addWeekdayMilliseconds} from '../lib/internal-timers.ts';
 import {courierDeadline} from '../lib/courier.ts';
 // Full API flow against temporary data; never uses the live CRM or carrier services.
@@ -38,6 +39,8 @@ try{
   const created=await call('operator','/api/crm',{action:'createOrder',clientId:c.id,delivery:'moscow_courier',items:[{name:'Product',quantity:1,price:10000}],addressConfirmed:true});
   const o=created.data.state.orders.find(o=>o.clientId===c.id);assert.equal(o.status,'draft');return o.id;
  }
+ // Unrelated delivery-switch fixtures start with a previously selected PVZ; the selection API has its own HTTP suite.
+ function fixturePickupPoint(id){const o=order(id);o.cdekPickupPoint={code:'TEST',address:'Test PVZ',workTime:'',context:pickupPointContext(o),by:'operator',selectedAt:new Date().toISOString()};db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(o),id);}
  async function act(id,actor,body,expected=200){const result=await call(actor,'/api/crm',{id,version:order(id).version,...body},expected);return result.data;}
  async function receipt(id,title,amount,{visible=true,read=true}={}){
   const state=(await call('courier')).data,notices=state.reminders.filter(r=>r.kind==='courier-receipt'&&r.orderId===id);
@@ -174,7 +177,7 @@ try{
  }
  // Logistics extra confirmation is dropped only on a switch to Moscow, not on the first confirmation.
  for(const from of ['russian_post','cdek_pickup']){
-  const switchId=await create();await act(switchId,'operator',{action:'updateOrder',delivery:from,items:order(switchId).items,addressConfirmed:true});await act(switchId,'operator',{action:'transition',to:'confirm'});
+  const switchId=await create();await act(switchId,'operator',{action:'updateOrder',delivery:from,items:order(switchId).items,addressConfirmed:true});if(from==='cdek_pickup')fixturePickupPoint(switchId);await act(switchId,'operator',{action:'transition',to:'confirm'});
   if(from==='russian_post')await act(switchId,'logistic',{action:'transition',to:'extra'});else{await act(switchId,'logistic',{action:'transition',to:'check'});await act(switchId,'admin',{action:'transition',to:'extra'});}
   await act(switchId,'logistic',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
   const action=from==='russian_post'?{action:'updateDelivery',delivery:'moscow_courier'}:{action:'updateOrder',delivery:'moscow_courier',addressConfirmed:true};
@@ -185,7 +188,7 @@ try{
  console.log('Courier recall/repack, guarded editing, stale clicks, custody, price/stock/cash and delivery-switch regressions passed.');
  // Department heads share the existing confirmation flow, never the courier's own stage.
  for(const [delivery,to] of [['cdek_pickup','check'],['russian_post','extra'],['moscow_courier','packing']]){
-  const headId=await create();await act(headId,'operator',{action:'updateOrder',delivery,items:order(headId).items,addressConfirmed:true});await act(headId,'operator',{action:'transition',to:'confirm'});
+  const headId=await create();await act(headId,'operator',{action:'updateOrder',delivery,items:order(headId).items,addressConfirmed:true});if(delivery==='cdek_pickup')fixturePickupPoint(headId);await act(headId,'operator',{action:'transition',to:'confirm'});
   assert.ok(!(await call('head')).data.tasks.some(t=>t.orderId===headId));assert.ok(!(await call('foreign-head')).data.tasks.some(t=>t.orderId===headId));
   await act(headId,'foreign-head',{action:'transition',to},403);
   const token=crypto.randomUUID();assert.equal((await call('head','/api/order-access',{orderId:headId,token,action:'acquire'})).data.editable,true);

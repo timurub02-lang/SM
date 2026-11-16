@@ -1,3 +1,4 @@
+import {canSelectOrderPickupPoint,selectedCachedPickupPoint} from '@/lib/order-pickup-point';
 import {acknowledgeCashNotice} from '@/lib/cash-notifications';
 import {canEditOrderRecipientName,nextExtraConfirmationAt} from '@/lib/crm';
 import {reportPostalBuyout,resolvePostalBuyout,postalBuyoutPending} from '@/lib/postal-buyout-report';
@@ -452,7 +453,7 @@ async function handlePOST(request:Request){
    d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,c.id,o.id,e.at,json(e),o.id,mutation)
   ]);
   if(!result[0].meta.changes)throw Error('Заказ или клиент уже изменены. Обновите карточку и повторите');
- }else if(["reportPostalBuyout","keepPostalSent","incomingBuyoutInfo","requestShipmentReturn","requestShipmentChange","resolveShipmentRequest","requestOrderEdit","resolveOrderEdit","completeOrderEdit","requestOrderCancellation","resolveOrderCancellation","updateLogisticComment","clientWaiting","markZvd","markPV","markBlacklist","courierAccept","courierOutcome","courierWorkflow","receivePayment","savePostalTracking","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
+ }else if(["selectOrderPickupPoint","reportPostalBuyout","keepPostalSent","incomingBuyoutInfo","requestShipmentReturn","requestShipmentChange","resolveShipmentRequest","requestOrderEdit","resolveOrderEdit","completeOrderEdit","requestOrderCancellation","resolveOrderCancellation","updateLogisticComment","clientWaiting","markZvd","markPV","markBlacklist","courierAccept","courierOutcome","courierWorkflow","receivePayment","savePostalTracking","saveManualDeliveryCost","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
   const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!["incomingBuyoutInfo","requestShipmentReturn","requestShipmentChange","resolveShipmentRequest","requestOrderEdit","resolveOrderEdit","completeOrderEdit","requestOrderCancellation","resolveOrderCancellation"].includes(p.action)&&!(p.action==='reportPostalBuyout')&&!(p.action==='updateLogisticComment'&&['admin','logistic','chief_logistic'].includes(employee.role))&&!(p.action==='clientWaiting'&&canOperatorReachClient(employee,o,s.employees))&&!(p.action==='updateOrder'&&p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees))&&!(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee,s.employees))&&!(p.action==='courierWorkflow'&&['claimDoor','resolveDoor'].includes(p.operation)&&canHandleCourierDoor(o,employee,s.employees))&&!(employee.role==="courier"&&["courierAccept","courierOutcome","courierWorkflow","contact"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");if(o.cdekDeleting)throw Error("СДЭК обрабатывает удаление. Дождитесь подтверждения");let next:Order & {_mutation:string}={...o,refusalHandoffAt:o.refusalHandoffAt||o.finalHandoffAt,updatedAt:now,_mutation:id("M-")};let text="";let cancellationIncoming:Awaited<ReturnType<typeof incomingForAction>>|undefined;let cashReceipt:ReturnType<typeof d.prepare>[]=[];let stockReturn:ReturnType<typeof d.prepare>[]=[];let incomingBuyout:Awaited<ReturnType<typeof incomingBuyoutUpdate>>|undefined;
   if(o.zvd&&!['markZvd','markPV','markBlacklist','comment','updateLogisticComment'].includes(p.action)&&!(employee.role==='admin'&&p.action==='transition'&&p.to==='packing'))throw Error('Заказ на ЗВД. Сначала администратор должен разрешить отправку');
   if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees)?'draft':canEditRecalledCourierOrder(o,employee,s.employees)?'rework':o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
@@ -461,7 +462,7 @@ async function handlePOST(request:Request){
    if(p.action==='updateOrder'&&o.courier!.doorRefusal!.claimedBy!==employee.id)throw Error('Сначала возьмите срочное обращение в работу');
   }
   if(o.status==="rework"&&!next.returnReason)next.returnReason=o.reason;
-  if((p.action==='resolveOrderEdit'&&p.decision==='edit'||p.action==='markBlacklist'||p.action==='resolveOrderCancellation'&&p.decision==='cancel'||["updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
+  if((p.action==='resolveOrderEdit'&&p.decision==='edit'||p.action==='markBlacklist'||p.action==='resolveOrderCancellation'&&p.decision==='cancel'||["selectOrderPickupPoint","updateOrder","updateDelivery","selectCdekTariff","saveManualDeliveryCost"].includes(p.action)||isLogistic(employee?.role)&&p.action==="updateWaybillComment")){
    const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind(`cdek-shipment-${o.id}`).first<{data:string}>();
    if(shipment&&JSON.parse(shipment.data).state!=="invalid")throw Error("Заказ уже выгружен или отправляется в СДЭК. Изменение доставки и корзины заблокировано");
   }
@@ -534,6 +535,11 @@ async function handlePOST(request:Request){
    if(p.confirmed!==true)throw Error('Подтвердите получение денег или возврат посылки');
    next.status=to;Object.assign(next,orderDatesForTransition(o,to,now));next.reason=reason;next.contact='none';next.due='';
    text=to==='redeemed'?'Курьер получил оплату клиента · '+o.courier.amount+' ₽':'Курьер отметил возврат · ожидает приёма посылки на склад · '+reason;
+  }else if(p.action==="selectOrderPickupPoint"){
+   if(!canSelectOrderPickupPoint(o,employee,s.employees))throw Error("Выбор ПВЗ недоступен");
+   const code=z.string().trim().min(1).max(50).parse(p.code),selectionId=z.string().uuid().parse(p.selectionId);
+   const cache=await d.prepare("SELECT data FROM settings WHERE id=?").bind("cdek-pickup-options-"+o.id).first<{data:string}>();
+   next.cdekPickupPoint={...selectedCachedPickupPoint(o,cache?JSON.parse(cache.data):null,code,selectionId,Date.now()),by:employee.id,selectedAt:now};delete next.cdekTariff;text="Выбран ПВЗ получателя: "+next.cdekPickupPoint.address+" · "+code;
   }else if(p.action==="reportPostalBuyout"){
    Object.assign(next,reportPostalBuyout(o,employee,s.employees,now,id("PBR-")));text="Оператор/РК сообщил: клиент выкупил почтовый заказ · требуется проверка логистом";
   }else if(p.action==="keepPostalSent"){
