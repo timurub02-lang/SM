@@ -27,6 +27,12 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
  await initCdekHistoryRecovery(d);
  await initCdekUnmatched(d);
  const rows=(await d.prepare(`SELECT o.id,o.data,o.version,s.data shipment FROM orders o LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id WHERE (json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') OR (json_extract(o.data,'$.delivery') IS NULL AND json_extract(o.data,'$.cdekHistoryRecovery') IS NOT NULL))`).all()).results;
+ const ledgerRow:{data:string}|null=await d.prepare("SELECT data FROM settings WHERE id='premium-ledger'").first();
+ const historyRow:{data:string}|null=await d.prepare("SELECT data FROM settings WHERE id='premium-paid-history'").first();
+ const ledger=ledgerRow?JSON.parse(ledgerRow.data) as import('./premium-ledger.ts').PremiumLedger:null;
+ const history=historyRow?JSON.parse(historyRow.data) as import('./premium-paid-history.ts').PaidHistory:null;
+ const paidIds=new Set(Object.values(ledger?.periods||{}).filter(p=>p.status==='paid').flatMap(p=>(p.orders||[]).map(o=>o.externalId)));
+ const historicalPaidIds=new Set((history?.orders||[]).map(o=>o.externalId));
  const byTracking=new Map<string,{id:string;data:string;version:number;shipment:string|null;order:Order;slot?:number}[]>();
  for(const row of rows){
   const order=JSON.parse(row.data) as Order,shipment=row.shipment?JSON.parse(row.shipment):null;
@@ -51,8 +57,10 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
   }
   const row=candidates[0];
   if(!row||row.slot&&row.slot!==slot||row.order.status!=='redeemed'||row.order.testOnly||allowedIds&&!allowedIds.has(row.id)){result.unmatched++;continue;}
+  const externalId=row.order.legacyLv?.orderId||row.id.replace(/^LV-/,'');
+  const premiumPaid=paidIds.has(externalId)||!row.order.importedPayment&&historicalPaidIds.has(externalId);
   const previous:CdekRemittance[]=row.order.cdekRemittances||[];
-  const next=[...previous];for(const receipt of receipts)if(!next.some(x=>sameRemittance(x,receipt)))next.push({...receipt,receivedAt:at});
+  const next=[...previous];for(const receipt of receipts)if(!next.some(x=>sameRemittance(x,receipt)))next.push({...receipt,receivedAt:at,...(receipt.paymentDate>='2026-11-16'&&premiumPaid?{afterPremiumPaid:true as const}:{})});
   if(next.length===previous.length){if(!dryRun)await resolveCdekUnmatched(d,receipts);result.unchanged++;continue;}
   const conflict=hasRemittanceConflict({cdekRemittances:next});
   const mutation=crypto.randomUUID(),text=conflict?'СДЭК: несколько положительных перечислений по заказу — требуется проверка администратора':`СДЭК: деньги получены, реестр №${next[0].registry}, дата перечисления ${next[0].paymentDate}${next.length>1?' · дубль сохранён без повторного начисления':''}`;

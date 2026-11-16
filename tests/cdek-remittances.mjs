@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {openDatabase} from '../server/sqlite.ts';
 import {registryPayments,applyCdekRegistries,syncCdekRemittances} from '../lib/cdek-remittance-sync.ts';
-import {cdekMoneyLabel,remittanceAccountingDate} from '../lib/cdek-remittance.ts';
+import {cdekMoneyLabel,remittanceAccountingDate,paidCdekReceipts} from '../lib/cdek-remittance.ts';
 import {periodOrders,applyPremiumStages,freezePeriod,signPeriod,payPeriod,ledgerRows} from '../lib/premium-ledger.ts';
 import {orderDisplayGroup} from '../lib/order-premium-stage.ts';
 const folder=mkdtempSync(join(tmpdir(),'cdek-remittances-')),db=openDatabase(join(folder,'test.sqlite'));
@@ -94,6 +94,32 @@ try{
  assert.equal(remittanceAccountingDate({paymentDate:'2026-11-03'}),'2026-11-03','Existing historical receipts are not reassigned');
  await assert.rejects(applyCdekRegistries(db,1,answer(),'invalid-time'));
 
+
+ await fixture('paid-alert',{legacyLv:{track:'paid-alert'}});
+ const alertLedger={periods:{'2026-11-1':{status:'open',orders:[{externalId:'paid-alert'}]}}};
+ await db.prepare('INSERT INTO settings(id,data) VALUES(?,?)').bind('premium-ledger',JSON.stringify(alertLedger)).run();
+ await applyCdekRegistries(db,1,answer(registry('PREPAY',90,'2026-11-16','paid-alert')),'2026-11-16T08:00:00Z');
+ assert.equal(paidCdekReceipts(await row('paid-alert')).length,0,'Open payroll does not prove a paid premium');
+ alertLedger.periods['2026-11-1'].status='paid';
+ await db.prepare('UPDATE settings SET data=? WHERE id=?').bind(JSON.stringify(alertLedger),'premium-ledger').run();
+ await applyCdekRegistries(db,1,answer(registry('PREPAY',90,'2026-11-16','paid-alert'),registry('OLD',90,'2026-02-16','paid-alert')),'2026-11-16T09:00:00Z');
+ assert.equal(paidCdekReceipts(await row('paid-alert')).length,0,'Old evidence and replay do not become new alerts after payroll closes');
+ await applyCdekRegistries(db,1,answer(registry('NEW',90,'2026-11-17','paid-alert')),'2026-11-17T09:00:00Z');
+ assert.deepEqual(paidCdekReceipts(await row('paid-alert')).map(r=>r.registry),['NEW']);
+ await applyCdekRegistries(db,1,answer(registry('NEW',90,'2026-11-17','paid-alert')),'2026-11-18T09:00:00Z');
+ assert.equal(paidCdekReceipts(await row('paid-alert')).length,1);
+ assert.equal((await row('paid-alert')).cdekRemittances.length,3,'Historical evidence is retained');
+
+ await db.prepare('INSERT INTO settings(id,data) VALUES(?,?)').bind('premium-paid-history',JSON.stringify({orders:[{externalId:'history-alert',period:'2026-10-1'},{externalId:'history-override',period:'2026-10-1'}]})).run();
+ await fixture('history-alert',{legacyLv:{track:'history-alert'}});
+ await fixture('history-override',{legacyLv:{track:'history-override'},importedPayment:{periodId:'2026-11-2'}});
+ for(const id of ['history-alert','history-override'])await applyCdekRegistries(db,1,answer(registry(id,90,'2026-11-17',id)),'2026-11-17T09:00:00Z');
+ assert.equal(paidCdekReceipts(await row('history-alert')).length,1,'A first newly received remittance for confirmed historical payroll is visible');
+ assert.equal(paidCdekReceipts(await row('history-override')).length,0,'Explicit imported payroll overrides old paid history');
+ await applyCdekRegistries(db,1,answer({...registry('FEE',90,'2026-11-17','paid-alert'),orders:[{cdek_number:'paid-alert',payment_sum:100,transfer_sum:90,basis_type:'SERVICE'}]}),'2026-11-17T09:00:00Z');
+ assert.equal(paidCdekReceipts(await row('paid-alert')).length,1,'Service charges do not create alerts');
+ await db.prepare("DELETE FROM settings WHERE id='premium-paid-history'").run();
+ await db.prepare("DELETE FROM settings WHERE id='premium-ledger'").run();
  const missingCount=async()=>Number((await db.prepare("SELECT COUNT(*) n FROM cdek_unmatched_remittances WHERE tracking='missing-track'").first()).n);
  const missingReceipt=answer(registry('MISSING',90,'2026-10-28','missing-track'));
  const beforeOrders=(await db.prepare('SELECT COUNT(*) n FROM orders').first()).n;

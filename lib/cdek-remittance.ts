@@ -1,5 +1,5 @@
 import type {Order} from './crm.ts';
-export type CdekRemittance={slot:number;registry:string;tracking:string;paymentDate:string;receivedAt?:string;amountCents:number;collectedCents:number};
+export type CdekRemittance={slot:number;registry:string;tracking:string;paymentDate:string;receivedAt?:string;afterPremiumPaid?:true;amountCents:number;collectedCents:number};
 export const isCdekOrder=(o:Pick<Order,'delivery'|'cdekHistoryRecovery'>)=>(!o.delivery&&!!o.cdekHistoryRecovery)||['cdek_pickup','cdek_courier'].includes(o.delivery||'');
 // Keep the first recorded receipt/date so later duplicates cannot move an order between periods.
 export function premiumRemittance(o:Pick<Order,'cdekRemittances'>){
@@ -22,3 +22,6 @@ export function sameRemittance(a:CdekRemittance,b:CdekRemittance){return a.slot=
 export function remittanceAccountingDate(r:CdekRemittance){
  return r.receivedAt?new Date(Date.parse(r.receivedAt)+3*3600000).toISOString().slice(0,10):r.paymentDate;
 }
+
+// Older evidence stays in order history; this queue starts with new receipts after rollout.
+export const paidCdekReceipts=(o:Pick<Order,'cdekRemittances'>)=>(o.cdekRemittances||[]).filter(r=>r.afterPremiumPaid&&r.paymentDate>='2026-11-16');
