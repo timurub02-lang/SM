@@ -436,6 +436,9 @@ try{
   assert.ok(saved.redeemedAt);
   const paidAt=saved.redeemedAt;
   saved=await receive(200,delivery==='moscow_courier'?99999:undefined);assert.equal(saved.status,'redeemed');assert.equal(saved.redeemedAt,paidAt);assert.ok(saved.paymentReceivedAt);assert.equal(saved.paymentReceivedBy,editor.e.id);assert.equal(saved.paymentReceipt.amount,1);assert.equal(saved.paymentReceipt.receivedByName,editor.e.name);assert.equal(saved.paymentReceipt.delivery,delivery);assert.equal(saved.paymentReceipt.operatorLogin,JSON.parse(db.prepare("SELECT data FROM employees WHERE id=?").get(saved.manager).data).login);
+  const receiptEvent=JSON.parse(db.prepare('SELECT data FROM events WHERE order_id=? ORDER BY at DESC LIMIT 1').get(id).data);
+  assert.match(receiptEvent.text,/Приём оплаты:/,'history retains full payment change');
+  for(const row of db.prepare('SELECT data FROM reminders WHERE employee_id=?').all(saved.manager))assert.doesNotMatch(row.data,/Приём оплаты:|Логин оператора:/,'history details are not broadcast as notifications');
   await receive(400);
  }
 
