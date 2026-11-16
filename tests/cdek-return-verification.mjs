@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {initRedemption,inRedemptionTab} from '../lib/redemption.ts';
+import {initRedemption,inRedemptionTab,compareRedemptionRows} from '../lib/redemption.ts';
 import {syncCdekReturns,verifiedReturn} from '../lib/cdek-return-verification.ts';
 import {returnedOrderHidden} from '../lib/order-premium-stage.ts';
 import {cdekStatusPatch} from '../lib/cdek-sync.ts';
@@ -8,6 +8,7 @@ const d=openDatabase(':memory:'),originalUuid=crypto.randomUUID(),returnUuid=cry
 const original={entity:{uuid:originalUuid,cdek_number:'111'},related_entities:[{type:'return_order',uuid:returnUuid,cdek_number:'222'}]};
 const returned={entity:{uuid:returnUuid,cdek_number:'222',is_return:true},related_entities:[{type:'direct_order',uuid:originalUuid,cdek_number:'111'}]};
 assert.equal(verifiedReturn(original,returned,originalUuid,'111','222'),returnUuid);
+assert.deepEqual([{id:'old-pending',result:'returned',returnConfirmedAt:'2026-11-01'},{id:'unconfirmed',result:'to_return'}].sort((a,b)=>compareRedemptionRows(a,b,'returns','2026-11-16')).map(r=>r.id),['unconfirmed','old-pending']);
 for(const patch of [{entity:{...returned.entity,is_return:false}},{related_entities:[]},{entity:{...returned.entity,cdek_number:'333'}}])assert.throws(()=>verifiedReturn(original,{...returned,...patch},originalUuid,'111','222'));
 assert.throws(()=>verifiedReturn({...original,related_entities:[]},returned,originalUuid,'111','222'));
 let mode='wrong',race=false;
