@@ -1,3 +1,4 @@
+import {withOrderChanges} from './order-change-history.ts';
 import {legacyPremiumPaid} from './legacy-premium-paid.ts';
 import {paidHistoryKey,type PaidHistory} from './premium-paid-history.ts';
 import {upgradeOrderTimers} from './internal-timers.ts';
@@ -17,7 +18,12 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
   for(const order of orders){
    const upgraded=upgradeOrderTimers(order);
    if(upgraded===order){upgradedOrders.push(order);continue;}
-   const result=await d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?').bind(json(upgraded),order.id,order.version).run();
+   const at=new Date().toISOString(),mutation=crypto.randomUUID();
+   const event:Event={id:mutation,clientId:order.clientId,orderId:order.id,at,actor:'Система',text:withOrderChanges('Обновлены сроки заказа',order,upgraded)};
+   const [result]=await d.batch([
+    d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?').bind(json({...upgraded,_mutation:mutation}),order.id,order.version),
+    d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,event.clientId,event.orderId,at,json(event),order.id,mutation)
+   ]);
    orderChanged=orderChanged||!!result.meta.changes;
    if(result.meta.changes)upgradedOrders.push({...upgraded,version:order.version+1});
   }
@@ -49,9 +55,10 @@ export async function reconcileOrderTimers(d:Db,orders:Order[],events:Event[]){
     if(o.courier)next={...courierToOperator(o,expiryReason,policy,at),_mutation:mutation};
     else{next={...o,status:'rework',returnKind:'clarification',contact:'none',due:'',reason:expiryReason,returnReason:expiryReason,reworkHours:policy.reworkHours,reworkDeadline:reworkDeadlineFrom(at,policy.reworkHours),timerCalendar:'weekdays-v1',updatedAt:at,_mutation:mutation};delete next.noAnswerDeadline;}
    }else if(expired)cancelCourierWork(next,at);
-   const e:Event={id:"EV-"+crypto.randomUUID(),clientId:o.clientId,orderId:o.id,at,actor:"Система",text:migrateCourier?"Заказ передан оператору из упразднённой очереди логиста · "+expiryReason:backToOperator?"Заказ передан оператору: "+expiryReason:expired?"Заказ отменён: "+expiryReason:`Включён таймер ${o.status==="extra"?"повторного":"первого"} подтверждения для существующего заказа: ${o.confirmationHours} ч`};
+   const e:Event={id:"EV-"+crypto.randomUUID(),clientId:o.clientId,orderId:o.id,at,actor:"Система",text:migrateCourier?"Заказ передан оператору из упразднённой очереди логиста · "+expiryReason:backToOperator?"Заказ передан оператору: "+expiryReason:expired?"Заказ отменён: "+expiryReason:!initialize?"Обновлены сроки заказа":`Включён таймер ${o.status==="extra"?"повторного":"первого"} подтверждения для существующего заказа: ${o.confirmationHours} ч`};
+   e.text=withOrderChanges(e.text,stored,next);
    const notices=(migrateCourier||expired)&&(next.courier||next.courierRecall)?await courierReminderStatements(d,o,next,e,mutation,(await d.prepare('SELECT data FROM employees').all()).results.map((r:{data:string})=>JSON.parse(r.data))):[];
-   const results=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?").bind(json(next),o.id,o.version),...(migrateCourier||expired||initialize&&deadline?[d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,at,json(e),o.id,mutation)]:[]),...notices,...await cancelledOrderNotices(d,o,next,e)]);
+   const results=await d.batch([d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=?").bind(json(next),o.id,o.version),...[d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,at,json(e),o.id,mutation)],...notices,...await cancelledOrderNotices(d,o,next,e)]);
    orderChanged=orderChanged||!!results[0].meta.changes;
   }
  return orderChanged;

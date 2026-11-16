@@ -39,6 +39,8 @@ for(const at of [now,now+2,now+86400000])for(const employee of staff){
  const scoped=employee.role==='operator'?state.orders.filter(o=>o.manager===employee.id):departmentOrders(state.orders,staff,employee),clients=new Map(state.clients.map(c=>[c.id,c]));
  const visible=scoped.filter(o=>showOrderInList(o,clients.get(o.clientId),employee.role,at)&&clients.has(o.clientId));
  assert.equal(summary.orders.all,visible.length);
+ assert.equal(summary.orders.newDraft,visible.filter(o=>orderDisplayGroup(o).id==='new'&&o.status==='draft').length);
+ assert.equal(summary.orders.newRework,visible.filter(o=>orderDisplayGroup(o).id==='new'&&o.status==='rework').length);
  for(const group of orderDisplayGroups){assert.equal(summary.orders.groups[group.id],visible.filter(o=>orderDisplayGroup(o).id===group.id).length);comparisons++;}
  assert.equal(summary.orders.eligibleSent,visible.filter(o=>orderGroup(o).id==='sent'&&eligibleForRedemption(o,state.redemptionStatuses)).length);
  for(const tab of ['new','expiring','callback','missed','extra_new','extra_expiring','extra_callback','extra_missed']){assert.equal(summary.rework[tab]||0,scoped.filter(o=>o.status==='rework'&&reworkStage(o,at,state.settings.orderPolicy)===tab).length);comparisons++;}
@@ -63,3 +65,10 @@ assert.equal(JSON.stringify(state),original,'summary calculation never changes s
  const other=structuredClone(swapped);[other.clients[0].createdAt,other.clients[1].createdAt]=[other.clients[1].createdAt,other.clients[0].createdAt];
  const first=buildWorkspaceSummary(swapped,staff[0],now),second=buildWorkspaceSummary(other,staff[0],now);assert.deepEqual(first.mine,second.mine);assert.deepEqual(first.work,second.work);assert.notEqual(first.listRevision,second.listRevision,'equal counters do not hide membership changes');
 console.log(`${comparisons} workspace summary parity comparisons; roles, hidden payroll history, foreign-manager ownership, retention/rework boundaries, Moscow midnight and client work passed`);
+
+const admin={id:'admin',role:'admin'};
+const adminSummary=buildWorkspaceSummary(state,admin,now);
+const newOrders=state.orders.filter(o=>orderDisplayGroup(o).id==='new'&&state.clients.some(c=>c.id===o.clientId)&&showOrderInList(o,state.clients.find(c=>c.id===o.clientId),admin.role,now));
+assert.equal(adminSummary.orders.newDraft,newOrders.filter(o=>o.status==='draft').length);
+assert.equal(adminSummary.orders.newRework,newOrders.filter(o=>o.status==='rework').length);
+assert.equal(adminSummary.orders.newDraft+adminSummary.orders.newRework,adminSummary.orders.groups.new);

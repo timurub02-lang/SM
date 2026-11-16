@@ -245,6 +245,13 @@ try{
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...savedOrder(),manualDeliveryCost:0,packingWaybillAt:new Date().toISOString()}),noticeId);
  async function editNotice(body){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(noticeId).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{id:noticeId,version,...body}});assert.equal(r.status,200,r.text);return savedOrder();}
  let notice=await editNotice({action:'updateOrder',addressConfirmed:true,address:'New address',delivery:'moscow_courier',comment:'Correction'});
+ const editHistory=JSON.parse(db.prepare('SELECT data FROM events WHERE order_id=? ORDER BY at DESC LIMIT 1').get(noticeId).data);
+ assert.match(editHistory.text,/Адрес: Corrected address → New address/);
+ assert.match(editHistory.text,/Способ доставки: СДЭК · Курьер → Москва · Курьер/);
+ const eventCount=db.prepare('SELECT count(*) n FROM events WHERE order_id=?').get(noticeId).n;
+ const staleEdit=await call('/api/crm',{cookie:editor.cookie,body:{action:'updateOrder',id:noticeId,version:1,addressConfirmed:true,address:'Must not be saved'}});
+ assert.notEqual(staleEdit.status,200);
+ assert.equal(db.prepare('SELECT count(*) n FROM events WHERE order_id=?').get(noticeId).n,eventCount,'failed save creates no history');
  assert.equal(notice.deliveryReset.calculation,true);assert.equal(notice.deliveryReset.waybill,true);assert.equal(notice.manualDeliveryCost,undefined);assert.equal(notice.packingWaybillAt,undefined);
  notice=await editNotice({action:'updateOrder',addressConfirmed:true,address:'New address',delivery:'moscow_courier',comment:'Another comment'});assert.equal(notice.deliveryReset.waybill,true);
  notice=await editNotice({action:'saveManualDeliveryCost',amount:0});assert.equal(notice.deliveryReset.calculation,false);assert.equal(notice.deliveryReset.waybill,true);

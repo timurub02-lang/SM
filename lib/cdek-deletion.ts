@@ -1,3 +1,4 @@
+import {withOrderChanges} from './order-change-history.ts';
 import {initReplacement} from './phone-replacement.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Order} from './crm.ts';
@@ -34,6 +35,7 @@ export async function applyCdekDeletion(d:Db,order:Order,stored:Shipment,previou
  const next={...(deleted?returnedFromCdek(order,at):order),updatedAt:at,_mutation:mutation};
  const event={id:mutation,clientId:order.clientId,orderId:order.id,at,actor:shipment.deletion.actor,
   text:(deleted?'Вернули из СДЭК · удалена накладная № ':'Удаление из СДЭК отклонено · накладная № ')+(shipment.number||'—')+' · UUID '+shipment.uuid+' · '+shipment.account+' · Причина запроса: '+shipment.deletion.reason+(deleted?'':' · Ответ СДЭК: '+(result.error||'заказ нельзя удалить'))};
+ event.text=withOrderChanges(event.text,order,next);
  const failed:Shipment={...shipment,state:'ready',deletion:undefined,error:'Удаление отклонено СДЭК: '+(result.error||'заказ нельзя удалить')};
  const changed="EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)";
  await initReminderStore(d);await initReplacement(d);

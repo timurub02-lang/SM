@@ -1,3 +1,4 @@
+import {withOrderChanges} from '@/lib/order-change-history';
 import {canSelectOrderPickupPoint,selectedCachedPickupPoint,pickupPointContext} from '@/lib/order-pickup-point';
 import {acknowledgeCashNotice} from '@/lib/cash-notifications';
 import {canEditOrderRecipientName,nextExtraConfirmationAt} from '@/lib/crm';
@@ -446,7 +447,7 @@ async function handlePOST(request:Request){
   if(warnings.length&&p.addressConfirmed!==true)throw Error('Проверьте адрес и подтвердите сохранение вручную: '+warnings.map(w=>w.message).join(' '));
   const mutation=id('M-'),next={...o,...(nameOnly?{}:{address,addressParts,logisticComment}),updatedAt:now,_mutation:mutation};
   const clientPatch={...(nameOnly?{}:clientAddressFromOrder(next)),name,updatedAt:now};
-  const e=ev(c.id,o.id,(nameOnly?'Логист изменил ФИО клиента':'Логист уточнил данные получателя Курьера Москва')+(name!==c.name?' · ФИО: '+c.name+' → '+name:'')+(!nameOnly&&address!==o.address?' · адрес: '+(o.address||c.address)+' → '+address:'')+(!nameOnly&&logisticComment!==o.logisticComment?' · комментарий: '+(logisticComment||'удалён'):'')+(warnings.length?' · адрес проверен вручную':''));
+  const e=ev(c.id,o.id,withOrderChanges((nameOnly?'Логист изменил ФИО клиента':'Логист уточнил данные получателя Курьера Москва')+(name!==c.name?' · ФИО: '+c.name+' → '+name:'')+(!nameOnly&&address!==o.address?' · адрес: '+(o.address||c.address)+' → '+address:'')+(!nameOnly&&logisticComment!==o.logisticComment?' · комментарий: '+(logisticComment||'удалён'):'')+(warnings.length?' · адрес проверен вручную':''),o,next,s.employees));
   const result=await d.batch([
    d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?) AND (?=0 OR NOT EXISTS(SELECT 1 FROM settings WHERE id=? AND json_extract(data,'$.state') IN ('sending','pending','ready','unknown','deleting')))").bind(json(next),o.id,p.version,c.id,clientVersion,nameOnly?1:0,'cdek-shipment-'+o.id),
    d.prepare("UPDATE clients SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(json(clientPatch),c.id,o.id,mutation),
@@ -597,7 +598,7 @@ async function handlePOST(request:Request){
    next.delivery=deliverySchema.parse(p.delivery);text="Изменён способ доставки";
   }else if(p.action==="updateOrder"){
    if(!isLogistic(employee.role)&&!["draft","rework"].includes(o.status)&&!canEditRecalledCourierOrder(o,employee,s.employees)&&!(p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees))&&!(employee.role==="admin"&&canAdminEditReturnedCdekOrder(o)))throw new Error("Корзину можно менять на этапе оформления или возврата оператору");
-   next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts??(p.address===undefined||p.address===o.address?o.addressParts:undefined));next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)&&(!canLogisticEditBasket(o)||p.items===undefined)?o.items:itemsSchemaFor(employee?.role==='admin').parse(p.items);validateManualOrderAmount(next.items,o.items);next.comment=o.comment;if(!isLogistic(employee.role)){const added=z.string().trim().max(3000).parse(p.newOrderComment||"");if(added)Object.assign(next,appendOrderComment(o,added,employee,now));else if(p.comment!==undefined&&p.comment!==o.comment&&String(p.comment).trim())Object.assign(next,appendOrderComment(o,z.string().max(3000).parse(p.comment),employee,now));}text=isLogistic(employee.role)?"Логист уточнил данные заказа":"Обновлены доставка, адрес, корзина и комментарий менеджера";
+   next.delivery=deliverySchema.parse(p.delivery??o.delivery??"");next.addressParts=addressPartsSchema.optional().parse(p.addressParts??(p.address===undefined||p.address===o.address?o.addressParts:undefined));next.address=z.string().trim().max(500).parse(p.address??o.address??c.address);next.items=isLogistic(employee.role)&&(!canLogisticEditBasket(o)||p.items===undefined)?o.items:itemsSchemaFor(employee?.role==='admin').parse(p.items);validateManualOrderAmount(next.items,o.items);next.comment=o.comment;if(!isLogistic(employee.role)){const added=z.string().trim().max(3000).parse(p.newOrderComment||"");if(added)Object.assign(next,appendOrderComment(o,added,employee,now));else if(p.comment!==undefined&&p.comment!==o.comment&&String(p.comment).trim())Object.assign(next,appendOrderComment(o,z.string().max(3000).parse(p.comment),employee,now));}text=isLogistic(employee.role)?"Логист уточнил данные заказа":"Сохранены данные заказа";
   }else if(p.action==="transition"){
    if(o.editRequest?.status==='editing')throw Error('После сохранения правок нажмите «Передать логисту»');
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
@@ -741,7 +742,7 @@ async function handlePOST(request:Request){
   const closesIncoming=!!p.incomingId&&(['incomingBuyoutInfo','requestShipmentReturn','requestShipmentChange','requestOrderEdit','requestOrderCancellation','contact','transition'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','resolveDoor'].includes(p.operation));
   if(closesIncoming){if(!employee)throw Error('Требуется сотрудник');await incomingForAction(d,z.string().max(100).parse(p.incomingId),employee,s.employees,c.id);text+=' · входящее обращение обработано';}
   if(postalBuyoutPending(o)&&["redeemed","returned"].includes(next.status))Object.assign(next,resolvePostalBuyout(o,employee,now,next.status==="redeemed"?"paid":"returned"));
-  const e=ev(c.id,o.id,text);
+  const e=ev(c.id,o.id,withOrderChanges(text,o,next,s.employees));
   const requestNotices=[...await orderRequestNotices(d,o,next,e),...(p.action==='incomingBuyoutInfo'?await incomingBuyoutNotices(d,o,e,!!incomingBuyout?.storageExtension):[])];
   const lifecycleNotices=[...await cancelledOrderNotices(d,o,next,e),...(p.action==='markBlacklist'?await releasedClientNotices(d,c,{...c,owner:''},e,s.orders,'Клиент внесён в ЧС'):[])];
   const paidNotices=await paidOrderNoticeStatements(d,o,next,next._mutation,now);
@@ -766,7 +767,7 @@ async function handlePOST(request:Request){
   const statements=[d.prepare("INSERT INTO settings(id,data) SELECT ?,? WHERE (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM clients ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=? AND "+clearCashGuard+" AND "+settledPayrollGuard).bind(key,json({employee:plan.employee,at:now,actorId:employee!.id,mode:p.mode,targetId:plan.target?.id,mutation}),snapshot(s.employees),snapshot(s.clients),snapshot(s.orders),p.id,p.id,p.id,p.id,p.id)];
   for(const c of plan.clients)statements.push(d.prepare(`UPDATE clients SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(c),c.id,...args));
   for(const o of plan.orders)statements.push(d.prepare(`UPDATE orders SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(o),o.id,...args));
-  const history=[ev('','',summary),...plan.clients.map(c=>ev(c.id,'',summary)),...plan.orders.map(o=>ev(o.clientId,o.id,summary))];
+  const history=[ev('','',summary),...plan.clients.map(c=>ev(c.id,'',summary)),...plan.orders.map(o=>ev(o.clientId,o.id,withOrderChanges(summary,s.orders.find(previous=>previous.id===o.id)!,o,s.employees)))];
   for(const e of history)statements.push(d.prepare(`INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE ${guard}`).bind(e.id,e.clientId,e.orderId,e.at,json(e),...args));
   if(personalAuth()){
    statements.push(d.prepare(`DELETE FROM auth_sessions WHERE employee_id=? AND ${guard}`).bind(p.id,...args));

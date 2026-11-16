@@ -46,7 +46,7 @@ try{
  for(const o of after){assert.equal(o.status,['first','repeat','final'].includes(o.id)?'refused':orders.find(x=>x.id===o.id).status);}
  assert.equal((await db.prepare('SELECT reserved FROM product_stock').first()).reserved,5);
  assert.equal(await reconcileOrderTimers(db,await read(),[]),false);
- assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM events').first()).n,3);
+ assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM events').first()).n,5);
  assert.equal(applyRetention(client,after.filter(o=>o.status==='refused'),now).owner,'');
  assert.equal(applyRetention(client,after,now).owner,'operator');
  assert.equal(applyRetention(client,[after[0],{...base,status:'redeemed',redeemedAt:fresh}],now).owner,'operator');
