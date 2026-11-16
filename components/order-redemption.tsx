@@ -14,7 +14,7 @@ export function OrderRedemption({orderId,employee,incomingId,onSaved,onConsultat
  useEffect(()=>{void load();},[orderId]);
  useEffect(()=>{if(action||comment)return;const timer=setInterval(()=>void load(),30000);return()=>clearInterval(timer);},[orderId,action,comment]);
  const row=data?.rows?.[0],future=row&&futureRedemptionDate(row,data.day);
- const choices=(a:string):string[]=>incomingId&&a==='po'&&row?.storageUntil?['date']:future&&a==='nd'?['none']:row?allowedResults(a,row,employee.role,data.day):[];
+ const choices=(a:string):string[]=>incomingId&&a==='po'&&row?.storageUntil?['date']:future&&a==='nd'?['none']:row?allowedResults(a,row,employee.role,data.day).filter(k=>k!=='operator'||!!employee.department&&row.department===employee.department):[];
  const title=redemptionResultLabel;
  const locked=!row||busy||operatorReturnScheduled(row)||['returned','delivered'].includes(row.result)||data.closed&&!row.testOnly&&!awaitingOperator(row);
  async function save(confirmed=false){if(future&&action!=='nd'&&!confirmed){setConfirm(true);return;}setBusy(true);try{
