@@ -7,7 +7,7 @@ import {seesOrder} from './permissions.ts';
 import {initBaseStorage} from './base-storage.ts';
 import {initPhone} from './phone-store.ts';
 
-type Row={handoff?:string;spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
+type Row={assignee_role?:string;handoff?:string;spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
 const incomingSchemas=new WeakMap<Db,Promise<void>>();
 export async function initIncoming(d:Db){let schema=incomingSchemas.get(d);if(!schema){schema=initializeIncoming(d);incomingSchemas.set(d,schema);schema.catch(()=>incomingSchemas.delete(d));}await schema;}
 async function initializeIncoming(d:Db){
@@ -28,8 +28,8 @@ async function initializeIncoming(d:Db){
   await d.prepare("UPDATE incoming_calls SET assignee_id=(SELECT json_extract(c.data,'$.owner') FROM clients c WHERE c.id=incoming_calls.client_id),department_id=COALESCE((SELECT json_extract(e.data,'$.department') FROM employees e JOIN clients c ON e.id=json_extract(c.data,'$.owner') WHERE c.id=incoming_calls.client_id),''),shared_queue=0 WHERE closed_at IS NULL AND (assignee_id IS NOT (SELECT json_extract(c.data,'$.owner') FROM clients c WHERE c.id=incoming_calls.client_id) OR shared_queue<>0) AND spam=0 AND COALESCE(handoff,'')='' AND NOT EXISTS(SELECT 1 FROM employees WHERE id=incoming_calls.assignee_id AND json_extract(data,'$.role')='redemption') AND EXISTS(SELECT 1 FROM clients c JOIN employees e ON e.id=json_extract(c.data,'$.owner') JOIN auth_accounts a ON a.employee_id=e.id AND a.enabled=1 WHERE c.id=incoming_calls.client_id AND json_extract(e.data,'$.role')='operator') AND EXISTS(SELECT 1 FROM orders o WHERE o.client_id=incoming_calls.client_id AND json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND json_extract(o.data,'$.status') NOT IN ('redeemed','refused','returned') AND (json_extract(o.data,'$.status') IN ('shipping','pickup') OR COALESCE(json_extract(o.data,'$.shippedAt'),'')<>'' OR COALESCE(json_extract(o.data,'$.cdekTransferredAt'),'')<>''))").run();
  await d.prepare('CREATE INDEX IF NOT EXISTS incoming_assignee ON incoming_calls(assignee_id,closed_at,at)').run();
 }
-export function seesIncoming(row:Pick<Row,'client_id'|'assignee_id'|'department_id'|'shared_queue'|'spam'>,e:Employee,staff:Employee[]){
- return (!row.spam||e.role==='admin')&&e.role!=='courier'&&(e.role==='admin'||row.assignee_id===e.id||e.role==='department_head'&&(!row.client_id||row.shared_queue===1||!!e.department&&(row.department_id===e.department||staff.some(x=>x.id===row.assignee_id&&x.role==='operator'&&x.department===e.department))));
+export function seesIncoming(row:Pick<Row,'client_id'|'assignee_id'|'department_id'|'shared_queue'|'spam'|'assignee_role'>,e:Employee,staff:Employee[]){
+ return (!row.spam||e.role==='admin')&&e.role!=='courier'&&(e.role==='admin'||row.assignee_id===e.id||e.role==='department_head'&&(row.assignee_role||staff.find(x=>x.id===row.assignee_id)?.role)!=='redemption'&&(!row.client_id||row.shared_queue===1||!!e.department&&(row.department_id===e.department||staff.some(x=>x.id===row.assignee_id&&x.role==='operator'&&x.department===e.department))));
 }
 export const activeIncomingOrder=(o:Order)=>['new','accepted','sent'].includes(orderGroup(o.status).id);
 export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumber:string;at:string;screening?:'passed'|'failed'|'blocked'}){
@@ -60,7 +60,7 @@ export async function receiveIncoming(d:Db,p:{id:string;phone:string;calledNumbe
 }
 export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order[],scoped=false):Promise<IncomingRequest[]>{
  await initIncoming(d);if(e.role==='courier')return [];
- const scope=e.role==='admin'?'1=1':e.role==='department_head'?"(i.client_id IS NULL OR i.shared_queue=1 OR i.assignee_id=? OR (?<>'' AND (i.department_id=? OR i.assignee_id IN (SELECT id FROM employees WHERE json_extract(data,'$.role')='operator' AND json_extract(data,'$.department')=?))))":'i.assignee_id=?';
+ const scope=e.role==='admin'?'1=1':e.role==='department_head'?"(i.client_id IS NULL OR i.shared_queue=1 OR i.assignee_id=? OR (?<>'' AND (i.department_id=? OR i.assignee_id IN (SELECT id FROM employees WHERE json_extract(data,'$.role')='operator' AND json_extract(data,'$.department')=?)))) AND NOT EXISTS(SELECT 1 FROM employees a WHERE a.id=i.assignee_id AND json_extract(a.data,'$.role')='redemption')":'i.assignee_id=?';
  const args=e.role==='admin'?[]:e.role==='department_head'?[e.id,e.department||'',e.department||'',e.department||'']:[e.id];
  const select=`SELECT i.*,EXISTS(SELECT 1 FROM incoming_phone_policy p WHERE p.phone=i.phone AND p.policy='block') AS blocked,json_extract(c.data,'$.name') AS client_name,json_extract(c.data,'$.owner') AS client_owner FROM incoming_calls i LEFT JOIN clients c ON c.id=i.client_id WHERE ${scope}`;
  const open=(await d.prepare(select+' AND i.closed_at IS NULL AND i.spam=0 ORDER BY i.at DESC').bind(...args).all()).results;
@@ -88,7 +88,7 @@ export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order
  });
 }
 export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee[],clientId?:string){
- await initIncoming(d);const row=await d.prepare('SELECT * FROM incoming_calls WHERE id=?').bind(id).first() as Row|null;
+ await initIncoming(d);const row=await d.prepare("SELECT i.*,json_extract(a.data,'$.role') AS assignee_role FROM incoming_calls i LEFT JOIN employees a ON a.id=i.assignee_id WHERE i.id=?").bind(id).first() as Row|null;
  if(!row||!seesIncoming(row,e,staff))throw Error('Обращение недоступно');
  if(row.spam)throw Error('Сначала верните обращение из спама в работу');
  if(row.closed_at)throw Error('Обращение уже закрыто. Обновите данные');
@@ -106,7 +106,7 @@ export function incomingCloseStatement(d:Db,id:string,employeeId:string,at:strin
 export async function sharedIncomingClientAccess(d:Db,e:Employee,clientId:string){
  if(e.role!=='department_head')return false;
  await initIncoming(d);
- return !!await d.prepare('SELECT id FROM incoming_calls WHERE client_id=? AND shared_queue=1 AND spam=0 AND closed_at IS NULL LIMIT 1').bind(clientId).first();
+ return !!await d.prepare("SELECT i.id FROM incoming_calls i WHERE i.client_id=? AND i.shared_queue=1 AND i.spam=0 AND i.closed_at IS NULL AND NOT EXISTS(SELECT 1 FROM employees a WHERE a.id=i.assignee_id AND json_extract(a.data,'$.role')='redemption') LIMIT 1").bind(clientId).first();
 }
 
 export async function incomingRouting(d:Db,clientId:string,c:{owner?:string}|null,at:string){

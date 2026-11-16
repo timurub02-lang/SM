@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {initIncoming,readIncoming,seesIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder} from '../lib/incoming.ts';
+import {initIncoming,readIncoming,seesIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder,sharedIncomingClientAccess} from '../lib/incoming.ts';
 const d=openDatabase(':memory:');
 try{
  await d.batch(['CREATE TABLE auth_accounts(employee_id TEXT,enabled INTEGER)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT,version INTEGER DEFAULT 1)','CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)'].map(s=>d.prepare(s)));
@@ -31,7 +31,23 @@ try{
   const row=(await readIncoming(d,e,staff,[])).find(i=>i.id==='unknown');assert.ok(row.closedAt,'Closed for everyone');assert.equal(row.reason,'Связались, вопрос решён');
   await assert.rejects(incomingForAction(d,'unknown',e,staff),/уже закрыто/);
  }
+ const buyer={id:'buyer',role:'redemption',name:'Buyer'},otherBuyer={id:'other-buyer',role:'redemption'};
+ for(const e of [buyer,otherBuyer])await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
+ const buyerStaff=[...staff,buyer,otherBuyer];
+ for(const [id,client,shared] of [['buyer-known','known',0],['buyer-shared','known',1],['buyer-unknown',null,0]]){
+  await d.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue) VALUES(?,?,?,?,?,?,?,?)').bind(id,client,buyer.id,'1','2026-11-16T10:00:00Z','+79990000003','+79990000004',shared).run();
+  const row={client_id:client,assignee_id:buyer.id,department_id:'1',shared_queue:shared};
+  for(const e of buyerStaff){
+   const expected=e.role==='admin'||e.id===buyer.id;
+   assert.equal(seesIncoming(row,e,buyerStaff),expected,e.id+' buyer pure access');
+   for(const scoped of [false,true])assert.equal((await readIncoming(d,e,buyerStaff,[],scoped)).some(i=>i.id===id),expected,e.id+' buyer SQL scope');
+   if(expected)await incomingForAction(d,id,e,buyerStaff);
+   else await assert.rejects(incomingForAction(d,id,e,buyerStaff),/недоступно/);
+  }
+  await assert.rejects(incomingForAction(d,id,staff[1],[]),/недоступно/,'Direct client-card checks with no staff list still deny heads');
+ }
  assert.equal(activeIncomingOrder({status:'draft'}),true);assert.equal(activeIncomingOrder({status:'redeemed'}),false);
+ assert.equal(await sharedIncomingClientAccess(d,staff[1],'known'),false,'Buyer queue cannot grant shared client-card access to heads');
  const orders=[{id:'a-own',clientId:'known',manager:'one',status:'draft'},{id:'z-foreign',clientId:'known',manager:'two',status:'confirm'},{id:'m-own',clientId:'known',manager:'one',status:'shipping'},{id:'closed',clientId:'known',manager:'one',status:'redeemed'},{id:'unrelated',clientId:'elsewhere',manager:'one',status:'draft'}];
  const namedStaff=staff.map(e=>({...e,name:'Name '+e.id}));
  for(const order of orders)await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(order.id,order.clientId,JSON.stringify(order)).run();
