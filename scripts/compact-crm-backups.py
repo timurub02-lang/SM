@@ -150,9 +150,11 @@ def run(root, policy, apply=False, reference_roots=REFERENCE_ROOTS):
     hours = policy['archive_after_hours']
     if not isinstance(hours, int) or hours < 48:
         raise ValueError('Keep at least 48 hours of raw checkpoints')
+    if not isinstance(policy['keep_names'], list) or any(
+            not isinstance(name, str) or pathlib.Path(name).name != name or not name.endswith('.sqlite')
+            for name in policy['keep_names']):
+        raise ValueError('Keep entries must be a list of SQLite basenames')
     keep = set(policy['keep_names'])
-    if any(not isinstance(name, str) or pathlib.Path(name).name != name for name in keep):
-        raise ValueError('Keep entries must be basenames')
     if policy['warn_backup_bytes'] <= 0 or not 1 <= policy['warn_disk_percent'] <= 100:
         raise ValueError('Invalid monitoring thresholds')
     cutoff = time.time() - hours * 3600
@@ -180,7 +182,11 @@ if __name__ == '__main__':
     os.umask(0o077)
     if POLICY.is_symlink() or POLICY.stat().st_uid != 0 or POLICY.stat().st_mode & 0o022:
         raise RuntimeError('Policy must be root-owned and not writable by others')
-    with open('/run/lock/sm-crm-backup-compaction.lock', 'w') as lock:
+    # The backup unit permits writes here; /run/lock is read-only under ProtectSystem=strict.
+    fd = os.open(ROOT / '.compaction.lock', os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'a') as lock:
+        if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
+            raise RuntimeError('Expected a regular maintenance lock')
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         result = run(ROOT, json.loads(POLICY.read_text()), args.apply)
         print(json.dumps(result if not args.apply else {

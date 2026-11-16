@@ -5,6 +5,8 @@ import json
 import os
 import pathlib
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -147,6 +149,22 @@ class Compaction(unittest.TestCase):
         self.assertIn('ExecStart=/usr/bin/python3 /usr/local/sbin/backup-sm-crm', unit)
         self.assertIn('ExecStartPost=/usr/bin/python3 /usr/local/sbin/compact-sm-crm-backups --apply', unit)
         self.assertIn('IOSchedulingClass=idle', unit)
+
+    @unittest.skipIf(os.name == 'nt', 'Linux root CLI')
+    def test_cli_with_synthetic_policy_and_writable_backup_directory(self):
+        self.database()
+        policy = self.root / 'policy.json'
+        policy.write_text(json.dumps(self.policy))
+        os.chmod(policy, 0o600)
+        source = (repo / 'scripts/compact-crm-backups.py').read_text()
+        source = source.replace("ROOT = pathlib.Path('/srv/crm/backups')", 'ROOT = pathlib.Path('+repr(str(self.root))+')')
+        source = source.replace("POLICY = pathlib.Path('/etc/sm-crm-backup-policy.json')", 'POLICY = pathlib.Path('+repr(str(policy))+')')
+        script = self.root / 'compactor.py'
+        script.write_text(source)
+        result = subprocess.run([sys.executable, str(script), '--apply'], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['compactedCount'], 1)
+        self.assertTrue((self.root / '.compaction.lock').is_file())
 
 
 if __name__ == '__main__':
