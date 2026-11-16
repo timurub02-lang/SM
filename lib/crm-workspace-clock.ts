@@ -38,7 +38,7 @@ async function install(d:ActivityDb){
     if(table==='redemption_entries')clients.push(`SELECT client_id AS id FROM orders WHERE id=${row}.order_id`);
     if(['reminders','client_reminders','client_work'].includes(table))people.push(`SELECT ${row}.employee_id AS id`);
     if(table==='incoming_calls'){
-     people.push(`SELECT ${row}.assignee_id AS id`);departments.push(`SELECT ${row}.department_id AS id`);
+     people.push(`SELECT ${row}.assignee_id AS id`,`SELECT e.id AS id FROM employees e JOIN employees a ON a.id=${row}.assignee_id WHERE (${json('a','role')}='redemption' AND ${json('e','role')}='redemption') OR (${json('a','role')} IN ('logistic','chief_logistic') AND ${json('e','role')} IN ('logistic','chief_logistic'))`);departments.push(`SELECT ${row}.department_id AS id`);
      shared.push(`${row}.shared_queue=1 OR ${row}.client_id IS NULL`);
     }
    }

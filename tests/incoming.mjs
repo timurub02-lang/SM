@@ -38,7 +38,7 @@ try{
   await d.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue) VALUES(?,?,?,?,?,?,?,?)').bind(id,client,buyer.id,'1','2026-11-16T10:00:00Z','+79990000003','+79990000004',shared).run();
   const row={client_id:client,assignee_id:buyer.id,department_id:'1',shared_queue:shared};
   for(const e of buyerStaff){
-   const expected=e.role==='admin'||e.id===buyer.id;
+   const expected=e.role==='admin'||e.role==='redemption';
    assert.equal(seesIncoming(row,e,buyerStaff),expected,e.id+' buyer pure access');
    for(const scoped of [false,true])assert.equal((await readIncoming(d,e,buyerStaff,[],scoped)).some(i=>i.id===id),expected,e.id+' buyer SQL scope');
    if(expected)await incomingForAction(d,id,e,buyerStaff);
@@ -47,6 +47,21 @@ try{
   await assert.rejects(incomingForAction(d,id,staff[1],[]),/недоступно/,'Direct client-card checks with no staff list still deny heads');
  }
  assert.equal(activeIncomingOrder({status:'draft'}),true);assert.equal(activeIncomingOrder({status:'redeemed'}),false);
+ const chief={id:'chief',role:'chief_logistic'},logistic2={id:'logistic2',role:'logistic'};
+ for(const e of [chief,logistic2])await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
+ const logisticsStaff=[...buyerStaff,chief,logistic2];
+ for(const assignee of ['logistic','chief']){
+  const id='team-'+assignee;
+  await d.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number) VALUES(?,?,?,?,?,?,?)').bind(id,'known',assignee,'','2026-11-16T10:00:00Z','1','2').run();
+  for(const e of logisticsStaff){
+   const expected=['admin','logistic','chief_logistic'].includes(e.role);
+   assert.equal(seesIncoming({client_id:'known',assignee_id:assignee,department_id:''},e,logisticsStaff),expected,e.id+' logistics team pure scope');
+   for(const scoped of [false,true])assert.equal((await readIncoming(d,e,logisticsStaff,[],scoped)).some(i=>i.id===id),expected,e.id+' logistics SQL scope');
+   if(expected)await incomingForAction(d,id,e,[]);
+   else await assert.rejects(incomingForAction(d,id,e,[]),/недоступно/);
+  }
+ }
+ assert.equal((await readIncoming(d,otherBuyer,[],[])).find(i=>i.id==='buyer-known').assigneeName,'Buyer','Assignee name survives a scoped staff list');
  assert.equal(await sharedIncomingClientAccess(d,staff[1],'known'),false,'Buyer queue cannot grant shared client-card access to heads');
  const orders=[{id:'a-own',clientId:'known',manager:'one',status:'draft'},{id:'z-foreign',clientId:'known',manager:'two',status:'confirm'},{id:'m-own',clientId:'known',manager:'one',status:'shipping'},{id:'closed',clientId:'known',manager:'one',status:'redeemed'},{id:'unrelated',clientId:'elsewhere',manager:'one',status:'draft'}];
  const namedStaff=staff.map(e=>({...e,name:'Name '+e.id}));
