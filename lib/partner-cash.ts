@@ -1,18 +1,21 @@
 import {communicationCents,type PartnerMinutes} from './partner-minutes.ts';
 import type {Employee,Order} from './crm.ts';
 import type {PayrollOrder,PayrollRow} from './premium-ledger.ts';
+import {bankRegistryKey} from './cdek-bank-registry.ts';
+import type {PartnerBank} from './partner-bank.ts';
 import {premiumRemittance} from './cdek-remittance.ts';
 export const isEmil=(e:Pick<Employee,'login'>)=>e.login==='A_Emil';
 export const partnerPremiumStatus=(cutoff:string,closed:boolean,now=Date.now())=>closed||now>Date.parse(cutoff+'T23:59:59.999+03:00')?'Рассчитано':'Ещё идёт';
 export type PartnerExpense={id:string;name:string;date:string;amount:number;at:string;by:string;removedAt?:string;removedBy?:string};
 export type PartnerSettings={revision:string;taxRate:number|null;communication:number;bank:number;minutePrice?:number;minutes?:PartnerMinutes;expenses?:PartnerExpense[];productUnitPrice?:number;productPrices?:Record<string,number>};
 export const defaultPartnerSettings:PartnerSettings={revision:'',taxRate:null,communication:0,bank:0};
-export function partnerCalculation(members:PayrollOrder[],orders:Order[],payroll:PayrollRow[],settings:PartnerSettings){
+export type PartnerReceipt={order:string;slot?:number;registry:string;date:string;collected:number;transferred:number;tax:number|null;tracking?:string;basis?:string};
+export function partnerCalculation(members:PayrollOrder[],orders:Order[],payroll:PayrollRow[],settings:PartnerSettings,bank?:PartnerBank){
  const byId=new Map(orders.map(o=>[o.id,o]));
  const byExternal=new Map(orders.map(o=>[o.legacyLv?.orderId||o.id.replace(/^LV-/,''),o]));
  const products=new Map<string,{name:string;quantity:number;price:number;total:number;orders:string[]}>();
  const seen=new Set<string>();let missingProducts=0;
- const receipts=members.filter(m=>m.department==='5'&&!m.historyOnly).flatMap(m=>{
+ let receipts:PartnerReceipt[]=members.filter(m=>m.department==='5'&&!m.historyOnly).flatMap(m=>{
   if(seen.has(m.externalId))return [];seen.add(m.externalId);
   const o=(m.id?byId.get(m.id):undefined)||byExternal.get(m.externalId);
   if(!o||!o.items?.length)missingProducts++;
@@ -26,6 +29,16 @@ export function partnerCalculation(members:PayrollOrder[],orders:Order[],payroll
   const r=o&&premiumRemittance(o);if(!r)return [];
   return [{order:o!.id,slot:r.slot,registry:r.registry,date:r.paymentDate,collected:r.collectedCents,transferred:r.amountCents,tax:settings.taxRate===null?null:Math.round(r.collectedCents*settings.taxRate/100)}];
  });
+ if(bank){
+  const replaced=new Set([...bank.excludedKeys,...bank.registries.map(bankRegistryKey)]);
+  receipts=receipts.filter(r=>r.slot===undefined||!replaced.has(bankRegistryKey({...r,slot:r.slot})));
+  const byTracking=new Map<string,Order[]>();
+  for(const o of orders){const tracking=o.cdekTrackingNumber||o.legacyLv?.track||o.cdekRemittances?.[0]?.tracking;if(tracking){const rows=byTracking.get(tracking)||[];rows.push(o);byTracking.set(tracking,rows);}}
+  for(const r of bank.registries)for(const row of r.rows){
+   const matches=byTracking.get(row.tracking)||[];
+   receipts.push({order:matches.length===1?matches[0].id:'',tracking:row.tracking,basis:row.basis,slot:r.slot,registry:r.registry,date:r.date,collected:row.collected,transferred:row.transferred,tax:settings.taxRate===null?null:Math.round(row.collected*settings.taxRate/100)});
+  }
+ }
  const transferred=receipts.reduce((s,r)=>s+r.transferred,0),collected=receipts.reduce((s,r)=>s+r.collected,0);
  const tax=settings.taxRate===null?null:receipts.reduce((s,r)=>s+r.tax!,0);
  const goods=[...products.values()].reduce((s,r)=>s+r.total,0);
@@ -35,7 +48,7 @@ export function partnerCalculation(members:PayrollOrder[],orders:Order[],payroll
  const balance=tax===null||communication===null?null:transferred-tax-communication-Math.round(settings.bank*100)-goods-expenses;
  const remaining=balance===null||premium===null||missingProducts?null:balance-premium;
  const share=remaining===null?null:Math.floor(remaining/2);
- return {receipts,products:[...products.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru')),expenses,communication,orderCount:seen.size,missingProducts,collected,transferred,tax,goods,premium,balance,remaining,ourShare:share,partnerShare:remaining===null?null:remaining-share!};
+ return {receipts,bankKeys:bank?.registries.map(bankRegistryKey)||[],products:[...products.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru')),expenses,communication,orderCount:seen.size,missingProducts,collected,transferred,tax,goods,premium,balance,remaining,ourShare:share,partnerShare:remaining===null?null:remaining-share!};
 }
 
 export function partnerRegistries(receipts:(Omit<ReturnType<typeof partnerCalculation>['receipts'][number],'slot'>&{slot?:number})[]){

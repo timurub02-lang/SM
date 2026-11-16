@@ -1,3 +1,4 @@
+import {readPartnerBank} from './partner-bank';
 import {db} from './db';
 import {initCash} from './cash-db';
 import {readPremiumState} from './premium-store';
@@ -15,13 +16,15 @@ export async function partnerAccountView(period:string){
  await initCash();
  const cash=await d.prepare('SELECT id,amount,accepted_at,recipient,sender FROM cash_operations WHERE sender=? OR recipient=?').bind(emil.id,emil.id).all<{id:string;amount:number;accepted_at:string|null;recipient:string|null;sender:string|null}>();
  const accepted=new Set(cash.results.filter(r=>r.accepted_at).map(r=>r.id));
- const obligations:ReturnType<typeof partnerObligations>=[];let transferred=0,taxReserve:number|null=0,opening=settlements.opening;
+ const obligations:ReturnType<typeof partnerObligations>=[];let transferred=0,taxReserve:number|null=0,opening=settlements.opening,bankRevision:string|undefined;
  for(const id of Object.keys(state.ledger.periods).filter(id=>id>=config.startPeriod&&id<=period).sort()){
   const s=id===period||state.ledger.periods[id].status==='paid'?state:await readPremiumState(id);
   const saved=costRows.results.find(r=>r.id==='partner-cash:'+id);
   let settings:PartnerSettings=saved?JSON.parse(saved.data):{...defaultPartnerSettings,taxRate:config.taxRate,bank:config.bank??0};
   const frozen=await d.prepare('SELECT data FROM settings WHERE id=?').bind('partner-cash-closed:'+id).first<{data:string}>();
-  const report:ReturnType<typeof partnerCalculation>=frozen?JSON.parse(frozen.data):partnerCalculation(periodOrders(s.ledger!,id,s.orders,s.employees),s.orders,ledgerRows(s.ledger!,id,s.orders,s.employees,s.adjustments),settings);
+  const bank=await readPartnerBank(d,s.ledger!,id,s.orders,s.employees);
+  if(bankRevision!==undefined&&bankRevision!==bank.revision)throw Error('Реестры изменились. Обновите кассу');bankRevision=bank.revision;
+  const report:ReturnType<typeof partnerCalculation>=frozen?JSON.parse(frozen.data):partnerCalculation(periodOrders(s.ledger!,id,s.orders,s.employees),s.orders,ledgerRows(s.ledger!,id,s.orders,s.employees,s.adjustments),settings,bank);
   if(frozen)settings=JSON.parse(frozen.data).settings;
   const rows=partnerObligations(id,report,settings,settlements,accepted,s.ledger!.periods[id].status==='paid');obligations.push(...rows);
   transferred+=report.transferred;
@@ -33,5 +36,5 @@ export async function partnerAccountView(period:string){
  const selectedIds=new Set(settlements.entries.filter(e=>e.period>=config.startPeriod&&e.period<=period&&e.action==='pay').map(e=>e.id));
  const spent=cash.results.filter(r=>selectedIds.has(r.id)||Object.keys(state.ledger!.periods).some(id=>id>=config.startPeriod&&id<=period&&(r.id==='premium:'+id+':'+emil.id||r.id.startsWith('partner-expense:'+id+':')))).reduce((sum,r)=>sum+(r.sender===emil.id?r.amount:-r.amount),0);
  const balance=settlements.opening+transferred-spent;
- return {costVersions:JSON.stringify(costRows.results.map(r=>[r.id,r.data])),state,account,stored,settlements,emil,opening,obligations,balance,taxReserve,available:taxReserve===null?null:balance-taxReserve,administrators:state.employees.filter(e=>e.role==='admin'&&!e.cashDisabled).map(e=>({id:e.id,name:e.name})),config};
+ return {bankRevision:bankRevision??'[]',costVersions:JSON.stringify(costRows.results.map(r=>[r.id,r.data])),state,account,stored,settlements,emil,opening,obligations,balance,taxReserve,available:taxReserve===null?null:balance-taxReserve,administrators:state.employees.filter(e=>e.role==='admin'&&!e.cashDisabled).map(e=>({id:e.id,name:e.name})),config};
 }

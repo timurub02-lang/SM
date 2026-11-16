@@ -1,14 +1,10 @@
 import {initCdekUnmatched,saveCdekUnmatched,resolveCdekUnmatched} from './cdek-unmatched.ts';
 import {initCdekHistoryRecovery,recoverCdekHistory} from './cdek-history-recovery.ts';
-import {z} from 'zod';
+import {registryDay as day,registryResponse as responseSchema,bankRegistries,saveBankRegistries} from './cdek-bank-registry.ts';
 import {cdekToken} from './cdek.ts';
 import {sameRemittance,hasRemittanceConflict,type CdekRemittance} from './cdek-remittance.ts';
 import type {Order} from './crm.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
-const day=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s);
-const number=z.union([z.string().trim().min(1).max(100),z.number().int().nonnegative().safe()]).transform(String);
-const amount=z.number().finite().min(-1e9).max(1e9);
-const responseSchema=z.object({errors:z.array(z.unknown()).optional(),warnings:z.array(z.unknown()).optional(),registries:z.array(z.object({registry_number:number,payment_date:day.optional(),orders:z.array(z.object({cdek_number:number,transfer_sum:amount,payment_sum:amount,basis_type:z.string().optional()}))})).optional()}).strict();
 export function registryPayments(data:unknown,slot:number):CdekRemittance[]{
  const parsed=responseSchema.parse(data);
  if(parsed.errors?.length)throw Error('СДЭК не подтвердил получение реестров');
@@ -25,6 +21,8 @@ export function registryPayments(data:unknown,slot:number):CdekRemittance[]{
 export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new Date().toISOString(),dryRun=false,allowedIds?:Set<string>){
  if(!Number.isFinite(Date.parse(at)))throw Error('Некорректное время получения реестра');
  const payments=registryPayments(data,slot);
+ const bankRows=allowedIds?[]:bankRegistries(data,slot,at);
+ if(!dryRun&&!allowedIds)await saveBankRegistries(d,bankRows);
  await initCdekHistoryRecovery(d);
  await initCdekUnmatched(d);
  const rows=(await d.prepare(`SELECT o.id,o.data,o.version,s.data shipment FROM orders o LEFT JOIN settings s ON s.id='cdek-shipment-'||o.id WHERE (json_extract(o.data,'$.delivery') IN ('cdek_pickup','cdek_courier') OR (json_extract(o.data,'$.delivery') IS NULL AND json_extract(o.data,'$.cdekHistoryRecovery') IS NOT NULL))`).all()).results;
