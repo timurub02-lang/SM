@@ -23,8 +23,16 @@ try{
  assert.deepEqual(resolveEmployeeReminders(state,head,rows).map(r=>r.id),result.map(r=>r.id));
  assert.ok(resolveEmployeeReminders(state,admin,rows).some(r=>r.id==='deletion'));assert.ok(resolveEmployeeReminders(state,courier,rows).some(r=>r.id==='receipt'));
  assert.ok(!resolveEmployeeReminders(state,other,rows).some(r=>r.id==='client-only'));
+ const paid=[{data:JSON.stringify({id:'order-paid:older',kind:'order-paid',orderId:'not-in-working-state',clientId:'c',at:own.createdAt}),read_at:null}];
+ assert.equal(resolveEmployeeReminders(state,admin,paid).length,1,'Admin retains informational paid events outside working-order state');
+ assert.equal(resolveEmployeeReminders(state,other,paid).length,0,'Other roles keep order visibility checks');
  const lifecycle=[{data:JSON.stringify({id:'client-released:e',kind:'client-released',clientId:'missing',title:'Откреплён',text:'Истёк срок',at:own.createdAt}),read_at:null}];
  assert.equal(resolveEmployeeReminders(state,op,lifecycle).length,1);assert.equal(resolveEmployeeReminders(state,head,lifecycle).length,1);assert.equal(resolveEmployeeReminders(state,courier,lifecycle).length,0);
  globalThis.__employeeReminderDb={prepare:()=>({bind:()=>({all:async()=>({results:rows})})})};assert.deepEqual(await employeeReminders(state,op),result);
+ const freshPaid={id:'order-paid:fresh',kind:'order-paid',clientId:'c',orderId:'own',at:'2026-11-12T12:00:00Z',title:'Paid',text:''};
+ const oldPaid={...freshPaid,id:'order-paid:older',at:'2026-11-11T12:00:00Z'};
+ globalThis.__employeeReminderDb={prepare:sql=>sql.includes('WHERE employee_id=')?{bind:()=>({all:async()=>({results:[{data:JSON.stringify(freshPaid),read_at:null}]})})}:{all:async()=>({results:[freshPaid,oldPaid].map(r=>({data:JSON.stringify(r),at:r.at}))})}};
+ const adminPaid=await employeeReminders(state,admin);
+ assert.deepEqual(adminPaid.map(r=>r.id),[freshPaid.id,oldPaid.id]);assert.equal(adminPaid[0].readAt,undefined,'Fresh personal notice stays unread');assert.equal(adminPaid[1].readAt,oldPaid.at,'Historical notices fill the tab without old popups');
  console.log('Employee reminders: indexed lookups preserve ownership, department rights, receipts, cancellation/calls/drafts/courier resolution, order and read state');
 }finally{Date.now=wallClock;delete globalThis.__employeeReminderDb;}

@@ -1,3 +1,4 @@
+import {recentPaidOrderNotices} from './paid-order-notice.ts';
 import {maintainReminders} from './reminder-maintenance';
 import {courierDoorNoticeId,courierDeadline,courierStage} from './courier.ts';
 import {draftDeadline,scheduledCalls,type State,type Employee} from './crm';
@@ -10,12 +11,17 @@ export {orderDecisionReminder} from './reminder-maintenance';
 export async function saveReminders(s:State,employeeId?:string,clientId?:string){return maintainReminders(db(),s,employeeId,clientId);}
 export async function employeeReminders(s:State,e:Employee){
  const rows=await db().prepare('SELECT data,read_at FROM reminders WHERE employee_id=? ORDER BY at DESC,id DESC').bind(e.id).all<{data:string;read_at:string|null}>();
- return resolveEmployeeReminders(s,e,rows.results);
+ const own=resolveEmployeeReminders(s,e,rows.results);
+ if(e.role!=='admin')return own;
+ const merged=new Map(own.map(r=>[r.id,r]));
+ for(const r of await recentPaidOrderNotices(db()))if(!merged.has(r.id))merged.set(r.id,r);
+ return [...merged.values()].sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id));
 }
 export function resolveEmployeeReminders(s:State,e:Employee,rows:{data:string;read_at:string|null}[]){
  const activeCalls=new Set(scheduledCalls(s.orders,e,s.employees).map(o=>`call:${o.id}:${o.due}`));
  const orders=new Map(s.orders.map(o=>[o.id,o])),clients=new Map(s.clients.map(c=>[c.id,c]));
  return rows.map(r=>({...JSON.parse(r.data),readAt:r.read_at||undefined}) as Reminder).filter(r=>{
+  if(e.role==='admin'&&r.kind==='order-paid')return true;
   if(r.kind==='cash-change')return e.role==='admin'&&!r.acknowledgedAt;
   if(e.role==='admin'&&!r.requestId&&r.kind!=='cdek-deletion')return false;
   // A personal receipt remains available after recall removes the courier's access to the order.
