@@ -976,6 +976,7 @@ try{
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.applied,true);assert.ok(imported.data.backupId);
  assert.ok(db.prepare('SELECT COUNT(*) AS n FROM base_import_snapshots WHERE session=?').get(baseImport.session).n>0);
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.data.added,1,'Retry must return the original result');
+ const importHistory=await call('/api/base?importHistory=1',{cookie:cookies.admin});assert.equal(importHistory.status,200,importHistory.text);assert.equal(importHistory.data.imports.find(x=>x.id===baseImport.session).added,1);assert.equal((await call('/api/base?importHistory=1',{cookie:policyOperator.cookie})).status,403);
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,session:crypto.randomUUID(),apply:true}});assert.equal(imported.data.skipped,1);
  const originalImport=db.prepare("SELECT id,data,version FROM clients WHERE phone='+79991239876'").get();
  assert.equal(JSON.parse(originalImport.data).city,'Тула');assert.deepEqual(JSON.parse(originalImport.data).linkedPhones,['+79991239875']);

@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {baseImportHistory} from '../lib/base-import-history.ts';
+const db=new DatabaseSync(':memory:');
+const d={prepare:sql=>({first:async()=>db.prepare(sql).get(),all:async()=>({results:db.prepare(sql).all()})})};
+assert.deepEqual(await baseImportHistory(d),[]);
+db.exec('CREATE TABLE base_import_backups(id TEXT PRIMARY KEY,at TEXT,data TEXT)');
+const put=(id,at,data)=>db.prepare('INSERT INTO base_import_backups VALUES(?,?,?)').run(id,at,JSON.stringify(data));
+put('1','2026-11-16T18:00:00Z',{session:'same',filename:'book.xlsx',base:'M',previous:[{secret:'must not be returned'}],report:{added:2,addedByBase:{M:1,J:1},skipped:3}});
+put('2','2026-11-16T18:01:00Z',{session:'same',filename:'book.xlsx',base:'M',report:{added:1,addedByBase:{M:0,J:1},invalid:[{row:2,phone:'70000000000',reason:'conflict'}]}});
+put('3','2026-11-15T18:00:00Z',{session:'old',filename:'book.xlsx',base:'M',report:{added:4,duplicates:1,moved:2}});
+const entries=await baseImportHistory(d);
+assert.equal(entries.length,2);assert.equal(entries[0].added,3);assert.equal(entries[0].male,1);assert.equal(entries[0].female,2);assert.equal(entries[0].skipped,3);assert.equal(entries[0].invalid.length,1);assert.equal(entries[0].at,'2026-11-16T18:01:00Z');assert.equal(entries[1].male,4);assert.equal(entries[1].moved,2);assert(!JSON.stringify(entries).includes('secret'));
+assert.equal(db.prepare('SELECT COUNT(*) n FROM base_import_backups').get().n,3);
+console.log('Import history: empty database, session aggregation, legacy reports, exclusions and read-only projection passed');
