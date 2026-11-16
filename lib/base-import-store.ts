@@ -24,8 +24,7 @@ export async function importBase(raw:unknown,actorId:string){
  const added=plan.added.map(r=>({id:'C-'+crypto.randomUUID(),baseType:r.destination||p.base,phone:'+'+r.phone,linkedPhones:(r.linkedPhones||[]).map(phone=>'+'+phone),name:r.name||r.phone,city:r.city||'',address:'',source:p.filename,sheet:r.target||target,owner:'',assignedUntil:'',createdAt:at,version:1,importFields:r.fields||{},distributedAt:''}));
  const backup={session:p.session,actorId,base:p.base,target,filename:p.filename,previous:plan.moved.map(x=>byId.get(x.client.id)),addedIds:added.map(c=>c.id),report};
  const statements=[d.prepare('INSERT INTO base_import_snapshots(session,client_id,phone,data,version) SELECT ?,id,phone,data,version FROM clients WHERE NOT EXISTS(SELECT 1 FROM base_import_sessions WHERE id=?)').bind(p.session,p.session),d.prepare('INSERT OR IGNORE INTO base_import_sessions VALUES(?,?)').bind(p.session,at),d.prepare('INSERT INTO base_import_backups(id,at,data) VALUES(?,?,?)').bind(id,at,JSON.stringify(backup)),d.prepare("INSERT INTO base_import_checks(valid) SELECT 0 WHERE COALESCE((SELECT json_extract(data,'$.revision') FROM settings WHERE id='base-settings'),'')<>?").bind(p.revision)];
- const memberBases=new Map([...clients,...added].map(c=>[c.id,c.baseType||'M']));
- for(const clientId of [...plan.matched.map(m=>m.client.id),...added.map(c=>c.id)])statements.push(d.prepare('INSERT INTO base_import_members(session,client_id,base,filename,created_at) VALUES(?,?,?,?,?)').bind(p.session,clientId,memberBases.get(clientId)||p.base,p.filename,at));
+ for(const c of added)statements.push(d.prepare('INSERT INTO base_import_members(session,client_id,base,filename,created_at) VALUES(?,?,?,?,?)').bind(p.session,c.id,c.baseType||'M',p.filename,at));
  for(const c of added)statements.push(d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(c.id,c.phone,JSON.stringify(c)));
  await d.batch(statements);
  return {...report,applied:true,backupId:id};
