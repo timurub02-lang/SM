@@ -1,3 +1,4 @@
+import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canReadIncomingClient} from './incoming.ts';
 import {redemptionTransferText} from './redemption-transfer-history.ts';
 import type {ActivityDb} from './activity-store.ts';
@@ -57,6 +58,6 @@ export async function readCrmHistory(d:ActivityDb,actor:Employee,q:HistoryQuery)
  const from=`FROM ${source} e LEFT JOIN clients c ON c.id=e.client_id WHERE ${clauses.join(' AND ')}`;
  args.unshift(...sourceArgs);
  const count=await d.prepare(`SELECT COUNT(*) AS n ${from}`).bind(...args).first();
- const rows=(await d.prepare(`SELECT e.data ${from} ORDER BY e.at DESC,e.id DESC LIMIT 50 OFFSET ?`).bind(...args,q.page*50).all()).results.map((r:{data:string})=>{const {_redemption,...event}=JSON.parse(r.data);const text=_redemption?redemptionTransferText(_redemption):event.text;return {...event,text:['operator','department_head'].includes(actor.role)?String(text||'').replace(/(?<!\d)(?:\+?7|8)(?:[\s().-]*\d){10}(?!\d)/g,'[телефон]'):text} as Event;});
+ const rows=(await d.prepare(`SELECT e.data ${from} ORDER BY e.at DESC,e.id DESC LIMIT 50 OFFSET ?`).bind(...args,q.page*50).all()).results.map((r:{data:string})=>{const {_redemption,...event}=JSON.parse(r.data);const text=_redemption?redemptionTransferText(_redemption):event.text;return {...event,text:visibleOrderHistoryText(String(text||''),actor.role)} as Event;});
  return {rows,total:Number(count.n),page:q.page};
 }

@@ -1,3 +1,4 @@
+import {withOrderChanges} from './order-change-history.ts';
 import {cancelledOrderNotices} from './client-lifecycle-notice.ts';
 import {paidOrderNoticeStatements} from './paid-order-notice.ts';
 import {initReplacement} from './phone-replacement.ts';
@@ -23,6 +24,7 @@ export async function applyCdekShipment(d:Db,order:Order,stored:Shipment,previou
  statements.push(d.prepare(`UPDATE settings SET data=? WHERE id=? AND data=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?${patch?" AND json_extract(data,'$._mutation')=?":""})`).bind(next,key,previous,order.id,order.version+(patch?1:0),...(patch?[mutation]:[])));
  if(patch){
   const event={id:mutation,clientId:order.clientId,orderId:order.id,at,actor:'СДЭК',text:patch.status?`СДЭК: ${patch.cdekStatus?.code} → ${statuses[patch.status]}`:patch.cdekStatus?`Обновлён статус СДЭК: ${patch.cdekStatus.code}`:patch.cdekAcceptedAt?'СДЭК принял посылку на склад отправителя':patch.cdekStorageUntil?'Обновлён срок бесплатного хранения СДЭК: '+patch.cdekStorageUntil:'Уточнена дата регистрации отправления в СДЭК'};
+  event.text=withOrderChanges(event.text,order,{...order,...patch});
   statements.push(d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,event.clientId,event.orderId,at,JSON.stringify(event),order.id,mutation));
   statements.push(...await cancelledOrderNotices(d,order,{...order,...patch},event));
  }

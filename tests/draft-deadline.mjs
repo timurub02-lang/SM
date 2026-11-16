@@ -28,7 +28,7 @@ try{
  for(const id of ['recent','disabled','custom'])assert.equal(after.find(o=>o.id===id).status,'draft');
  assert.equal(after.find(o=>o.id==='passed').status,'confirm');
  assert.equal((await db.prepare('SELECT reserved FROM product_stock').first()).reserved,4);
- assert.equal(await reconcileOrderTimers(db,await read(),[]),false);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM events').first()).n,1);
+ assert.equal(await reconcileOrderTimers(db,await read(),[]),false);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM events').first()).n,2);
  // A stale snapshot cannot cancel an order already handed to logistics.
  await db.prepare("UPDATE orders SET data=json_set(data,'$.status','confirm'),version=version+1 WHERE id='recent'").run();
  assert.equal(await reconcileOrderTimers(db,[{...orders[1],createdAt:at}],[]),false);

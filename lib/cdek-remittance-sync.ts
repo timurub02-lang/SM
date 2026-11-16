@@ -1,3 +1,4 @@
+import {withOrderChanges} from './order-change-history.ts';
 import {initCdekUnmatched,saveCdekUnmatched,resolveCdekUnmatched} from './cdek-unmatched.ts';
 import {initCdekHistoryRecovery,recoverCdekHistory} from './cdek-history-recovery.ts';
 import {registryDay as day,registryResponse as responseSchema,bankRegistries,saveBankRegistries} from './cdek-bank-registry.ts';
@@ -56,8 +57,8 @@ export async function applyCdekRegistries(d:Db,slot:number,data:unknown,at=new D
   const conflict=hasRemittanceConflict({cdekRemittances:next});
   const mutation=crypto.randomUUID(),text=conflict?'СДЭК: несколько положительных перечислений по заказу — требуется проверка администратора':`СДЭК: деньги получены, реестр №${next[0].registry}, дата перечисления ${next[0].paymentDate}${next.length>1?' · дубль сохранён без повторного начисления':''}`;
   if(!dryRun){
-   const event={id:mutation,orderId:row.id,clientId:row.order.clientId,at,actor:'СДЭК',text};
    const updated={...row.order,cdekRemittances:next,updatedAt:at,_mutation:mutation};
+   const event={id:mutation,orderId:row.id,clientId:row.order.clientId,at,actor:'СДЭК',text:withOrderChanges(text,row.order,updated)};
    const batch=await d.batch([
     d.prepare(`UPDATE orders SET data=json_set(data,'$.cdekRemittances',json(?),'$.updatedAt',?,'$._mutation',?),version=version+1 WHERE id=? AND version=? AND data=? AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?`).bind(JSON.stringify(updated.cdekRemittances),at,mutation,row.id,row.version,row.data,'cdek-shipment-'+row.id,row.shipment||''),
     d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(mutation,row.order.clientId,row.id,at,JSON.stringify(event),row.id,mutation)
