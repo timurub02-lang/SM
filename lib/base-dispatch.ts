@@ -6,6 +6,7 @@ export async function initBaseDispatch(d:Db){
  await d.prepare(`CREATE TABLE IF NOT EXISTS base_dispatch_jobs(id TEXT PRIMARY KEY,base TEXT NOT NULL,sheet TEXT NOT NULL,project TEXT NOT NULL,distribution_date TEXT NOT NULL,created_at TEXT NOT NULL,automatic_key TEXT UNIQUE)`).run();
  await d.prepare(`CREATE TABLE IF NOT EXISTS base_dispatch_items(job_id TEXT NOT NULL,client_id TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',error TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL,PRIMARY KEY(job_id,client_id))`).run();
  await d.prepare(`CREATE TABLE IF NOT EXISTS base_dispatch_imports(id TEXT PRIMARY KEY,job_id TEXT NOT NULL,project TEXT NOT NULL,distribution_date TEXT NOT NULL,data TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,upload_id TEXT,error TEXT NOT NULL DEFAULT '')`).run();
+ await d.prepare("CREATE INDEX IF NOT EXISTS base_dispatch_client_state ON base_dispatch_items(client_id,state)").run();
  await d.prepare("CREATE UNIQUE INDEX IF NOT EXISTS base_dispatch_one_active ON base_dispatch_items(client_id) WHERE state IN ('pending','sending','unknown')").run();
  // Keep a client free throughout an external dispatch, including an uncertain API outcome.
  await d.prepare(`CREATE TRIGGER IF NOT EXISTS base_dispatch_owner_guard BEFORE UPDATE OF data ON clients WHEN COALESCE(json_extract(NEW.data,'$.owner'),'')<>'' AND EXISTS(SELECT 1 FROM base_dispatch_items WHERE client_id=NEW.id AND state IN ('pending','sending','unknown')) BEGIN SELECT RAISE(ABORT,'Клиент отправляется в Скорозвон. Дождитесь завершения отправки'); END`).run();
