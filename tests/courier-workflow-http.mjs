@@ -33,7 +33,7 @@ try{
  const hours=n=>new Date(Date.now()+n*3600000).toISOString();
  let count=0;
  async function create(){
-  const r=await call('admin','/api/crm',{action:'createClient',baseType:'M',client:{name:'Test client '+(++count),phone:'+79990000'+String(count).padStart(3,'0'),city:'Москва',address:'Москва, Тверская, дом 1',owner:'operator',source:'Synthetic'}});
+  const r=await call('admin','/api/crm',{action:'createClient',baseType:'M',client:{name:'Test client '+(++count),phone:'+79990000'+String(count).padStart(3,'0'),city:'Москва',address:'125009, Москва, Тверская, дом 1',owner:'operator',source:'Synthetic'}});
   const c=r.data.state.clients.find(c=>c.name==='Test client '+count);
   const created=await call('operator','/api/crm',{action:'createOrder',clientId:c.id,delivery:'moscow_courier',items:[{name:'Product',quantity:1,price:10000}],addressConfirmed:true});
   const o=created.data.state.orders.find(o=>o.clientId===c.id);assert.equal(o.status,'draft');return o.id;
@@ -109,7 +109,7 @@ try{
  // Editable price/address while operator works: custody follows amount, physical contents stay locked.
  const editId=await create();await assembled(editId);await act(editId,'courier',{action:'courierAccept',confirmed:true});await act(editId,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'Change order'});
  const editStock=stock(),editableVersion=order(editId).version;
- const edit={action:'updateOrder',items:[{name:'Product',quantity:1,price:9000}],address:'Москва, Тверская, дом 2',comment:'New price and address',addressConfirmed:true};
+ const edit={action:'updateOrder',items:[{name:'Product',quantity:1,price:9000}],address:'125009, Москва, Тверская, дом 2',comment:'New price and address',addressConfirmed:true};
  await act(editId,'operator',edit);assert.equal(order(editId).courier.amount,9000);assert.equal(courierBalance([order(editId)],'courier').parcels,9000);assert.equal(stock(),editStock);
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(order(editId).clientId).data).address,edit.address);
  assert.ok((await call('courier')).data.reminders.some(r=>r.orderId===editId&&r.title.includes('9000')));
