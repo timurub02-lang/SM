@@ -12,6 +12,7 @@ export function orderDecisionReminder(c:Client,staff:Employee[]):Reminder|null{
  return {kind:'order-decision',decision:request.status,id:'decision:'+request.id,requestId:request.id,clientId:c.id,title:request.status==='approved'?'Дополнительный заказ разрешён':'Запрос на дополнительный заказ отклонён',text:c.name+(author?' · Решение: '+author:''),at:request.decidedAt||request.at};
 }
 function activeReminder(r:Reminder,s:State,e:Employee){
+ if(r.kind==='cash-change')return !r.acknowledgedAt;
  const o=s.orders.find(o=>o.id===r.orderId);
  if(r.kind==='order-cancellation')return !!o&&o.cancellationRequest?.status==='pending'&&r.id===`cancel:${o.cancellationRequest.id}:pending`;
  if(r.kind==='courier-door')return !!o&&r.id===courierDoorNoticeId(o);
