@@ -120,6 +120,8 @@ const review=skOrderReview(null,{id:'sender'},reviewClient,reviewOwner,[{id:'SK-
 assert.equal(review.ownerLabel,'Иван Иванов · OP_Ivan');
 assert.deepEqual(review.activeOrderIds,['SK-123','SK-124']);
 assert.equal(review.reasons.length,4);
+assert.equal(review.reasons[1],'Есть действующие заказы: SK-123 — Новый, SK-124 — Отправлен');
+assert.equal(skOrderReview('project',{id:'owner'},reviewClient,reviewOwner,[{id:'SK-126',clientId:'review',status:'packing'}]).reasons[0],'Есть действующие заказы: SK-126 — Принят');
 assert.match(review.reasons[0],/Иван Иванов/);
 assert.ok(review.reasons.includes('Создан не из Проекта'));
 assert.equal(skOrderReview('project',{id:'owner'},reviewClient,reviewOwner,[]).ownerLabel,review.ownerLabel);
