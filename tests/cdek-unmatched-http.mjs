@@ -23,6 +23,11 @@ try{
  assert.equal(d.prepare('SELECT COUNT(*) n FROM cdek_unmatched_remittances').get().n,54);
  let result=await (await get('a')).json();assert.equal(result.total,52);assert.equal(result.rows.length,50);assert.equal((await (await get('a','?page=1')).json()).rows.length,2);
  assert.ok(result.rows.every(r=>r.paymentDate>='2026-10-01'));assert.equal((await (await get('a','?page=1')).json()).rows.at(-1).paymentDate,'2026-10-01');
+
+ const reviewedReceipt=JSON.stringify(result.rows[0]);
+ d.prepare('INSERT INTO settings(id,data) VALUES(?,?)').run('cdek-unmatched-reviewed-paid',JSON.stringify([{receipt:reviewedReceipt,externalId:'synthetic-paid',period:'2026-11-1'}]));
+ const reviewed=await (await get('a')).json();assert.equal(reviewed.total,51);assert.ok(!reviewed.rows.some(r=>JSON.stringify(r)===reviewedReceipt));
+ assert.equal(d.prepare('SELECT COUNT(*) n FROM cdek_unmatched_remittances').get().n,54);
  for(const page of ['-1','NaN','1.5','100001'])assert.equal((await get('a','?page='+page)).status,400);
  assert.equal((await get('h','?actorId=a')).status,403);
  assert.equal((await fetch(url,{method:'POST',headers:{cookie:cookies.a,Origin:origin,'Content-Type':'application/json'},body:'{}'})).status,405);
