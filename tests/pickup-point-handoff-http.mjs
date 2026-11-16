@@ -21,7 +21,7 @@ try{
  }
  const now=new Date().toISOString(),client={id:'c',name:'Тестов Иван Иванович',phone:'+79990000001',owner:'op',source:'test',city:'Москва',address:'101000, Москва, Тестовая, д1',baseType:'M',sheet:'К',createdAt:now,assignedUntil:new Date(Date.now()+86400000).toISOString(),assignmentStartedAt:now};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run('c',client.phone,JSON.stringify(client));
- const initial={id:'post',clientId:'c',manager:'op',logistic:'log',status:'draft',draftHours:null,delivery:'cdek_pickup',address:'101000, Москва, Тестовая, д1',addressParts:{postalCode:'101000',city:'Москва',street:'Тестовая',house:'1'},items:[{name:'Product',quantity:1,price:10000}],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:now,updatedAt:now,shippedAt:now};
+ const initial={id:'post',clientId:'c',manager:'op',logistic:'log',status:'draft',draftHours:null,delivery:'cdek_pickup',address:'101000, Москва, Тестовая, д1',addressParts:{postalCode:'101000',region:'',city:'Москва',street:'Тестовая',house:'1',flat:''},items:[{name:'Product',quantity:1,price:10000}],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:now,updatedAt:now,shippedAt:now};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run('post','c',JSON.stringify(initial));
  server=spawn(process.execPath,['--import',pathToFileURL(resolve('tests/fixtures/cdek-fetch.mjs')).href,resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_SPLIT_READS:'1',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),CDEK_TEST_FIXTURE:upstreamFile,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}assert.ok(ready,logs);
@@ -33,6 +33,16 @@ try{
  await call('foreign','/api/cdek/pickup-points?orderId=post',undefined,403);await call('other-head','/api/cdek/pickup-points?orderId=post',undefined,403);
  const loaded=(await call('op','/api/cdek/pickup-points?orderId=post')).data;assert.deepEqual(loaded.points.map(p=>p.code),['MSK1']);assert.ok(loaded.selectionId);assert.equal(JSON.stringify(loaded).includes('clientSecret'),false);
  await act('op','selectOrderPickupPoint',{code:'FORGED',selectionId:loaded.selectionId},400);
+ const saveData={delivery:initial.delivery,address:initial.address,addressParts:initial.addressParts,items:initial.items};
+ const unsaved=order();assert.equal(unsaved.cdekPickupPoint,undefined);
+ await act('op','updateOrder',{...saveData,newOrderComment:'Must not persist',pickupPoint:{code:'FORGED',selectionId:loaded.selectionId}},400);
+ assert.deepEqual(order(),unsaved,'invalid PVZ must not partially save order/comment/version');
+ await act('foreign','updateOrder',{...saveData,pickupPoint:{code:'MSK1',selectionId:loaded.selectionId}},403);
+ await act('op','updateOrder',{...saveData,address:initial.address+' changed',pickupPoint:{code:'MSK1',selectionId:loaded.selectionId}},400);
+ assert.deepEqual(order(),unsaved,'stale context must not partially save the changed address');
+ await act('op','updateOrder',{...saveData,pickupPoint:{code:'MSK1',selectionId:loaded.selectionId}});
+ assert.equal(order().cdekPickupPoint.code,'MSK1');assert.equal(order().version,unsaved.version+1,'order and PVZ saved together once');
+ const saved=order();await act('op','updateOrder',{...saveData,version:unsaved.version,pickupPoint:{code:'MSK1',selectionId:loaded.selectionId}},400);assert.deepEqual(order(),saved,'stale version cannot overwrite saved order/PVZ');
  await act('head','selectOrderPickupPoint',{code:'MSK1',selectionId:loaded.selectionId});assert.equal(order().cdekPickupPoint.code,'MSK1');
  const before=order();db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify({...before,address:'101000, Москва, Другой дом'}));
  await act('op','transition',{to:'confirm'},400);await act('op','selectOrderPickupPoint',{code:'MSK1',selectionId:loaded.selectionId},400);
