@@ -254,8 +254,8 @@ try{
   const reserve=stock(),opened=order(doorId),door=opened.courier.doorRefusal;
   assert.equal(opened.status,'rework');assert.equal(opened.courier.atDoor,true);
   assert.equal(Date.parse(door.claimDueAt)-Date.parse(door.at),120000);assert.equal(Date.parse(door.decisionDueAt)-Date.parse(door.at),600000);
-  for(const who of ['operator','head','admin','courier'])assert.ok((await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved));
-  for(const who of ['foreign-head','stranger','logistic'])assert.ok(!(await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId));
+  for(const who of ['operator','head','courier'])assert.ok((await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId&&!r.resolved));
+  for(const who of ['admin','foreign-head','stranger','logistic'])assert.ok(!(await call(who)).data.reminders.some(r=>r.kind==='courier-door'&&r.orderId===doorId));
   await act(doorId,'foreign-head',{action:'courierWorkflow',operation:'claimDoor'},403);
   await act(doorId,'head',{action:'updateOrder',comment:'Not an edit permission'},400);
   await act(doorId,'operator',{action:'courierWorkflow',operation:'resolveDoor',result,confirmed:true},400);
