@@ -1,4 +1,4 @@
-import {canSelectOrderPickupPoint,selectedCachedPickupPoint} from '@/lib/order-pickup-point';
+import {canSelectOrderPickupPoint,selectedCachedPickupPoint,pickupPointContext} from '@/lib/order-pickup-point';
 import {acknowledgeCashNotice} from '@/lib/cash-notifications';
 import {canEditOrderRecipientName,nextExtraConfirmationAt} from '@/lib/crm';
 import {reportPostalBuyout,resolvePostalBuyout,postalBuyoutPending} from '@/lib/postal-buyout-report';
@@ -591,6 +591,7 @@ async function handlePOST(request:Request){
    const tariff=quote.tariffs.find((t:any)=>t.code===p.code);if(!tariff)throw new Error("Тариф не найден в расчёте СДЭК");
    next.delivery=quote.params.delivery;next.cdekTariff={...tariff,deliveryPoint:quote.deliveryPoint,needsConfirmation:false,account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
    }
+   if(next.cdekTariff?.deliveryPoint)next.cdekPickupPoint={...next.cdekTariff.deliveryPoint,context:pickupPointContext(next),by:employee.id,selectedAt:now};else delete next.cdekPickupPoint;
   }else if(p.action==="updateDelivery"){
    if(!employee||!canManageDelivery(employee.role,o.status))throw new Error("Способ доставки выбирает логист до отправки заказа");
    next.delivery=deliverySchema.parse(p.delivery);text="Изменён способ доставки";

@@ -1,3 +1,4 @@
+import {orderPickupPoint,pickupPointContext} from '../lib/order-pickup-point.ts';
 import {pathToFileURL} from 'node:url';
 // Run after the Miran standalone build. No real CDEK requests or customer data.
 import assert from 'node:assert/strict';
@@ -151,6 +152,9 @@ try{
  const selected=await call('/api/crm','logistic',{action:'selectCdekTariff',id:pickupOrder.id,version:readOrder(pickupOrder.id).version,quoteId:quote.data.quoteId,code:136});
  assert.equal(selected.status,200,selected.text);
  const savedPoint=readOrder(pickupOrder.id).cdekTariff.deliveryPoint;
+ assert.equal(readOrder(pickupOrder.id).cdekPickupPoint.code,'PVZ-ONE');
+ assert.equal(readOrder(pickupOrder.id).cdekPickupPoint.context,pickupPointContext(readOrder(pickupOrder.id)));
+ assert.equal(orderPickupPoint({...readOrder(pickupOrder.id),cdekTariff:undefined}).code,'PVZ-ONE','Logistics point stays selected when a later recalculation clears the tariff');
  assert.deepEqual(savedPoint,{code:'PVZ-ONE',address:'Москва, ул. Тестовая, д. 2',workTime:'09:00–21:00'});
  assert.equal(readOrder(pickupOrder.id).cdekTariff.needsConfirmation,false);
  const packing={...readOrder(pickupOrder.id),status:'packing'};
