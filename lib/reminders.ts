@@ -16,6 +16,7 @@ export function resolveEmployeeReminders(s:State,e:Employee,rows:{data:string;re
  const activeCalls=new Set(scheduledCalls(s.orders,e,s.employees).map(o=>`call:${o.id}:${o.due}`));
  const orders=new Map(s.orders.map(o=>[o.id,o])),clients=new Map(s.clients.map(c=>[c.id,c]));
  return rows.map(r=>({...JSON.parse(r.data),readAt:r.read_at||undefined}) as Reminder).filter(r=>{
+  if(e.role==='admin'&&!r.requestId&&r.kind!=='cdek-deletion')return false;
   // A personal receipt remains available after recall removes the courier's access to the order.
   if(r.kind==='buyout-info')return ['redemption','admin'].includes(e.role);
   if(r.kind==='shipment-result')return ['operator','department_head','admin'].includes(e.role);

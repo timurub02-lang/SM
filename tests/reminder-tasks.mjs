@@ -27,7 +27,7 @@ const wait={...assigned,status:'rework',courier:{...confirmation.courier,phase:'
 assert.equal(tasks(courier,wait).length,0);assert.equal(tasks(operator,wait).length,1);
 const urgent={...wait,courier:{...wait.courier,doorRefusal:{at,claimDueAt:at,decisionDueAt:future}}};
 assert.equal(reworkStage(urgent,now),'new','Urgent doorstep work stays in New regardless of the normal timer or call filter');
-for(const e of [operator,head,admin]){assert.equal(tasks(e,urgent).length,1);assert.equal(tasks(e,urgent)[0].kind,'courier-door');}
+for(const e of [operator,head]){assert.equal(tasks(e,urgent).length,1);assert.equal(tasks(e,urgent)[0].kind,'courier-door');}
 for(const e of [courier,logistic,otherHead])assert.equal(tasks(e,urgent).length,0);
 const paid={...assigned,status:'redeemed',redeemedAt:at};
 assert.equal(tasks(courier,paid).length,1);assert.equal(tasks(logistic,paid).length,1);
@@ -77,3 +77,5 @@ for(const status of ['confirm','extra'])for(const contact of ['none','callback',
  assert.equal(tasks(head,order).length,0,'logistic confirmation is not a mandatory head task');
  assert.equal(tasks(logistic,order).length,1,'logistic retains confirmation and callback task');
 }
+
+for(const order of [urgent,repack,atWarehouse,{...base,cancellationRequest:{status:'pending',at}},{...base,editRequest:{status:'pending',at}},{...base,contact:'callback',due:future}])assert.equal(tasks(admin,order).length,0,'Admin does not inherit operational tasks');

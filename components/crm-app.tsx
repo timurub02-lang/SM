@@ -219,7 +219,7 @@ export default function Page(){
  const dueCalls=allCalls.filter(o=>Date.parse(o.due)<=reminderNow);
  const reminders=state.reminders||[],tasks=state.tasks||[],notificationGroups=notificationSections(tasks,reminders,reminderNow,employee.role==="department_head"),shownReminders=notificationGroups[reminderTab];
  useNotificationPopups(actor,ready&&(!splitReads||tasksReady),tasks,reminders,tab=>{setReminderTab(tab);setRemindersOpen(true);});
- function openReminder(id:string,target:{type:"client"|"order";id:string}){if(id.startsWith("order-cancelled:")||id.startsWith("client-released:")){void mutate({action:"readReminder",id});return;}if(id.startsWith("task:incoming:")){setRemindersOpen(false);setDetail(null);navigate("incoming");return;}if(!id.startsWith("task:"))void mutate({action:"readReminder",id});setRemindersOpen(false);setDetail(target);}
+ function openReminder(id:string,target:{type:"client"|"order";id:string}){if(id.startsWith("task:sk-permission:")){setRemindersOpen(false);navigate("orders","permissions");return;}if(id.startsWith("replacement:")){setRemindersOpen(false);navigate("settings");return;}if(id.startsWith("order-cancelled:")||id.startsWith("client-released:")){void mutate({action:"readReminder",id});return;}if(id.startsWith("task:incoming:")){setRemindersOpen(false);setDetail(null);navigate("incoming");return;}if(!id.startsWith("task:"))void mutate({action:"readReminder",id});setRemindersOpen(false);setDetail(target);}
  async function openDecision(r:Reminder,canCreate:boolean){
   if(!r.id.startsWith("task:")&&!await mutate({action:"readReminder",id:r.id}))return;
   setRemindersOpen(false);
