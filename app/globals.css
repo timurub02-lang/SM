@@ -468,3 +468,7 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .admin-order-mark:disabled,.admin-order-mark:has(input:disabled){opacity:.55;cursor:not-allowed}
 
 .logistic-list-comment{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;min-width:140px;max-width:220px;font-size:13px;color:var(--muted-foreground);background:transparent;border:0;padding:4px;cursor:pointer}
+
+.order-row-postal-buyout>td{border-top:2px solid #a4d8b6!important;border-bottom:2px solid #a4d8b6!important;background:rgba(164,216,182,.1)}
+.order-row-postal-buyout>td:first-child{border-left:2px solid #a4d8b6!important}.order-row-postal-buyout>td:last-child{border-right:2px solid #a4d8b6!important}
+.postal-buyout-notice{border:1px solid #a4d8b6;background:rgba(164,216,182,.12)}

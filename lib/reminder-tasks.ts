@@ -1,3 +1,4 @@
+import {postalBuyoutPending} from './postal-buyout-report.ts';
 import {packingStage,draftDeadline,confirmationDeadline,scheduledCalls,canReceivePayment,isLogistic,type State,type Employee,type Order} from './crm.ts';
 import {courierDoorRefusal,canHandleCourierDoor,courierDoorNoticeId,courierDoorPhase,courierStage,courierPhase,courierDeadline,courierWarehouseReturn,courierPendingAction} from './courier.ts';
 import {seesOrder,ownsClient} from './permissions.ts';
@@ -16,6 +17,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
   if(admin){if(o.status==='check')add(o,'check','Проверьте заказ перед сборкой');continue;}
   if(o.cancellationRequest?.status==='pending'&&(logistic||admin)){add(o,'cancel-request','СРОЧНО: обработайте запрос на отмену',o.cancellationRequest.at,o.cancellationRequest.at,'order-cancellation',o.cancellationRequest.name+' · '+o.cancellationRequest.reason);continue;}
   if(o.editRequest?.status==='pending'&&(logistic||admin)){add(o,'edit-request','Клиент просит редактирование заказа',o.editRequest.at,o.editRequest.at,'order-edit',o.editRequest.name+' · '+o.editRequest.reason);continue;}
+  if(logistic&&postalBuyoutPending(o)){const r=o.postalBuyoutReport!;add(o,'postal-buyout:'+r.id,'Проверьте выкуп заказа Почты России',undefined,r.at,'task',r.name+' сообщил: клиент выкупил заказ');continue;}
   const shipmentRequest=o.shipmentReturn?.status==='pending'&&(admin||(o.delivery?.startsWith('cdek_')?e.role==='redemption':logistic))?o.shipmentReturn:o.shipmentChange?.status==='pending'&&(admin||logistic)?o.shipmentChange:undefined;
   if(shipmentRequest){add(o,'shipment-'+shipmentRequest.id,shipmentRequest.kind==='return'?'СРОЧНО: запросить возврат у перевозчика':'Клиент просит изменения у перевозчика',shipmentRequest.at,shipmentRequest.at,'task',shipmentRequest.name+' · '+shipmentRequest.reason);continue;}
   const door=courierDoorRefusal(o),phase=courierPhase(o),stage=courierStage(o);

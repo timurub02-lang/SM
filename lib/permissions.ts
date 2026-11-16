@@ -60,6 +60,8 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='resolveOrderEdit')return allow(isLogistic(e.role));
  if(p.action==='completeOrderEdit')return allow(['operator','department_head'].includes(e.role));
  if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
+ if(p.action==='reportPostalBuyout')return allow(order.delivery==='russian_post'&&['shipping','pickup'].includes(order.status)&&(e.role==='operator'&&order.manager===e.id||e.role==='department_head'&&isDepartmentOrder(e,order,s.employees)));
+ if(p.action==='keepPostalSent')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
  if(p.action==='savePostalTracking')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
  if(p.action==='updateRecipientName')return allow(canEditOrderRecipientName(e,order));
  if(p.action==='updateMoscowDetails')return allow(canEditMoscowOrderDetails(e,order));
