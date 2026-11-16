@@ -23,7 +23,7 @@ export function filteredOrderList(state:State,employee:Employee,{view,filter,que
   case 'location':return orderLocation(o);
   case 'action':return orderNextAction(o);
   case 'total':return total(o);
-  case 'manager':return employeesById.get(o.manager)?.name||'';
+  case 'manager':return employeesById.get(o.manager)?.login||employeesById.get(o.manager)?.name||'';
  }};
  const compare=(a:Order,b:Order)=>{const av=value(a),bv=value(b);if(sort==='stageDate'&&(!av||!bv))return Number(!av)-Number(!bv)||(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0);return (typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'ru',{numeric:true,sensitivity:'base'}))*(direction==='asc'?1:-1)||(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0)||a.id.localeCompare(b.id);};
  const shippingView=['shipping','moscow','post'].includes(view);
