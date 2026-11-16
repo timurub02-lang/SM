@@ -111,6 +111,14 @@ class Compaction(unittest.TestCase):
                 self.run_policy(True)
         self.assertTrue(p.exists())
 
+    def test_unreadable_process_state_fails_closed(self):
+        p = self.database()
+        with patch.object(module, 'in_use', side_effect=PermissionError('Cannot inspect processes')):
+            with self.assertRaises(PermissionError):
+                self.run_policy(True)
+        self.assertTrue(p.exists())
+        self.assertFalse((self.root / 'old.sqlite.gz').exists())
+
     def test_source_opened_before_unlink_is_not_removed(self):
         p = self.database()
         with patch.object(module, 'in_use', side_effect=[False, False, False, True]):

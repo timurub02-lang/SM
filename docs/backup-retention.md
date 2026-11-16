@@ -75,6 +75,8 @@ file, compare size/SHA-256 and run a read-only SQLite check. Do not overwrite
 production data. Native state and the restored CRM/bridge history cursors require
 separate reconciliation before any restored service can communicate externally.
 
-Tests: `python3 tests/backup-compaction.py` covers preservation, successful and
+Linux tests: `sudo python3 tests/backup-compaction.py` uses only temporary synthetic
+databases and needs root to inspect system process state, just like the installed
+service. Insufficient inspection permissions fail closed. The suite covers preservation, successful and
 repeat runs, references, active sidecars, corrupt databases, insufficient space,
 archive collision, last-moment activity and Linux links.
