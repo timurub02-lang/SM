@@ -13,6 +13,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
  }
  for(const o of s.orders){
   if(!seesOrder(e,o,s.employees)||o.cdekDeleting)continue;
+  if(admin){if(o.status==='check')add(o,'check','Проверьте заказ перед сборкой');continue;}
   if(o.cancellationRequest?.status==='pending'&&(logistic||admin)){add(o,'cancel-request','СРОЧНО: обработайте запрос на отмену',o.cancellationRequest.at,o.cancellationRequest.at,'order-cancellation',o.cancellationRequest.name+' · '+o.cancellationRequest.reason);continue;}
   if(o.editRequest?.status==='pending'&&(logistic||admin)){add(o,'edit-request','Клиент просит редактирование заказа',o.editRequest.at,o.editRequest.at,'order-edit',o.editRequest.name+' · '+o.editRequest.reason);continue;}
   const shipmentRequest=o.shipmentReturn?.status==='pending'&&(admin||(o.delivery?.startsWith('cdek_')?e.role==='redemption':logistic))?o.shipmentReturn:o.shipmentChange?.status==='pending'&&(admin||logistic)?o.shipmentChange:undefined;
@@ -40,7 +41,6 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
    if(o.status==='rework')add(o,'rework','Доработайте возвращённый заказ',o.reworkDeadline,o.courier?.operatorStartedAt||o.updatedAt,'task',o.returnReason||o.reason);
    continue;
   }
-  if(admin){if(o.status==='check')add(o,'check','Проверьте заказ перед сборкой');continue;}
   if(e.role==='courier'){
    const action=courierPendingAction(o);
    if(action)add(o,phase||stage,action.title,undefined,action.at,'task',phase==='recall'?o.courier?.recall?.reason:stage==='return'?o.reason:'');

@@ -26,7 +26,7 @@ async function install(d:ActivityDb){
  const statements=[];
  const bump=(recipients:string,changed:readonly string[]=areas)=>`INSERT INTO crm_workspace_clock(scope,area,revision) SELECT recipient,area,1 FROM (${recipients}) CROSS JOIN (${changed.map(a=>`SELECT '${a}' AS area`).join(' UNION ALL ')}) WHERE recipient IS NOT NULL AND recipient<>'' ON CONFLICT(scope,area) DO UPDATE SET revision=revision+1;`;
  const global=bump("SELECT '*' AS recipient");
- for(const table of ['clients','orders','events','incoming_calls','reminders','client_reminders','client_work','redemption_entries','phone_calls','employees','auth_accounts','settings'].filter(t=>tables.has(t))){
+ for(const table of ['clients','orders','events','incoming_calls','reminders','client_reminders','client_work','redemption_entries','phone_calls','employees','auth_accounts','settings','sk_order_transfers','replacement_numbers','replacement_assignments'].filter(t=>tables.has(t))){
   const columns=(await d.prepare(`PRAGMA table_info(${table})`).all()).results.map((r:{name:string})=>r.name);
   for(const op of ['INSERT','UPDATE','DELETE']){
    const images=op==='UPDATE'?['OLD','NEW']:[op==='DELETE'?'OLD':'NEW'];
@@ -51,7 +51,7 @@ async function install(d:ActivityDb){
      shared.push(`EXISTS(SELECT 1 FROM incoming_calls WHERE client_id IN (${ids}) AND shared_queue=1 AND closed_at IS NULL)`);
     }
    }
-   let body=global;
+   let body=['sk_order_transfers','replacement_numbers','replacement_assignments'].includes(table)?bump("SELECT id AS recipient FROM employees WHERE json_extract(data,'$.role')='admin'",['tasks']):global;
    if(people.length){
     const ids=people.join(' UNION '),dept=departments.length?` OR ${json('e','department')} IN (${departments.join(' UNION ')})`:'';
     // Heads inherit their operators' changes; shared incoming is visible to every head.

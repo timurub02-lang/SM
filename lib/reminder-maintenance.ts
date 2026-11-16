@@ -62,7 +62,7 @@ export async function maintainReminders(d:ActivityDb,s:State,employeeId?:string,
 
   const generated=[...cancellationNotices,...calls,...drafts,...requests,...decisions,...courierNotices];
   const prior=new Map(existing.map(r=>[r.id,r]));
-  for(const r of generated){const old=prior.get(r.id);if(old){const {readAt,...data}=old;if(r.kind!=='call'||JSON.stringify(data)===JSON.stringify(r))continue;}writes.push(d.prepare(r.kind==='call'?'INSERT INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?) ON CONFLICT(employee_id,id) DO UPDATE SET data=excluded.data,at=excluded.at WHERE excluded.at>=reminders.at AND excluded.data<>reminders.data':'INSERT OR IGNORE INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?)').bind(e.id,r.id,JSON.stringify(r),r.at));}
+  for(const r of generated){const old=prior.get(r.id);if(old){const {readAt,acknowledgedAt,...data}=old;if(r.kind!=='call'||JSON.stringify(data)===JSON.stringify(r))continue;}writes.push(d.prepare(r.kind==='call'?'INSERT INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?) ON CONFLICT(employee_id,id) DO UPDATE SET data=excluded.data,at=excluded.at WHERE excluded.at>=reminders.at AND excluded.data<>reminders.data':'INSERT OR IGNORE INTO reminders(employee_id,id,data,at) VALUES(?,?,?,?)').bind(e.id,r.id,JSON.stringify(r),r.at));}
   // Keep current tasks and separate 20-event histories so releases cannot displace buyouts.
   const combined=new Map([...existing,...generated].map(r=>[r.id,r]));
   const history=[...combined.values()].filter(r=>!activeReminder(r,s,e)).sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id));

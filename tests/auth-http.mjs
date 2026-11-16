@@ -607,6 +607,19 @@ try{
   assert.ok(!(await call('/api/crm',{cookie:reminderActor.cookie})).data.reminders.some(r=>r.id===reminderId));
   sharedOrderId=orderId;sharedReminderId=reminderId;
  }
+ // Acknowledgement is explicit, personal to a head, and limited to a future department call.
+ db.prepare("UPDATE orders SET data=json_set(data,'$.status','draft','$.contact','callback','$.due',?) WHERE id=?").run(new Date(Date.now()+86400000).toISOString(),reminderOrder);
+ const plannedOrder=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get('reminder-operator-o-draft').data);
+ const plannedId='call:'+plannedOrder.id+':'+plannedOrder.due;
+ const ack=async(cookie,id=plannedId)=>call('/api/crm',{cookie,body:{action:'readReminder',id,acknowledge:true}});
+ assert.equal((await ack(reminderActor.cookie)).status,400,'operator cannot acknowledge for a head');
+ assert.equal((await ack(unrelatedHead.cookie)).status,400,'foreign department cannot acknowledge');
+ assert.equal((await call('/api/crm',{cookie:cashHead.cookie,body:{action:'readReminder',id:plannedId}})).status,200);
+ assert.equal((await call('/api/crm',{cookie:cashHead.cookie})).data.reminders.find(r=>r.id===plannedId).acknowledgedAt,undefined,'opening is not acknowledgement');
+ assert.equal((await ack(cashHead.cookie)).status,200);
+ for(let i=0;i<2;i++)assert.ok((await call('/api/crm',{cookie:cashHead.cookie})).data.reminders.find(r=>r.id===plannedId).acknowledgedAt,'refresh keeps acknowledgement');
+ assert.equal((await call('/api/crm',{cookie:reminderActor.cookie})).data.reminders.find(r=>r.id===plannedId).acknowledgedAt,undefined,'operator schedule is unchanged');
+ assert.equal((await ack(cashHead.cookie,'call:missing:future')).status,400);
  const legacy=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(sharedOrderId).data);
  assert.equal(legacy.contactAuthor.id,editor.e.id);
  await call('/api/crm',{cookie:colleague.cookie,body:{action:'readReminder',id:sharedReminderId}});

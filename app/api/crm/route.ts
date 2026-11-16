@@ -48,7 +48,7 @@ import {appendOrderComment} from "@/lib/order-comments";
 import {confirmSavedTariff} from "@/lib/cdek-calculator";
 import {operatorFollowup} from '@/lib/operator-followup';
 import {personalClientReminders,clientReminderTasks,changeClientReminder} from '@/lib/client-reminders';
-import {replacementTasks} from '@/lib/phone-replacement';
+import {adminNotificationTasks} from '@/lib/admin-notification-tasks';
 import {readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder,incomingRouting} from '@/lib/incoming';
 import {employeeTasks} from '@/lib/reminder-tasks';
 import {courierReminderStatements} from '@/lib/reminder-store';
@@ -135,10 +135,10 @@ async function responseState(user:Awaited<ReturnType<typeof identity>>,fanout=fa
  // Paged lists retain their selectors' inputs; full-screen tasks and account metadata are not returned.
  if(entityOnly||list==='orders')return {...visible,...(entityOnly?{incoming:incoming.filter(i=>state.clients.some(c=>c.id===i.clientId))}:{}),redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses};
  const clientReminders=await personalClientReminders(db(),state,user.employee);
- if(list==='tasks'){await initReminders();return {...visible,incoming,tasks:[...clientReminderTasks(clientReminders,state),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)};}
+ if(list==='tasks'){await initReminders();return {...visible,incoming,tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await adminNotificationTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)};}
  if(list==='mine')return {...visible,clientReminders,clientWork:await readClientWork(db(),user.employee)};
  const incomingOperators=['admin','department_head'].includes(user.employee.role)?state.employees.filter(e=>e.role==='operator').map(({id,name,department,login})=>({id,name,department,login})):[];
- return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),...(includeTasks?{tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await replacementTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)}:{}),currentEmployeeId:user.employee.id,personalAuth:true};
+ return {...visible,redemptionResults:await readRedemptionSummaries(db(),visible.orders.map(o=>o.id)),redemptionStatuses:(await redemptionConfig(db())).statuses,incoming,incomingOperators,clientReminders,clientWork:await readClientWork(db(),user.employee),...(includeTasks?{tasks:[...clientReminderTasks(clientReminders,state),...(user.employee.role==='admin'?await adminNotificationTasks(db()):[]),...employeeTasks(state,user.employee),...incoming.filter(i=>!i.closedAt&&!i.spam).map(i=>({kind:'incoming' as const,id:'task:incoming:'+i.id,incomingId:i.id,clientId:i.clientId,title:!i.clientId?'Неизвестный клиент перезвонил':'Клиент перезвонил — свяжитесь с ним',text:i.clientName+' · '+i.assigneeName,at:i.at}))],reminders:await employeeReminders(state,user.employee)}:{}),currentEmployeeId:user.employee.id,personalAuth:true};
 }
 const listSchema=z.object({manualSort:z.enum(['0','1']).default('0'),clientSort:z.enum(['default','name','amount']).default('default'),sort:z.enum(orderSortKeys).default('stageDate'),direction:z.enum(['asc','desc']).default('desc'),list:z.enum(['orders','mine']),view:z.enum(['mine',...orderListViews]),filter:z.string().max(80).default('all'),query:z.string().max(150).default(''),next:z.enum(['0','1']).default('0'),timeZone:z.string().max(100).default('Europe/Moscow').refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}}),clientWorkFilter:z.enum(['all','needed','planned','done']).default('all'),page:z.coerce.number().int().min(0).max(100000).default(0)});
 async function handleGET(request:Request){
@@ -232,7 +232,11 @@ async function handlePOST(request:Request){
   await changeClientReminder(d,s,employee,p,now);message=p.action==="createClientReminder"?"Напоминание сохранено":"Напоминание закрыто";
  }else if(p.action==="readReminder"){
   if(!employee)throw Error("Требуется сотрудник");
-  await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
+  const reminderId=z.string().max(500).parse(p.id);
+  if(p.acknowledge===true){
+   if(employee.role!=='department_head'||!scheduledCalls(s.orders,employee,s.employees).some(o=>`call:${o.id}:${o.due}`===reminderId&&Date.parse(o.due)>Date.parse(now)))throw Error('Ознакомление доступно руководителю для будущего звонка своего отдела');
+   await d.prepare("UPDATE reminders SET data=json_set(data,'$.acknowledgedAt',?),read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,now,employee.id,reminderId).run();
+  }else await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,reminderId).run();
  }else if(p.action==="createIncomingClient"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Создать клиента могут администратор и руководители');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);

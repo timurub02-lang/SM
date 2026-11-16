@@ -4,7 +4,7 @@ import {draftDeadline,scheduledCalls,type State,type Employee} from './crm';
 import {db} from './db';
 import {initReminderStore} from './reminder-store.ts';
 import {seesOrder,ownsClient} from './permissions';
-export type Reminder={incomingId?:string;kind?:"buyout-info"|"shipment-result"|"order-edit"|"order-cancelled"|"client-released"|"order-blacklist"|"order-paid"|"order-cancellation"|"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
+export type Reminder={acknowledgedAt?:string;incomingId?:string;kind?:"buyout-info"|"shipment-result"|"order-edit"|"order-cancelled"|"client-released"|"order-blacklist"|"order-paid"|"order-cancellation"|"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
 export async function initReminders(){await initReminderStore(db());}
 export {orderDecisionReminder} from './reminder-maintenance';
 export async function saveReminders(s:State,employeeId?:string,clientId?:string){return maintainReminders(db(),s,employeeId,clientId);}
@@ -16,6 +16,7 @@ export function resolveEmployeeReminders(s:State,e:Employee,rows:{data:string;re
  const activeCalls=new Set(scheduledCalls(s.orders,e,s.employees).map(o=>`call:${o.id}:${o.due}`));
  const orders=new Map(s.orders.map(o=>[o.id,o])),clients=new Map(s.clients.map(c=>[c.id,c]));
  return rows.map(r=>({...JSON.parse(r.data),readAt:r.read_at||undefined}) as Reminder).filter(r=>{
+  if(e.role==='admin'&&!r.requestId&&r.kind!=='cdek-deletion')return false;
   // A personal receipt remains available after recall removes the courier's access to the order.
   if(r.kind==='buyout-info')return ['redemption','admin'].includes(e.role);
   if(r.kind==='shipment-result')return ['operator','department_head','admin'].includes(e.role);

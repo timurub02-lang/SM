@@ -13,3 +13,15 @@ const old={id:'old',kind:'incoming',resolved:true};assert.deepEqual(notification
 
 const paid={id:'paid',kind:'order-paid'};const releases=Array.from({length:20},(_,i)=>({id:'release:'+i,kind:'client-released'}));
 assert.deepEqual(notificationSections([],[...releases,paid]).paid,[paid],'buyouts remain reachable outside the general 20-event page');
+
+const now=Date.parse('2026-11-16T10:00:00Z'),due='2026-11-18T09:46:00Z';
+const call={kind:'call',id:'task:order:call:'+due,orderId:'order',due};
+const acknowledged={kind:'call',id:'call:order:'+due,due,readAt:'2026-11-16T11:00:00Z',acknowledgedAt:'2026-11-16T11:00:00Z'};
+assert.deepEqual(notificationSections([call],[],now).tasks,[]);
+assert.deepEqual(notificationSections([call],[],now).planned,[call]);
+assert.deepEqual(notificationSections([call],[acknowledged],now,true).planned,[],'Head acknowledgement removes only the planned notice');
+assert.deepEqual(notificationSections([call],[acknowledged],now,false).planned,[call],'Operator keeps the scheduled call');
+assert.deepEqual(notificationSections([call],[acknowledged],Date.parse(due),true).tasks,[call],'At the due time acknowledgement cannot hide the task');
+const moved={...call,due:'2026-11-19T09:46:00Z'};
+assert.deepEqual(notificationSections([moved],[acknowledged],now,true).planned,[moved],'A new date requires a new acknowledgement');
+assert.deepEqual(notificationSections([call],[{...acknowledged,acknowledgedAt:undefined}],now,true).planned,[call],'Opening a reminder is not acknowledgement');
