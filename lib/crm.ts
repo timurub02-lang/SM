@@ -71,6 +71,8 @@ export function orderMissingField(o:Pick<Order,"delivery"|"address"|"addressPart
  if(!itemsSchemaFor(role==='admin').safeParse(o.items).success)return {field:"basket",label:"Заполните данные товара"} as const;
  if(!(o.address??c.address??"").trim())return {field:"address",label:"Заполните адрес"} as const;
  if(missingCourierHouse(o,c.address))return {field:"address",label:"Укажите номер дома для доставки курьером"} as const;
+ const postalCode=o.addressParts?.postalCode??(o.address??c.address??"").match(/^\s*(\d{6})(?=[\s,]|$)/)?.[1]??"";
+ if(!/^\d{6}$/.test(postalCode.trim()))return {field:"address",label:"Укажите почтовый индекс: 6 цифр"} as const;
  return null;
 }
 export const deliveryChannel=(delivery:DeliveryMethod|undefined)=>delivery?.startsWith("cdek_")?"cdek":delivery||"";

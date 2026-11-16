@@ -255,7 +255,7 @@ try{
  db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('return-product','test',JSON.stringify({name:'Test'}));
  db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('return-stock','return-product',10,'Fixture','admin',new Date().toISOString());
  const flow=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
- db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...flow,address:'Москва, ул. Тестовая, дом 1',addressParts:undefined,delivery:'cdek_courier',items:[{name:'Test',quantity:1,price:1}]}),flowId);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...flow,address:'101000, Москва, ул. Тестовая, дом 1',addressParts:undefined,delivery:'cdek_courier',items:[{name:'Test',quantity:1,price:1}]}),flowId);
  // The warehouse hides completed LV goods even when they retain a positive balance.
  for(const [id,active] of [['warehouse-active',1],['warehouse-completed',0]]){
   db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run(id,id,JSON.stringify({name:id}));
@@ -377,7 +377,7 @@ try{
  const dispatchCourier=await fixture('dispatch-courier',undefined,'courier'),strangerCourier=await fixture('stranger-courier',undefined,'courier');
  for(const [delivery,section] of [['moscow_courier','moscow'],['russian_post','post']]){
   const id='manual-'+delivery,clientId='one-c-confirm';
-  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'Москва, ул. Тестовая, дом 1',addressParts:undefined,items:[{name:'Test',quantity:1,price:1}]}));
+  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'101000, Москва, ул. Тестовая, дом 1',addressParts:undefined,items:[{name:'Test',quantity:1,price:1}]}));
   async function manualStep(to,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version,to,reason:'Test',courierId:dispatchCourier.e.id}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
   await manualStep('check',400);await manualStep('refused',400);
   let saved=await manualStep(delivery==='moscow_courier'?'packing':'extra');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
@@ -425,7 +425,7 @@ try{
 
  assert.equal(courierBalance((await call('/api/crm',{cookie:dispatchCourier.cookie})).data.orders,dispatchCourier.e.id).total,0);
  const courierReturnId='courier-return';
- db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(courierReturnId,'one-c-confirm',JSON.stringify({...flow,id:courierReturnId,clientId:'one-c-confirm',status:'packing',delivery:'moscow_courier',address:'Москва, ул. Тестовая, дом 1',addressParts:undefined,packingWaybillAt:new Date().toISOString(),items:[{name:'Test',quantity:1,price:1}]}));
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(courierReturnId,'one-c-confirm',JSON.stringify({...flow,id:courierReturnId,clientId:'one-c-confirm',status:'packing',delivery:'moscow_courier',address:'101000, Москва, ул. Тестовая, дом 1',addressParts:undefined,packingWaybillAt:new Date().toISOString(),items:[{name:'Test',quantity:1,price:1}]}));
  async function courierAction(cookie,body,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(courierReturnId).version;const r=await call('/api/crm',{cookie,body:{id:courierReturnId,version,...body}});assert.equal(r.status,expected,r.text);return r;}
  await courierAction(editor.cookie,{action:'transition',to:'shipping'},400);
  await courierAction(editor.cookie,{action:'transition',to:'shipping',courierId:editor.e.id},400);
@@ -724,7 +724,7 @@ try{
  db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('policy-product','policy product',JSON.stringify({name:'Policy product'}));
  db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('policy-stock','policy-product',10,'Fixture','admin',new Date().toISOString());
  let policyOrder=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(policyId).data);
- db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...policyOrder,address:'Москва, ул. Тестовая, дом 1',addressParts:undefined,delivery:'cdek_courier',items:[{name:'Policy product',quantity:1,price:100}]}),policyId);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...policyOrder,address:'101000, Москва, ул. Тестовая, дом 1',addressParts:undefined,delivery:'cdek_courier',items:[{name:'Policy product',quantity:1,price:100}]}),policyId);
  async function policyAction(cookie,body,status=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(body.id||policyId).version;const r=await call('/api/crm',{cookie,body:{id:policyId,version,incompleteNameReason:"Клиент так пожелал",...body}});assert.equal(r.status,status,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(body.id||policyId).data);}
  await policyAction(editor.cookie,{action:'updateOrder',address:'Changed'},400);
  await policyAction(editor.cookie,{action:'updateDelivery',delivery:'moscow_courier'},400);
