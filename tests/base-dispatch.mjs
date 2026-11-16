@@ -23,8 +23,8 @@ assert.equal(calls.filter(([url,o])=>url.endsWith('/leads/import')&&o.method==='
 const callCount=calls.length;await runBaseDispatch(d,request,new Date('2026-10-02T18:02:00Z'));assert.equal(calls.length,callCount);
 const existing=[{id:'a',phone:'79990000001',baseType:'M',sheet:'К',version:1},{id:'b',phone:'79990000002',baseType:'J',sheet:'Ж2',version:1},{id:'c',phone:'79990000003',baseType:'M',sheet:'Т2',version:1}];
 const rows=['79990000001','79990000002','79990000003','79990000004','8 (999) 000-00-04','bad'].map((phone,i)=>({phone,row:i+2,name:'test'}));
-let p=planImport(rows,existing,'M','Т1');assert.equal(p.skipped,1);assert.equal(p.conflicts.length,1);assert.equal(p.added.length,1);assert.equal(p.moved.length,1);assert.equal(p.duplicates,1);assert.equal(p.invalid.length,1);
-p=planImport(rows,existing,'M','Т1',{b:'M'});assert.equal(p.conflicts.length,0);assert.equal(p.moved.length,2);
+let p=planImport(rows,existing,'M','Т1');assert.equal(p.skipped,3);assert.equal(p.conflicts.length,0);assert.equal(p.added.length,1);assert.equal(p.moved.length,0);assert.equal(p.duplicates,1);assert.equal(p.invalid.length,1);
+p=planImport(rows,existing,'M','Т1',{b:'M'});assert.equal(p.conflicts.length,0);assert.equal(p.moved.length,0);assert.equal(p.skipped,3);
 d.close();console.log('Dispatch eligibility, ownership lock, successful acknowledgement, no resend, import priority and cross-base choices passed');
 const {initBaseStorage}=await import('../lib/base-storage.ts');
 const phonesDb=openDatabase(':memory:');await phonesDb.prepare('CREATE TABLE clients(id TEXT PRIMARY KEY,phone TEXT UNIQUE,data TEXT,version INTEGER DEFAULT 1)').run();await phonesDb.prepare('CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)').run();await initBaseStorage(phonesDb);
