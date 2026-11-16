@@ -1,4 +1,4 @@
-import {canSelectOrderPickupPoint,selectedCachedPickupPoint} from '@/lib/order-pickup-point';
+import {canSelectOrderPickupPoint,selectedCachedPickupPoint,pickupPointContext} from '@/lib/order-pickup-point';
 import {acknowledgeCashNotice} from '@/lib/cash-notifications';
 import {canEditOrderRecipientName,nextExtraConfirmationAt} from '@/lib/crm';
 import {reportPostalBuyout,resolvePostalBuyout,postalBuyoutPending} from '@/lib/postal-buyout-report';
@@ -589,7 +589,7 @@ async function handlePOST(request:Request){
    if(!quote||quote.id!==p.quoteId||Date.now()-Date.parse(quote.calculatedAt)>3600000||JSON.stringify(quote.items)!==JSON.stringify(o.items)||quote.address!==o.address||JSON.stringify(quote.addressParts)!==JSON.stringify(o.addressParts))throw new Error("Расчёт устарел. Рассчитайте доставку повторно");
    if(quote.params.delivery==='cdek_pickup'&&!quote.deliveryPoint?.code)throw Error('Выберите ПВЗ и рассчитайте доставку повторно');
    const tariff=quote.tariffs.find((t:any)=>t.code===p.code);if(!tariff)throw new Error("Тариф не найден в расчёте СДЭК");
-   next.delivery=quote.params.delivery;next.cdekTariff={...tariff,deliveryPoint:quote.deliveryPoint,needsConfirmation:false,account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
+   next.delivery=quote.params.delivery;next.cdekTariff={...tariff,deliveryPoint:quote.deliveryPoint,needsConfirmation:false,account:quote.account,slot:quote.params.slot,calculatedAt:quote.calculatedAt,params:quote.params};if(quote.deliveryPoint)next.cdekPickupPoint={...quote.deliveryPoint,context:pickupPointContext(next),by:employee.id,selectedAt:now};else delete next.cdekPickupPoint;text=`Выбран тариф СДЭК: ${tariff.name} (${tariff.code}), ${tariff.amount} ₽ · ${quote.account}`;
    }
   }else if(p.action==="updateDelivery"){
    if(!employee||!canManageDelivery(employee.role,o.status))throw new Error("Способ доставки выбирает логист до отправки заказа");
