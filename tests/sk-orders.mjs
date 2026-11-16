@@ -1,3 +1,4 @@
+import {seedSkDispatch} from './fixtures/sk-dispatch.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
@@ -61,6 +62,7 @@ for(const role of ['courier','purchasing','logistic','chief_logistic','redemptio
 for(const method of ['GET','POST'])assert.equal(mayCallEndpoint(admin,new URL('https://crm/api/sk-orders'),method,{}),true);
 assert.equal(mayCallEndpoint(sender,new URL('https://crm/api/sk-orders'),'POST',{}),false);
 assert.equal(mayCallEndpoint(head,new URL('https://crm/api/sk-orders'),'POST',{}),false);
+await seedSkDispatch(d,[['C-SK-5','+79990000005'],['C-SK-9','+79990000009']]);
 const now=Date.parse('2026-10-21T10:00:00Z');
 for(const [id,data] of Object.entries({'skorozvon':{login:'x',apiKey:'x',clientId:'x',clientSecret:'x'},'sk-order-import':{enabled:true,enabledAt:'2026-10-21T09:00:00Z',resultIds:[123]}}))await d.prepare('INSERT INTO settings VALUES(?,?)').bind(id,JSON.stringify(data)).run();
 const request=async(url,opts)=>{const p=new URL(url).pathname;let value;
