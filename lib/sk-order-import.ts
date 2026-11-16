@@ -1,3 +1,4 @@
+import {skOrderReview} from './sk-order-review.ts';
 import {nextOrderId} from './order-number.ts';
 import {normalizePhone,clientSheet,hasActiveOrder,type Client,type Order,type Employee} from './crm.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
@@ -46,7 +47,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
   }
  }
  const orders:Order[]=existing?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(existing.id).all()).results.map((r:any)=>JSON.parse(r.data)):[];
- let reason=!sender?'Не найден единственный активный оператор с этим ФИО Скорозвона':input.projectId===null?'Создан не из Проекта':existing?.owner&&existing.owner!==sender.id?'Клиент принадлежит оператору '+(owner?.login||existing.owner):existing&&hasActiveOrder(orders,existing.id)?'У клиента есть действующий заказ':existing&&['ЧС','ПВ'].includes(clientSheet(existing))?'Клиент находится на листе '+clientSheet(existing):'';
+ const reason=skOrderReview(input.projectId,sender,existing,owner,orders).reasons.join('; ');
  if(reason&&(!decision||!sender||existing&&['ЧС','ПВ'].includes(clientSheet(existing))&&decision.role!=='admin')){
   await d.prepare("UPDATE sk_order_transfers SET reason=? WHERE id=? AND state='pending'").bind(reason,input.callId).run();return {state:'pending',reason};
  }

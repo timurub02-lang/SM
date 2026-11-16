@@ -113,3 +113,14 @@ const raceDb={...d,async batch(statements){if(!raced&&statements.some(s=>s.sql.s
 await assert.rejects(acceptSkOrder(raceDb,{...input,callId:'7',phone:'79990000007'}),/сотрудник изменился/);
 assert.equal(raced,true);assert.equal(await d.prepare("SELECT id FROM orders WHERE id=(SELECT order_id FROM sk_order_transfers WHERE id='7')").first(),null);assert.equal(await d.prepare("SELECT id FROM clients WHERE id='C-SK-7'").first(),null);
 d.close();console.log('SK orders: assignment, sheet K, duplicate delivery, conflict approval, address preservation, unknown/disabled sender, permissions, polling and provider errors passed');
+
+const {skOrderReview}=await import('../lib/sk-order-review.ts');
+const reviewClient={id:'review',owner:'owner',sheet:'ЧС'},reviewOwner={id:'owner',name:'Иван Иванов',login:'OP_Ivan'};
+const review=skOrderReview(null,{id:'sender'},reviewClient,reviewOwner,[{id:'SK-123',clientId:'review',status:'draft'},{id:'SK-124',clientId:'review',status:'shipping'},{id:'SK-125',clientId:'review',status:'refused'}]);
+assert.equal(review.ownerLabel,'Иван Иванов · OP_Ivan');
+assert.deepEqual(review.activeOrderIds,['SK-123','SK-124']);
+assert.equal(review.reasons.length,4);
+assert.match(review.reasons[0],/Иван Иванов/);
+assert.ok(review.reasons.includes('Создан не из Проекта'));
+assert.equal(skOrderReview('project',{id:'owner'},reviewClient,reviewOwner,[]).ownerLabel,review.ownerLabel);
+assert.deepEqual(skOrderReview('project',{id:'sender'},undefined,undefined,[]).reasons,[]);
