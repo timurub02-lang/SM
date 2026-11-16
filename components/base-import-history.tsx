@@ -1,0 +1,8 @@
+'use client';
+import {useEffect,useState} from 'react';
+import type {ImportHistoryEntry} from '@/lib/base-import-history';
+export function BaseImportHistory({actorId}:{actorId:string}){
+ const [entries,setEntries]=useState<ImportHistoryEntry[]|null>(null),[error,setError]=useState('');
+ useEffect(()=>{const controller=new AbortController();void fetch(`/api/base?actorId=${encodeURIComponent(actorId)}&importHistory=1`,{cache:'no-store',signal:controller.signal}).then(async response=>{const result=await response.json() as {imports:ImportHistoryEntry[];error?:string};if(!response.ok)throw Error(result.error||'Не удалось загрузить историю');setEntries(result.imports);}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();},[actorId]);
+ return <section className="stack">{error?<p role="alert">{error}</p>:entries===null?<p className="muted">Загрузка истории…</p>:!entries.length?<p className="muted">Загрузок Excel пока нет.</p>:<><p className="muted">Последние 100 загрузок. Указаны результаты сохранённых частей импорта.</p>{entries.map(entry=><article className="base-sheet-settings" key={entry.id}><strong>{entry.filename}</strong><p className="muted">{new Date(entry.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} МСК</p><p><b>Добавлено: {entry.added}</b> · М: {entry.male} · Ж: {entry.female}</p><p>Уже в базе: {entry.skipped} · Повторы в файле: {entry.duplicates} · Пропущено с причиной: {entry.invalid.length}</p>{entry.moved>0&&<p>Перемещено: {entry.moved}</p>}{entry.invalid.length>0&&<details><summary>Пропущенные строки с причиной</summary>{entry.invalid.map((row,i)=><p key={i}>Строка {row.row} · {row.phone} — {row.reason}</p>)}</details>}</article>)}</>}</section>;
+}
