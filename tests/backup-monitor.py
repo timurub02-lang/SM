@@ -72,11 +72,27 @@ class MonitorTests(unittest.TestCase):
             m.notify({'disk': 'full'}, previous, 100, lambda _: (_ for _ in ()).throw(RuntimeError('offline')))
         self.assertEqual(previous, {'keys': [], 'sentAt': 1})
         secret = '123456:' + 'a' * 35
-        with patch.object(m.urllib.request, 'build_opener', side_effect=RuntimeError(secret)):
+        with patch.object(m.subprocess, 'run', side_effect=RuntimeError(secret)):
             with self.assertRaises(RuntimeError) as error:
                 m.send({'token': secret, 'chat_id': -123}, 'test')
         self.assertNotIn(secret, str(error.exception))
-        self.assertIsNone(m.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://other.example'))
+
+    def test_transport_uses_stdin_tls_and_no_redirects(self):
+        secret = '123456:' + 'a' * 35
+        result = type('Result', (), {'stdout': json.dumps({'ok': True, 'result': {'chat': {'id': -123}, 'message_id': 7}})})()
+        with patch.object(m.subprocess, 'run', return_value=result) as call:
+            self.assertEqual(m.send({'token': secret, 'chat_id': -123}, 'Проверка\n"test"'), 7)
+        args, kwargs = call.call_args
+        self.assertNotIn(secret, str(args))
+        self.assertIn(secret, kwargs['input'])
+        self.assertEqual(args[0][:2], ['curl', '-q'])
+        self.assertIn('=https', args[0])
+        self.assertFalse(set(args[0]) & {'-L', '--location', '-k', '--insecure'})
+        body_line = next(line for line in kwargs['input'].splitlines() if line.startswith('data-binary = '))
+        self.assertEqual(json.loads(json.loads(body_line.split(' = ', 1)[1]))['text'], 'Проверка\n"test"')
+        result.stdout = '{"ok":true,"result":{"chat":{"id":-999},"message_id":7}}'
+        with patch.object(m.subprocess, 'run', return_value=result):
+            with self.assertRaises(RuntimeError): m.send({'token': secret, 'chat_id': -123}, 'test')
 
     def test_atomic_state_and_protected_config(self):
         path = self.root / 'state.json'

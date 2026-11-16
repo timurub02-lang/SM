@@ -12,7 +12,6 @@ import stat
 import subprocess
 import tempfile
 import time
-import urllib.request
 
 ROOT = pathlib.Path('/srv/crm/backups')
 POLICY = pathlib.Path('/etc/sm-crm-backup-policy.json')
@@ -83,27 +82,28 @@ def inspect(root, policy, now, get_unit=systemd):
     return problems, {'diskPercent': round(percent, 1), 'freeBytes': disk.free, 'backupBytes': total}
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 def send(config, text):
     if not isinstance(config.get('token'), str) or not re.fullmatch(r'\d+:[A-Za-z0-9_-]{30,}', config['token']):
         raise ValueError('Invalid Telegram credential')
     if type(config.get('chat_id')) is not int or config['chat_id'] >= 0:
         raise ValueError('Expected a group chat identifier')
-    request = urllib.request.Request('https://api.telegram.org/bot' + config['token'] + '/sendMessage',
-                                     data=json.dumps({'chat_id': config['chat_id'], 'text': text}).encode(),
-                                     headers={'Content-Type': 'application/json'}, method='POST')
+    # curl is already installed for deployment and supports the site's SOCKS5 proxy.
+    # Feed the token-bearing URL/body through stdin, never process arguments.
+    request = '\n'.join([
+        'url = ' + json.dumps('https://api.telegram.org/bot' + config['token'] + '/sendMessage'),
+        'header = "Content-Type: application/json"',
+        'data-binary = ' + json.dumps(json.dumps({'chat_id': config['chat_id'], 'text': text})),
+    ]) + '\n'
     try:
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=15) as response:
-            data = json.load(response)
+        response = subprocess.run(['curl', '-q', '--config', '-', '--silent', '--show-error', '--fail',
+                                   '--proto', '=https', '--connect-timeout', '8', '--max-time', '20'],
+                                  input=request, capture_output=True, text=True, timeout=25, check=True)
+        data = json.loads(response.stdout)
         if data.get('ok') is not True or data['result']['chat']['id'] != config['chat_id']:
             raise ValueError('Unexpected delivery response')
         return data['result']['message_id']
     except Exception:
-        # HTTP errors contain the token-bearing URL; never propagate or log them.
+        # Network errors may contain credentials; never propagate or log them.
         raise RuntimeError('Telegram delivery failed; state unchanged, next timer run retries') from None
 
 
