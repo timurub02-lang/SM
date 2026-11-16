@@ -1,4 +1,4 @@
-import {canEditOrderRecipientName} from '@/lib/crm';
+import {canEditOrderRecipientName,nextExtraConfirmationAt} from '@/lib/crm';
 import {reportPostalBuyout,resolvePostalBuyout,postalBuyoutPending} from '@/lib/postal-buyout-report';
 import {journalAuthor} from '@/lib/journal-author';
 import {changeClientSheet} from '@/lib/client-sheet-change';
@@ -615,6 +615,11 @@ async function handlePOST(request:Request){
    }
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(isRefusalRework(o)&&p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с отказом клиента");Object.assign(next,reworkHandoff(o,now,s.settings.orderPolicy!));}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
    delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(to==='packing')delete next.packingReworkDelivery;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);next.timerCalendar="weekdays-v1";if(to==="rework"){next.returnKind=returnKind;next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;
+   delete next.extraCallbackAt;
+   if(employee.role==='admin'&&o.status==='check'&&to==='extra'){
+    next.extraCallbackAt=nextExtraConfirmationAt(now);next.contact='callback';next.due=next.extraCallbackAt;
+    next.confirmationStartedAt=next.extraCallbackAt;next.noAnswerDeadline=confirmationDeadline(next);
+   }
    if(to==='shipping'&&o.delivery==='moscow_courier'){next.status='packing';delete next.shippedAt;delete next.finalHandoffAt;delete next.reworkDeadline;}
    if(courierRecalledAtWarehouse(o)){
     if(to==='rework'){
@@ -643,8 +648,10 @@ async function handlePOST(request:Request){
    if(courierRecalledAtWarehouse(o)&&['rework','packing'].includes(to))text+=' · После пересборки · посылка на складе';
    if(to==='shipping'&&o.delivery==='moscow_courier')text="Передан курьеру · ожидает приёма посылки · заказ остаётся Принят";
    if(next.incompleteNameExplanation?.at===now)text+=' · ФИО неполное («'+c.name+'»): '+next.incompleteNameExplanation.text;
+   if(next.extraCallbackAt)text+=' · Повторное подтверждение: '+new Date(next.extraCallbackAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК · срок начинается с назначенного времени';
    if(p.confirmationAt)text+=" · Просил подтверждения ко времени: "+new Date(next.confirmationRequest!.at).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})+" МСК · по просьбе клиента";
   }else if(p.action==="contact"){
+   delete next.extraCallbackAt;
    if(courierRecalledAtWarehouse(o)&&o.status==='rework'&&!['admin','operator','department_head'].includes(employee.role))throw Error('Заказ после пересборки находится в работе у оператора');
    if(o.courier){
     const phase=courierPhase(o);

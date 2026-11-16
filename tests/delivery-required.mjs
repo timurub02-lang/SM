@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {validateTransition,deliverySchema} from '../lib/crm.ts';
-const base={createdAt:new Date().toISOString(),status:'draft',address:'Москва, ул. Тестовая, дом 1',items:[{name:'Product',quantity:1,price:1}]};
+const base={createdAt:new Date().toISOString(),status:'draft',address:'101000, Москва, ул. Тестовая, дом 1',items:[{name:'Product',quantity:1,price:1}]};
 for(const [status,extra,to] of [['draft',false,'confirm'],['rework',false,'confirm'],['rework',true,'extra']]){
  const order={...base,status,extra};
  for(const delivery of ['',undefined,['cdek_pickup','russian_post']])assert.throws(()=>validateTransition({...order,delivery},to,{name:'Тестовый Клиент'},''),/доставки/);
@@ -53,8 +53,25 @@ for(const delivery of ['cdek_courier','moscow_courier']){
    for(const role of ['operator','department_head','admin','logistic'])assert.throws(()=>validateTransition(o,to,{name:'Test Client'},'',role),/номер дома/);
   }
  }
- assert.equal(orderMissingField({...base,delivery,addressParts:{postalCode:'',region:'',city:'Москва',street:'Тестовая',house:'74',flat:''}},{name:'Test Client'}),null,'Private house needs no flat');
- assert.equal(orderMissingField({...base,delivery,addressParts:{postalCode:'',region:'',city:'Москва',street:'Тестовая',house:'',flat:'15'}},{name:'Test Client'}).field,'address','A flat is not a house');
+ assert.equal(orderMissingField({...base,delivery,addressParts:{postalCode:'101000',region:'',city:'Москва',street:'Тестовая',house:'74',flat:''}},{name:'Test Client'}),null,'Private house needs no flat');
+ assert.equal(orderMissingField({...base,delivery,addressParts:{postalCode:'101000',region:'',city:'Москва',street:'Тестовая',house:'',flat:'15'}},{name:'Test Client'}).field,'address','A flat is not a house');
 }
-assert.equal(orderMissingField({...base,delivery:'cdek_pickup',address:'Глазов'},{name:'Test Client'}),null);
+assert.equal(orderMissingField({...base,delivery:'cdek_pickup',address:'427620, Глазов'},{name:'Test Client'}),null);
 console.log('Courier house is required for every handoff role and existing check/packing transitions; street digits and flat do not pass; private houses and PVZ remain valid');
+
+for(const delivery of ['cdek_pickup','cdek_courier','moscow_courier','russian_post']){
+ for(const [status,to] of [['draft','confirm'],['rework','confirm'],['rework','extra']]){
+  for(const role of ['operator','department_head','admin']){
+   const order={...base,delivery,status,extra:to==='extra'};
+   for(const postalCode of ['', '  ', '12345', '1234567', '12a456']){
+    const invalid={...order,addressParts:{postalCode,region:'',city:'Москва',street:'Тестовая',house:'1',flat:''}};
+    assert.equal(orderMissingField(invalid,{name:'Тест Клиент'},role).label,'Укажите почтовый индекс: 6 цифр');
+    assert.throws(()=>validateTransition(invalid,to,{name:'Тест Клиент'},'',role),/индекс/);
+   }
+   assert.throws(()=>validateTransition({...order,address:'Москва, дом 1'},to,{name:'Тест Клиент'},'',role),/индекс/);
+   assert.doesNotThrow(()=>validateTransition(order,to,{name:'Тест Клиент'},'',role),'Legacy address with leading postal code stays valid');
+   assert.doesNotThrow(()=>validateTransition({...order,addressParts:{postalCode:' 101000 ',region:'',city:'Москва',street:'Тестовая',house:'1',flat:''}},to,{name:'Тест Клиент'},'',role));
+  }
+ }
+}
+console.log('Postal code: first/repeated handoff, all delivery methods, malformed/missing and legacy addresses passed');
