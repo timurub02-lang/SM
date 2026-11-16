@@ -289,6 +289,15 @@ try{
   const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,returnKind:to==='rework'?kind:undefined,reason:'Test reason',incompleteNameReason:'Клиент пожелал не указывать фамилию',finalHandoffConfirmed:true}});
   assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
  }
+ const postalBefore=db.prepare('SELECT data,version FROM orders WHERE id=?').get(flowId);
+ const noPostal={...JSON.parse(postalBefore.data),status:'rework',returnKind:'clarification',reworkDeadline:undefined,address:'Москва, ул. Тестовая, дом 1',addressParts:undefined};
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(noPostal),flowId);
+ await call('/api/crm',{cookie:returnOperator.cookie});
+ const postalRejectedBefore=db.prepare('SELECT data,version FROM orders WHERE id=?').get(flowId);
+ const postalRejected=await call('/api/crm',{cookie:returnOperator.cookie,body:{action:'transition',id:flowId,version:postalRejectedBefore.version,to:'confirm',incompleteNameReason:'Клиент так пожелал',finalHandoffConfirmed:true}});
+ assert.equal(postalRejected.status,400,postalRejected.text);assert.match(postalRejected.data.error,/индекс/);
+ assert.deepEqual(db.prepare('SELECT data,version FROM orders WHERE id=?').get(flowId),postalRejectedBefore);
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(postalBefore.data,flowId);
  await step(editor.cookie,'rework',400,null);
  await step(editor.cookie,'rework',400,'unknown');
  for(let i=0;i<5;i++){
@@ -317,7 +326,7 @@ try{
   flowOrder=await step(returnOperator.cookie,'confirm');assert.equal(flowOrder.round,2);assert.equal(flowOrder.refusalHandoffAt,refusalHandoffAt);
   await step(editor.cookie,'rework',400,'refusal');
  }
- await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);assert.equal(flowOrder.refusalHandoffAt,refusalHandoffAt);assert.equal(flowOrder.confirmationHours,48);assert.equal(flowOrder.noAnswerDeadline,internalDeadline(flowOrder.confirmationStartedAt,48));
+ await step(editor.cookie,'check');flowOrder=await step(cookies.admin,'extra');assert.equal(flowOrder.contact,'callback');assert.equal(flowOrder.due,flowOrder.extraCallbackAt);assert.equal(flowOrder.confirmationStartedAt,flowOrder.due);assert.equal(new Date(flowOrder.due).toLocaleTimeString('en-GB',{timeZone:'Europe/Moscow'}),'09:00:00');assert.ok(Date.parse(flowOrder.due)>Date.now());assert.equal(flowOrder.round,2);assert.equal(flowOrder.finalHandoffAt,undefined);assert.equal(flowOrder.refusalHandoffAt,refusalHandoffAt);assert.equal(flowOrder.confirmationHours,48);assert.equal(flowOrder.noAnswerDeadline,internalDeadline(flowOrder.confirmationStartedAt,48));
  await step(editor.cookie,'rework',400,'refusal');
  await step(editor.cookie,'rework',200,'clarification');flowOrder=await step(returnOperator.cookie,'extra');assert.equal(flowOrder.round,2);assert.equal(flowOrder.refusalHandoffAt,refusalHandoffAt);assert.ok(flowOrder.finalHandoffAt);
  await step(editor.cookie,'rework',400,'refusal');await step(editor.cookie,'refused');
@@ -750,14 +759,14 @@ try{
  policyOrder=await policyAction(editor.cookie,{action:'transition',to:'rework',returnKind:'clarification',reason:'Своя причина возврата'});assert.equal(policyOrder.returnReason,'Своя причина возврата');assert.equal(policyOrder.reworkHours,null);assert.equal(policyOrder.reworkDeadline,undefined);
  await setPolicy({...originalPolicy,finalHours:3});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).reworkDeadline,undefined);
- policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',addressConfirmed:true,items:policyOrder.items,address:'Updated address, дом 1'});assert.equal(policyOrder.address,'Updated address, дом 1');
+ policyOrder=await policyAction(policyOperator.cookie,{action:'updateOrder',addressConfirmed:true,items:policyOrder.items,address:'101000, Updated address, дом 1'});assert.equal(policyOrder.address,'101000, Updated address, дом 1');
  policyOrder=await policyAction(policyOperator.cookie,{action:'transition',to:'extra',reason:'Test',finalHandoffConfirmed:true});assert.equal(policyOrder.finalConfirmHours,3);assert.ok(Math.abs(internalElapsed(Date.now(),Date.parse(policyOrder.noAnswerDeadline))-3*3600000)<10000);
  const frozenFinal=policyOrder.noAnswerDeadline;await setPolicy({finalHours:1});
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).noAnswerDeadline,frozenFinal);
  db.prepare("UPDATE orders SET data=json_set(data,'$.finalHandoffAt',?) WHERE id=?").run(addWeekdayMilliseconds(Date.now(),-4*3600000),policyId);
  assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.orders.find(o=>o.id===policyId).status,'refused');
  // New drafts freeze the configured duration; both call outcomes respect their deadline.
- const timerClient={id:'timer-client',name:'Timer client',phone:'+79990000987',owner:policyOperator.e.id,source:'Test',sheet:'К',returnSheet:'Т2',address:'Test address',createdAt:new Date().toISOString()};
+ const timerClient={id:'timer-client',name:'Timer client',phone:'+79990000987',owner:policyOperator.e.id,source:'Test',sheet:'К',returnSheet:'Т2',address:'101000, Test address',createdAt:new Date().toISOString()};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(timerClient.id,timerClient.phone,JSON.stringify(timerClient));
  let timerResult=await call('/api/crm',{cookie:policyOperator.cookie,body:{action:'createOrder',clientId:timerClient.id,items:[{name:'Policy product',quantity:1,price:100}],addressConfirmed:true,delivery:'russian_post'}});assert.equal(timerResult.status,200,timerResult.text);
  let timerOrder=timerResult.data.state.orders.find(o=>o.clientId===timerClient.id);assert.equal(timerOrder.draftHours,24);
