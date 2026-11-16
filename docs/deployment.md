@@ -341,3 +341,21 @@ Department heads may enter only current operators in their own non-empty departm
 Phone providers are not mounted in this mode. Legacy telephony, native Oktell connection/call/result APIs, operator-status control and native delivery control reject the impersonating session server-side. The real employee's sessions and phone remain unchanged. Only an administrator's own unfinished call blocks entering this mode; no call is disconnected by switching. Use synthetic phone bridges for tests, never real calls.
 
 `auth_impersonation_audit` records entry, return/logout and mutating authenticated API requests with the initiating administrator/head (in the existing admin_id column), effective employee, operation/entity and response status. It does not store request bodies, passwords or session tokens. An attempted request is recorded before executing its handler; a missing status means its completion was not confirmed. These additive auth tables require no phone service or installer changes. The feature requires a compatible web runtime; before a manual rollback to a pre-feature runtime, end employee modes using the current compatible runtime; older runtimes do not implement this mode. The standard release tests exercise independent employee sessions, phone isolation, effective data rights, revocation, auditing and recovery.
+
+## SK callbacks and current project membership
+
+Calls without a source project now check project membership before importing. A
+positive project-scoped API row must match the original lead ID and phone, or the
+same normalized phone and full name for a duplicate SK card. The original call,
+lead ID and source project remain unchanged; additive membership evidence is saved
+on the transfer. Confirmed callbacks skip the no-project review and order marker.
+Ownership, active-order, sender-role, blocked-account and protected-sheet checks
+remain in force.
+
+Project scans use the existing paced SK workers, three contact pages per attempt,
+with a durable private settings cursor. They resume after retries/restarts; incomplete
+or failed responses never permit an import. Large projects can delay acceptance.
+Mutable provider pagination can miss members, so an unsuccessful scan is only a
+lack of confirmation, never proof that a contact is absent. Existing unresolved
+no-project transfers encountered by reconciliation are also checked. No new timer,
+service, external writes or manual database migration is required.

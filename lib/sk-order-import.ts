@@ -1,10 +1,11 @@
+import type {SkProjectMembership} from './sk-project-membership.ts';
 import {skOrderReview} from './sk-order-review.ts';
 import {nextOrderId} from './order-number.ts';
 import {normalizePhone,clientSheet,hasActiveOrder,type Client,type Order,type Employee} from './crm.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {initBaseStorage} from './base-storage.ts';
 import {defaultOrderPolicy,orderPolicySchema} from './order-policy.ts';
-export type SkOrderInput={callId:string;leadId:string;projectId?:string|null;email:string;userName?:string;userNameUnique?:boolean;name:string;phone:string;address:string;city:string;comment:string};
+export type SkOrderInput={callId:string;leadId:string;projectId?:string|null;projectMembership?:SkProjectMembership;projectCheckedAt?:string;email:string;userName?:string;userNameUnique?:boolean;name:string;phone:string;address:string;city:string;comment:string};
 export async function initSkOrders(d:Db){
  await initBaseStorage(d);
  await d.prepare("CREATE TABLE IF NOT EXISTS sk_order_cooldowns(phone TEXT NOT NULL,operator_id TEXT NOT NULL,call_id TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(phone,operator_id))").run();
@@ -47,7 +48,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
   }
  }
  const orders:Order[]=existing?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(existing.id).all()).results.map((r:any)=>JSON.parse(r.data)):[];
- const reason=skOrderReview(input.projectId,sender,existing,owner,orders).reasons.join('; ');
+ const reason=skOrderReview(input.projectId,sender,existing,owner,orders,!!input.projectMembership).reasons.join('; ');
  if(reason&&(!decision||!sender||existing&&['ЧС','ПВ'].includes(clientSheet(existing))&&decision.role!=='admin')){
   await d.prepare("UPDATE sk_order_transfers SET reason=? WHERE id=? AND state='pending'").bind(reason,input.callId).run();return {state:'pending',reason};
  }
@@ -57,7 +58,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
  const client={...base,owner:sender.id,sheet:'К',returnSheet:base.returnSheet||(clientSheet(base)==='К'?'П':clientSheet(base))||'Т1',assignedUntil:'',assignmentStartedAt:base.owner===sender.id?base.assignmentStartedAt||now:now,trialUntil:undefined,trialReturnSheet:undefined,importRetentionUntil:undefined,address:base.address||input.address.slice(0,500)};
  const policyRow=await d.prepare("SELECT data FROM settings WHERE id='order-policy'").first();const policy=policyRow?orderPolicySchema.parse(JSON.parse(policyRow.data).policy):defaultOrderPolicy;
  const comment=[input.comment.trim(),base.address&&input.address.trim()?`Адрес из Скорозвона для сверки: ${input.address.trim()}`:''].filter(Boolean).join('\n').slice(0,3000);
- const order:Order={id,clientId,skLeadId:input.leadId,skWithoutProject:input.projectId===null,delivery:'',address:client.address,addressParts:base.addressParts,status:'draft',draftHours:policy.draftHours,items:[],comment,reason:'',contact:'none',due:'',round:1,extra:false,createdAt:now,updatedAt:now,manager:sender.id,logistic:'',version:1};
+ const order:Order={id,clientId,skLeadId:input.leadId,skWithoutProject:input.projectId===null&&!input.projectMembership,delivery:'',address:client.address,addressParts:base.addressParts,status:'draft',draftHours:policy.draftHours,items:[],comment,reason:'',contact:'none',due:'',round:1,extra:false,createdAt:now,updatedAt:now,manager:sender.id,logistic:'',version:1};
  const event={id:'SK-ORDER-'+input.callId,clientId,orderId:id,at:now,actor:sender.name,actorId:sender.id,text:'Создан заказ из Скорозвона · СМ СРМ'+(decision?' · разрешил '+decision.name:'')};
  const senderGuard="EXISTS(SELECT 1 FROM employees WHERE id=? AND version=?)"+(sender.accessEnabled!==undefined?" AND EXISTS(SELECT 1 FROM auth_accounts WHERE employee_id=? AND enabled=1)":"");
  const senderArgs=sender.accessEnabled!==undefined?[sender.id,sender.version,sender.id]:[sender.id,sender.version];
