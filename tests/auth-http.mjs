@@ -971,14 +971,17 @@ try{
 
  const baseOverview=await call('/api/base',{cookie:cookies.admin});assert.equal(baseOverview.status,200,baseOverview.text);assert.ok(baseOverview.data.config.M.sheets.some(s=>s.name==='П'));assert.equal('clients' in baseOverview.data,false);
  assert.equal((await call('/api/base',{cookie:policyOperator.cookie})).status,403);
- const baseImport={action:'import',base:'J',filename:'test.xlsx',revision:baseOverview.data.revision,session:crypto.randomUUID(),rows:[{row:2,name:'Import test',phone:'8 (999) 123-98-76',linkedPhones:['79991239875'],fields:{custom:'preserved'}}]};
+ const baseImport={action:'import',base:'J',filename:'test.xlsx',revision:baseOverview.data.revision,session:crypto.randomUUID(),rows:[{row:2,name:'Import test',phone:'8 (999) 123-98-76',city:'Тула',linkedPhones:['79991239875'],fields:{custom:'preserved'}}]};
  let imported=await call('/api/base',{cookie:cookies.admin,body:baseImport});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.added,1);assert.equal(imported.data.applied,false);
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.applied,true);assert.ok(imported.data.backupId);
  assert.ok(db.prepare('SELECT COUNT(*) AS n FROM base_import_snapshots WHERE session=?').get(baseImport.session).n>0);
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.data.added,1,'Retry must return the original result');
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,session:crypto.randomUUID(),apply:true}});assert.equal(imported.data.skipped,1);
- let conflict=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,base:'M'}});assert.equal(conflict.data.conflicts.length,1);
- const importedId=conflict.data.conflicts[0].clientId;assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.clients.some(c=>c.id===importedId),false,'Free database records must not enter the CRM card payload');
+ const originalImport=db.prepare("SELECT id,data,version FROM clients WHERE phone='+79991239876'").get();
+ assert.equal(JSON.parse(originalImport.data).city,'Тула');assert.deepEqual(JSON.parse(originalImport.data).linkedPhones,['+79991239875']);
+ const conflict=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,session:crypto.randomUUID(),base:'M',apply:true,copyFields:true}});assert.equal(conflict.data.conflicts.length,0);assert.equal(conflict.data.skipped,1);assert.equal(conflict.data.moved,0);assert.equal(conflict.data.fieldsUpdated,0);
+ assert.deepEqual(db.prepare('SELECT id,data,version FROM clients WHERE id=?').get(originalImport.id),originalImport,'Existing client must remain unchanged even with old copyFields enabled');
+ const importedId=originalImport.id;assert.equal((await call('/api/crm',{cookie:cookies.admin})).data.clients.some(c=>c.id===importedId),false,'Free database records must not enter the CRM card payload');
  const denied=await call('/api/base',{cookie:cookies.admin,body:{action:'dispatch',base:'J',sheet:'К',project:'1',count:1}});assert.equal(denied.status,400);
  const baseAssigned=await call('/api/base',{cookie:cookies.admin,body:{action:'assign',base:'J',sheet:'Т1',operator:'one',count:1}});assert.equal(baseAssigned.status,200,baseAssigned.text);assert.equal(baseAssigned.data.assigned,1);
  console.log('Base HTTP: aggregate response, admin guard, Excel import preview/apply/backup/duplicates, cross-base conflicts, no free cards, blocked dispatch and manual assignment passed.');
