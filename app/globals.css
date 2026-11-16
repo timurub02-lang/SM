@@ -327,7 +327,7 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .client-card .card-identity .client-local-time{display:flex;align-items:center;gap:7px;color:var(--foreground);font-weight:600;margin-top:8px}.client-local-time svg{flex-shrink:0}
 
 /* Client handoff: readable rows and searchable operator lists. */
-.operator-select{min-width:min(260px,100%);flex:1;max-width:520px}.operator-select .search{width:100%;min-width:0}.operator-select .search input{min-width:0;max-width:none;width:100%}.operator-select select{min-width:0;max-width:100%;width:100%;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--card);color:inherit}.operator-select option{padding:8px 10px}.released-clients .toolbar{align-items:flex-end;flex-wrap:wrap;gap:16px}.released-table{overflow:auto;max-height:65vh}.released-table table{border-collapse:collapse;width:100%;min-width:1100px}.released-table th{position:sticky;top:0;z-index:1;text-align:left}.released-table th,.released-table td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle}.released-table th:first-child,.released-table td:first-child{width:44px;padding:12px}.released-table .numeric{text-align:right;font-variant-numeric:tabular-nums}.released-table td:nth-child(2){min-width:220px;max-width:320px}.released-table td:nth-child(3){white-space:nowrap}.released-table tbody tr:hover{background:var(--accent)}.released-table input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:#287fff}.released-table .text-button{font-size:14px;line-height:1.45}.released-table td:nth-child(4){min-width:150px;max-width:230px}
+.operator-select{min-width:min(260px,100%);flex:1;max-width:520px}.operator-select .search{width:100%;min-width:0}.operator-select .search input{min-width:0;max-width:none;width:100%}.operator-select select{min-width:0;max-width:100%;width:100%;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--card,#fff);color:inherit}.operator-select option{padding:8px 10px}.released-clients .toolbar{align-items:flex-end;flex-wrap:wrap;gap:16px}.released-table{overflow:auto;max-height:65vh}.released-table table{border-collapse:collapse;width:100%;min-width:1100px}.released-table th{position:sticky;top:0;z-index:1;text-align:left}.released-table th,.released-table td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle}.released-table th:first-child,.released-table td:first-child{width:44px;padding:12px}.released-table .numeric{text-align:right;font-variant-numeric:tabular-nums}.released-table td:nth-child(2){min-width:220px;max-width:320px}.released-table td:nth-child(3){white-space:nowrap}.released-table tbody tr:hover{background:var(--accent)}.released-table input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:#287fff}.released-table .text-button{font-size:14px;line-height:1.45}.released-table td:nth-child(4){min-width:150px;max-width:230px}
 
 .incoming-transfer.notice{align-items:stretch;width:100%;min-width:0;text-align:left}.incoming-transfer>.field{width:100%;max-width:100%;min-width:0}.incoming-transfer>.operator-select{flex:none}.incoming-transfer>strong{overflow-wrap:anywhere}.incoming-transfer>.primary{max-width:100%;white-space:normal}
 
@@ -371,12 +371,12 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 
 .premium-archive-actions .premium-archive-period{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}.premium-archive-actions .premium-search{width:clamp(220px,20vw,320px)}
 
-.released-clients .released-transfer{display:flex;justify-content:flex-start;align-items:flex-end;gap:12px;padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--card)}
+.released-clients .released-transfer{display:flex;justify-content:flex-start;align-items:flex-end;gap:12px;padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--card,#fff)}
 .released-transfer>.field{flex:0 0 180px;min-width:0;margin:0}
 .released-transfer>.operator-select-inline{display:grid;grid-template-columns:minmax(180px,1fr) minmax(240px,1.3fr);gap:8px 12px;flex:1 1 480px;max-width:850px}
 .operator-select-inline>span{grid-column:1/-1}
 .released-transfer>.field>select,.released-transfer .operator-select-inline>select,.released-transfer .search,.released-transfer>.primary{height:44px;min-height:44px;margin:0}
-.released-transfer>.field>select{width:100%;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:inherit}
+.released-transfer>.field>select{width:100%;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:var(--card,#fff);color:inherit}
 .released-transfer .search{padding:0 12px;gap:8px}
 .released-transfer .search input{border:0!important;background:transparent!important;box-shadow:none!important;padding:0!important;height:100%;min-height:0}
 .released-transfer .search svg{flex-shrink:0}
@@ -443,7 +443,7 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .partner-save{align-self:flex-start}.partner-details{margin-top:16px}.partner-details [data-slot=tabs-content]{padding-top:16px;min-width:0}.partner-details .tabs-line{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:4px;width:fit-content}
 .partner-cash .partner-details td:first-child{white-space:normal;overflow-wrap:anywhere}
 /* Partner expense controls stay separate from the embedded premium tables. */
-.partner-cash .partner-layout{font-size:14px;background:var(--card);border:1px solid var(--border);border-radius:10px}
+.partner-cash .partner-layout{font-size:14px;background:var(--card,#fff);border:1px solid var(--border);border-radius:10px}
 .partner-cash .partner-layout th{background:var(--muted);font-size:12px;color:var(--muted-foreground);padding:12px;text-align:left}
 .partner-cash .partner-layout td{padding:10px 12px;vertical-align:middle;border-bottom:1px solid var(--border)}
 .partner-layout th:nth-child(1){width:23%}.partner-layout th:nth-child(2){width:16%}.partner-layout th:nth-child(3){width:17%}.partner-layout th:nth-child(4){width:44%}
@@ -474,3 +474,14 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .postal-buyout-notice{border:1px solid #a4d8b6;background:rgba(164,216,182,.12)}
 
 .sk-order-pending .sk-active-order-warning{list-style:none;margin:10px 0;padding:12px 16px;border:1px solid #e4b55e;border-left:4px solid #bd781b;border-radius:12px;background:#fff3dc;color:#75420c;line-height:1.5;overflow-wrap:anywhere}.sk-active-order-warning strong{font-weight:700}
+
+/* Keep long PVZ addresses inside the order card, including nested fieldsets. */
+#order-pickup-point,#order-pickup-point fieldset,.order-fields{min-width:0;max-width:100%}
+.cdek-point-select{width:100%;max-width:100%;min-width:0}
+.cdek-point-select [data-slot="input-group"]{width:100%;min-width:0;height:auto;min-height:44px;border:1px solid var(--border);border-radius:12px;background:var(--card,#fff)}
+.cdek-point-select input{width:0;min-width:0;flex:1;padding:12px 14px;font:inherit;box-sizing:border-box;background:transparent;border:0;border-radius:12px}
+.cdek-point-positioner{z-index:100;max-width:var(--available-width);width:var(--anchor-width)}
+.cdek-point-popup{width:100%;min-width:0;max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--card,#fff);color:var(--foreground);box-shadow:0 8px 24px #0002;padding:4px}
+.cdek-point-popup [data-slot="combobox-item"]{white-space:normal;overflow-wrap:anywhere;min-width:0;padding:10px 32px 10px 12px;font:inherit}
+.cdek-point-popup [data-highlighted]{background:var(--accent,#eaf2ff)}
+.cdek-point-popup [data-disabled]{opacity:.5}
