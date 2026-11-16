@@ -14,6 +14,23 @@ try{
  await d.prepare('INSERT INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind('o',now.toISOString(),JSON.stringify({manualStorage:'2026-10-25'})).run();
  const row=async()=>(await redemptionRows(d))[0];
  const edit=async(actor,p,t=now)=>editRedemption(d,actor,{id:'o',version:(await row()).version,comment:'Комментарий к действию',...p},t);
+ const original=(await d.prepare("SELECT data FROM redemption_entries WHERE order_id='o'").first()).data;
+ const workSend={action:'work',result:'operator',comment:'Уточнить получение у клиента'};
+ for(const actor of [op,buyer,{...buyer,role:'admin'},{...head,department:'2'}])await assert.rejects(edit(actor,workSend));
+ await edit(head,{action:'work',result:'date',date:'2026-10-17'});assert(!awaitingOperator(await row()));
+ await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(original).run();
+ await edit(head,workSend);assert(awaitingOperator(await row()));assert.equal((await row()).action,'work');assert.equal((await row()).result,'date');assert.equal((await row()).operatorReturn.deadline,'2026-10-18T10:00:00.000Z');assert.equal((await row()).operatorReturn.comment,workSend.comment);assert.equal((await row()).refusalRetryUsed,false);assert.equal(redemptionLeads([await row()],'2026-10-16','https://example.test').length,0);
+ await assert.rejects(edit(head,workSend),'Cannot restart an active handoff');
+ await edit(op,{action:'date',result:'date',date:'2026-10-20'});assert(!awaitingOperator(await row()));assert(awaitingDateConfirmation(await row()));
+ for(const storage of [null,'2026-10-15']){
+  await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(original).run();
+  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil',?)").bind(storage).run();
+  await assert.rejects(edit(head,workSend));
+ }
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-17')").run();
+ await edit(head,workSend);assert.equal((await row()).operatorReturn.deadline,'2026-10-17T20:59:59.999Z');
+ await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(original).run();
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-25')").run();
  const send={operation:'return_operator',reason:returnReasons[0],comment:''};
  await assert.rejects(edit(head,send));await assert.rejects(edit(buyer,{...send,reason:'Другое'}));
  await edit({...buyer,role:'admin'},send);assert(inRedemptionTab(await row(),'work','2026-10-16'));await assert.rejects(edit(buyer,{operation:'comment',text:'blocked'}),/у оператора/);assert(awaitingOperator(await row()));assert(!awaitingReturn(await row()));assert(!inWorkday(await row(),'2026-10-16'));

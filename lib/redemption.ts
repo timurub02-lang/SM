@@ -4,7 +4,7 @@ import {incomingForAction} from './incoming.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import type {Employee} from './crm.ts';
 export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В работе',courier:'У курьера',client_delivered:'Вручен со слов клиента',po:'Под ответственность'};
-export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера',client_delivered:'Вручен со слов клиента'};
+export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера',client_delivered:'Вручен со слов клиента',operator:'Передать оператору'};
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
@@ -77,7 +77,7 @@ export function allowedResults(action:string,row:any,role:string,day:string){
  if(action==='client_delivered')return ['client_delivered'];
  const expired=row.storageUntil&&row.storageUntil<=day;
  if(expired&&!['refusal','po'].includes(action))return [];
- if(action==='date'||action==='work')return ['date'];
+ if(action==='date'||action==='work')return ['date',...(action==='work'&&role==='department_head'&&!awaitingDateConfirmation(row)&&row.storageUntil&&row.storageUntil>day?['operator']:[])];
  if(action==='nd')return ['none'];
  if(action==='courier')return ['courier'];
  if(action==='refusal')return row.refusalRetryUsed?['to_return']:[...(!expired&&row.storageUntil?['date']:[]),'to_return',...(role==='redemption'?['returned']:[])];
@@ -158,19 +158,21 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(future&&p.action==='nd'){next.changeKind='missed_attempt';next.lastAttempt={action:'nd',author:e.name,authorId:e.id,at};await persist();return;}
   if(p.result==='returned'){if(typeof p.returnWaybill!=='string'||!p.returnWaybill.trim()||p.returnWaybill.trim().length>100)throw Error('Укажите номер возвратной накладной (до 100 символов)');Object.assign(next,{returnWaybill:p.returnWaybill.trim(),returnConfirmedAt:at});}
   if((awaitingOperator(row)||incoming)&&p.action==='po'&&p.responsibilityConfirmed!==true)throw Error('Подтвердите, что клиент точно выкупит заказ после окончания срока хранения');
-  let date='';if(p.result==='date'){
-   if(!row.storageUntil&&!['date','work'].includes(p.action)&&(p.action!=='po'||incoming))throw Error('СДЭК пока не передал срок хранения');
-   date=p.action==='refusal'?day:p.date;
+  const workHandoff=p.action==='work'&&p.result==='operator';
+  if(workHandoff&&(e.role!=='department_head'||!e.department||row.department!==e.department))throw Error('Передать можно только заказ оператора своего отдела');
+  let date='';if(p.result==='date'||workHandoff){
+   if(!row.storageUntil&&(workHandoff||!['date','work'].includes(p.action))&&(p.action!=='po'||incoming))throw Error('СДЭК пока не передал срок хранения');
+   date=p.action==='refusal'||workHandoff?day:p.date;
    if(incoming&&p.action==='po'&&date<=row.storageUntil)throw Error('Под ответственность выберите дату после срока хранения');
    if(!validDate(date||'')||date<day||date>redemptionDateLimit(day,row.storageUntil,p.action))throw Error('Дата должна быть не раньше сегодня, не дальше одного месяца и в пределах СХ (кроме «Под ответственность»)');
   }
-  if(p.action==='refusal'&&p.result==='date'){
+  if(p.action==='refusal'&&p.result==='date'||workHandoff){
    const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(row.manager).first();
    if(!manager||JSON.parse(manager.data).role!=='operator')throw Error('У заказа нет ответственного оператора');
-   next.operatorReturn={sourceTab:'work',reason:'Отработать отказ',comment:'Проработать отказ сразу после передачи',author:e.name,authorId:e.id,at,timerCalendar:"weekdays-v1",durationHours:48,deadline:operatorReturnDeadline(row.storageUntil,now)};
+   next.operatorReturn={sourceTab:'work',reason:workHandoff?'Другое':'Отработать отказ',comment:workHandoff?p.comment.trim():'Проработать отказ сразу после передачи',author:e.name,authorId:e.id,at,timerCalendar:"weekdays-v1",durationHours:48,deadline:operatorReturnDeadline(row.storageUntil,now)};
   }
   if(awaitingOperator(row))next.operatorReturn={...v.operatorReturn,resolvedAt:at,resolvedBy:e.name,resolvedById:e.id};
-  Object.assign(next,{incomingScheduled:!!incoming&&p.result==='date',resultSource:incoming?'incoming':null,refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?(incoming?'incoming':'pending'):null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,dateVerifiedAt:null,dateVerifiedBy:null,dateVerifiedById:null,action:p.action,result:p.result,resultDate:date,author:e.name,authorId:e.id,authorRole:e.role,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:p.result,date,author:e.name,at,ndCount:redemptionNdCount(v,day)+(p.action==='nd'?1:0)}}});
+  Object.assign(next,{incomingScheduled:!!incoming&&p.result==='date',resultSource:incoming?'incoming':null,refusalRetryUsed:!!v.refusalRetryUsed||p.action==='refusal'&&p.result==='date',dateConfirmation:p.result==='date'&&['date','work','po'].includes(p.action)?(incoming?'incoming':'pending'):null,dateConfirmedBy:null,dateConfirmedById:null,dateConfirmedAt:null,dateVerifiedAt:null,dateVerifiedBy:null,dateVerifiedById:null,action:p.action,result:workHandoff?'date':p.result,resultDate:date,author:e.name,authorId:e.id,authorRole:e.role,lastDay:day,days:{...(v.days||{}),[day]:{action:p.action,result:workHandoff?'date':p.result,date,author:e.name,at,ndCount:redemptionNdCount(v,day)+(p.action==='nd'?1:0)}}});
  }
  await persist();
 }
