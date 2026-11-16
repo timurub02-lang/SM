@@ -113,3 +113,8 @@ compaction enabled, retain the protected credential/state for diagnosis.
 This local monitor cannot alert while VM100/host/network is down; use an independent
 external check if outage detection is required. Fresh files prove backup presence,
 not recoverability; isolated restores and off-host copies remain separate checks.
+Before enabling the timer, test HTTPS connectivity to Telegram from the server.
+If direct access fails, keep the timer disabled until a trusted permanent route
+is configured and `--test` succeeds. Python's standard `HTTPS_PROXY` environment
+can be supplied via a protected systemd EnvironmentFile; never use an untrusted
+relay, expose proxy credentials in unit files, or disable TLS verification.
