@@ -88,3 +88,22 @@ assert.equal(redemptionResultLabel({action:'po',result:'date',resultDate:'2026-1
 assert.equal(redemptionResultLabel({result:'date',resultDate:'2026-10-30'}),'Дата · 30.10.2026');
 assert.equal(redemptionResultLabel({action:'courier',result:'courier'}),'У курьера');
 console.log('Head order-card scope and selected action labels passed');
+
+// A colleague can process a callback assigned to another buyout employee.
+const buyer2={id:'buyer2',name:'Buyout colleague',role:'redemption'};
+for(const e of [buyer,buyer2])await d.prepare('INSERT INTO employees VALUES(?,?)').bind(e.id,JSON.stringify(e)).run();
+await d.prepare("INSERT INTO orders VALUES('team-buyout','c',?)").bind(JSON.stringify({manager:'op',status:'shipping',delivery:'cdek_courier',cdekStatus:{code:'CREATED'},cdekStorageUntil:'2026-11-05'})).run();
+await d.prepare("INSERT INTO incoming_calls(id,client_id,assignee_id,order_id,at,phone,called_number) VALUES('team-buyout-in','c','buyer','team-buyout',?,'1','2')").bind(now.toISOString()).run();
+await prepareIncomingRedemption(d,buyer2,'team-buyout','team-buyout-in',now);
+await assert.rejects(prepareIncomingRedemption(d,op,'team-buyout','team-buyout-in',now),/недоступно/);
+await assert.rejects(prepareIncomingRedemption(d,buyer2,'early','team-buyout-in',now),/другому заказу/);
+let teamRow=(await redemptionRows(d,true)).find(r=>r.order_id==='team-buyout');
+await editRedemption(d,buyer2,{id:'team-buyout',source:'order',incomingId:'team-buyout-in',version:teamRow.version,action:'nd',result:'none',comment:''},now);
+assert.equal((await d.prepare("SELECT closed_at FROM incoming_calls WHERE id='team-buyout-in'").first()).closed_at,null);
+teamRow=(await redemptionRows(d,true)).find(r=>r.order_id==='team-buyout');
+await editRedemption(d,buyer2,{id:'team-buyout',source:'order',incomingId:'team-buyout-in',version:teamRow.version,action:'date',result:'date',date:'2026-10-30',comment:'Colleague processed incoming'},now);
+const teamIncoming=await d.prepare("SELECT * FROM incoming_calls WHERE id='team-buyout-in'").first();
+assert.equal(teamIncoming.closed_by,'buyer2');assert.equal(teamIncoming.assignee_id,'buyer');
+assert.equal((await redemptionRows(d,true)).find(r=>r.order_id==='team-buyout').authorId,'buyer2');
+await assert.rejects(prepareIncomingRedemption(d,buyer,'team-buyout','team-buyout-in',now),/закрыто/);
+console.log('Buyout team incoming: colleague can prepare/save, missed stays open, result closes once, original assignee retained, actor recorded and owner/wrong-order denied');

@@ -74,5 +74,15 @@ try{
  let racing=0;
  const duringSave=()=>cachedWorkspaceResponse(d,staff[0],request,'workspace','race',async()=>{racing++;if(racing===1)await save('settings','during-read',{});return Response.json({racing});});
  await duringSave();await duringSave();assert.equal(racing,2,'changed source cannot retain the in-flight result');
+ const groupStaff=[{id:'buyer1',role:'redemption'},{id:'buyer2',role:'redemption'},{id:'log1',role:'logistic'},{id:'log2',role:'logistic'},{id:'chief',role:'chief_logistic'}];
+ for(const e of groupStaff)await save('employees',e.id,e);
+ const groupVersions=()=>Promise.all(groupStaff.map(e=>workspaceVersions(d,e)));
+ for(const [assignee,expected] of [['buyer1',[0,1]],['log1',[2,3,4]],['chief',[2,3,4]]]){
+  await d.prepare("INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number) VALUES(?,?,?,'','','','')").bind('group-'+assignee,'cb',assignee).run();
+  const prior=await groupVersions();
+  await d.prepare("UPDATE incoming_calls SET closed_at='done' WHERE id=?").bind('group-'+assignee).run();
+  const after=await groupVersions();
+  groupStaff.forEach((e,i)=>assert.equal(after[i].tasks!==prior[i].tasks,expected.includes(i),e.id+' team callback close refresh'));
+ }
  console.log('Workspace clock/cache: scoped changes, transfers, shared incoming, phone work, premium, rights, rollback, epoch, health, fast 304, single flight, TTL and failure recovery passed');
 }finally{Date.now=wallClock;d.close();}

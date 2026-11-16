@@ -91,7 +91,7 @@ export async function prepareIncomingRedemption(d:Db,e:Employee,orderId:string,i
  const o=JSON.parse(stored?.data||'{}');
  if(!stored||e.role==='operator'&&(o.manager!==e.id||o.status!=='shipping')||e.role==='redemption'&&!['shipping','pickup'].includes(o.status)||!o.delivery?.startsWith('cdek_'))throw Error('Результат выкупа недоступен для этого заказа');
  const incoming=await incomingForAction(d,incomingId,e,[],stored.client_id);
- if(e.role==='redemption'&&(incoming.assignee_id!==e.id||incoming.order_id&&incoming.order_id!==orderId))throw Error('Обращение относится к другому заказу или сотруднику');
+ if(e.role==='redemption'&&incoming.order_id&&incoming.order_id!==orderId)throw Error('Обращение относится к другому заказу');
  await initRedemption(d);
  await d.prepare('INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind(orderId,now.toISOString(),JSON.stringify({pendingEnrollment:e.role!=='redemption'})).run();
 }
