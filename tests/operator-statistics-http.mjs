@@ -60,6 +60,13 @@ try{
  assert.deepEqual(Object.keys(shippedRows[0]).sort(),['id','label','sentCdek','sentPost','sentMoscow','sent','redeemed','returned'].sort());
  for(const secret of ['PRIVATE-PAID','PRIVATE CLIENT','79990000001'])assert.ok(!shippedResponse.text.includes(secret));
  assert.equal(JSON.parse((await call(shippedPath.replace('department=2','department=1'),cookies.head)).text).rows.length,0);
+ const delayed={...paid,id:'DELAYED-ACCEPTANCE',cdekTransferredAt:'2026-11-13T10:00:00Z',shippedAt:'2026-11-13T10:00:00Z',cdekAcceptedAt:'2026-11-16T10:00:00Z'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(delayed.id,delayed.clientId,JSON.stringify(delayed));
+ const exportPath='/api/operator-statistics?section=shipped&groupBy=day&department=2';
+ const originalExport=await call(exportPath+'&from=2026-11-13&to=2026-11-13',cookies.head);
+ assert.equal(originalExport.status,200);assert.equal(JSON.parse(originalExport.text).rows[0].sentCdek,1);
+ assert.equal(JSON.parse((await call(exportPath+'&from=2026-11-16&to=2026-11-16',cookies.head)).text).rows.length,0);
+ assert.ok(!originalExport.text.includes(delayed.id));
  // Existing object-level access remains closed for another department's orders.
  assert.equal((await call('/api/order-access',cookies.head,{orderId:order.id})).status,403);
  console.log('Statistics HTTP: head aggregates only, dates, role and identity checks, private orders inaccessible');
