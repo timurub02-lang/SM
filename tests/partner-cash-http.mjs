@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
+import {inventorySQL} from '../lib/inventory-sql.ts';
 import {authSchema} from '../lib/auth-schema.ts';
 import {hashPassword} from '../lib/auth-crypto.ts';
 const dir=mkdtempSync(join(tmpdir(),'partner-cash-')),db=new DatabaseSync(join(dir,'db.sqlite'));
@@ -14,10 +15,14 @@ let server,logs='';
 try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of authSchema)db.exec(sql);
  const hash=await hashPassword(password);
+ for(const sql of inventorySQL)db.exec(sql);
+ db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('product','product',JSON.stringify({name:'Product'}));
+ db.prepare('INSERT INTO settings VALUES(?,?)').run('warehouse-cost:product',JSON.stringify({amount:300,revision:'cost-initial'}));
  for(const [id,role] of [['admin','admin'],['A_Emil','department_head'],['head','department_head'],['operator','operator']]){
   const e={id,login:id,name:id,role,department:'5',salary:0,bonus:5,sz:false,version:1,...(id==='head'?{cashDisabled:true,leaderPremium:{model:'salary_bonus',fixedPerPeriod:0,links:[]}}:{})};
   db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
  }
+ db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('fixture-stock','product',1000,'Synthetic stock','admin',new Date().toISOString());
  const period='2026-11-1',next='2026-11-2';
  const input={salary:0,vacation:0,official:0,debt:0,penalty:0,extra:0,sz:false,firstHalfBonus:null};
  const row={id:'operator',employeeId:'operator',login:'operator',name:'operator',department:'5',role:'operator',rate:5,volume:11300,commission:500,salary:0,input,result:500,payout:500};
@@ -51,9 +56,13 @@ try{
  assert.equal((await call(path,cookies.admin,form)).status,409);
  const product=saved.data.products[0].name;
  assert.equal((await call(path,cookies.admin,{...form,revision:saved.data.settings.revision,productPrices:{[product]:-1}})).status,400);
- const priced=await call(path,cookies.admin,{...form,revision:saved.data.settings.revision,productPrices:{[product]:125.50}});assert.equal(priced.status,200);assert.equal(priced.data.goods,25100);assert.equal(priced.data.remaining,598470);
- const restored=await call(path,cookies.admin,{...form,revision:priced.data.settings.revision,productPrices:{[product]:300}});assert.equal(restored.status,200);assert.equal(restored.data.goods,60000);
- assert.equal((await call(path,cookies.admin)).data.settings.productPrices[product],300);
+ assert.equal((await call(path,cookies.admin,{...form,revision:saved.data.settings.revision,productPrices:{[product]:125.5}})).status,400,'Manual partner prices removed');
+ const warehouseCost=(amount,revision)=>call('/api/warehouse',cookies.admin,{action:'saveCost',productId:'product',cost:{amount,revision}});
+ const changedCost=await warehouseCost(125.5,'cost-initial');assert.equal(changedCost.status,200);
+ const priced=await call(path,cookies.A_Emil);assert.equal(priced.status,200);assert.equal(priced.data.goods,25100);assert.equal(priced.data.remaining,598470);
+ assert.equal((await warehouseCost(300,changedCost.data.cost.revision)).status,200);
+ assert.equal((await call(path,cookies.A_Emil)).data.goods,60000);
+ assert.equal((await call(path,cookies.admin)).data.settings.productPrices,undefined);
  assert.equal((await call(path,cookies.A_Emil)).data.editable,false);
  assert.equal((await call('/api/cash',cookies.A_Emil,{action:'create'})).status,403);
  assert(!(await call('/api/cash',cookies.admin)).data.recipients.some(e=>e.id==='A_Emil'));
@@ -66,7 +75,9 @@ try{
  assert.equal((await call(path,cookies.admin,{...form,revision:saved.data.settings.revision})).status,409);
  db.prepare("UPDATE orders SET data=json_set(data,'$.items[0].quantity',99)").run();
  db.prepare('INSERT INTO settings VALUES(?,?)').run(bankKey,JSON.stringify(bankRegistry));
- assert.equal((await call(path,cookies.admin)).data.goods,60000,'Closed goods remain frozen');
+ db.prepare("UPDATE settings SET data=json_set(data,'$.amount',999) WHERE id='warehouse-cost:product'").run();
+ assert.equal((await call(path,cookies.admin)).data.goods,60000,'Closed goods remain frozen after warehouse cost changes');
+ assert.equal((await call(path,cookies.A_Emil)).data.settings.warehouseProductPrices,undefined);
  assert.equal((await call(path,cookies.admin)).data.transferred,767670,'New registry data cannot rewrite a previously closed cash calculation');
  const future=await call('/api/partner-cash?period='+next,cookies.admin);assert.equal(future.status,200,JSON.stringify(future.data));assert.equal(future.data.opening,717670);assert.equal(future.data.settings.taxRate,7);
  const loss=await call('/api/partner-cash?period='+next,cookies.admin,{revision:'',taxRate:7,communication:10000,bank:0});assert.equal(loss.status,200);assert.equal(loss.data.accountRemaining,-436430);
@@ -103,5 +114,16 @@ try{
  const removed=await call(currentPath,cookies.A_Emil,removeBody);assert.equal(removed.status,200,JSON.stringify(removed.data));assert.equal(removed.data.accountBalance,expenseBefore.accountBalance);assert.equal(removed.data.remaining,expenseBefore.remaining);
  assert.equal((await call(currentPath,cookies.A_Emil,removeBody)).data.accountBalance,expenseBefore.accountBalance);
  assert.equal((await call(path,cookies.admin,{...expenseBody,id:crypto.randomUUID(),period,date:'2026-11-01'})).status,400);
+ // A separate synthetic open settlement proves that first payment locks warehouse prices.
+ db.prepare("DELETE FROM settings WHERE id LIKE 'partner-cash%' OR id='partner-settlements'").run();
+ const openLedger={...ledger,revision:'cost-lock',periods:{[period]:{...ledger.periods[period],status:'frozen'}}};
+ db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(JSON.stringify(openLedger));
+ db.prepare("UPDATE orders SET data=? WHERE id='LV-1'").run(JSON.stringify(order));
+ db.prepare("UPDATE settings SET data=json_set(data,'$.amount',300) WHERE id='warehouse-cost:product'").run();
+ const fresh=await call(path,cookies.admin,{revision:'',taxRate:0,communication:0,bank:0});assert.equal(fresh.status,200,JSON.stringify(fresh.data));
+ const firstPay=await call(path,cookies.A_Emil,{action:'pay',id:crypto.randomUUID(),revision:fresh.data.settlementRevision,period,kind:'goods',amount:1,recipient:'admin'});assert.equal(firstPay.status,200,JSON.stringify(firstPay.data));
+ db.prepare("UPDATE settings SET data=json_set(data,'$.amount',999) WHERE id='warehouse-cost:product'").run();
+ const locked=await call(path,cookies.A_Emil);assert.equal(locked.status,200);assert.equal(locked.data.goods,60000,'Started payments keep their original warehouse prices');
+ assert.equal(locked.data.settings.warehouseProductPrices,undefined,'Internal catalog snapshot is not exposed');
  console.log('Partner HTTP: access, cash vs estimates, Emil signature, payroll once, partial payment, acceptance, retry, debt carry and unchanged future profit passed');
 }catch(e){console.error(logs);throw e;}finally{if(server&&server.exitCode===null){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

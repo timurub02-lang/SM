@@ -1,3 +1,4 @@
+import {canEditProductCost,productCostSchema,productCostKey,readProductCosts} from '@/lib/warehouse-cost';
 import {warehouseReadOnly} from '@/lib/permissions';
 import {readLimitedText} from '@/lib/request-body';
 import {authenticated} from '@/lib/api-auth';
@@ -16,6 +17,7 @@ async function offices(query:URLSearchParams){
 }
 async function init(){await initInventory();await db().prepare('CREATE TABLE IF NOT EXISTS products(id TEXT PRIMARY KEY,name_key TEXT UNIQUE NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)').run();await db().prepare("INSERT OR IGNORE INTO settings(id,data) VALUES('warehouse-address',?)").bind(JSON.stringify({address:'127422',postalCode:'127422'})).run();}
 async function permitted(actorId:string,readOnly=false){const r=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();if(!r)return false;const {role}=JSON.parse(r.data);return ['admin','logistic','chief_logistic'].includes(role)||readOnly&&warehouseReadOnly(role);}
+async function costAccess(actorId:string){const r=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();return !!r&&canEditProductCost(JSON.parse(r.data).role);}
 async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(new URL(req.url).searchParams.has('catalog')){await init();const rows=await db().prepare('SELECT p.id,p.data,s.available,s.blocked FROM products p JOIN product_stock s ON s.id=p.id WHERE NOT EXISTS(SELECT 1 FROM lv_stock l WHERE l.product_id=p.id AND l.active=0) ORDER BY p.name_key').all<{id:string;data:string;available:number;blocked:number}>();return Response.json({products:rows.results.map(r=>{const p=JSON.parse(r.data);return {id:r.id,name:p.name,tag:p.tag||'',available:r.available,blocked:!!r.blocked};})},{headers:{'Cache-Control':'no-store'}});}
@@ -24,13 +26,23 @@ async function handleGET(req:Request){
  if(new URL(req.url).searchParams.has('points')){try{const postal=z.string().regex(/^\d{6}$/).parse(new URL(req.url).searchParams.get('postalCode'));return Response.json({points:await offices(new URLSearchParams({postal_code:postal,type:'PVZ',country_code:'RU',is_reception:'true'}))},{headers:{'Cache-Control':'no-store'}});}catch(e){return Response.json({error:e instanceof z.ZodError?'Укажите индекс из 6 цифр':e instanceof Error?e.message:'Не удалось загрузить ПВЗ'},{status:400});}}
  await init();const r=await db().prepare(`SELECT p.id,p.data,p.version,s.available,s.reserved,s.sold,s.supplied,s.blocked,l.lv_id,l.lv_name,l.synced_at,l.active AS lv_active,EXISTS(SELECT 1 FROM orders o,json_each(o.data,'$.items') i WHERE json_extract(i.value,'$.name')=json_extract(p.data,'$.name')) AS nameLocked FROM products p JOIN product_stock s ON s.id=p.id LEFT JOIN lv_stock l ON l.product_id=p.id WHERE l.product_id IS NULL OR l.active=1 ORDER BY p.name_key`).all<{id:string;data:string;version:number;available:number;reserved:number;sold:number;supplied:number;nameLocked:number;blocked:number;lv_id:string;lv_name:string;synced_at:string;lv_active:number}>();
  const addressRow=await db().prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
- return Response.json({warehouseAddress:JSON.parse(addressRow!.data),products:r.results.map(x=>({...JSON.parse(x.data),id:x.id,version:x.version,nameLocked:!!x.nameLocked,lv:x.lv_id?{id:x.lv_id,name:x.lv_name,syncedAt:x.synced_at,active:!!x.lv_active,blocked:!!x.blocked}:undefined,stock:{available:x.available,reserved:x.reserved,sold:x.sold,supplied:x.supplied}}))},{headers:{'Cache-Control':'no-store'}});
+ const costs=await costAccess(new URL(req.url).searchParams.get('actorId')||'')?(await readProductCosts(db())).costs:undefined;
+ return Response.json({costs,warehouseAddress:JSON.parse(addressRow!.data),products:r.results.map(x=>({...JSON.parse(x.data),id:x.id,version:x.version,nameLocked:!!x.nameLocked,lv:x.lv_id?{id:x.lv_id,name:x.lv_name,syncedAt:x.synced_at,active:!!x.lv_active,blocked:!!x.blocked}:undefined,stock:{available:x.available,reserved:x.reserved,sold:x.sold,supplied:x.supplied}}))},{headers:{'Cache-Control':'no-store'}});
 }
 async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
   const raw=await readLimitedText(req,16000);if(raw.length>4000)throw Error();const p=JSON.parse(raw);
+  if(p.action==='saveCost'){
+   if(!await costAccess(z.string().parse(p.actorId)))return Response.json({error:'Недостаточно прав'},{status:403});
+   const id=z.string().min(1).max(200).parse(p.productId),cost=productCostSchema.parse(p.cost);
+   if(!await db().prepare('SELECT id FROM products WHERE id=?').bind(id).first())return Response.json({error:'Товар не найден'},{status:404});
+   const data=JSON.stringify({...cost,revision:crypto.randomUUID()}),key=productCostKey(id);
+   const result=cost.revision?await db().prepare("UPDATE settings SET data=? WHERE id=? AND json_extract(data,'$.revision')=?").bind(data,key,cost.revision).run():await db().prepare('INSERT OR IGNORE INTO settings(id,data) VALUES(?,?)').bind(key,data).run();
+   if(!result.meta.changes)return Response.json({error:'Себестоимость уже изменена. Обновите карточку.'},{status:409});
+   return Response.json({ok:true,cost:JSON.parse(data)});
+  }
   if(!await permitted(z.string().parse(p.actorId)))return Response.json({error:'Склад доступен администратору и логисту'},{status:403});
   await init();if(p.action==='stock'){
    const movement=z.object({id:z.string().uuid(),productId:z.string().min(1),quantity:z.number().int().min(1).max(1000000),kind:z.enum(['add','remove']),reason:z.string().trim().min(1,'Укажите основание движения').max(500)}).parse(p.movement);

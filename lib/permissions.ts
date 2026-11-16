@@ -98,7 +98,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/base-search')return method==='GET'&&['admin','department_head','logistic','chief_logistic'].includes(e.role);
  if(path==='/api/sk-client-link')return method==='GET'&&!['courier','purchasing'].includes(e.role);
  if(path==='/api/crm/history')return method==='GET'&&!['courier','purchasing'].includes(e.role);
- if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&method==='GET'&&!url.searchParams.has('points');
+ if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&(method==='GET'&&!url.searchParams.has('points')||method==='POST'&&p?.action==='saveCost');
  if(path==='/api/redemption')return ['GET','POST'].includes(method)&&['admin','operator','department_head','redemption'].includes(e.role);if(e.role==='admin')return true;
  if(path==='/api/partner-cash')return ['GET','POST'].includes(method)&&e.login==='A_Emil';
  if(path==='/api/operator-statistics')return method==='GET'&&e.role==='department_head';
