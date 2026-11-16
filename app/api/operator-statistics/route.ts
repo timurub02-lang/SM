@@ -1,3 +1,4 @@
+import {shipmentStats} from '@/lib/shipment-stats';
 import {authenticated} from '@/lib/api-auth';
 import {assignedCountsQuery} from '@/lib/base-summary';
 import {baseStats} from '@/lib/base-stats';
@@ -16,5 +17,6 @@ export const GET=authenticated(async req=>{
   return Response.json({rows:baseStats(employees,counts)},{headers:{'Cache-Control':'no-store'}});
  }
  const orders=(await db().prepare('SELECT data FROM orders').all<{data:string}>()).results.map(row=>JSON.parse(row.data) as Order);
+ if(url.searchParams.get('section')==='shipped')return Response.json({rows:shipmentStats({employees,orders},{...actor,role:'admin'},from,to,url.searchParams.get('department')||'',url.searchParams.get('groupBy')==='day').map(({orders,...row})=>row)},{headers:{'Cache-Control':'no-store'}});
  return Response.json({rows:operatorStatsSummary({employees,orders},actor,from,to,url.searchParams.get('groupBy')==='day',url.searchParams.get('department')||'')},{headers:{'Cache-Control':'no-store'}});
 });

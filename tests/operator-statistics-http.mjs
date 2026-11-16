@@ -20,7 +20,7 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run('private-client','+79990000001',JSON.stringify({id:'private-client',phone:'+79990000001',name:'PRIVATE CLIENT',owner:'other'}));
  const order={id:'PRIVATE-ORDER',clientId:'private-client',manager:'other',createdAt:'2026-11-11T10:00:00Z',status:'confirm',items:[{name:'PRIVATE ITEM',price:12345,quantity:1}]};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(order.id,order.clientId,JSON.stringify(order));
- const paid={...order,id:'PRIVATE-PAID',legacyLv:{orderId:'old'},status:'redeemed',delivery:'cdek_pickup',redeemedAt:'2026-11-11T10:00:00Z'};
+ const paid={...order,shippedAt:'2026-11-10T21:00:00Z',id:'PRIVATE-PAID',legacyLv:{orderId:'old'},status:'redeemed',delivery:'cdek_pickup',redeemedAt:'2026-11-11T10:00:00Z'};
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(paid.id,paid.clientId,JSON.stringify(paid));
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{PATH:process.env.PATH,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:'3398'},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
@@ -53,6 +53,13 @@ try{
  const dailyRows=JSON.parse(dailyResponse.text).rows;assert.equal(dailyRows.length,1);assert.equal(dailyRows[0].login,'2026-11-11');assert.equal(dailyRows[0].buyoutCdek,1);assert.equal(dailyRows[0].buyoutAmount,12345);
  for(const secret of ['PRIVATE-PAID','PRIVATE CLIENT','79990000001','orderLists'])assert.ok(!dailyResponse.text.includes(secret));
  assert.equal(JSON.parse((await call(dailyPath.replace('department=2','department=1'),cookies.head)).text).rows.length,0);
+ const shippedPath='/api/operator-statistics?section=shipped&groupBy=day&department=2&from=2026-11-11&to=2026-11-11';
+ assert.equal((await call(shippedPath,cookies.operator)).status,403);
+ const shippedResponse=await call(shippedPath,cookies.head);assert.equal(shippedResponse.status,200,shippedResponse.text);
+ const shippedRows=JSON.parse(shippedResponse.text).rows;assert.equal(shippedRows.length,1);assert.equal(shippedRows[0].label,'2026-11-11');assert.equal(shippedRows[0].sentCdek,1);assert.equal(shippedRows[0].sent,1);assert.equal(shippedRows[0].redeemed,1);
+ assert.deepEqual(Object.keys(shippedRows[0]).sort(),['id','label','sentCdek','sentPost','sentMoscow','sent','redeemed','returned'].sort());
+ for(const secret of ['PRIVATE-PAID','PRIVATE CLIENT','79990000001'])assert.ok(!shippedResponse.text.includes(secret));
+ assert.equal(JSON.parse((await call(shippedPath.replace('department=2','department=1'),cookies.head)).text).rows.length,0);
  // Existing object-level access remains closed for another department's orders.
  assert.equal((await call('/api/order-access',cookies.head,{orderId:order.id})).status,403);
  console.log('Statistics HTTP: head aggregates only, dates, role and identity checks, private orders inaccessible');
