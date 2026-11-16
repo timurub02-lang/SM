@@ -13,6 +13,6 @@ export function cdekStatusPatch(order:Order&{cdekStatus?:{at:string;code:string;
  if(!latest)return Object.keys(details).length?details:null;const at=new Date(latest.date_time).toISOString();
  if(order.cdekStatus&&(Date.parse(at)<Date.parse(order.cdekStatus.at)||at===order.cdekStatus.at&&latest.code===order.cdekStatus.code&&revision===order.cdekStatus.revision))return Object.keys(details).length?details:null;
  const targets:Record<string,Status>={new:'draft',accepted:'check',cancelled:'refused',sent:'shipping',paid:'redeemed',returned:'returned'};
- const status=targets[mapping[latest.code]];
+ const status=order.cdekReturn?undefined:targets[mapping[latest.code]];
  return {...details,cdekStatus:{code:latest.code,at,revision},...(status&&status!==order.status?{status,warehouseReturnedAt:undefined,...orderDatesForTransition(order,status,at),...(status==='check'&&!order.confirmedAt?{confirmedAt:at}:{}),contact:'none' as const,due:''}:{})};
 }
