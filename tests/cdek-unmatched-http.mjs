@@ -32,4 +32,4 @@ try{
  assert.equal((await get('h','?actorId=a')).status,403);
  assert.equal((await fetch(url,{method:'POST',headers:{cookie:cookies.a,Origin:origin,'Content-Type':'application/json'},body:'{}'})).status,405);
  console.log('Unmatched receipts API: admin-only, pagination, validation and read-only access passed');
-}finally{if(server){server.kill();await once(server,'exit');}d.close();rmSync(dir,{recursive:true,force:true});}
+}catch(error){console.error(logs);throw error;}finally{if(server&&server.exitCode===null){server.kill();await once(server,'exit');}d.close();rmSync(dir,{recursive:true,force:true});}
