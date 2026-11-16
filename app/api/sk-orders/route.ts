@@ -11,7 +11,7 @@ export const GET=authenticated(async()=>{
  for(const row of rows.results as any[]){const input:SkOrderInput=JSON.parse(row.data),sender=skSender(staff,input.email,input.userName,input.userNameUnique),client=await skClient(d,input.phone),owner=staff.find(e=>e.id===client?.owner),canDecide=skMayDecide(actor,sender,owner);
  if(actor.id!==sender?.id&&!canDecide)continue;
  const orders=client?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(client.id).all()).results.map((r:any)=>JSON.parse(r.data)):[];
- const review=skOrderReview(input.projectId,sender,client,owner,orders);
+ const review=skOrderReview(input.projectId,sender,client,owner,orders,!!input.projectMembership);
  visible.push({id:row.id,clientId:client?.id||'',name:client?.name||input.name,at:row.created_at,...review,reason:review.reasons.join('; '),canDecide,sender:sender?.login||input.userName||input.email});}
 
  const health=actor.role==='admin'?await d.prepare("SELECT data FROM settings WHERE id='sk-order-health'").first<{data:string}>():null;
