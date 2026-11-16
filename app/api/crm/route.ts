@@ -232,7 +232,11 @@ async function handlePOST(request:Request){
   await changeClientReminder(d,s,employee,p,now);message=p.action==="createClientReminder"?"Напоминание сохранено":"Напоминание закрыто";
  }else if(p.action==="readReminder"){
   if(!employee)throw Error("Требуется сотрудник");
-  await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,z.string().max(500).parse(p.id)).run();
+  const reminderId=z.string().max(500).parse(p.id);
+  if(p.acknowledge===true){
+   if(employee.role!=='department_head'||!scheduledCalls(s.orders,employee,s.employees).some(o=>`call:${o.id}:${o.due}`===reminderId&&Date.parse(o.due)>Date.parse(now)))throw Error('Ознакомление доступно руководителю для будущего звонка своего отдела');
+   await d.prepare("UPDATE reminders SET data=json_set(data,'$.acknowledgedAt',?),read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,now,employee.id,reminderId).run();
+  }else await d.prepare("UPDATE reminders SET read_at=COALESCE(read_at,?) WHERE employee_id=? AND id=?").bind(now,employee.id,reminderId).run();
  }else if(p.action==="createIncomingClient"){
   if(!employee||!['admin','department_head'].includes(employee.role))throw Error('Создать клиента могут администратор и руководители');
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
