@@ -76,7 +76,8 @@ try{
   const bootBefore=forwarded,bootstrap=await call(role,'?part=bootstrap');
   assert.equal(bootstrap.status,200,bootstrap.text);assert.equal(forwarded,bootBefore+1,'Initial read must be isolated too');
   const directBoot=await call(role,'?transport=compact-v1&comparison=direct');assert.deepEqual(bootstrap.data,directBoot.data,'Bootstrap retains all current role-specific data');
-  const compressed=await call(role,'?part=bootstrap',{headers:{'Accept-Encoding':'br'}});assert.equal(compressed.headers.get('content-encoding'),'br');assert.deepEqual(compressed.data,bootstrap.data,'HTTP fetch decodes the streaming response unchanged');
+  const compressed=await call(role,'?part=bootstrap',{headers:{'Accept-Encoding':'gzip'}});assert.equal(compressed.headers.get('content-encoding'),'gzip');assert.deepEqual(compressed.data,bootstrap.data,'HTTP fetch decodes the streaming response unchanged');
+  const identity=await call(role,'?part=bootstrap',{headers:{'Accept-Encoding':'br'}});assert.deepEqual(identity.data,bootstrap.data,'Unsupported compression must preserve JSON');
   checks.push(role+': exact full parity, masks, 304 and decoded delta');
  }
  for(const role of ['operator','department_head']){

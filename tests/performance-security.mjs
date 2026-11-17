@@ -4,7 +4,6 @@ import {conditionalJson} from '../lib/conditional-json.ts';
 import {readLimitedText,BodyTooLarge} from '../lib/request-body.ts';
 import {byteRange} from '../lib/byte-range.ts';
 import {visibleState} from '../lib/permissions.ts';
-import {brotliDecompressSync} from 'node:zlib';
 const url='https://crm.test/api/crm';
 const originalFetch=globalThis.fetch;
 try{
@@ -59,30 +58,17 @@ const response=await conditionalJson(new Request(url),{private:'one'}),etag=resp
 assert.equal(response.status,200);assert.match(response.headers.get('cache-control'),/no-store/);
 assert.equal((await conditionalJson(new Request(url,{headers:{'If-None-Match':etag}}),{private:'one'})).status,304);
 assert.equal((await conditionalJson(new Request(url,{headers:{'If-None-Match':etag}}),{private:'two'})).status,200);
-const runtime=process.env.CRM_RUNTIME;
-try{
- process.env.CRM_RUNTIME='miran';
- const large={private:'Синтетическая история '.repeat(1000)};
- const compressed=await conditionalJson(new Request(url,{headers:{'Accept-Encoding':'gzip, deflate, br'}}),large);
- assert.equal(compressed.headers.get('content-encoding'),'br');
- assert.match(compressed.headers.get('vary'),/Cookie, Accept-Encoding/);
- assert.equal(compressed.headers.get('cache-control'),'private, no-store');
- const bytes=new Uint8Array(await compressed.arrayBuffer());
- assert.deepEqual(JSON.parse(brotliDecompressSync(bytes)),large);
- assert.ok(bytes.length<Buffer.byteLength(JSON.stringify(large)));
- const compressedTag=compressed.headers.get('etag');
- const notModified=await conditionalJson(new Request(url,{headers:{'Accept-Encoding':'br','If-None-Match':compressedTag}}),large);
- assert.equal(notModified.status,304);assert.equal(await notModified.text(),'');
- for(const encoding of ['', 'gzip','br;q=0, gzip','br;q=0.1, gzip;q=1','br;q=oops','br;q=2']){
-  const fallback=await conditionalJson(new Request(url,{headers:{'Accept-Encoding':encoding,'If-None-Match':compressedTag}}),large);
-  assert.equal(fallback.status,200);assert.equal(fallback.headers.get('content-encoding'),null);assert.deepEqual(await fallback.json(),large);
- }
- for(const encoding of ['BR', 'gzip;q=0.5, br;q=0.8'])assert.equal((await conditionalJson(new Request(url,{headers:{'Accept-Encoding':encoding}}),large)).headers.get('content-encoding'),'br');
- assert.equal((await conditionalJson(new Request(url,{headers:{'Accept-Encoding':'br'}}),{})).headers.get('content-encoding'),null);
- const changed=await conditionalJson(new Request(url,{headers:{'Accept-Encoding':'br','If-None-Match':compressedTag}}),{...large,other:'role'});assert.equal(changed.status,200);
- delete process.env.CRM_RUNTIME;
- assert.equal((await conditionalJson(new Request(url,{headers:{'Accept-Encoding':'br'}}),large)).headers.get('content-encoding'),null);
-}finally{if(runtime===undefined)delete process.env.CRM_RUNTIME;else process.env.CRM_RUNTIME=runtime;}
+const large={private:'Synthetic history '.repeat(1000)};
+for(const encoding of ['identity','gzip, deflate, br','br','br;q=0']){
+ const request=new Request(url,{headers:{'Accept-Encoding':encoding}});
+ const response=await conditionalJson(request,large);
+ assert.equal(response.headers.get('content-encoding'),null,'HTTP compression belongs to Next');
+ assert.deepEqual(await response.json(),large);
+ const tag=response.headers.get('etag');
+ const unchanged=await conditionalJson(new Request(url,{headers:{'If-None-Match':tag}}),large);
+ assert.equal(unchanged.status,304);assert.equal(await unchanged.text(),'');
+ assert.equal((await conditionalJson(new Request(url,{headers:{'If-None-Match':tag}}),{...large,other:'role'})).status,200);
+}
 let cancelled=false;
 const body=new ReadableStream({pull(c){c.enqueue(new Uint8Array(6));},cancel(){cancelled=true;}});
 await assert.rejects(readLimitedText(new Request(url,{method:'POST',body,duplex:'half'}),10),BodyTooLarge);assert.equal(cancelled,true);
