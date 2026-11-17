@@ -24,3 +24,19 @@ state.events=[{orderId:'missing',actorId:'head',actor:'Артем',at:author.at,
 state.events.push({...state.events[0],actorId:'second',actor:'Другой',at:'2026-11-18T09:00:00Z'});assert.equal(stats()[0].confirmed,6);assert.equal(stats(undefined,'2026-11-18')[0].confirmed,2);
 
 state.events.push({orderId:'intermediate',actorId:'head',actor:'Артем',at:author.at,text:'Комментарий: текст\nСтатус: Подтверждение → Упаковка'});assert.equal(stats()[0].confirmed,6);
+
+const confirmedAt='2026-11-17T20:59:59Z',reviewedAt='2026-11-17T21:00:00Z';
+const audit=(orderId,actorId,actor,at,transition)=>({orderId,actorId,actor,at,text:transition+'\nСтатус: '+transition});
+const reviewed={employees,orders:[order('reviewed','redeemed',{deliveryConfirmationAuthor:{id:'admin',name:'Администратор',role:'admin',at:reviewedAt}})],events:[audit('reviewed','head','Артем',confirmedAt,'Подтверждение → Проверка'),audit('reviewed','admin','Администратор',reviewedAt,'Проверка → Упаковка')]};
+const corrected=confirmationStats(reviewed,{role:'admin'},'2026-11-17','2026-11-17');
+assert.equal(corrected[0].label,'Артем');assert.equal(corrected[0].paid,1);
+assert.equal(confirmationStats(reviewed,{role:'admin'},'2026-11-18','2026-11-18').length,0,'Admin review must not move the confirmation date');
+reviewed.orders[0].deliveryConfirmationAuthor=undefined;
+assert.equal(confirmationStats(reviewed,{role:'admin'},'','')[0].label,'Артем','Pre-feature history is corrected too');
+reviewed.events.push(audit('reviewed','second','Другой','2026-11-19T09:00:00Z','Подтверждение → Проверка'),audit('reviewed','admin','Администратор','2026-11-19T10:00:00Z','Проверка → Упаковка'));
+assert.equal(confirmationStats(reviewed,{role:'admin'},'','')[0].label,'Другой','The last consent author still wins');
+reviewed.events=reviewed.events.filter(e=>e.actorId==='admin');
+assert.equal(confirmationStats(reviewed,{role:'admin'},'','').length,0,'Review alone is not client consent');
+console.log('Client consent: pre-admin author/date, historical mistaken admin markers, latest reconfirmation and missing evidence passed');
+
+reviewed.events=[{orderId:'reviewed',actorId:'head',actor:'Артем',at:confirmedAt,text:'Подтверждено руководителем · Артем · замечания логиста исправлены: адрес · клиент согласен выкупить заказ\nСтатус: Возврат оператору → Проверка'},audit('reviewed','admin','Администратор',reviewedAt,'Проверка → Упаковка')];assert.equal(confirmationStats(reviewed,{role:'admin'},'','')[0].label,'Артем','Explicit head confirmation before admin check is preserved');

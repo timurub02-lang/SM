@@ -19,7 +19,7 @@ export const GET=authenticated(async req=>{
  }
  const orders=(await db().prepare('SELECT data FROM orders').all<{data:string}>()).results.map(row=>JSON.parse(row.data) as Order);
  if(url.searchParams.get('section')==='confirmation'){
-  const events=(await db().prepare("SELECT data FROM events WHERE data LIKE '%→ Упаковка%'").all<{data:string}>()).results.map(row=>JSON.parse(row.data) as Event);
+  const events=(await db().prepare("SELECT data FROM events WHERE data LIKE '%→ Упаковка%' OR data LIKE '%Подтверждение → Проверка%' OR data LIKE '%Подтверждение → Доп. подтверждение%' OR data LIKE '%Подтверждено руководителем%'").all<{data:string}>()).results.map(row=>JSON.parse(row.data) as Event);
   return Response.json({rows:confirmationStats({employees,orders,events},url.searchParams.get('scope')==='own'?actor:{...actor,role:'admin'},from,to,url.searchParams.get('department')||'').map(({orders,...row})=>({...row,...(url.searchParams.get('scope')==='own'?{orderIds:orders.map(o=>o.id)}:{})}))},{headers:{'Cache-Control':'no-store'}});
  }
  if(url.searchParams.get('section')==='shipped')return Response.json({rows:shipmentStats({employees,orders},{...actor,role:'admin'},from,to,url.searchParams.get('department')||'',url.searchParams.get('groupBy')==='day').map(({orders,...row})=>row)},{headers:{'Cache-Control':'no-store'}});
