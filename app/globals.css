@@ -485,3 +485,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .cdek-point-popup [data-slot="combobox-item"]{white-space:normal;overflow-wrap:anywhere;min-width:0;padding:10px 32px 10px 12px;font:inherit}
 .cdek-point-popup [data-highlighted]{background:var(--accent,#eaf2ff)}
 .cdek-point-popup [data-disabled]{opacity:.5}
+
+.sk-operator-pending{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:rgba(120,132,151,.09);color:var(--muted,#64748b)}
