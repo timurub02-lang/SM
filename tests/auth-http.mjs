@@ -1151,9 +1151,9 @@ try{
  const reworkSaved=await editDraft();assert.equal(reworkSaved.status,200,JSON.stringify(reworkSaved.data));
  db.prepare("UPDATE orders SET data=json_set(data,'$.status','confirm','$.contact','missed','$.confirmationHours',NULL) WHERE id=?").run(headDraft.id);
  const followup=await call('/api/crm',{cookie:draftHead.cookie,body:{action:'updateOrder',id:headDraft.id,version:db.prepare('SELECT version FROM orders WHERE id=?').get(headDraft.id).version,operatorFollowup:true,items:[],addressConfirmed:true,logisticMessage:'Head reached client'}});
- assert.equal(followup.status,200,JSON.stringify(followup.data));
+ assert.equal(followup.status,400,JSON.stringify(followup.data));
  const continued=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(headDraft.id).data);
- assert.equal(continued.clientWaiting.by,draftHead.e.id);assert.equal(continued.manager,draftOp.e.id);
+ assert.equal(continued.clientWaiting,undefined);assert.equal(continued.manager,draftOp.e.id);
  db.prepare("UPDATE orders SET data=json_remove(json_set(data,'$.status','draft','$.contact','none'),'$.clientWaiting') WHERE id=?").run(headDraft.id);
  console.log('Head draft/rework/followup, scope, author and editor lease passed');
  for(const [id,name] of [['basket-goods','Basket goods'],['basket-total','ИТОГО']]){

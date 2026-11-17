@@ -201,12 +201,32 @@ try{
   await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});assert.equal(order(headId).confirmationStartedAt,started);assert.equal(order(headId).noAnswerDeadline,deadline);
   await act(headId,'head',{action:'updateOrder',items:order(headId).items,comment:'Forbidden edit',addressConfirmed:true},400);
   if(to==='packing'){await act(headId,'head',{action:'transition',to},400);assert.equal(order(headId).status,'confirm');}
-  await act(headId,'head',{action:'transition',to,clientConfirmedByHead:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');
+  await act(headId,'head',{action:'confirmByHead',clientConfirmed:true},400);await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead'},400);await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');
   await call('head','/api/order-access',{orderId:headId,token,action:'release'});
-  if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'transition',to:'packing',clientConfirmedByHead:true});assert.equal(order(headId).status,'packing');}
+  if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,'packing');}
   else if(to==='check')await act(headId,'head',{action:'transition',to:'packing'},400);
   else await act(headId,'head',{action:'markPackingWaybill'},400);
  }
+ // Returned confirmation orders can be corrected and confirmed without another logistics call.
+ for(const delivery of ['cdek_pickup','cdek_courier','moscow_courier','russian_post']){
+  const rid=await create();await act(rid,'operator',{action:'updateOrder',delivery,items:order(rid).items,addressConfirmed:true});if(delivery==='cdek_pickup')fixturePickupPoint(rid);
+  await act(rid,'operator',{action:'transition',to:'confirm'});await act(rid,'logistic',{action:'transition',to:'rework',returnKind:'clarification',reason:'Check address'});
+  const unchanged=JSON.stringify(order(rid));
+  await act(rid,'operator',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true},400);
+  await act(rid,'foreign-head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true},403);
+  await act(rid,'head',{action:'confirmByHead',clientConfirmed:true},400);
+  assert.equal(JSON.stringify(order(rid)),unchanged);
+  await act(rid,'head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true});
+  assert.equal(order(rid).status,delivery.startsWith('cdek_')?'check':'packing');assert.equal(order(rid).confirmationAuthor.id,'head');assert.equal(order(rid).reworkDeadline,undefined);
+  assert.ok(db.prepare('SELECT data FROM events WHERE order_id=?').all(rid).some(r=>JSON.parse(r.data).text.includes('Check address')));
+ }
+ const requestId=await create();await act(requestId,'operator',{action:'transition',to:'confirm'});
+ await act(requestId,'head',{action:'requestOrderEdit',reason:'Correct recipient'});assert.equal(order(requestId).editRequest.status,'pending');
+ await act(requestId,'head',{action:'confirmByHead',clientConfirmed:true},400);
+ await act(requestId,'logistic',{action:'resolveOrderEdit',requestId:order(requestId).editRequest.id,decision:'edit'});
+ await act(requestId,'head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true},400);
+ await act(requestId,'head',{action:'updateOrder',items:order(requestId).items,addressConfirmed:true});
+ await act(requestId,'head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true});assert.equal(order(requestId).editRequest.status,'completed');assert.equal(order(requestId).status,'packing');
  const cancelId=await create();await act(cancelId,'operator',{action:'transition',to:'confirm'});const cancelStock=stock();
  await act(cancelId,'head',{action:'transition',to:'refused',reason:' '},400);
  await act(cancelId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(cancelId).cancellationAuthor.role,'department_head');assert.equal(stock(),cancelStock+1);
