@@ -99,3 +99,12 @@ for(const [view,status,delivery] of [['rework','rework','cdek_courier'],['confir
 
 const managerState={...state,employees:[{id:'one',name:'Альфа',login:'Z_login'},{id:'two',name:'Яна',login:'A_login'}],orders:[{...order,id:'LOGIN-Z',manager:'one'},{...order,id:'LOGIN-A',manager:'two'}]};
 assert.deepEqual(filteredOrderList(managerState,{id:'admin',role:'admin'},{...query,filter:'all',sort:'manager',direction:'asc'},now).map(o=>o.id),['LOGIN-A','LOGIN-Z'],'Manager sorting follows displayed CRM login rather than name');
+
+const retentionState=seed();retentionState.employees=[employee];retentionState.orders=[];
+retentionState.clients=['unknown','later','soon','expired','premium','active'].map(id=>({id,name:id,phone:'',city:'',owner:employee.id,createdAt:at,assignedUntil:id==='later'?'2026-12-01T00:00:00Z':id==='soon'?'2026-11-15T00:00:00Z':id==='active'?'2026-11-01T00:00:00Z':''}));
+retentionState.retentionPreview={expired:{expiresAfterPremium:true},premium:{until:'2026-11-16T00:00:00Z'}};
+retentionState.orders=[{...order,id:'active-order',clientId:'active',manager:employee.id}];
+const retentionQuery={filter:'all',query:'',clientWorkFilter:'all',clientSort:'release'};
+assert.deepEqual(filteredClientList(retentionState,employee,{...retentionQuery,direction:'asc'},now).map(c=>c.id),['expired','soon','premium','later','active','unknown']);
+assert.deepEqual(filteredClientList(retentionState,employee,{...retentionQuery,direction:'desc'},now).map(c=>c.id),['later','premium','soon','expired','active','unknown']);
+assert.deepEqual(filteredClientList(retentionState,employee,{...retentionQuery,query:'soon'},now).map(c=>c.id),['soon']);
