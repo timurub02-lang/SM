@@ -253,7 +253,7 @@ export const packingStage=(order:Order)=>!["moscow_courier","russian_post"].incl
 
 export const waitingForLogistic=(o:Order)=>["confirm","extra"].includes(o.status)&&!o.courier;
 export const canOperatorReachClient=(e:Pick<Employee,"id"|"role"|"department">,o:Order,staff:Employee[]=[])=>isOrderOperator(e,o,staff)&&waitingForLogistic(o)&&o.contact==="missed"&&!o.cdekDeleting&&!o.clientWaiting;
-export const canOperatorAmendMissed=(e:Pick<Employee,"id"|"role"|"department">,o:Order,staff:Employee[]=[])=>canOperatorReachClient(e,o,staff)&&!o.cdekExported;
+export const canOperatorAmendMissed=(e:Pick<Employee,"id"|"role"|"department">,o:Order,staff:Employee[]=[])=>e.role==="operator"&&canOperatorReachClient(e,o,staff)&&!o.cdekExported;
 export const operatorCallBlocked=(e:Pick<Employee,"id"|"role">,o:Order)=>e.role==="operator"&&waitingForLogistic(o)&&!canOperatorReachClient(e,o);
 export function markClientWaiting(e:Employee,o:Order,now:string,staff:Employee[]=[]):Order{
  if(!canOperatorReachClient(e,o,staff))throw Error("Сообщить логисту можно только по своему заказу с недозвоном");

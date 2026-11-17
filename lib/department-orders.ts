@@ -7,6 +7,7 @@ export const headDraftStage=(o:Pick<Order,'status'|'courier'|'cdekExported'|'cde
 export const departmentWorkStage=(o:Pick<Order,'status'|'courier'|'cdekExported'|'cdekDeleting'>)=>
  !o.cdekExported&&!o.cdekDeleting&&['confirm','extra','rework'].includes(o.status)&&(!o.courier||o.status==='rework'&&o.courier.phase==='operator');
 export function usesOrderLease(e:Pick<Employee,'id'|'role'>,o:Order){
+ if(e.role==='department_head'&&o.editRequest?.status==='pending')return false;
  if(['logistic','chief_logistic'].includes(e.role))return true;
  if(o.courier?.doorRefusal&&!o.courier.doorRefusal.resolvedAt)return false; // Urgent doorstep takeover keeps its existing claim protocol.
  return e.role==='department_head'?(departmentWorkStage(o)||headDraftStage(o)||o.status==='packing'&&!o.courier&&!!o.courierRecall?.completedAt&&!o.packingWaybillAt):e.role==='operator'&&o.manager===e.id&&(['draft','rework'].includes(o.status)||canOperatorAmendMissed(e,o));

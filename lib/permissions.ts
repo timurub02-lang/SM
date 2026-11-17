@@ -1,3 +1,4 @@
+import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canSelectOrderPickupPoint} from './order-pickup-point.ts';
 import {canEditOrderRecipientName} from './crm.ts';
@@ -57,6 +58,8 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(['incomingBuyoutInfo','requestShipmentReturn','requestShipmentChange','requestOrderCancellation','requestOrderEdit','incomingResult'].includes(p.action)&&typeof p.incomingId==='string'&&['operator','department_head'].includes(e.role))return;
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
+ if(p.action==='requestOrderEdit')return allow(canHeadRequestEdit(e,order,s.employees));
+ if(p.action==='confirmByHead')return allow(isDepartmentOrder(e,order,s.employees)&&!!headConfirmationTarget(order));
  if(p.action==='requestOrderCancellation')return allow(['operator','department_head'].includes(e.role)&&typeof p.incomingId==='string');
  if(p.action==='resolveShipmentRequest')return allow(isLogistic(e.role)||e.role==='redemption');
  if(p.action==='resolveOrderEdit')return allow(isLogistic(e.role));
