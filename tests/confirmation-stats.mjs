@@ -65,3 +65,8 @@ dates.events=[];assert.equal(confirmationStats(dates,{role:'admin'},'','').lengt
 dates.orders[0].deliveryPackingAt=reviewedAt;
 assert.equal(confirmationStats(dates,{role:'admin'},'2026-11-18','2026-11-18')[0].id,'head','Persisted packing date works without loaded history');
 console.log('Packing date: Moscow midnight, original author, later shipping/buyout and unknown historical dates passed');
+
+const physical={employees,orders:[order('physical','packing',{delivery:'moscow_courier',shippedAt:undefined,courier:{acceptedAt:'2026-11-18T09:00:00Z'}})]};
+assert.equal(confirmationStats(physical,{role:'admin'},'','')[0].sent,1);
+physical.orders[0].status='refused';assert.equal(confirmationStats(physical,{role:'admin'},'','')[0].cancelled,1);
+physical.orders[0].status='returned';assert.equal(confirmationStats(physical,{role:'admin'},'','')[0].cancelled,0);assert.equal(confirmationStats(physical,{role:'admin'},'','')[0].returned,1);
