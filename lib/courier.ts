@@ -171,7 +171,7 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
   return {order:{...order,courier:{...order.courier,cashHandoverAt:at},updatedAt:at},text:'Курьер отметил передачу денег логисту · '+order.courier.amount+' ₽ · ожидается подтверждение получения'};
  }
  if(order.delivery!=='moscow_courier'||!order.courier||['redeemed','returned','refused'].includes(order.status))throw Error('Работа с этой посылкой недоступна');
- let o:Order={...order,refusalHandoffAt:order.refusalHandoffAt||order.finalHandoffAt,courier:{...order.courier},updatedAt:at};const c=o.courier!,phase=courierPhase(o);
+ let o:Order={...order,refusalHandoffAt:order.refusalHandoffAt||order.finalHandoffAt,courier:{...order.courier},updatedAt:at};const c=o.courier!,phase=courierPhase(o);if(c.acceptedAt)o.courierHandedAt||=c.acceptedAt;
  const logistic=['admin','logistic','chief_logistic'].includes(e.role);
  const courier=e.role==='courier'&&c.id===e.id,operator=(e.role==='operator'&&o.manager===e.id)||e.role==='admin'||isDepartmentOrder(e,o,staff);
  const require=(ok:boolean,message='Это действие недоступно на текущем этапе')=>{if(!ok)throw Error(message);};
@@ -222,7 +222,7 @@ export function applyCourierCommand(order:Order,p:CourierCommand,e:Pick<Employee
   resetToPacking();text='Логист принял отозванную посылку · заказ возвращён на сборку';
  }else if(p.action==='courierAccept'){
   require(courier&&phase==='pending'&&!c.acceptedAt);require(p.confirmed===true,'Подтвердите фактический приём посылки');
-  c.acceptedAt=at;
+  c.acceptedAt=at;o.courierHandedAt||=at;
   if(c.phase==='pending'){c.phase='confirmation';c.workStartedAt=at;c.workHours=policy.courierConfirmationHours;clearCall(o);text='Принято курьером · начато подтверждение клиента';}
   else{text='Принято курьером · ранее подтверждённый заказ';} // Existing deliveries keep their completed confirmation.
  }else if(p.operation==='resume'){

@@ -99,3 +99,8 @@ assert.equal(summaryDay[0].buyoutCount,1);assert.ok(!('orderLists' in summaryDay
 const twoDays=buyoutStatsByDay(operatorStats(state,{role:'admin'},'2026-11-11','2026-11-13'));
 assert.deepEqual(twoDays.map(r=>r.login).sort(),['2026-11-11','2026-11-12','2026-11-13']);
 assert.equal(buyoutStatsByDay([]).length,0);
+
+const physical={id:'physical',manager:'a',createdAt:'2026-11-12T07:00:00Z',confirmedAt:'2026-11-12T07:30:00Z',delivery:'moscow_courier',status:'packing',items:[],courier:{acceptedAt:'2026-11-12T08:00:00Z'}};
+const physicalStats=()=>operatorStats({employees:[{id:'a',role:'operator',login:'a'}],orders:[physical]},{role:'admin'},'2026-11-12','2026-11-12')[0];
+assert.equal(physicalStats().sent,1);assert.equal(physicalStats().awaitingShipment,0);
+for(const status of ['refused','returned','redeemed']){physical.status=status;assert.equal(physicalStats().sent,1);assert.equal(physicalStats().created,1);assert.equal(physicalStats().confirmed,1);}

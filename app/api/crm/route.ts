@@ -612,6 +612,7 @@ async function handlePOST(request:Request){
     const items=legacyReturnItems(o,rows.map(row=>({id:row.id,name:JSON.parse(row.data).name,blocked:!!row.blocked})));
     stockReturn=items.map(item=>d.prepare("INSERT INTO stock_movements(id,product_id,quantity,reason,actor_id,at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind('legacy-return:'+o.id+':'+item.productId,item.productId,item.quantity,'Физический возврат заказа '+o.id,employee.id,now,o.id,next._mutation));
    }
+   if(o.delivery==='moscow_courier'&&o.status==='refused'){next.status='returned';next.returnedAt=now;}
    next.warehouseReturnedAt=now;text=o.legacyLv?'Возврат на склад · товары оприходованы; обмен с ЛВ по штатной синхронизации':'Возврат на склад · товар принят, резерв освобождён';
   }else if(p.action==="markPackingWaybill"){
    if(courierRecalledAtWarehouse(o)&&o.status==='rework')throw Error('Заказ в работе у оператора. Дождитесь возврата на сборку');

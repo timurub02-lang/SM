@@ -1,4 +1,4 @@
-import {total,type State,type Employee} from './crm.ts';
+import {total,orderShipmentAt,type State,type Employee} from './crm.ts';
 const moscowDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow'});
 export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Employee,from:string,to:string){
  const operators=state.employees.filter(e=>e.role==='operator'&&(actor.role==='admin'||actor.role==='department_head'&&!!actor.department&&e.department===actor.department||actor.role==='operator'&&e.id===actor.id));
@@ -21,7 +21,7 @@ export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Emplo
   const created=cohort.filter(o=>o.manager===employee.id);
   // First-occurrence dates keep completed stages counted after the order moves on.
   const confirmed=created.filter(o=>!!o.confirmedAt);
-  const sent=created.filter(o=>!!o.shippedAt||!!o.cdekAcceptedAt||['shipping','pickup','redeemed','returned'].includes(o.status));
+  const sent=created.filter(o=>!!orderShipmentAt(o)||!!o.cdekAcceptedAt||['shipping','pickup','redeemed','returned'].includes(o.status));
   const cancelled=created.filter(o=>!!o.cancelledAt||o.status==='refused');
   const awaitingShipment=confirmed.filter(o=>!sent.includes(o)&&!cancelled.includes(o));
   const inWork=created.filter(o=>!confirmed.includes(o)&&!cancelled.includes(o));
