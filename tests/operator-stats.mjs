@@ -114,3 +114,13 @@ for(const [from,to] of [['','2026-11-17'],['2026-11-17',''],['2026-11-18','2026-
 assert.equal(shiftStatsPeriod('0001-01-01','0001-01-01',-1),null);
 assert.equal(shiftStatsPeriod('9999-12-31','9999-12-31',1),null);
 console.log('Statistics date arrows: yesterday/tomorrow, preserved range, year/leap transitions and incomplete/invalid boundaries passed');
+
+// Only physically received Moscow returns stop contributing to the cancelled counter.
+physical.cancelledAt='2026-11-13T10:00:00Z';physical.status='refused';assert.equal(physicalStats().cancelled,1);
+physical.status='returned';assert.equal(physicalStats().cancelled,1,'Awaiting physical receipt still retains its cancellation');
+physical.warehouseReturnedAt='2026-11-14T10:00:00Z';
+assert.deepEqual([physicalStats().created,physicalStats().confirmed,physicalStats().sent,physicalStats().cancelled],[1,1,1,0]);
+assert.deepEqual(physicalStats().orderLists.cancelled,[]);assert.equal(physicalStats().orderLists.sent[0].id,'physical');
+assert.equal(physical.cancelledAt,'2026-11-13T10:00:00Z','The historical cancellation remains on the order');
+for(const delivery of ['cdek_pickup','cdek_courier','russian_post']){physical.delivery=delivery;assert.equal(physicalStats().cancelled,1,'Other delivery methods keep their existing calculation');}
+console.log('Created statistics: received Moscow returns leave cancelled only; shipment, history and other deliveries are preserved');
