@@ -51,6 +51,24 @@ class MonitorTests(unittest.TestCase):
         self.policy['warn_disk_percent'] = float('nan')
         with self.assertRaises(ValueError): self.inspect()
 
+    def test_required_hourly_compaction_health(self):
+        self.policy['require_compaction_timer'] = True
+        self.assertEqual(self.inspect()[0], {})
+        def broken(name):
+            return {'LoadState': 'not-found'} if 'compact' in name else self.unit(name)
+        self.assertEqual(set(self.inspect(broken)[0]), {'compaction_service', 'compaction_timer'})
+        def running(name):
+            return {'LoadState': 'loaded', 'ActiveState': 'activating', 'Result': 'exit-code'} if name == 'sm-crm-backup-compact.service' else self.unit(name)
+        self.assertEqual(self.inspect(running)[0], {})
+        def failed(name):
+            return {'LoadState': 'loaded', 'ActiveState': 'failed', 'Result': 'exit-code'} if name == 'sm-crm-backup-compact.service' else self.unit(name)
+        self.assertEqual(set(self.inspect(failed)[0]), {'compaction_service'})
+        def disabled(name):
+            return {'LoadState': 'loaded', 'ActiveState': 'inactive'} if name == 'sm-crm-backup-compact.timer' else self.unit(name)
+        self.assertEqual(set(self.inspect(disabled)[0]), {'compaction_timer'})
+        self.policy['require_compaction_timer'] = 'yes'
+        with self.assertRaises(ValueError): self.inspect()
+
     def test_repeat_recovery_and_test_do_not_spam(self):
         calls = []
         send = lambda text: calls.append(text) or len(calls)

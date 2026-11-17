@@ -1,0 +1,16 @@
+[Unit]
+Description=Verified compaction of cold CRM checkpoints
+After=sm-crm-backup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/compact-sm-crm-backups --apply
+Nice=19
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/crm/backups
+TimeoutStartSec=1800
