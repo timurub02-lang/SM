@@ -160,7 +160,7 @@ try{
  assert.equal((await api('/api/call-history?orderId=o-one')).data.calls[0].status,'completed','PBX result is authoritative');
  const recording='/api/call-history/recording?id='+callId;
  assert.equal((await call(recording)).status,401);assert.equal((await api(recording,undefined,cookies.two)).status,403);assert.equal((await api(recording,undefined,cookies.one)).status,200);
- const range=await call(recording,{cookie:cookies.admin,headers:{Range:'bytes=0-43'}});assert.equal(range.status,206);assert.equal(range.headers.get('content-length'),'44');
+ const range=await fetch(base+recording,{headers:{Cookie:cookies.admin,Range:'bytes=0-43'}});assert.equal(range.status,206);assert.equal(range.headers.get('content-range'),`bytes 0-43/${audio.length}`);assert.deepEqual(Buffer.from(await range.arrayBuffer()),audio.subarray(0,44));
  assert.equal((await call(recording,{cookie:cookies.admin,headers:{Range:`bytes=${audio.length}-`}})).status,416);
  const wavPath=join(dir,'recordings',callId+'.wav'),mp3Path=join(dir,'recordings',callId+'.mp3');
  renameSync(wavPath,wavPath+'.saved');writeFileSync(mp3Path,'ID3-synthetic-audio');
