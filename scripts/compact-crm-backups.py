@@ -149,8 +149,8 @@ def run(root, policy, apply=False, reference_roots=REFERENCE_ROOTS):
     if root.resolve() != root or not root.is_dir():
         raise ValueError('Expected a real absolute backup directory')
     hours = policy['archive_after_hours']
-    if not isinstance(hours, int) or hours < 48:
-        raise ValueError('Keep at least 48 hours of raw checkpoints')
+    if type(hours) is not int or hours < 12:
+        raise ValueError('Keep at least 12 hours of raw checkpoints')
     if not isinstance(policy['keep_names'], list) or any(
             not isinstance(name, str) or pathlib.Path(name).name != name or not name.endswith('.sqlite')
             for name in policy['keep_names']):

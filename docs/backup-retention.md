@@ -13,7 +13,9 @@ must not be marked complete based on this compactor alone.
 ## Selection and preservation
 
 Only ordinary single-link `.sqlite` files immediately under `/srv/crm/backups`
-are eligible, after at least 48 hours without changes. Subdirectories, daily,
+are eligible, after at least 12 hours without changes. Existing 48-hour policies
+remain valid, but can accumulate several days of large manual checkpoints before
+the old daily maintenance catches up. Subdirectories, daily,
 imports, live databases, recordings, releases and `deploy-latest.sqlite` are
 outside this operation. A sibling `<name>.sqlite.keep` marker or a basename
 in `keep_names` protects a checkpoint. References in installed release code,
@@ -39,7 +41,8 @@ The root-owned `/etc/sm-crm-backup-policy.json` must not be group/other writable
 
 ```json
 {
-  "archive_after_hours": 48,
+  "archive_after_hours": 12,
+  "require_compaction_timer": true,
   "keep_names": [],
   "warn_backup_bytes": 42949672960,
   "warn_disk_percent": 75
@@ -55,18 +58,26 @@ After successful CI, install the reviewed file separately as
 `/usr/local/sbin/compact-sm-crm-backups` (root-owned, executable), create the
 protected policy, and run it without `--apply`. Preserve a copy of any replaced
 root tooling outside releases. Production runtime files must not be edited.
-Install the updated `scripts/systemd/sm-crm-backup.service` only after the script
-and policy exist and the preview is accepted. Its `ExecStartPost` performs
-compaction after a successful daily backup, using the existing timer and low
-CPU/I/O priority. A failed daily backup prevents compaction. A maintenance failure
-or threshold warning makes the service fail visibly; the verified daily copies
-are still retained. The 30-minute service timeout covers both stages. No new
-runtime job or change to package job counting is involved.
+Install the updated `scripts/systemd/sm-crm-backup.service` together with
+`sm-crm-backup-compact.service` and `.timer` only after the script and policy exist
+and the preview is accepted. Wait for any running daily/compaction job to finish
+before replacing definitions. The daily unit now only creates/verifies its seven
+dated backups; its timer and script are unchanged. Remove the old compaction
+`ExecStartPost` by installing this unit before enabling the new hourly timer.
+The separate compaction unit runs at low CPU/I/O priority, with a 30-minute timeout
+and the same exclusive lock. Failure or a threshold warning makes this unit fail
+visibly. No runtime job or package job counting change is involved.
 
-Run `systemd-analyze verify` on the installed unit, reload unit definitions without
-restarting CRM/bridge, and check both a maintenance run and the next timer trigger.
-For rollback, restore the previous unit and reload it; the daily script/timer are
-unchanged. Retain archives/receipts created by maintenance. Record installed hashes,
+Install the updated monitor before setting `require_compaction_timer: true`;
+it then also requires the hourly timer and successful compaction service.
+Run `systemd-analyze verify` on the installed units, reload definitions without
+restarting CRM/bridge, enable/start `sm-crm-backup-compact.timer`, and check both
+a maintenance run and the next timer trigger. Schedule is hourly plus up to five
+minutes jitter, so eligible files normally wait no more than about 13 hours.
+For rollback, disable the new timer and wait for compaction to finish, restore
+the previous daily unit, script and policy (including its 48-hour setting), then
+reload definitions. The daily script/timer are unchanged.
+Retain archives/receipts created by maintenance. Record installed hashes,
 result and service health. External archive expiry is a separate step after
 off-host recovery is verified.
 
@@ -97,7 +108,8 @@ history is required. The script only sends; it does not accept commands.
 
 Every five minutes it checks the existing policy's disk/backup thresholds,
 nonempty dated CRM/pilot daily files younger than30hours, backup service result
-and active daily timer. Scan errors also raise an alert. Changed problems notify
+and active daily timer, plus hourly compaction health when required by policy.
+Scan errors also raise an alert. Changed problems notify
 immediately on the next check, unchanged problems repeat after6hours, and recovery
 notifies once. Failed delivery keeps the previous notification state and retries
 on the next run. `/var/lib/sm-crm-alerts` holds the protected deduplication state.

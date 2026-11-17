@@ -3,7 +3,6 @@ Description=Verified daily CRM and Oktell bridge SQLite backups
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /usr/local/sbin/backup-sm-crm
-ExecStartPost=/usr/bin/python3 /usr/local/sbin/compact-sm-crm-backups --apply
 Nice=19
 IOSchedulingClass=idle
 UMask=0077
