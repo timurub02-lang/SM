@@ -72,3 +72,22 @@ const newOrders=state.orders.filter(o=>orderDisplayGroup(o).id==='new'&&state.cl
 assert.equal(adminSummary.orders.newDraft,newOrders.filter(o=>o.status==='draft').length);
 assert.equal(adminSummary.orders.newRework,newOrders.filter(o=>o.status==='rework').length);
 assert.equal(adminSummary.orders.newDraft+adminSummary.orders.newRework,adminSummary.orders.groups.new);
+
+const checkState=structuredClone(state);
+checkState.orders=[
+ {...state.orders[4],id:'new',zvd:false},
+ {...state.orders[4],id:'held',zvd:true},
+ {...state.orders[4],id:'foreign',manager:'b',zvd:true},
+ {...state.orders[4],id:'missing-client',clientId:'missing',zvd:true},
+ {...state.orders[4],id:'other-status',status:'draft',zvd:true},
+];
+for(const [employee,expected] of [[admin,[1,2]],[staff[0],[1,1]],[staff[2],[1,1]]]){
+ const {check,checkNew,checkZvd}=buildWorkspaceSummary(checkState,employee,now).nav;
+ assert.deepEqual([checkNew,checkZvd],expected);assert.equal(check,checkNew+checkZvd);
+}
+checkState.orders=checkState.orders.filter(o=>o.id==='held');
+assert.equal(buildWorkspaceSummary(checkState,admin,now).nav.checkNew,0);
+assert.equal(buildWorkspaceSummary(checkState,admin,now).nav.checkZvd,1);
+checkState.orders=[];
+assert.equal(buildWorkspaceSummary(checkState,admin,now).nav.checkNew,0);
+assert.equal(buildWorkspaceSummary(checkState,admin,now).nav.checkZvd,0);
