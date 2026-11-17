@@ -485,3 +485,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .cdek-point-popup [data-slot="combobox-item"]{white-space:normal;overflow-wrap:anywhere;min-width:0;padding:10px 32px 10px 12px;font:inherit}
 .cdek-point-popup [data-highlighted]{background:var(--accent,#eaf2ff)}
 .cdek-point-popup [data-disabled]{opacity:.5}
+
+.incoming-tab-pair{display:inline-flex;align-items:stretch;border:1px solid var(--border);border-radius:10px;overflow:hidden;flex-shrink:0}.incoming-tabs .incoming-tab-pair>button{border-radius:0;margin:0}.incoming-tabs .incoming-tab-pair>button+button{border-left:1px solid var(--border)}.incoming-missed-note{font-size:.9em;color:var(--muted-foreground);margin:0;overflow-wrap:anywhere}
