@@ -89,7 +89,7 @@ const approved={...sent,status:'shipping',courier:{...sent.courier,phase:'delive
 assert.equal(applyCourierCommand({...base,status:'shipping',courier:{...base.courier,phase:undefined}},{action:'courierAccept',confirmed:true},courier,policy,at).order.status,'shipping');
 for(const delivery of ['cdek_pickup','russian_post'])assert.throws(()=>run({...accepted,delivery},courier,'confirm',101));
 assert.deepEqual(allowedOrderTransitions({...base,status:'confirm',courier:undefined},'logistic'),['packing','rework']);
-assert.deepEqual(allowedOrderTransitions({...base,status:'confirm',delivery:'russian_post',courier:undefined},'logistic'),['extra','rework']);
+assert.deepEqual(allowedOrderTransitions({...base,status:'confirm',delivery:'russian_post',courier:undefined},'logistic'),['check','rework']);
 assert.deepEqual(allowedOrderTransitions({...base,status:'confirm',delivery:'cdek_pickup',courier:undefined},'logistic'),['check','rework']);
 const d=openDatabase(':memory:');
 try{

@@ -5,7 +5,7 @@ const at=new Date().toISOString(),e={id:'head',name:'Head',role:'department_head
 const base={id:'test',clientId:'client',manager:'op',status:'rework',returnKind:'clarification',returnReason:'Fix address',delivery:'moscow_courier',address:c.address,items:[{name:'Product',quantity:1,price:100}],round:1,contact:'none',extra:false,createdAt:at,updatedAt:at};
 for(const delivery of ['moscow_courier','russian_post','cdek_courier','cdek_pickup']){
  const o={...base,delivery};if(delivery==='cdek_pickup')o.cdekPickupPoint={code:'TEST',address:'PVZ',workTime:'',context:pickupPointContext(o)};
- assert.equal(confirmByHead(o,c,e,staff,at,true,true).status,delivery.startsWith('cdek_')?'check':'packing');
+ assert.equal(confirmByHead(o,c,e,staff,at,true,true).status,delivery!=='moscow_courier'?'check':'packing');
  assert.throws(()=>confirmByHead(o,c,e,staff,at,true,false),/замечаний/);
  for(const status of ['confirm','extra']){
   const missed={...o,status,contact:'missed',returnKind:undefined};assert.ok(headConfirmationTarget(missed));assert.equal(headConfirmationTarget({...missed,contact:'callback'}),undefined);

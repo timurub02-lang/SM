@@ -12,7 +12,7 @@ const at=new Date().toISOString(),due=new Date(Date.now()+3600000).toISOString()
 const operator={id:'op',role:'operator',department:'1'},head={id:'head',role:'department_head',department:'1',name:'Руководитель'},foreign={...head,id:'foreign',department:'2'},logistic={id:'log',role:'logistic'};
 const employees=[operator,head,foreign,logistic],base={id:'order',clientId:'client',manager:'op',status:'confirm',delivery:'cdek_pickup',contact:'none',due:'',round:1,extra:false,createdAt:at,updatedAt:at,items:[]};
 const state=o=>({orders:[o],clients:[{id:'client',name:'Клиент'}],employees,settings:{},events:[]});
-for(const [delivery,next] of [['cdek_pickup','check'],['cdek_courier','check'],['moscow_courier','packing'],['russian_post','extra']]){
+for(const [delivery,next] of [['cdek_pickup','check'],['cdek_courier','check'],['moscow_courier','packing'],['russian_post','check']]){
  const o={...base,delivery};assert(allowedOrderTransitions(o,head.role).includes(next));assert(allowedOrderTransitions(o,head.role).includes('refused'));
  assert.doesNotThrow(()=>authorizeCrm(head,{action:'transition',id:o.id,to:next},state(o)));
  assert.throws(()=>authorizeCrm(foreign,{action:'transition',id:o.id,to:next},state(o)),/Недостаточно/);

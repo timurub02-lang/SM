@@ -103,7 +103,6 @@ export function allowedOrderTransitions(o:Order,role?:string):Status[]{
  let allowed:Status[]=o.status==="rework"&&o.extra?["extra","refused"]:o.status==="extra"?["packing","rework","refused"]:transitions[o.status];
  if(o.status==="confirm"&&o.delivery==="moscow_courier")allowed=allowed.map(to=>to==="check"?"packing":to);
  if(o.packingReworkDelivery&&o.status==="confirm"&&(o.delivery===o.packingReworkDelivery||["russian_post","moscow_courier"].includes(o.delivery||"")))allowed=["packing","rework"];
- if(o.status==="confirm"&&o.delivery==="russian_post")allowed=allowed.map(to=>to==="check"?"extra":to);
  if(["moscow_courier","russian_post"].includes(o.delivery||"")&&["packing","phone"].includes(o.status))allowed=o.packingWaybillAt&&["admin","logistic","chief_logistic"].includes(role||"")?["shipping"]:[];
  if(o.delivery==="russian_post"&&["shipping","pickup"].includes(o.status)&&["admin","logistic","chief_logistic"].includes(role||""))allowed=["redeemed","returned"];
  if(refusalAlreadyHandled(o)){
