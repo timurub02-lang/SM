@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {shipmentStats,shipmentDay} from '../lib/shipment-stats.ts';
+import {shipmentStats,shipmentDay,shipmentBuyoutRate} from '../lib/shipment-stats.ts';
 const employees=[{id:'a',login:'one',role:'operator',department:'1'},{id:'b',login:'two',role:'operator',department:'2'}];
 const order=(id,extra={})=>({id,manager:'a',createdAt:'2026-10-01',shippedAt:'2026-11-15T21:00:00Z',delivery:'russian_post',status:'shipping',items:[],...extra});
 const orders=[order('1'),order('2',{status:'redeemed',redeemedAt:'2026-12-01'}),order('3',{status:'returned'}),order('4',{delivery:'moscow_courier'}),order('5',{delivery:'cdek_pickup',cdekTransferredAt:'2026-11-15T21:00:00Z',cdekAcceptedAt:'2026-11-17T10:00:00Z',shippedAt:'2026-11-14'}),order('other',{manager:'b'}),order('old',{shippedAt:'2026-11-15T20:59:59Z'}),order('future',{shippedAt:'2026-11-16T21:00:00Z'}),order('missing',{shippedAt:undefined,status:'redeemed'}),order('bad',{shippedAt:'bad'}),order('test',{testOnly:true}),order('legacy',{legacyLv:{orderId:'LV'},status:'redeemed'})];
@@ -34,3 +34,20 @@ assert.equal(shipmentDay({...exported,cdekTransferredAt:undefined,shippedAt:unde
 exported.cdekAcceptedAt='2026-11-20T09:00:00Z';exported.status='redeemed';
 const originalDay=shipmentStats({employees,orders:[exported]},{role:'admin'},'2026-11-13','2026-11-13')[0];
 assert.equal(originalDay.sent,1);assert.equal(originalDay.redeemed,1);
+
+assert.equal(shipmentBuyoutRate({sent:10,redeemed:3}),30);
+assert.equal(shipmentBuyoutRate({sent:0,redeemed:0}),0);
+assert.equal(shipmentBuyoutRate({sent:10,redeemed:0}),0);
+assert.equal(shipmentBuyoutRate({sent:7,redeemed:7}),100);
+const percentages=[{sent:10,redeemed:3},{sent:90,redeemed:9}];
+assert.equal(shipmentBuyoutRate(percentages.reduce((total,row)=>({sent:total.sent+row.sent,redeemed:total.redeemed+row.redeemed}),{sent:0,redeemed:0})),12);
+assert.equal(shipmentBuyoutRate({sent:3,redeemed:1}).toLocaleString('ru-RU',{maximumFractionDigits:1}),'33,3');
+console.log('Shipment buyout percentage: 3/10=30%, zero, full buyout, weighted total and Russian rounding passed');
+
+const amounts={employees,orders:[order('money-a',{items:[{quantity:3,price:10.01}]}),order('money-paid',{status:'redeemed',items:[{quantity:2,price:0.1}]}),order('money-return',{status:'returned',items:[{quantity:1,price:20.02}]}),order('money-other',{manager:'b',items:[{quantity:1,price:100}]}),order('money-outside',{shippedAt:'2026-11-10',items:[{quantity:1,price:999}]}),order('money-test',{testOnly:true,items:[{quantity:1,price:999}]})]};
+amounts.orders.push({...amounts.orders[0]});
+const amountRows=shipmentStats(amounts,{role:'admin'},'2026-11-16','2026-11-16');
+assert.deepEqual(amountRows.map(row=>row.sentAmount),[50.25,100]);
+assert.equal(shipmentStats(amounts,{role:'admin'},'2026-11-16','2026-11-16','',true)[0].sentAmount,150.25);
+assert.equal(shipmentStats(amounts,{role:'department_head',department:'1'},'2026-11-16','2026-11-16')[0].sentAmount,50.25);
+console.log('Shipment amount: exact kopecks, paid/returned included, date/role scopes and deduplication passed');
