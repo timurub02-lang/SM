@@ -35,15 +35,15 @@ try{
  assert.equal(JSON.parse(baseResponse.text).rows.find(r=>r.id==='other').clients,1);
  assert.ok(!baseResponse.text.includes('private-client'));
 
- const buyoutPath='/api/operator-statistics?section=buyouts&from=2026-11-11&to=2026-11-11';
- const buyerResponse=await call(buyoutPath,cookies.buyer);assert.equal(buyerResponse.status,200,buyerResponse.text);
- const buyerRow=JSON.parse(buyerResponse.text).rows.find(r=>r.id==='other');assert.equal(buyerRow.buyoutCdek,1);assert.equal(buyerRow.buyoutAmount,12345);
- assert.deepEqual(Object.keys(buyerRow).sort(),['id','login','department','buyoutCount','buyoutAmount','buyoutCdek','buyoutPost','buyoutMoscow'].sort());
+ const buyerPath='/api/operator-statistics?section=shipped&from=2026-11-11&to=2026-11-11';
+ const buyerResponse=await call(buyerPath,cookies.buyer);assert.equal(buyerResponse.status,200,buyerResponse.text);
+ const buyerRow=JSON.parse(buyerResponse.text).rows.find(r=>r.id==='other');assert.equal(buyerRow.sentCdek,1);assert.equal(buyerRow.redeemed,1);
+ assert.deepEqual(Object.keys(buyerRow).sort(),['id','label','sentCdek','sentPost','sentMoscow','sent','redeemed','returned'].sort());
  for(const secret of ['PRIVATE-PAID','PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001','orderLists'])assert.ok(!buyerResponse.text.includes(secret));
- for(const section of ['base','created','shipped','confirmation',''])assert.equal((await call('/api/operator-statistics?section='+section,cookies.buyer)).status,403);
- assert.equal((await call(buyoutPath+'&actorId=admin',cookies.buyer)).status,403);
- const buyerDaily=await call(buyoutPath+'&groupBy=day&department=2',cookies.buyer);assert.equal(buyerDaily.status,200);assert.equal(JSON.parse(buyerDaily.text).rows[0].login,'2026-11-11');
- assert.equal(JSON.parse((await call(buyoutPath+'&department=1',cookies.buyer)).text).rows.some(r=>r.buyoutCount>0),false);
+ for(const section of ['base','created','buyouts','confirmation',''])assert.equal((await call('/api/operator-statistics?section='+section,cookies.buyer)).status,403);
+ assert.equal((await call(buyerPath+'&actorId=admin',cookies.buyer)).status,403);
+ const buyerDaily=await call(buyerPath+'&groupBy=day&department=2',cookies.buyer);assert.equal(buyerDaily.status,200);assert.equal(JSON.parse(buyerDaily.text).rows[0].label,'2026-11-11');
+ assert.equal(JSON.parse((await call(buyerPath+'&department=1',cookies.buyer)).text).rows.length,0);
  const path='/api/operator-statistics?from=2026-11-11&to=2026-11-11';
  assert.equal((await call(path)).status,401);
  assert.equal((await call(path,cookies.operator)).status,403);
@@ -79,5 +79,7 @@ try{
  assert.ok(!originalExport.text.includes(delayed.id));
  // Existing object-level access remains closed for another department's orders.
  assert.equal((await call('/api/order-access',cookies.head,{orderId:order.id})).status,403);
+ const returned={...paid,id:'PRIVATE-RETURNED',status:'returned',returnedAt:'2026-11-17T10:00:00Z'};db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(returned.id,returned.clientId,JSON.stringify(returned));
+ const withReturn=JSON.parse((await call(buyerPath,cookies.buyer)).text).rows.find(r=>r.id==='other');assert.equal(withReturn.sent,2);assert.equal(withReturn.redeemed,1);assert.equal(withReturn.returned,1);
  console.log('Statistics HTTP: head aggregates only, dates, role and identity checks, private orders inaccessible');
 }catch(error){console.error(logs);throw error;}finally{if(server&&server.exitCode===null){server.kill();await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}
