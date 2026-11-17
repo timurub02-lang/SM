@@ -2,7 +2,7 @@ import {allowedOrderTransitions,orderMissingField,validateTransition,type Order,
 import {isDepartmentOrder} from './department-orders.ts';
 export function headConfirmationTarget(o:Order):Status|undefined{
  if(o.courier||o.courierRecall||o.shippedAt||o.cdekTransferredAt||o.cdekExported||o.cdekDeleting||o.zvd||o.cancellationRequest?.status==='pending'||o.packingReworkDelivery||o.editRequest?.status==='pending'||o.editRequest?.status==='editing'&&!o.editRequest.savedAt)return;
- if(o.status==='rework')return o.returnKind&&o.delivery?(o.delivery.startsWith('cdek_')?'check':'packing'):undefined;
+ if(o.status==='rework')return o.returnKind&&o.delivery?(o.delivery!=='moscow_courier'?'check':'packing'):undefined;
  if(['confirm','extra'].includes(o.status)&&o.contact==='missed')return allowedOrderTransitions(o,'logistic').find(to=>['check','extra','packing'].includes(to));
 }
 export function confirmByHead(o:Order,c:Client,e:Employee,staff:Employee[],at:string,clientConfirmed:boolean,correctionsConfirmed:boolean):Order{
