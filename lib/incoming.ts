@@ -7,7 +7,7 @@ import {seesOrder} from './permissions.ts';
 import {initBaseStorage} from './base-storage.ts';
 import {initPhone} from './phone-store.ts';
 
-type Row={assignee_role?:string;handoff?:string;spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
+type Row={missed_at?:string;missed_until?:string;missed_by?:string;assignee_role?:string;handoff?:string;spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
 const incomingSchemas=new WeakMap<Db,Promise<void>>();
 export async function initIncoming(d:Db){let schema=incomingSchemas.get(d);if(!schema){schema=initializeIncoming(d);incomingSchemas.set(d,schema);schema.catch(()=>incomingSchemas.delete(d));}await schema;}
 async function initializeIncoming(d:Db){
@@ -20,7 +20,7 @@ async function initializeIncoming(d:Db){
   }
   await d.prepare("UPDATE incoming_calls SET shared_queue=1,assignee_id=NULL,department_id='' WHERE closed_at IS NULL AND client_id IN (SELECT id FROM clients WHERE COALESCE(json_extract(data,'$.owner'),'')='') AND NOT EXISTS(SELECT 1 FROM orders WHERE orders.client_id=incoming_calls.client_id AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))").run();
  }
- for(const [name,definition] of [['handoff',"TEXT NOT NULL DEFAULT ''"],['spam','INTEGER NOT NULL DEFAULT 0'],['spam_reason',"TEXT NOT NULL DEFAULT ''"],['call_count','INTEGER NOT NULL DEFAULT 1'],['last_at',"TEXT NOT NULL DEFAULT ''"]]){
+ for(const [name,definition] of [['missed_at',"TEXT NOT NULL DEFAULT ''"],['missed_until',"TEXT NOT NULL DEFAULT ''"],['missed_by',"TEXT NOT NULL DEFAULT ''"],['handoff',"TEXT NOT NULL DEFAULT ''"],['spam','INTEGER NOT NULL DEFAULT 0'],['spam_reason',"TEXT NOT NULL DEFAULT ''"],['call_count','INTEGER NOT NULL DEFAULT 1'],['last_at',"TEXT NOT NULL DEFAULT ''"]]){
   if(!columns.results.some((c:{name:string})=>c.name===name))try{await d.prepare('ALTER TABLE incoming_calls ADD COLUMN '+name+' '+definition).run();}catch(error){if(!(await d.prepare('PRAGMA table_info(incoming_calls)').all()).results.some((c:{name:string})=>c.name===name))throw error;}
  }
  await d.prepare('CREATE INDEX IF NOT EXISTS incoming_open_phone ON incoming_calls(phone,closed_at)').run();
@@ -75,11 +75,11 @@ export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order
  const team=incomingTeamRoles(e.role);
  const scope=e.role==='admin'?'1=1':e.role==='department_head'?"(i.client_id IS NULL OR i.shared_queue=1 OR i.assignee_id=? OR (?<>'' AND (i.department_id=? OR i.assignee_id IN (SELECT id FROM employees WHERE json_extract(data,'$.role')='operator' AND json_extract(data,'$.department')=?)))) AND NOT EXISTS(SELECT 1 FROM employees a WHERE a.id=i.assignee_id AND json_extract(a.data,'$.role')='redemption')":team.length?"(i.assignee_id=? OR i.assignee_id IN (SELECT id FROM employees WHERE json_extract(data,'$.role') IN (SELECT value FROM json_each(?))))":'i.assignee_id=?';
  const args=e.role==='admin'?[]:e.role==='department_head'?[e.id,e.department||'',e.department||'',e.department||'']:team.length?[e.id,JSON.stringify(team)]:[e.id];
- const select=`SELECT i.*,EXISTS(SELECT 1 FROM incoming_phone_policy p WHERE p.phone=i.phone AND p.policy='block') AS blocked,json_extract(c.data,'$.name') AS client_name,json_extract(c.data,'$.owner') AS client_owner,json_extract(a.data,'$.name') AS assignee_name FROM incoming_calls i LEFT JOIN clients c ON c.id=i.client_id LEFT JOIN employees a ON a.id=i.assignee_id WHERE ${scope}`;
+ const select=`SELECT i.*,EXISTS(SELECT 1 FROM incoming_phone_policy p WHERE p.phone=i.phone AND p.policy='block') AS blocked,json_extract(c.data,'$.name') AS client_name,json_extract(c.data,'$.owner') AS client_owner,json_extract(a.data,'$.name') AS assignee_name,json_extract(m.data,'$.name') AS missed_name FROM incoming_calls i LEFT JOIN clients c ON c.id=i.client_id LEFT JOIN employees a ON a.id=i.assignee_id LEFT JOIN employees m ON m.id=i.missed_by WHERE ${scope}`;
  const open=(await d.prepare(select+' AND i.closed_at IS NULL AND i.spam=0 ORDER BY i.at DESC').bind(...args).all()).results;
  const closed=(await d.prepare(select+' AND i.closed_at IS NOT NULL AND i.spam=0 ORDER BY i.closed_at DESC LIMIT 50').bind(...args).all()).results;
  const spam=e.role==='admin'?(await d.prepare(select+' AND i.spam=1 ORDER BY i.last_at DESC,i.at DESC LIMIT 100').bind(...args).all()).results:[];
- const rows=[...open,...closed,...spam] as (Row&{client_name:string|null;client_owner:string|null;assignee_name:string|null})[];if(!rows.length)return [];
+ const rows=[...open,...closed,...spam] as (Row&{client_name:string|null;client_owner:string|null;assignee_name:string|null;missed_name:string|null})[];if(!rows.length)return [];
  const ids=new Set(rows.map(r=>r.client_id));
  if(scoped)orders=(await d.prepare("SELECT json_object('id',id,'clientId',client_id,'manager',json_extract(data,'$.manager'),'status',json_extract(data,'$.status'),'version',version,'shippedAt',json_extract(data,'$.shippedAt'),'courier',json_extract(data,'$.courier'),'delivery',json_extract(data,'$.delivery'),'cdekTransferredAt',json_extract(data,'$.cdekTransferredAt')) AS data FROM orders WHERE client_id IN (SELECT value FROM json_each(?)) ORDER BY id DESC").bind(JSON.stringify([...ids].filter(Boolean))).all()).results.map((r:{data:string})=>JSON.parse(r.data));
  const buyoutByClient=new Map<string|null,string[]>();
@@ -97,7 +97,7 @@ export async function readIncoming(d:Db,e:Employee,staff:Employee[],orders:Order
  }
  return rows.map(r=>{
   const active=activeByClient.get(r.client_id)||[];
-  return {buyoutOrderIds:buyoutByClient.get(r.client_id)||[],shippedOrderIds:shippedByClient.get(r.client_id)||[],orderVersions:Object.fromEntries(active.map(o=>[o.id,o.version])),preShipmentOrderIds:beforeByClient.get(r.client_id)||[],clientOwnerId:r.client_owner||'',handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staffById.get(r.assignee_id)?.name||r.assignee_name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:hideClientPhone(e.role)?'':r.phone,calledNumber:hideClientPhone(e.role)?'':r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)&&(e.role!=='redemption'||!r.order_id||o.id===r.order_id)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staffById.get(r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
+  return {missedAt:r.missed_at||'',missedUntil:r.missed_until||'',missedBy:r.missed_by||'',missedName:r.missed_name||'',buyoutOrderIds:buyoutByClient.get(r.client_id)||[],shippedOrderIds:shippedByClient.get(r.client_id)||[],orderVersions:Object.fromEntries(active.map(o=>[o.id,o.version])),preShipmentOrderIds:beforeByClient.get(r.client_id)||[],clientOwnerId:r.client_owner||'',handoff:r.handoff?JSON.parse(r.handoff):undefined,spam:!!r.spam,spamReason:r.spam_reason||'',callCount:r.call_count||1,lastAt:r.last_at||r.at,blocked:!!r.blocked,sharedQueue:r.shared_queue===1,id:r.id,clientId:r.client_id||'',clientName:r.client_name||'Неизвестный клиент',at:r.at,text:'Клиент перезвонил',source:r.id.startsWith('LV-IN-')?'ЛВ':'Билайн АТС',assigneeId:r.assignee_id||'',assigneeName:staffById.get(r.assignee_id)?.name||r.assignee_name||(r.shared_queue||!r.client_id?'Общая очередь руководителей и администратора':'Не распределено — требуется администратор'),department:r.department_id,phone:hideClientPhone(e.role)?'':r.phone,calledNumber:hideClientPhone(e.role)?'':r.called_number,hasActiveOrder:active.length>0,orderIds:active.filter(o=>seesOrder(e,o,staff)&&(e.role!=='redemption'||!r.order_id||o.id===r.order_id)).map(o=>o.id),closedAt:r.closed_at||'',closedBy:staffById.get(r.closed_by)?.name||'',reason:r.reason,orderId:r.order_id||''};
  });
 }
 export async function incomingForAction(d:Db,id:string,e:Employee,staff:Employee[],clientId?:string){
@@ -140,4 +140,18 @@ export async function incomingRouting(d:Db,clientId:string,c:{owner?:string}|nul
  const assignee=shared?undefined:paidCallback?ownerCaller||undefined:cdekSent?buyoutCaller||ownerCaller||undefined:ownerCaller?logisticCaller||ownerCaller:previous||undefined;
  const owner=staff.find(e=>e.id===c?.owner);
  return {assignee,department:owner?.department||assignee?.department||'',shared,cdekSent,paidCallback,callbackOrderId:paidCallback||buyoutCaller?last.order_id:undefined};
+}
+
+export async function markIncomingMissed(d:Db,id:string,e:Employee,staff:Employee[],now=new Date().toISOString()){
+ if(!['admin','operator','department_head','logistic','chief_logistic','redemption'].includes(e.role))throw Error('Обращение недоступно');
+ const row=await incomingForAction(d,id,e,staff);
+ if(Date.parse(row.missed_until||'')>Date.parse(now))return row.missed_until;
+ const until=new Date(Date.parse(now)+3600000).toISOString();
+ const event={id:'INCOMING-ND-'+crypto.randomUUID(),clientId:row.client_id,orderId:row.order_id||'',at:now,actor:e.name,actorId:e.id,text:'Недозвон по входящему обращению · повторная обработка через час · '+until};
+ const result=await d.batch([
+  d.prepare("UPDATE incoming_calls SET missed_at=?,missed_until=?,missed_by=? WHERE id=? AND closed_at IS NULL AND spam=0 AND assignee_id IS ? AND client_id IS ? AND department_id=? AND shared_queue=? AND COALESCE(missed_until,'')=?").bind(now,until,e.id,id,row.assignee_id,row.client_id,row.department_id,row.shared_queue||0,row.missed_until||''),
+  ...(row.client_id?[d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE changes()>0 AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND missed_at=? AND missed_until=? AND missed_by=?)").bind(event.id,event.clientId,event.orderId,now,JSON.stringify(event),id,now,until,e.id)]:[])
+ ]);
+ if(!result[0].meta.changes)throw Error('Обращение изменилось. Обновите данные');
+ return until;
 }

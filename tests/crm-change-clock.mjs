@@ -38,5 +38,11 @@ try{
  await initCrmChangeClock(d);assert.equal(await crmChangeRevision(d),migrated);assert.equal(await d.prepare('PRAGMA schema_version').first('schema_version'),schema,'no repeated DDL');
  await d.prepare("CREATE TRIGGER IF NOT EXISTS crm_clock_settings_UPDATE AFTER UPDATE ON settings BEGIN UPDATE crm_change_clock SET revision=revision+1 WHERE id=1; END").run();
  assert.equal(await d.prepare("SELECT sql FROM sqlite_master WHERE name='crm_clock_settings_UPDATE'").first('sql'),definition,'old runtime initialization cannot restore noisy triggers');
+ await d.prepare('CREATE TABLE incoming_calls(id TEXT PRIMARY KEY,closed_at TEXT)').run();await initCrmChangeClock(d);
+ await d.prepare("INSERT INTO incoming_calls VALUES('unknown',NULL)").run();
+ await d.prepare("ALTER TABLE incoming_calls ADD COLUMN missed_until TEXT NOT NULL DEFAULT ''").run();await initCrmChangeClock(d);
+ const beforeNd=await crmChangeRevision(d);await d.prepare("UPDATE incoming_calls SET missed_until='2026-11-17T11:00:00Z' WHERE id='unknown'").run();
+ assert.notEqual(await crmChangeRevision(d),beforeNd,'ND on unknown incoming refreshes peers after schema upgrade');
+ const afterNd=await crmChangeRevision(d);await initCrmChangeClock(d);assert.equal(await crmChangeRevision(d),afterNd,'Incoming trigger upgrade is idempotent');
  console.log('CRM clock: insert, update, delete, rollback and idempotent initialization passed');
 }finally{d.close();}

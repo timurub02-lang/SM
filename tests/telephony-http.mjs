@@ -667,6 +667,23 @@ try{
  console.log('Unknown client creation, cross-department assignment, reassignment, validation and active-order protection passed.');
  console.log('Unknown caller search, Cyrillic names, owner labels, extra phone linking, future matching and duplicate protection passed.');
  console.log('Incoming HTTP: trusted ingress, linked phone matching, actual last caller/owner routing, role-scoped tasks, all heads unknown queue, required results, CSRF, no view closure, automatic outcome closure, shared deduplication passed.');
+ const ndClient={...createClient,id:'incoming-nd-client',phone:'+79990000654',owner:'one'};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(ndClient.id,ndClient.phone,JSON.stringify(ndClient));
+ const ndOrdersBefore=JSON.stringify(db.prepare('SELECT * FROM orders ORDER BY id').all());
+ for(const role of ['admin','one','head','logistic','chief','redemption']){
+  const ndId='nd-'+role;
+  db.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number) VALUES(?,?,?,?,?,?,?)').run(ndId,ndClient.id,role,'1',new Date().toISOString(),ndClient.phone,'');
+  const savedNd=await api('/api/crm',{action:'missIncoming',incomingId:ndId},cookies[role]);assert.equal(savedNd.status,200,savedNd.text);
+  const storedNd=db.prepare('SELECT * FROM incoming_calls WHERE id=?').get(ndId);
+  assert.equal(Date.parse(storedNd.missed_until)-Date.parse(storedNd.missed_at),3600000);assert.equal(storedNd.closed_at,null);assert.equal(storedNd.assignee_id,role);assert.equal(storedNd.missed_by,role);
+  const ndItem=(await state(role)).incoming.find(i=>i.id===ndId);assert.equal(ndItem.missedUntil,storedNd.missed_until);
+  assert.equal((await api('/api/crm',{action:'missIncoming',incomingId:ndId},cookies[role])).status,200);
+  assert.equal(db.prepare('SELECT missed_until FROM incoming_calls WHERE id=?').get(ndId).missed_until,storedNd.missed_until);
+ }
+ assert.equal((await api('/api/crm',{action:'missIncoming',incomingId:'nd-one'},cookies.two)).status,400,'Foreign operator cannot postpone an incoming');
+ assert.equal((await api('/api/crm',{action:'missIncoming',incomingId:'nd-one'},cookies.courier)).status,403,'Courier has no incoming workflow');
+ assert.equal(JSON.stringify(db.prepare('SELECT * FROM orders ORDER BY id').all()),ndOrdersBefore,'ND never changes orders');
+ console.log('Incoming ND HTTP: all six roles, persistent one-hour timeout, no extension on retry, isolation and unchanged orders passed. No calls placed.');
  console.log('Experimental classification, authorized manual correction, unchanged orders, call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and staff telephony: authentication, per-employee credentials, role and client access, CSRF, server destinations, card phone normalization, private config and no-store passed. No calls placed.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

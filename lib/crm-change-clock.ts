@@ -26,7 +26,7 @@ async function install(d:ActivityDb){
    const settingsChanged=`(OLD.id IS NOT NEW.id OR CASE WHEN json_valid(OLD.data) AND json_valid(NEW.data) THEN CASE WHEN OLD.id GLOB 'cdek-shipment-*' THEN json_remove(OLD.data,'$.checkedAt') IS NOT json_remove(NEW.data,'$.checkedAt') WHEN OLD.id IN ('cdek-sync-health','sk-order-health','lv-incoming-health') THEN json_remove(OLD.data,'$.checkedAt','$.at','$.lastSuccessAt') IS NOT json_remove(NEW.data,'$.checkedAt','$.at','$.lastSuccessAt') ELSE OLD.data IS NOT NEW.data END ELSE OLD.data IS NOT NEW.data END)`;
    const conditions=[...(operation==='UPDATE'?[table==='settings'?settingsChanged:`(${changed})`]:[]),...(table==='settings'?[`${operation==='DELETE'?'OLD':'NEW'}.id<>'crm-maintenance-health'`]:[])];
    const name=`crm_clock_${table}_${operation}`,sql=`CREATE TRIGGER ${name} AFTER ${operation} ON ${table} ${conditions.length?'WHEN '+conditions.join(' AND '):''} BEGIN UPDATE crm_change_clock SET revision=revision+1 WHERE id=1; END`;
-   if(table==='settings'&&operation==='UPDATE'&&triggers.has(name)&&triggers.get(name)!==sql){
+   if(['settings','incoming_calls'].includes(table)&&operation==='UPDATE'&&triggers.has(name)&&triggers.get(name)!==sql){
     statements.push(d.prepare(`DROP TRIGGER ${name}`),d.prepare(sql),d.prepare('UPDATE crm_change_clock SET revision=revision+1 WHERE id=1'));
    }else if(!triggers.has(name))statements.push(d.prepare(sql.replace('CREATE TRIGGER ','CREATE TRIGGER IF NOT EXISTS ')));
   }

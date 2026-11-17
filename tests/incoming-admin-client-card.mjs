@@ -11,8 +11,8 @@ const item={id:'incoming-test',clientId:'client-test',clientName:'Synthetic clie
 function render(role,itemPatch={},clients=[],tab='free'){
  globalThis.__incomingTab=tab;const opened=[];
  const tree=IncomingInbox({items:[{...item,...itemPatch}],clients,employees:[],employee:{id:'actor',role},busy:false,onOpenClient:(...args)=>opened.push(args)});
- const cards=[],buttons=[];function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;if(node.type==='details'&&node.props.className?.includes('incoming-card'))cards.push(node);if(node.type==='button'&&node.props.children==='Карточка клиента')buttons.push(node);walk(node.props?.children);}
- walk(tree);return {buttons,opened,cards};
+ const cards=[],buttons=[],ndTabs=[],ndActions=[];function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;if(node.type==='details'&&node.props.className?.includes('incoming-card'))cards.push(node);if(node.type==='button'&&node.props.children==='Карточка клиента')buttons.push(node);if(node.type==='button'&&node.props['aria-label']?.startsWith('НД:'))ndTabs.push(node);if(node.type==='button'&&node.props.children==='Недозвон')ndActions.push(node);walk(node.props?.children);}
+ walk(tree);return {buttons,opened,cards,ndTabs,ndActions};
 }
 for(const [patch,tab] of [[{},'free'],[{clientOwnerId:'other'},'known'],[{closedAt:'2026-11-14T13:00:00Z'},'closed']]){
  const view=render('admin',patch,[],tab);assert.equal(view.buttons.length,1,'Admin card navigation must not depend on the client cache');
@@ -28,3 +28,9 @@ console.log('Inbox navigation: admin missing-cache/free/owned/closed, callback I
 
 for(const patch of [{clientOwnerId:'owner'},{clientOwnerId:'owner',assigneeId:'actor'}])assert.ok(render('admin',patch,[],'known').cards[0].props.className.includes('incoming-card-owned-no-order'),'Owned clients without active orders are blue regardless of the assigned handler');
 for(const [patch,tab] of [[{},'free'],[{assigneeId:'actor'},'free'],[{hasActiveOrder:true,clientOwnerId:'owner'},'known'],[{clientId:undefined},'unknown']])assert.ok(!render('admin',patch,[],tab).cards[0].props.className.includes('incoming-card-owned-no-order'),'Free, active-order and unknown cards are not blue');
+
+const nd=render('admin',{missedUntil:new Date(Date.now()+3600000).toISOString()},[],'free');
+assert.equal(nd.cards.length,0,'Deferred card is hidden from its ordinary category');
+assert.equal(nd.ndTabs.length,3,'Each active admin category has a paired ND tab');
+for(const role of ['admin','operator','department_head','logistic','chief_logistic','redemption'])assert.equal(render(role,{clientOwnerId:'actor'},[],'known').ndActions.length,1,'ND action for '+role);
+assert.equal(render('admin',{closedAt:'closed'},[],'closed').ndActions.length,0,'Closed incoming cannot be marked ND');
