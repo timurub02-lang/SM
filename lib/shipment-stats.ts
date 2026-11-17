@@ -1,8 +1,8 @@
 import {operatorStats} from './operator-stats.ts';
-import type {Order,State,Employee} from './crm.ts';
+import {orderShipmentAt,type Order,type State,type Employee} from './crm.ts';
 const moscowDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow'});
 export function shipmentDay(order:Order){
- const at=order.delivery?.startsWith('cdek_')?order.cdekTransferredAt||order.shippedAt:order.shippedAt;
+ const at=orderShipmentAt(order);
  if(!at||!Number.isFinite(Date.parse(at)))return '';
  return moscowDate.format(new Date(at));
 }

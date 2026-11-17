@@ -1,4 +1,5 @@
 import {packingStage,deliveryQueue} from '../lib/crm.ts';
+import {operatorStats} from '../lib/operator-stats.ts';
 import {confirmationStats} from '../lib/confirmation-stats.ts';
 import {shipmentStats,shipmentDay} from '../lib/shipment-stats.ts';
 import {pickupPointContext} from '../lib/order-pickup-point.ts';
@@ -250,8 +251,8 @@ try{
   const acceptedAt=order(headId).courier.acceptedAt,budget=order(headId).courier.operatorBudgetMs,reserve=stock();
   await act(headId,'head',{action:'contact',contact:'missed',reason:'Calling'});assert.equal(order(headId).courier.operatorBudgetMs,budget);
   if(cancel){
-   await act(headId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(headId).cancellationAuthor.id,'head');assert.equal(stock(),reserve);assert.equal(order(headId).courier.acceptedAt,acceptedAt);
-   await act(headId,'head',{action:'returnToWarehouse'},400);await act(headId,'logistic',{action:'returnToWarehouse'});assert.equal(order(headId).status,'returned');assert.equal(order(headId).returnedAt,order(headId).warehouseReturnedAt);assert.equal(stock(),reserve+1);
+   await act(headId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(headId).cancellationAuthor.id,'head');assert.equal(order(headId).shippedAt,undefined);const physicalDay=shipmentDay(order(headId));assert.ok(physicalDay);const countPhysical=()=>shipmentStats({employees:[{id:'operator',role:'operator',login:'operator'}],orders:[order(headId)]},{role:'admin'},physicalDay,physicalDay)[0];assert.equal(countPhysical().sentMoscow,1);assert.equal(countPhysical().returned,0);assert.equal(stock(),reserve);assert.equal(order(headId).courier.acceptedAt,acceptedAt);
+   await act(headId,'head',{action:'returnToWarehouse'},400);await act(headId,'logistic',{action:'returnToWarehouse'});assert.equal(order(headId).status,'returned');assert.equal(order(headId).returnedAt,order(headId).warehouseReturnedAt);assert.equal(countPhysical().sentMoscow,1);assert.equal(countPhysical().returned,1);assert.equal(stock(),reserve+1);
   }else{
    await act(headId,'head',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(headId).courier.phase,'resume');assert.equal(order(headId).courier.confirmedBy,'department_head');assert.equal(order(headId).deliveryConfirmationAuthor.id,'head');assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).courier.acceptedAt,acceptedAt);assert.equal(stock(),reserve);assert.ok(order(headId).courier.operatorBudgetMs<=budget);
    await act(headId,'courier',{action:'courierAccept',confirmed:true},400);await act(headId,'courier',{action:'courierWorkflow',operation:'resume'});
@@ -323,6 +324,7 @@ try{
    assert.equal(received.status,'returned');assert.equal(received.returnedAt,received.warehouseReturnedAt);assert.equal(received.shippedAt,beforeReceipt.shippedAt);assert.equal(received.cancelledAt,beforeReceipt.cancelledAt);assert.equal(received.reason,beforeReceipt.reason);assert.equal(received.deliveryConfirmationAuthor.id,beforeReceipt.deliveryConfirmationAuthor.id);
    assert.deepEqual([afterSent.sentMoscow,afterSent.sent,afterSent.returned],[1,beforeSent.sent,1]);
    assert.deepEqual([afterConfirm.confirmed,afterConfirm.cancelled,afterConfirm.returned],[beforeConfirm.confirmed,0,1]);
+   const createdStats=operatorStats(statsState(received),{role:'admin'},'','')[0];assert.equal(createdStats.created,1);assert.equal(createdStats.confirmed,1);assert.equal(createdStats.sent,1);
    const receivedVersion=received.version;
    await call('logistic','/api/crm',{action:'returnToWarehouse',id:doorId,version:beforeReceipt.version},400);assert.equal(order(doorId).version,receivedVersion);
    assert.ok(db.prepare('SELECT data FROM events WHERE order_id=?').all(doorId).some(r=>JSON.parse(r.data).text.includes('Статус: Отказ → Возврат')));

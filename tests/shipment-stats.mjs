@@ -34,3 +34,16 @@ assert.equal(shipmentDay({...exported,cdekTransferredAt:undefined,shippedAt:unde
 exported.cdekAcceptedAt='2026-11-20T09:00:00Z';exported.status='redeemed';
 const originalDay=shipmentStats({employees,orders:[exported]},{role:'admin'},'2026-11-13','2026-11-13')[0];
 assert.equal(originalDay.sent,1);assert.equal(originalDay.redeemed,1);
+
+// Physical Moscow custody is a shipment even before the courier confirms delivery.
+const physical=order('physical',{delivery:'moscow_courier',status:'packing',shippedAt:undefined,courier:{acceptedAt:'2026-11-12T07:57:46Z'}});
+const physicalRows=()=>shipmentStats({employees,orders:[physical]},{role:'admin'},'2026-11-12','2026-11-12')[0];
+assert.equal(physicalRows().sentMoscow,1);assert.equal(physicalRows().sent,1);
+physical.status='refused';assert.equal(physicalRows().sent,1);assert.equal(physicalRows().returned,0);
+physical.status='returned';physical.warehouseReturnedAt='2026-11-16T07:24:10Z';assert.equal(physicalRows().sent,1);assert.equal(physicalRows().returned,1);
+physical.status='redeemed';assert.equal(physicalRows().sent,1);assert.equal(physicalRows().redeemed,1);
+physical.shippedAt='2026-11-13T10:00:00Z';assert.equal(shipmentDay(physical),'2026-11-12','Later client confirmation cannot move the shipment cohort');
+physical.courier.acceptedAt='2026-11-14T10:00:00Z';assert.equal(shipmentDay(physical),'2026-11-13','A subsequent courier receipt cannot move an already recorded shipment');
+assert.equal(shipmentDay({...physical,shippedAt:undefined,courier:{assignedAt:'2026-11-12T10:00:00Z'}}),'','Assignment without physical receipt is not a shipment');
+
+assert.equal(shipmentDay({...physical,shippedAt:undefined,courier:undefined,courierHandedAt:'2026-11-12T07:57:46Z'}),'2026-11-12','Physical handoff survives recall and replacement of courier assignment');
