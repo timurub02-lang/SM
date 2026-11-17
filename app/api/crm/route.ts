@@ -55,7 +55,7 @@ import {confirmSavedTariff} from "@/lib/cdek-calculator";
 import {operatorFollowup} from '@/lib/operator-followup';
 import {personalClientReminders,clientReminderTasks,changeClientReminder} from '@/lib/client-reminders';
 import {adminNotificationTasks} from '@/lib/admin-notification-tasks';
-import {readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder,incomingRouting} from '@/lib/incoming';
+import {markIncomingMissed,readIncoming,incomingForAction,incomingCloseStatement,activeIncomingOrder,incomingRouting} from '@/lib/incoming';
 import {employeeTasks} from '@/lib/reminder-tasks';
 import {courierReminderStatements} from '@/lib/reminder-store';
 import {baseTypes,baseSettingsSchema,initialBaseSettings} from '@/lib/base-policy';
@@ -381,6 +381,10 @@ async function handlePOST(request:Request){
   if(!result[0].meta.changes)throw Error('Обращение уже назначено или клиент изменился. Обновите данные');
   message='Обращение и клиент переданы оператору';
   }
+ }else if(p.action==='missIncoming'){
+  if(!employee)throw Error('Требуется сотрудник');
+  await markIncomingMissed(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees,now);
+  message='Недозвон сохранён. Обращение вернётся через час';
  }else if(p.action==="closeIncoming"||p.action==="incomingResult"){
   if(!employee||employee.role==='courier')throw Error('Обращение недоступно');
   const incomingId=z.string().min(1).max(100).parse(p.incomingId);

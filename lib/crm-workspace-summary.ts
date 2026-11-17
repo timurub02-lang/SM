@@ -1,3 +1,4 @@
+import {incomingCounts} from './incoming-status.ts';
 import {assignedClients,departmentOrders,orderGroup,reworkStage,scheduledCalls,type Employee,type State} from './crm.ts';
 import {filteredClientList} from './crm-client-list.ts';
 import {clientWorkStatus} from './client-work.ts';
@@ -7,7 +8,7 @@ import {clientRetentionExpiring} from './client-retention-label.ts';
 
 export type WorkspaceSummary={
  mine:{all:number;withoutOrders:number;inTransit:number;expires:number;reworkOrders:number;scheduledCalls:number};
- nav:{check:number;checkNew:number;checkZvd:number;rework:number;incoming:number};
+ nav:{check:number;checkNew:number;checkZvd:number;rework:number;incoming:number;incomingMissed:number};
  orders:{all:number;groups:Record<string,number>;eligibleSent:number;newDraft:number;newRework:number;nextPremium:number};
  rework:Record<string,number>;
  work:ClientWorkCounts;
@@ -43,7 +44,7 @@ export function buildWorkspaceSummary(state:State,employee:Employee,now=Date.now
  for(const order of scoped)add(order.id+':'+(order.status==='rework'?reworkStage(order,now,state.settings.orderPolicy):'')+':'+Number(!!order.due&&Date.parse(order.due)<=now));
  return {
   mine:{all:mine.length,withoutOrders:mine.filter(c=>!activeClients.has(c.id)).length,inTransit:mine.filter(c=>transitClients.has(c.id)).length,expires:mine.filter(c=>clientRetentionExpiring(c,activeClients.has(c.id),now,state.retentionPreview?.[c.id])).length,reworkOrders:state.orders.filter(o=>mineIds.has(o.clientId)&&o.status==='rework').length,scheduledCalls:scheduledCalls(state.orders,employee,state.employees).filter(o=>mineIds.has(o.clientId)).length},
-  nav:{check:scoped.filter(o=>o.status==='check'&&clients.has(o.clientId)).length,checkNew:scoped.filter(o=>o.status==='check'&&!o.zvd&&clients.has(o.clientId)).length,checkZvd:scoped.filter(o=>o.status==='check'&&!!o.zvd&&clients.has(o.clientId)).length,rework:scoped.filter(o=>o.status==='rework').length,incoming:(state.incoming||[]).filter(i=>!i.closedAt&&!i.spam).length},
+  nav:{check:scoped.filter(o=>o.status==='check'&&clients.has(o.clientId)).length,checkNew:scoped.filter(o=>o.status==='check'&&!o.zvd&&clients.has(o.clientId)).length,checkZvd:scoped.filter(o=>o.status==='check'&&!!o.zvd&&clients.has(o.clientId)).length,rework:scoped.filter(o=>o.status==='rework').length,incoming:incomingCounts(state.incoming||[],now).ready,incomingMissed:incomingCounts(state.incoming||[],now).missed},
   orders:{all:visible.length,groups,newDraft:visible.filter(o=>orderDisplayGroup(o).id==='new'&&o.status==='draft').length,newRework:visible.filter(o=>orderDisplayGroup(o).id==='new'&&o.status==='rework').length,eligibleSent:visible.filter(o=>orderGroup(o).id==='sent'&&eligibleForRedemption(o,state.redemptionStatuses||[])).length,nextPremium:visible.filter(o=>!!state.premiumNextPeriod&&o.premiumNextPeriod===state.premiumNextPeriod).length},
   rework,work,listRevision:(revision>>>0).toString(36),
  };
