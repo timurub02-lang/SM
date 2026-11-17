@@ -165,7 +165,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(p.result==='returned'){if(typeof p.returnWaybill!=='string'||!p.returnWaybill.trim()||p.returnWaybill.trim().length>100)throw Error('Укажите номер возвратной накладной (до 100 символов)');Object.assign(next,{returnWaybill:p.returnWaybill.trim(),returnConfirmedAt:at,returnCheck:{state:'pending',at},returnVerifiedAt:null,returnVerifiedBy:null});}
   if((awaitingOperator(row)||incoming)&&p.action==='po'&&p.responsibilityConfirmed!==true)throw Error('Подтвердите, что клиент точно выкупит заказ после окончания срока хранения');
   const workHandoff=p.action==='work'&&p.result==='operator';
-  if(workHandoff&&(e.role!=='department_head'||!e.department||row.department!==e.department))throw Error('Передать можно только заказ оператора своего отдела');
+  if(workHandoff&&e.role!=='department_head')throw Error('Передать заказ через «В работе» может только руководитель отдела');
   let date='';if(p.result==='date'||workHandoff){
    if(!row.storageUntil&&(workHandoff||!['date','work'].includes(p.action))&&(p.action!=='po'||incoming))throw Error('СДЭК пока не передал срок хранения');
    date=p.action==='refusal'||workHandoff?day:p.date;
