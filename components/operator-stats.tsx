@@ -5,9 +5,9 @@ import {ConfirmationStats} from './confirmation-stats';
 import {ShipmentStats} from './shipment-stats';
 import {BaseStats} from './base-stats';
 import {Switch} from './ui/switch';
-import {BarChart3} from 'lucide-react';
+import {BarChart3,ChevronLeft,ChevronRight} from 'lucide-react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from './ui/dialog';
-import {buyoutStatsByDay,operatorStats,sortOperatorStats,type StatsSortKey, type operatorStatsSummary} from '../lib/operator-stats';
+import {shiftStatsPeriod,buyoutStatsByDay,operatorStats,sortOperatorStats,type StatsSortKey, type operatorStatsSummary} from '../lib/operator-stats';
 import {money,statuses,departments,type Order,type State,type Employee} from '../lib/crm';
 export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;actor:Employee;onOpenOrder:(id:string)=>void;detailOpen:boolean}){
  const shippedOnly=actor.role==='redemption';
@@ -18,6 +18,8 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  const [summary,setSummary]=useState<ReturnType<typeof operatorStatsSummary>>([]),[summaryError,setSummaryError]=useState(''),[summaryLoading,setSummaryLoading]=useState(false);
  const [sort,setSort]=useState<{key:StatsSortKey;ascending:boolean}>({key:'created',ascending:false});
  const [open,setOpen]=useState(false),[from,setFrom]=useState(''),[to,setTo]=useState('');
+ const previousPeriod=shiftStatsPeriod(from,to,-1),nextPeriod=shiftStatsPeriod(from,to,1);
+ function changePeriod(period:ReturnType<typeof shiftStatsPeriod>){if(period){setFrom(period.from);setTo(period.to);}}
  const visible=open&&!detailOpen;
  const summaryMode=shippedOnly||actor.role==='department_head'&&showAll;
  useEffect(()=>{
@@ -54,6 +56,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
     <div className="stats-period">
      <label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
      <label>По дату<input aria-label="Конец периода" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
+     <div className="stats-date-arrows" role="group" aria-label="Сдвинуть период на день"><button type="button" className="secondary" title="На день назад" aria-label="На день назад" disabled={!previousPeriod} onClick={()=>changePeriod(previousPeriod)}><ChevronLeft size={16} aria-hidden="true"/></button><button type="button" className="secondary" title="На день вперёд" aria-label="На день вперёд" disabled={!nextPeriod} onClick={()=>changePeriod(nextPeriod)}><ChevronRight size={16} aria-hidden="true"/></button></div>
      <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today.slice(0,7)+"-01");setTo(today);}}>За месяц</button>
      {(section==='buyouts'||section==='shipped')&&<button className="secondary" aria-pressed={byDay} onClick={()=>{setByDay(!byDay);setSort({key:!byDay?'login':'buyoutCount',ascending:false});}}>По дням</button>}
      {(actor.role==='admin'||summaryMode)&&<div className="stats-departments" role="group" aria-label="Отделы"><button className="secondary" aria-pressed={!department} onClick={()=>setDepartment('')}>Все отделы</button>{Object.entries(departments).map(([id,name])=><button className="secondary" key={id} aria-pressed={department===id} onClick={()=>setDepartment(id)}>{name}</button>)}</div>}

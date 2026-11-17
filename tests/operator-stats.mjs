@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {buyoutStatsByDay,operatorStats,sortOperatorStats,operatorStatsSummary} from '../lib/operator-stats.ts';
+import {shiftStatsPeriod,buyoutStatsByDay,operatorStats,sortOperatorStats,operatorStatsSummary} from '../lib/operator-stats.ts';
 const employees=[{id:'a',login:'one',role:'operator',department:'1'},{id:'b',login:'two',role:'operator',department:'2'}];
 const order=(id,amount,fields={})=>({id,manager:'a',createdAt:'2026-11-10T21:30:00Z',status:'draft',items:[{name:'Item',quantity:1,price:amount}],...fields});
 const state={employees,events:[],orders:[
@@ -104,3 +104,13 @@ const physical={id:'physical',manager:'a',createdAt:'2026-11-12T07:00:00Z',confi
 const physicalStats=()=>operatorStats({employees:[{id:'a',role:'operator',login:'a'}],orders:[physical]},{role:'admin'},'2026-11-12','2026-11-12')[0];
 assert.equal(physicalStats().sent,1);assert.equal(physicalStats().awaitingShipment,0);
 for(const status of ['refused','returned','redeemed']){physical.status=status;assert.equal(physicalStats().sent,1);assert.equal(physicalStats().created,1);assert.equal(physicalStats().confirmed,1);}
+
+assert.deepEqual(shiftStatsPeriod('2026-11-17','2026-11-17',-1),{from:'2026-11-16',to:'2026-11-16'});
+assert.deepEqual(shiftStatsPeriod('2026-11-16','2026-11-16',1),{from:'2026-11-17',to:'2026-11-17'});
+assert.deepEqual(shiftStatsPeriod('2026-11-01','2026-11-17',-1),{from:'2026-10-31',to:'2026-11-16'});
+assert.deepEqual(shiftStatsPeriod('2026-12-31','2026-12-31',1),{from:'2027-01-01',to:'2027-01-01'});
+assert.deepEqual(shiftStatsPeriod('2028-03-01','2028-03-01',-1),{from:'2028-02-29',to:'2028-02-29'});
+for(const [from,to] of [['','2026-11-17'],['2026-11-17',''],['2026-11-18','2026-11-17'],['bad','bad'],['2026-02-30','2026-03-01']])assert.equal(shiftStatsPeriod(from,to,-1),null);
+assert.equal(shiftStatsPeriod('0001-01-01','0001-01-01',-1),null);
+assert.equal(shiftStatsPeriod('9999-12-31','9999-12-31',1),null);
+console.log('Statistics date arrows: yesterday/tomorrow, preserved range, year/leap transitions and incomplete/invalid boundaries passed');
