@@ -15,7 +15,7 @@ export function verifiedReturn(original:any,returned:any,originalUuid:string,ori
 
 export async function syncCdekReturns(d:Db,request:typeof fetch=fetch){
  await initRedemption(d);
- const rows=(await d.prepare(`SELECT r.order_id,r.data,r.version,o.data order_data,o.version order_version,s.data shipment FROM redemption_entries r JOIN orders o ON o.id=r.order_id LEFT JOIN settings s ON s.id='cdek-shipment-'||r.order_id WHERE json_extract(r.data,'$.result')='returned' AND COALESCE(json_extract(r.data,'$.returnWaybill'),'')<>'' AND json_extract(r.data,'$.returnCheck.state') IS NOT 'verified' AND COALESCE(json_extract(o.data,'$.testOnly'),0)<>1 ORDER BY COALESCE(json_extract(r.data,'$.returnCheck.at'),''),r.order_id LIMIT 50`).all()).results;
+ const rows=(await d.prepare(`SELECT r.order_id,r.data,r.version,o.data order_data,o.version order_version,s.data shipment FROM redemption_entries r JOIN orders o ON o.id=r.order_id LEFT JOIN settings s ON s.id='cdek-shipment-'||r.order_id WHERE (json_extract(r.data,'$.result')='to_return' OR json_extract(r.data,'$.result')='returned' AND COALESCE(json_extract(r.data,'$.returnWaybill'),'')<>'') AND json_extract(r.data,'$.returnCheck.state') IS NOT 'verified' AND COALESCE(json_extract(o.data,'$.testOnly'),0)<>1 ORDER BY COALESCE(json_extract(r.data,'$.returnCheck.at'),''),r.order_id LIMIT 50`).all()).results;
  const tokens=new Map<number,Promise<string>>(),counts={checked:0,verified:0,failed:0};
  let cursor=0;
  async function work(){while(cursor<rows.length){
@@ -26,13 +26,25 @@ export async function syncCdekReturns(d:Db,request:typeof fetch=fetch){
    let token=tokens.get(shipment.slot);
    if(!token){token=(async()=>{const account=await d.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-'+shipment.slot).first();if(!account)throw Error('Аккаунт СДЭК не подключён');const keys=JSON.parse(account.data);return cdekToken(keys.clientId,keys.clientSecret,request);})();tokens.set(shipment.slot,token);}
    const accessToken=await token;
-   async function get(path:string){const r=await request('https://api.cdek.ru/v2'+path,{headers:{Authorization:'Bearer '+accessToken},signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('СДЭК временно недоступен или накладная не найдена (HTTP '+r.status+')');return await r.json();}
-   const original=await get('/orders/'+encodeURIComponent(shipment.uuid)),returned=await get('/orders?cdek_number='+encodeURIComponent(entry.returnWaybill));
-   const uuid=verifiedReturn(original,returned,shipment.uuid,String(shipment.number),entry.returnWaybill);
-   const mutation=crypto.randomUUID(),e={...entry,returnCheck:{state:'verified',at},returnVerifiedAt:at,returnVerifiedBy:'API СДЭК',updatedAt:at,changedBy:'API СДЭК',changeKind:'verify_return_api'};
-   const next={...order,status:'returned',returnedAt:order.returnedAt||at,contact:'none',due:'',updatedAt:at,_mutation:mutation,cdekReturn:{number:entry.returnWaybill,uuid,originalUuid:shipment.uuid,verifiedAt:at}};
+   async function get(path:string):Promise<any>{const r=await request('https://api.cdek.ru/v2'+path,{headers:{Authorization:'Bearer '+accessToken},signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('СДЭК временно недоступен или накладная не найдена (HTTP '+r.status+')');return await r.json();}
+   const original=await get('/orders/'+encodeURIComponent(shipment.uuid));
+   if(original.entity?.uuid!==shipment.uuid||String(original.entity?.cdek_number)!==String(shipment.number))throw Error('СДЭК не подтвердил исходную накладную');
+   let number=entry.returnWaybill;
+   if(!number){
+    const candidates=[...new Set<string>((Array.isArray(original.related_entities)?original.related_entities:[]).filter((r:any)=>r.type==='return_order'&&typeof r.uuid==='string'&&r.cdek_number).map((r:any)=>String(r.cdek_number)))];
+    if(candidates.length>1)throw Error('СДЭК передал несколько возвратных накладных. Укажите нужную вручную');
+    number=candidates[0];
+    if(!number){
+     await d.prepare('UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id=? AND version=? AND data=?').bind(JSON.stringify({...entry,returnCheck:{state:'pending',at},updatedAt:at,changedBy:'API СДЭК',changeKind:'return_check'}),row.order_id,row.version,row.data).run();
+     counts.checked++;continue;
+    }
+   }
+   const returned=await get('/orders?cdek_number='+encodeURIComponent(number));
+   const uuid=verifiedReturn(original,returned,shipment.uuid,String(shipment.number),number);
+   const mutation=crypto.randomUUID(),e={...entry,result:'returned',returnWaybill:number,returnConfirmedAt:entry.returnConfirmedAt||at,returnCheck:{state:'verified',at},returnVerifiedAt:at,returnVerifiedBy:'API СДЭК',updatedAt:at,changedBy:'API СДЭК',changeKind:'verify_return_api'};
+   const next={...order,status:'returned',returnedAt:order.returnedAt||at,contact:'none',due:'',updatedAt:at,_mutation:mutation,cdekReturn:{number,uuid,originalUuid:shipment.uuid,verifiedAt:at}};
    const gate="EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)";
-   const event={id:mutation,orderId:row.order_id,clientId:order.clientId,actor:'СДЭК',at,text:'Возврат подтверждён API СДЭК · возвратная накладная '+entry.returnWaybill+' связана с исходной '+shipment.number+'. Ожидается физический приём на склад.'};
+   const event={id:mutation,orderId:row.order_id,clientId:order.clientId,actor:'СДЭК',at,text:'Возврат подтверждён API СДЭК · возвратная накладная '+number+' связана с исходной '+shipment.number+'. Ожидается физический приём на склад.'};
    const result=await d.batch([
     d.prepare('UPDATE orders SET data=?,version=version+1 WHERE id=? AND version=? AND data=? AND EXISTS(SELECT 1 FROM redemption_entries WHERE order_id=? AND version=? AND data=?) AND EXISTS(SELECT 1 FROM settings WHERE id=? AND data=?)').bind(JSON.stringify(next),row.order_id,row.order_version,row.order_data,row.order_id,row.version,row.data,'cdek-shipment-'+row.order_id,row.shipment),
     d.prepare('UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id=? AND version=? AND '+gate).bind(JSON.stringify(e),row.order_id,row.version,row.order_id,mutation),

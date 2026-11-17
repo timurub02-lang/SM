@@ -10,22 +10,23 @@ import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '.
 import {buyoutStatsByDay,operatorStats,sortOperatorStats,type StatsSortKey, type operatorStatsSummary} from '../lib/operator-stats';
 import {money,statuses,departments,type Order,type State,type Employee} from '../lib/crm';
 export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;actor:Employee;onOpenOrder:(id:string)=>void;detailOpen:boolean}){
- const [section,setSection]=useState('created');
+ const buyoutsOnly=actor.role==='redemption';
+ const [section,setSection]=useState(buyoutsOnly?'buyouts':'created');
  const [byDay,setByDay]=useState(false);
  const daily=(section==='buyouts'||section==='shipped')&&byDay;
  const [department,setDepartment]=useState(''),[showAll,setShowAll]=useState(false);
  const [summary,setSummary]=useState<ReturnType<typeof operatorStatsSummary>>([]),[summaryError,setSummaryError]=useState(''),[summaryLoading,setSummaryLoading]=useState(false);
- const [sort,setSort]=useState<{key:StatsSortKey;ascending:boolean}>({key:'created',ascending:false});
+ const [sort,setSort]=useState<{key:StatsSortKey;ascending:boolean}>({key:buyoutsOnly?'buyoutCount':'created',ascending:false});
  const [open,setOpen]=useState(false),[from,setFrom]=useState(''),[to,setTo]=useState('');
  const visible=open&&!detailOpen;
- const summaryMode=actor.role==='department_head'&&showAll;
+ const summaryMode=buyoutsOnly||actor.role==='department_head'&&showAll;
  useEffect(()=>{
   if(!visible||!summaryMode||(section==='shipped'||section==='confirmation'))return;
   const controller=new AbortController();setSummaryLoading(true);setSummaryError('');setSummary([]);
-  fetch(`/api/operator-statistics?actorId=${encodeURIComponent(actor.id)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&groupBy=${daily?'day':'operator'}&department=${encodeURIComponent(department)}`,{signal:controller.signal}).then(async response=>{const data=await response.json() as {rows:ReturnType<typeof operatorStatsSummary>;error?:string};if(!response.ok)throw Error(data.error||'Не удалось загрузить статистику');return data.rows;}).then(rows=>{if(!controller.signal.aborted)setSummary(rows);}).catch(error=>{if(!controller.signal.aborted)setSummaryError(error.message);}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});
+  fetch(`/api/operator-statistics?section=${section}&actorId=${encodeURIComponent(actor.id)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&groupBy=${daily?'day':'operator'}&department=${encodeURIComponent(department)}`,{signal:controller.signal}).then(async response=>{const data=await response.json() as {rows:ReturnType<typeof operatorStatsSummary>;error?:string};if(!response.ok)throw Error(data.error||'Не удалось загрузить статистику');return data.rows;}).then(rows=>{if(!controller.signal.aborted)setSummary(rows);}).catch(error=>{if(!controller.signal.aborted)setSummaryError(error.message);}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});
   return ()=>controller.abort();
  },[visible,summaryMode,from,to,actor.id,daily,department,section]);
- if(!['admin','department_head','operator'].includes(actor.role))return null;
+ if(!['admin','department_head','operator','redemption'].includes(actor.role))return null;
  const sourceRows=!visible?[]:summaryMode?summary.map(row=>({...row,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}})):operatorStats(state,actor,from,to);
  const filtered=sourceRows.filter(r=>!department||summaryMode&&daily||r.department===department);
  const grouped=daily&&!summaryMode?buyoutStatsByDay(filtered):filtered;
@@ -48,7 +49,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
   <Dialog open={visible} onOpenChange={setOpen}>{visible&&<DialogContent className="form-dialog operator-stats-dialog">
    <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>{section==='confirmation'?'Подтверждённые и переданные на упаковку заказы: автор согласия клиента и текущее состояние. Даты — по Москве.':section==='shipped'?'Заказы по дате отправки и их текущий выкуп. Даты — по Москве.':section==='base'?'Закреплённые клиенты операторов и отделов.':section==='buyouts'?'По дате выкупа, включая перенесённые заказы ЛВ. Даты — по Москве.':'Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.'}</DialogDescription></DialogHeader>
    <div className="stack">
-    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики"><TabsTrigger value="created">Созданные заказы</TabsTrigger><TabsTrigger value="buyouts">Выкупы</TabsTrigger><TabsTrigger value="confirmation">Подтверждение</TabsTrigger><TabsTrigger value="shipped">Отправленные</TabsTrigger>{actor.role==='admin'&&<TabsTrigger value="base">База</TabsTrigger>}</TabsList></Tabs>
+    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики">{!buyoutsOnly&&<TabsTrigger value="created">Созданные заказы</TabsTrigger>}<TabsTrigger value="buyouts">Выкупы</TabsTrigger>{!buyoutsOnly&&<><TabsTrigger value="confirmation">Подтверждение</TabsTrigger><TabsTrigger value="shipped">Отправленные</TabsTrigger></>}{actor.role==='admin'&&<TabsTrigger value="base">База</TabsTrigger>}</TabsList></Tabs>
     {section==='base'?actor.role==='admin'&&<BaseStats actorId={actor.id}/>:<>
     <div className="stats-period">
      <label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>

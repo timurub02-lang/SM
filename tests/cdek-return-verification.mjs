@@ -19,12 +19,12 @@ const request=async(url)=>{
   if(race)await d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.returnWaybill','333'),version=version+1 WHERE order_id='o'").run();
   return Response.json(mode==='wrong'?{...returned,related_entities:[]}:returned);
  }
- return Response.json(original);
+ return Response.json(mode==='absent'?{...original,related_entities:[]}:mode==='multiple'?{...original,related_entities:[...original.related_entities,{type:'return_order',uuid:crypto.randomUUID(),cdek_number:'444'}]}:original);
 };
 try{
  await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT,version INTEGER DEFAULT 1)','CREATE TABLE events(id TEXT PRIMARY KEY,client_id TEXT,order_id TEXT,at TEXT,data TEXT)'].map(s=>d.prepare(s)));
  await initRedemption(d);
- const order={id:'o',clientId:'c',status:'shipping',delivery:'cdek_pickup',items:[{name:'Product',quantity:2}],manager:'op',version:1,createdAt:'2026-11-01',updatedAt:'2026-11-01'};
+ const order={paymentReceivedAt:'2026-11-02T10:00:00Z',paymentReceivedAmount:1234,priorPremiumPaid:{at:'2026-11-03',source:'synthetic'},id:'o',clientId:'c',status:'shipping',delivery:'cdek_pickup',items:[{name:'Product',quantity:2}],manager:'op',version:1,createdAt:'2026-11-01',updatedAt:'2026-11-01'};
  await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind('o','c',JSON.stringify(order)).run();
  await d.prepare('INSERT INTO settings VALUES(?,?)').bind('cdek-1',JSON.stringify({clientId:'synthetic',clientSecret:'synthetic'})).run();
  await d.prepare('INSERT INTO settings VALUES(?,?)').bind('cdek-shipment-o',JSON.stringify({slot:1,uuid:originalUuid,number:'111'})).run();
@@ -42,5 +42,15 @@ try{
  assert(!returnedOrderHidden(done,'logistic'));assert(returnedOrderHidden({...done,warehouseReturnedAt:'2026-11-16T10:00:00Z'},'logistic',Date.parse('2026-11-18T10:00:00Z')));
  assert.equal((await syncCdekReturns(d,request)).checked,0);assert.equal((await d.prepare('SELECT count(*) n FROM events').first()).n,1);
  assert.equal(cdekStatusPatch(done,{statuses:[{code:'DELIVERED',date_time:'2026-11-16T12:00:00Z'}]},{DELIVERED:'paid'},'revision')?.status,undefined);
+ // Automatic discovery only starts in Confirm return; no manual number is required.
+ await d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id='o'").bind(JSON.stringify(order)).run();
+ await d.prepare("UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id='o'").bind(JSON.stringify({action:'refusal',result:'to_return'})).run();
+ mode='absent';assert.equal((await syncCdekReturns(d,request)).verified,0);assert.equal((await entry()).result,'to_return');assert.equal((await entry()).returnWaybill,undefined);assert.equal((await entry()).returnCheck.state,'pending');
+ mode='multiple';assert.equal((await syncCdekReturns(d,request)).failed,1);assert.equal((await readOrder()).status,'shipping');assert.equal((await entry()).returnWaybill,undefined);
+ mode='wrong';assert.equal((await syncCdekReturns(d,request)).failed,1);assert.equal((await readOrder()).status,'shipping');assert.equal((await entry()).returnWaybill,undefined);
+ mode='ok';assert.equal((await syncCdekReturns(d,request)).verified,1);assert.equal((await entry()).returnWaybill,'222');assert.equal((await entry()).result,'returned');assert.equal((await readOrder()).status,'returned');assert.equal((await readOrder()).warehouseReturnedAt,undefined);assert.equal((await readOrder()).paymentReceivedAmount,order.paymentReceivedAmount);assert.equal((await readOrder()).paymentReceivedAt,order.paymentReceivedAt);assert.deepEqual((await readOrder()).priorPremiumPaid,order.priorPremiumPaid);
+ assert.equal((await syncCdekReturns(d,request)).checked,0);
+ await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(JSON.stringify({result:'courier'})).run();
+ assert.equal((await syncCdekReturns(d,request)).checked,0,'Main-table orders are not discovered');
  console.log('CDEK return verification: bidirectional identity, retry, legacy manual marks, race, exactly-once transition, no warehouse receipt, scope and 48h archive passed');
 }finally{d.close();}
