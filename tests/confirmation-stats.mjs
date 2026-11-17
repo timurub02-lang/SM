@@ -20,5 +20,7 @@ orders.push(order('missing','refused',{deliveryConfirmationAuthor:undefined}),or
 assert.equal(stats()[0].confirmed,6);
 console.log('Confirmation statistics: user example, last author, Moscow date, current outcomes, deduplication and permissions passed');
 
-state.events=[{orderId:'missing',actorId:'head',actor:'Артем',at:author.at,text:'Статус: Доп. подтверждение → Упаковка'}];assert.equal(stats()[0].confirmed,7);
+state.events=[{orderId:'missing',actorId:'head',actor:'Артем',at:author.at,text:'Доп. подтверждение → Упаковка\nСтатус: Доп. подтверждение → Упаковка'}];assert.equal(stats()[0].confirmed,7);
 state.events.push({...state.events[0],actorId:'second',actor:'Другой',at:'2026-11-18T09:00:00Z'});assert.equal(stats()[0].confirmed,6);assert.equal(stats(undefined,'2026-11-18')[0].confirmed,2);
+
+state.events.push({orderId:'intermediate',actorId:'head',actor:'Артем',at:author.at,text:'Комментарий: текст\nСтатус: Подтверждение → Упаковка'});assert.equal(stats()[0].confirmed,6);

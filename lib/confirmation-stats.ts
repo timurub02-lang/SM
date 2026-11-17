@@ -11,7 +11,7 @@ export function confirmationOutcome(order:Order){
 export function confirmationStats(state:Pick<State,'employees'|'orders'> & Partial<Pick<State,'events'>>,actor:Employee,from:string,to:string,department=''){
  const allowed=new Set(operatorStats({...state,orders:[]},actor,'','').filter(e=>!department||e.department===department).map(e=>e.id));
  const handoffs=new Map<string,NonNullable<State['events']>[number]>();
- for(const event of state.events||[]){if(event.actorId&&/^Статус: (Подтверждение|Проверка|Доп\. подтверждение|Возврат оператору) → Упаковка$/m.test(event.text)&&(!handoffs.has(event.orderId)||handoffs.get(event.orderId)!.at<event.at))handoffs.set(event.orderId,event);}
+ for(const event of state.events||[]){if(event.actorId&&/^(?:Подтверждено руководителем · [^\n]+ · )?(?:ЗВД снят · )?(Подтверждение|Проверка|Доп\. подтверждение|Возврат оператору) → Упаковка(?: · [^\n]*)?(?:\n|$)/.test(event.text)&&/^Статус: (Подтверждение|Проверка|Доп\. подтверждение|Возврат оператору) → Упаковка$/m.test(event.text)&&(!handoffs.has(event.orderId)||handoffs.get(event.orderId)!.at<event.at))handoffs.set(event.orderId,event);}
  const rows=new Map<string,{id:string;label:string;confirmed:number;cancelled:number;sent:number;paid:number;returned:number;waiting:number;orders:Order[]}>();
  for(const order of new Map(state.orders.map(o=>[o.id,o])).values()){
   const handoff=handoffs.get(order.id);
