@@ -394,10 +394,10 @@ try{
  for(const [delivery,section] of [['moscow_courier','moscow'],['russian_post','post']]){
   const id='manual-'+delivery,clientId='one-c-confirm';
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'101000, Москва, ул. Тестовая, дом 1',addressParts:undefined,items:[{name:'Test',quantity:1,price:1}]}));
-  async function manualStep(to,expected=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version,to,reason:'Test',courierId:dispatchCourier.e.id}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
-  await manualStep('check',400);await manualStep('refused',400);
-  let saved=await manualStep(delivery==='moscow_courier'?'packing':'extra');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
-  await manualStep('refused',400);if(delivery==='russian_post')saved=await manualStep('packing');assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
+  async function manualStep(to,expected=200,cookie=editor.cookie){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie,body:{action:'transition',id,version,to,reason:'Test',courierId:dispatchCourier.e.id}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
+  if(delivery==='moscow_courier')await manualStep('check',400);else await manualStep('extra',400);await manualStep('refused',400);
+  let saved=await manualStep(delivery==='moscow_courier'?'packing':'check');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
+  await manualStep('refused',400);if(delivery==='russian_post'){await manualStep('packing',400);saved=await manualStep('packing',200,cookies.admin);assert.ok(saved.adminReviewedAt);}assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
   await manualStep('shipping',400);
   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
   assert.equal((await call('/api/crm',{cookie:editor.cookie,body:{action:'markPackingWaybill',id,version}})).status,200);
