@@ -1,4 +1,6 @@
 import {packingStage,deliveryQueue} from '../lib/crm.ts';
+import {confirmationStats} from '../lib/confirmation-stats.ts';
+import {shipmentStats,shipmentDay} from '../lib/shipment-stats.ts';
 import {pickupPointContext} from '../lib/order-pickup-point.ts';
 import {addWeekdayMilliseconds} from '../lib/internal-timers.ts';
 import {courierDeadline} from '../lib/courier.ts';
@@ -249,7 +251,7 @@ try{
   await act(headId,'head',{action:'contact',contact:'missed',reason:'Calling'});assert.equal(order(headId).courier.operatorBudgetMs,budget);
   if(cancel){
    await act(headId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(headId).cancellationAuthor.id,'head');assert.equal(stock(),reserve);assert.equal(order(headId).courier.acceptedAt,acceptedAt);
-   await act(headId,'head',{action:'returnToWarehouse'},400);await act(headId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserve+1);
+   await act(headId,'head',{action:'returnToWarehouse'},400);await act(headId,'logistic',{action:'returnToWarehouse'});assert.equal(order(headId).status,'returned');assert.equal(order(headId).returnedAt,order(headId).warehouseReturnedAt);assert.equal(stock(),reserve+1);
   }else{
    await act(headId,'head',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(headId).courier.phase,'resume');assert.equal(order(headId).courier.confirmedBy,'department_head');assert.equal(order(headId).deliveryConfirmationAuthor.id,'head');assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).courier.acceptedAt,acceptedAt);assert.equal(stock(),reserve);assert.ok(order(headId).courier.operatorBudgetMs<=budget);
    await act(headId,'courier',{action:'courierAccept',confirmed:true},400);await act(headId,'courier',{action:'courierWorkflow',operation:'resume'});
@@ -269,7 +271,7 @@ try{
  const returnedId=await create();await assembled(returnedId);await act(returnedId,'courier',{action:'courierAccept',confirmed:true});
  const accepted=order(returnedId);accepted.courier.workStartedAt=addWeekdayMilliseconds(Date.now(),-49*3600000);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(accepted),returnedId);await call('operator');assert.equal(order(returnedId).status,'rework');
  const reserved=stock(),rework=order(returnedId);rework.reworkDeadline=hours(-1);rework.courier.operatorStartedAt=hours(-169);db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(rework),returnedId);await call('courier');assert.equal(order(returnedId).status,'refused');assert.equal(stock(),reserved);
- await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
+ await act(returnedId,'courier',{action:'returnToWarehouse'},403);await act(returnedId,'logistic',{action:'returnToWarehouse'});assert.equal(order(returnedId).status,'returned');assert.equal(order(returnedId).returnedAt,order(returnedId).warehouseReturnedAt);assert.equal(stock(),reserved+1);await act(returnedId,'logistic',{action:'returnToWarehouse'},400);
  await receipt(returnedId,'Возврат принят на склад',10000);
  // Explicit doorstep refusal: two human decisions, no timer-driven cancellation.
  for(const result of ['deliver','return']){
@@ -313,7 +315,18 @@ try{
    await act(doorId,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});assert.equal(order(doorId).status,'redeemed');
   }else{
    assert.equal(order(doorId).status,'refused');assert.equal(order(doorId).warehouseReturnedAt,undefined);
+   const beforeReceipt=order(doorId),statsState=o=>({employees:[{id:'operator',role:'operator',login:'operator',department:'1'}],orders:[o]}),day=shipmentDay(beforeReceipt);
+   const beforeSent=shipmentStats(statsState(beforeReceipt),{role:'admin'},day,day)[0],beforeConfirm=confirmationStats(statsState(beforeReceipt),{role:'admin'},'','')[0];
+   assert.equal(beforeSent.sentMoscow,1);assert.equal(beforeSent.returned,0);assert.equal(beforeConfirm.cancelled,1);
    await act(doorId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserve+1);
+   const received=order(doorId),afterSent=shipmentStats(statsState(received),{role:'admin'},day,day)[0],afterConfirm=confirmationStats(statsState(received),{role:'admin'},'','')[0];
+   assert.equal(received.status,'returned');assert.equal(received.returnedAt,received.warehouseReturnedAt);assert.equal(received.shippedAt,beforeReceipt.shippedAt);assert.equal(received.cancelledAt,beforeReceipt.cancelledAt);assert.equal(received.reason,beforeReceipt.reason);assert.equal(received.deliveryConfirmationAuthor.id,beforeReceipt.deliveryConfirmationAuthor.id);
+   assert.deepEqual([afterSent.sentMoscow,afterSent.sent,afterSent.returned],[1,beforeSent.sent,1]);
+   assert.deepEqual([afterConfirm.confirmed,afterConfirm.cancelled,afterConfirm.returned],[beforeConfirm.confirmed,0,1]);
+   const receivedVersion=received.version;
+   await call('logistic','/api/crm',{action:'returnToWarehouse',id:doorId,version:beforeReceipt.version},400);assert.equal(order(doorId).version,receivedVersion);
+   assert.ok(db.prepare('SELECT data FROM events WHERE order_id=?').all(doorId).some(r=>JSON.parse(r.data).text.includes('Статус: Отказ → Возврат')));
+
    await act(doorId,'logistic',{action:'returnToWarehouse'},400);assert.equal(stock(),reserve+1);
   }
  }
