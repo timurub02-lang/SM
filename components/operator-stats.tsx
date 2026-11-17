@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState} from 'react';
 import {Tabs,TabsList,TabsTrigger} from './ui/tabs';
+import {ConfirmationStats} from './confirmation-stats';
 import {ShipmentStats} from './shipment-stats';
 import {BaseStats} from './base-stats';
 import {Switch} from './ui/switch';
@@ -19,7 +20,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  const visible=open&&!detailOpen;
  const summaryMode=actor.role==='department_head'&&showAll;
  useEffect(()=>{
-  if(!visible||!summaryMode||section==='shipped')return;
+  if(!visible||!summaryMode||(section==='shipped'||section==='confirmation'))return;
   const controller=new AbortController();setSummaryLoading(true);setSummaryError('');setSummary([]);
   fetch(`/api/operator-statistics?actorId=${encodeURIComponent(actor.id)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&groupBy=${daily?'day':'operator'}&department=${encodeURIComponent(department)}`,{signal:controller.signal}).then(async response=>{const data=await response.json() as {rows:ReturnType<typeof operatorStatsSummary>;error?:string};if(!response.ok)throw Error(data.error||'Не удалось загрузить статистику');return data.rows;}).then(rows=>{if(!controller.signal.aborted)setSummary(rows);}).catch(error=>{if(!controller.signal.aborted)setSummaryError(error.message);}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});
   return ()=>controller.abort();
@@ -45,9 +46,9 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  return <>
   <button className="secondary" onClick={()=>{const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Moscow"});setFrom(today);setTo(today);setOpen(true);}} title="Статистика операторов"><BarChart3 size={18}/>Статистика</button>
   <Dialog open={visible} onOpenChange={setOpen}>{visible&&<DialogContent className="form-dialog operator-stats-dialog">
-   <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>{section==='shipped'?'Заказы по дате отправки и их текущий выкуп. Даты — по Москве.':section==='base'?'Закреплённые клиенты операторов и отделов.':section==='buyouts'?'По дате выкупа, включая перенесённые заказы ЛВ. Даты — по Москве.':'Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.'}</DialogDescription></DialogHeader>
+   <DialogHeader><DialogTitle>Статистика операторов</DialogTitle><DialogDescription>{section==='confirmation'?'Кто передал заказы в доставку и их текущее состояние. Даты — по Москве.':section==='shipped'?'Заказы по дате отправки и их текущий выкуп. Даты — по Москве.':section==='base'?'Закреплённые клиенты операторов и отделов.':section==='buyouts'?'По дате выкупа, включая перенесённые заказы ЛВ. Даты — по Москве.':'Заказы из Скорозвона и CRM, созданные за выбранный период. Даты — по Москве.'}</DialogDescription></DialogHeader>
    <div className="stack">
-    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики"><TabsTrigger value="created">Созданные заказы</TabsTrigger><TabsTrigger value="buyouts">Выкупы</TabsTrigger><TabsTrigger value="shipped">Отправленные</TabsTrigger>{actor.role==='admin'&&<TabsTrigger value="base">База</TabsTrigger>}</TabsList></Tabs>
+    <Tabs value={section} onValueChange={value=>{setSection(value);setSort({key:value==='buyouts'?'buyoutCount':'created',ascending:false});}}><TabsList aria-label="Вид статистики"><TabsTrigger value="created">Созданные заказы</TabsTrigger><TabsTrigger value="buyouts">Выкупы</TabsTrigger><TabsTrigger value="confirmation">Подтверждение</TabsTrigger><TabsTrigger value="shipped">Отправленные</TabsTrigger>{actor.role==='admin'&&<TabsTrigger value="base">База</TabsTrigger>}</TabsList></Tabs>
     {section==='base'?actor.role==='admin'&&<BaseStats actorId={actor.id}/>:<>
     <div className="stats-period">
      <label>С даты<input aria-label="Начало периода" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
@@ -58,7 +59,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
      {actor.role==='department_head'&&<label className="stats-all-switch"><Switch aria-label="Показать все отделы" checked={showAll} onCheckedChange={checked=>{setShowAll(checked);setDepartment('');}}/>Показать все отделы</label>}
     </div>
     {summaryMode&&<p className="muted">Общая сводка: только показатели, без доступа к заказам.</p>}
-    {section==='shipped'?(invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<ShipmentStats state={state} actor={actor} from={from} to={to} department={department} byDay={byDay} summaryMode={summaryMode} metric={metric}/>):<>
+    {section==='confirmation'?(invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<ConfirmationStats state={state} actor={actor} from={from} to={to} department={department} summaryMode={summaryMode} metric={metric}/>):section==='shipped'?(invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<ShipmentStats state={state} actor={actor} from={from} to={to} department={department} byDay={byDay} summaryMode={summaryMode} metric={metric}/>):<>
     {summaryMode&&summaryLoading?<p role="status">Загрузка статистики отделов…</p>:summaryMode&&summaryError?<p role="alert">{summaryError}</p>:invalid?<p role="alert">Начало периода не может быть позже конца.</p>:<div className="stats-results"><div className="stats-table-wrap"><table className="stats-table">{colgroup}{headers}
      {section==='buyouts'?<><tbody>{rows.map(r=><tr key={r.id}><td>{daily?r.login.split('-').reverse().join('.'):r.login}</td>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(r[key]):r[key],r.orderLists.redeemed.filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label)}</td>)}</tr>)}</tbody><tfoot><tr><th>Итого</th>{buyoutCells.map(([key,label,deliveries])=><td key={key}>{metric(key==='buyoutAmount'?money(rows.reduce((n,r)=>n+Math.round(r[key]*100),0)/100):rows.reduce((n,r)=>n+r[key],0),rows.flatMap(r=>r.orderLists.redeemed).filter(o=>!deliveries||deliveries.includes(o.delivery||'')),label+' — итого')}</td>)}</tr></tfoot></>:<><tbody>{rows.map(r=><tr key={r.id}>
       <td title={r.login}>{r.login}</td><td>{metric(r.created,r.orderLists.created,"Создано заказов")}</td>

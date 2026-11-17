@@ -202,11 +202,16 @@ try{
   await act(headId,'head',{action:'updateOrder',items:order(headId).items,comment:'Forbidden edit',addressConfirmed:true},400);
   if(to==='packing'){await act(headId,'head',{action:'transition',to},400);assert.equal(order(headId).status,'confirm');}
   await act(headId,'head',{action:'transition',to,clientConfirmedByHead:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');
+  assert.equal(order(headId).deliveryConfirmationAuthor?.id,to==='packing'?'head':undefined);
   await call('head','/api/order-access',{orderId:headId,token,action:'release'});
-  if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'transition',to:'packing',clientConfirmedByHead:true});assert.equal(order(headId).status,'packing');}
+  if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'transition',to:'packing',clientConfirmedByHead:true});assert.equal(order(headId).status,'packing');assert.equal(order(headId).deliveryConfirmationAuthor.id,'head');}
   else if(to==='check')await act(headId,'head',{action:'transition',to:'packing'},400);
   else await act(headId,'head',{action:'markPackingWaybill'},400);
  }
+ const ownConfirmations=await call('head','/api/operator-statistics?section=confirmation&actorId=head&scope=own');
+ assert.ok(ownConfirmations.data.rows.some(row=>row.id==='head'&&row.confirmed>=2&&row.orderIds.length===row.confirmed));
+ const summaryConfirmations=await call('head','/api/operator-statistics?section=confirmation&actorId=head');
+ assert.ok(summaryConfirmations.data.rows.every(row=>!('orderIds' in row)&&!('orders' in row)));
  const cancelId=await create();await act(cancelId,'operator',{action:'transition',to:'confirm'});const cancelStock=stock();
  await act(cancelId,'head',{action:'transition',to:'refused',reason:' '},400);
  await act(cancelId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(cancelId).cancellationAuthor.role,'department_head');assert.equal(stock(),cancelStock+1);
@@ -226,7 +231,7 @@ try{
    await act(headId,'head',{action:'transition',to:'refused',reason:'Client refused'});assert.equal(order(headId).cancellationAuthor.id,'head');assert.equal(stock(),reserve);assert.equal(order(headId).courier.acceptedAt,acceptedAt);
    await act(headId,'head',{action:'returnToWarehouse'},400);await act(headId,'logistic',{action:'returnToWarehouse'});assert.equal(stock(),reserve+1);
   }else{
-   await act(headId,'head',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(headId).courier.phase,'resume');assert.equal(order(headId).courier.confirmedBy,'department_head');assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).courier.acceptedAt,acceptedAt);assert.equal(stock(),reserve);assert.ok(order(headId).courier.operatorBudgetMs<=budget);
+   await act(headId,'head',{action:'courierWorkflow',operation:'confirm'});assert.equal(order(headId).courier.phase,'resume');assert.equal(order(headId).courier.confirmedBy,'department_head');assert.equal(order(headId).deliveryConfirmationAuthor.id,'head');assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).courier.acceptedAt,acceptedAt);assert.equal(stock(),reserve);assert.ok(order(headId).courier.operatorBudgetMs<=budget);
    await act(headId,'courier',{action:'courierAccept',confirmed:true},400);await act(headId,'courier',{action:'courierWorkflow',operation:'resume'});
   }
  }
