@@ -1,4 +1,5 @@
 "use client";
+import {HistoryEvent} from '@/components/history-event';
 import {useEffect,useState} from 'react';
 import {stamp,type Event} from '@/lib/crm';
 export function CrmHistory({clientId,orderId,revision,incomingId}:{incomingId?:string;clientId:string;orderId?:string;revision:string}){
@@ -10,5 +11,5 @@ export function CrmHistory({clientId,orderId,revision,incomingId}:{incomingId?:s
   fetch('/api/crm/history?'+query,{signal:abort.signal}).then(async r=>{const d=await r.json() as {rows:Event[];total:number;error?:string};if(!r.ok)throw Error(d.error||'Не удалось загрузить историю');setData(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
   return()=>abort.abort();
  },[clientId,orderId,page,revision,incomingId]);
- return <section className="history"><h3>История взаимодействий {data&&<span>{data.total}</span>}</h3>{loading&&<p role="status">Загрузка истории…</p>}{error&&<p role="alert">{error}</p>}{!loading&&!error&&data?.rows.map(e=><div className="history-event" key={e.id}><span className="history-dot"/><div><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{e.text}</p><small>{stamp(e.at)} · {e.actor}</small></div></div>)}{!loading&&!error&&data?.total===0&&<p className="muted">История пока пуста</p>}{data&&data.total>50&&<nav className="action-buttons" aria-label="Страницы истории"><button disabled={loading||page===0} onClick={()=>setPage(page-1)}>Назад</button><span>{page+1} / {Math.ceil(data.total/50)}</span><button disabled={loading||(page+1)*50>=data.total} onClick={()=>setPage(page+1)}>Далее</button></nav>}</section>;
+ return <section className="history"><h3>История взаимодействий {data&&<span>{data.total}</span>}</h3>{loading&&<p role="status">Загрузка истории…</p>}{error&&<p role="alert">{error}</p>}{!loading&&!error&&data?.rows.map(e=><HistoryEvent key={e.id} event={e}/>)}{!loading&&!error&&data?.total===0&&<p className="muted">История пока пуста</p>}{data&&data.total>50&&<nav className="action-buttons" aria-label="Страницы истории"><button disabled={loading||page===0} onClick={()=>setPage(page-1)}>Назад</button><span>{page+1} / {Math.ceil(data.total/50)}</span><button disabled={loading||(page+1)*50>=data.total} onClick={()=>setPage(page+1)}>Далее</button></nav>}</section>;
 }

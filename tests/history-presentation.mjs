@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {historyPresentation as view} from '../lib/history-presentation.ts';
+const basket='Сохранены данные заказа\nКорзина: А: 2 шт. × 10 ₽ → А: 3 шт. × 10 ₽';
+assert.equal(view(basket).summary,'Изменения заказа: корзина');assert.equal(view(basket).details,basket);
+const address='Сохранены данные заказа\nАдрес: старый → новый\nПоля адреса: Дом: 1 → Дом: 2';
+assert.equal(view(address).summary,'Изменения заказа: адрес');
+const returned='Доп. подтверждение → Возврат оператору · Уточнить данные · Просит специалиста\nПозвонить завтра\nСтатус: Доп. подтверждение → Возврат оператору';
+assert.match(view(returned).summary,/Просит специалиста\nПозвонить завтра/);assert.equal(view(returned).details,returned);
+assert.deepEqual(view('Создан заказ'),{summary:'Создан заказ',details:''});
+assert.equal(view('Комментарий: первая строка\nвторая строка').details,'Комментарий: первая строка\nвторая строка');
+assert.equal(view('Старое событие без подробностей').details,'');
+console.log('Compact history retains complete details, multiline return reasons and legacy events');
