@@ -69,10 +69,13 @@ try{
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'client',clientId:'foreign-card',orderId:'own-order'},cookies.irina)).status,403);
  await req('/api/crm',null,cookies.irina);
  db.prepare('INSERT INTO incoming_calls(id,assignee_id,at,phone,called_number) VALUES(?,?,?,?,?)').run('unknown-incoming',id,c.createdAt,'+79990000099','');
+ assert.equal((await req('/api/oktell-phone',{action:'call',tab,clientId:'test-card'},cookies.irina)).status,403,'Incoming blocks unrelated native call');
+ assert.equal((await req('/api/telephony',{mode:'client',clientId:'test-card'},cookies.irina)).status,423,'Incoming blocks unrelated Beeline call');
  const incomingCall=await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'unknown-incoming'},cookies.irina);
  assert.equal(incomingCall.status,200,JSON.stringify(incomingCall.data));assert.equal(incomingCall.data.destination,'79990000099');
  assert.equal(db.prepare('SELECT incoming_id FROM phone_call_incoming WHERE call_id=?').get(incomingCall.data.callId).incoming_id,'unknown-incoming');closeCalls();
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'missing'},cookies.irina)).status,403);
+ assert.equal((await req('/api/crm',{action:'missIncoming',incomingId:'unknown-incoming'},cookies.irina)).status,200);
  // Created after startup: no test-card configuration, migration or per-card setup needed.
  addCard('new-card','+79990000004');
  const choices=await req('/api/telephony?mode=client&clientId=new-card',null,cookies.irina);assert.equal(choices.status,200);assert.equal(choices.data.phones.length,2);assert.equal(choices.data.phones[0].label.includes('79990000004'),false);
@@ -83,6 +86,8 @@ try{
   const result=await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'known-extra-incoming',phoneKey:choice.key},cookies.irina);assert.equal(result.status,200,JSON.stringify(result.data));assert.equal(result.data.destination,choice.label==='Основной'?'79990000004':'79990000002');closeCalls();
  }
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'known-extra-incoming',phoneKey:'f'.repeat(64)},cookies.irina)).status,403);
+
+ assert.equal((await req('/api/crm',{action:'missIncoming',incomingId:'known-extra-incoming'},cookies.irina)).status,200);
 
  for(const route of ['mts','beeline']){
   const p=route==='mts'?{action:'call',tab,clientId:'new-card',phoneKey:extra}:{mode:'client',clientId:'new-card',phoneKey:extra};const res=await req(route==='mts'?'/api/oktell-phone':'/api/telephony',p,cookies.irina);assert.equal(res.status,200,JSON.stringify(res.data));assert.equal(route==='mts'?res.data.destination:db.prepare('SELECT destination FROM phone_call_targets WHERE call_id=?').get(res.data.callId).destination,'79990000002');closeCalls();

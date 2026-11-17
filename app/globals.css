@@ -488,3 +488,7 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 
 .incoming-tab-pair{display:inline-flex;align-items:stretch;border:1px solid var(--border);border-radius:10px;overflow:hidden;flex-shrink:0}.incoming-tabs .incoming-tab-pair>button{border-radius:0;margin:0}.incoming-tabs .incoming-tab-pair>button+button{border-left:1px solid var(--border)}.incoming-missed-note{font-size:.9em;color:var(--muted-foreground);margin:0;overflow-wrap:anywhere}
 .sk-operator-pending{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:rgba(120,132,151,.09);color:var(--muted,#64748b)}
+
+.incoming-work-gate{max-height:90dvh;overflow-y:auto;overflow-wrap:anywhere}
+.incoming-work-gate a{display:inline-flex;justify-content:center;text-decoration:none;white-space:normal}
+.incoming-work-gate button,.incoming-work-gate a{border-radius:10px;font-weight:400}

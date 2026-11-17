@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.ts';
+import {initIncoming,markIncomingMissed} from '../lib/incoming.ts';
+import {readIncomingWorkGate,incomingWorkRequestAllowed} from '../lib/incoming-work-gate.ts';
+import {incomingWorkTarget} from '../lib/incoming-work-policy.ts';
+const d=openDatabase(':memory:'),now='2026-11-17T10:00:00.000Z';
+try{
+ for(const sql of ['CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT,version INTEGER DEFAULT 1)','CREATE TABLE auth_accounts(employee_id TEXT,enabled INTEGER)','CREATE TABLE events(id TEXT PRIMARY KEY,client_id TEXT,order_id TEXT,at TEXT,data TEXT)'])await d.prepare(sql).run();
+ const staff=[['op','operator','1'],['other','operator','2'],['head','department_head','1'],['head2','department_head','2'],['admin','admin',''],['logistic','logistic',''],['chief','chief_logistic',''],['redemption','redemption',''],['buyout','redemption',''],['courier','courier','']].map(([id,role,department])=>({id,role,department,name:id}));
+ const e=id=>staff.find(e=>e.id===id);
+ for(const person of staff)await d.prepare('INSERT INTO employees VALUES(?,?)').bind(person.id,JSON.stringify(person)).run();
+ for(const [id,owner] of [['c','op'],['other','other'],['sk','op'],['ordinary','op']])await d.prepare('INSERT INTO clients VALUES(?,?)').bind(id,JSON.stringify({id,owner})).run();
+ for(const [id,clientId,status,manager,skLeadId] of [['o','c','shipping','op',''],['sk','sk','draft','op','123'],['old-sk','sk','confirm','op','123'],['other-sk','other','draft','other','456'],['ordinary','ordinary','draft','op','']])await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind(id,clientId,JSON.stringify({id,clientId,status,manager,skLeadId})).run();
+ await initIncoming(d);
+ async function add(id,client,assignee,department='1',extra={}){await d.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number,shared_queue) VALUES(?,?,?,?,?,?,?,?)').bind(id,client,assignee,department,now,'1','2',extra.shared?1:0).run();}
+ await add('one','c','op');
+ const get=(who='op',time=Date.parse(now))=>readIncomingWorkGate(d,e(who),time);
+ const allowed=async(path,body,who='op',method=body?'POST':'GET')=>incomingWorkRequestAllowed(d,e(who),new URL('http://crm'+path),method,body,await get(who));
+ let g=await get();assert.deepEqual(g.incomingIds,['one']);assert.deepEqual(g.skOrders.map(o=>({...o})),[{id:'sk',clientId:'sk'}]);
+ assert.equal(incomingWorkTarget(g,'order','sk'),true);assert.equal(incomingWorkTarget(g,'client','sk'),false);
+ assert.equal(await allowed('/api/crm',{action:'transition',id:'sk',to:'confirm'}),true);
+ assert.equal(await allowed('/api/crm',{action:'transition',id:'sk',to:'refused'}),false);
+ assert.equal(await allowed('/api/crm',{action:'contact',id:'sk',contact:'missed'}),false);
+ assert.equal(await allowed('/api/crm',{action:'saveOrder',id:'sk',changes:[{action:'updateOrder'}]}),true);
+ assert.equal(await allowed('/api/crm',{action:'saveOrder',id:'sk',changes:[{action:'transition',to:'redeemed'}]}),false);
+ assert.equal(await allowed('/api/crm',{action:'updateOrder',id:'ordinary'}),false);
+ assert.equal(await allowed('/api/crm',{action:'updateOrder',id:'old-sk'}),false);
+ assert.equal(await allowed('/api/crm',{action:'updateOrder',id:'other-sk'}),false);
+ assert.equal(await allowed('/api/crm',{action:'updateOrder',id:'o'}),true);
+ assert.equal(await allowed('/api/crm',{action:'updateClient',id:'c'}),true);
+ assert.equal(await allowed('/api/crm',{action:'updateClient',id:'sk'}),false);
+ assert.equal(await allowed('/api/crm',{action:'readReminder',id:'fake'}),false);
+ assert.equal(await allowed('/api/crm',{action:'missIncoming',incomingId:'one'}),true);
+ assert.equal(await allowed('/api/crm',{action:'missIncoming',incomingId:'fake'}),true,'Incoming handler retains object-level validation');
+ assert.equal(await allowed('/api/telephony',{mode:'client',clientId:'ordinary'}),false);
+ assert.equal(await allowed('/api/telephony',{mode:'order',orderId:'sk'}),true);
+ assert.equal(await allowed('/api/telephony',{mode:'incoming',incomingId:'one'}),true);
+ assert.equal(await allowed('/api/telephony',{id:'existing',status:'connected'},'op','PATCH'),true);
+ assert.equal(await allowed('/api/order-access',{action:'release',orderId:'ordinary'}),true);
+ assert.equal(await allowed('/api/cash',{action:'save'}),false);
+ assert.equal(await allowed('/api/redemption',{id:'ordinary'}),false);
+ assert.equal(await allowed('/api/redemption',{id:'o'}),true);
+ assert.equal(await allowed('/api/incoming-order-client?incomingId=one'),true);
+ assert.equal(await allowed('/api/warehouse?catalog=1'),true);
+ assert.equal(await allowed('/api/warehouse'),false);
+ assert.equal(await allowed('/api/crm',{action:'updateOrder',id:'ordinary'},'admin'),true);
+ assert.equal((await get('head')).incomingIds.length,1);assert.equal((await get('head2')).incomingIds.length,0);assert.equal((await get('other')).incomingIds.length,0);
+ // A head's ND releases the same authoritative row for the operator, including exact expiry.
+ await markIncomingMissed(d,'one',e('head'),staff,now);assert.equal((await get()).incomingIds.length,0);
+ assert.equal((await get('op',Date.parse(now)+3600000)).incomingIds.length,1);
+ await add('second',null,'op');assert.deepEqual((await get()).incomingIds,['second']);
+ await d.prepare("UPDATE incoming_calls SET closed_at=? WHERE id='second'").bind(now).run();assert.equal((await get()).incomingIds.length,0);
+ await d.prepare("UPDATE incoming_calls SET missed_until='',closed_at=? WHERE id='one'").bind(now).run();assert.equal((await get()).incomingIds.length,0);
+ // Shared queues preserve existing department/team visibility, never leak buyout to heads.
+ await add('buyout','c','redemption','');await add('logistics','c','logistic','');await add('unknown',null,null,'',{shared:true});
+ assert.deepEqual((await get('buyout')).incomingIds,['buyout']);assert.deepEqual((await get('chief')).incomingIds,['logistics']);assert.deepEqual((await get('head2')).incomingIds,['unknown']);
+ await d.prepare("UPDATE orders SET data=json_set(data,'$.status','confirm') WHERE id='sk'").run();assert.equal((await get('head')).skOrders.length,0);
+ assert.equal(await incomingWorkRequestAllowed(d,e('op'),new URL('http://crm/api/crm'),'POST',{action:'updateOrder',id:'ordinary'},await get()),true,'No outstanding incoming, ordinary work resumes');
+ console.log('Incoming work gate: roles/teams, head→operator release, ND expiry, multiple requests, SK-only exception, direct writes, unrelated clients, calls and preserved call cleanup passed');
+}finally{d.close();}

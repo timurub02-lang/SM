@@ -1,8 +1,11 @@
+import {incomingWorkRequestAllowed} from './incoming-work-gate';
+import {incomingWorkMessage} from './incoming-work-policy';
 import {createHmac} from 'node:crypto';
 import {closedOrderCallBlocked,operatorCallBlocked,type Employee,type Order} from './crm';
 import {db} from './db';
 import {phoneScope,normalizeOutgoingNumber,incomingCallTarget} from './phone-store';
 export async function clientPhones(actor:Employee,p:{mode:string;clientId?:string;orderId?:string;incomingId?:string}){
+ if(!await incomingWorkRequestAllowed(db(),actor,new URL('http://crm/api/telephony'),'POST',p))throw Error(incomingWorkMessage);
  if(actor.impersonation)throw Error('В режиме входа под сотрудником звонки отключены');
  if(!['client','order','incoming'].includes(p.mode))throw Error('Выберите клиента, заказ или обращение');
  const incomingNumber=p.mode==='incoming'?await incomingCallTarget(db(),actor,p.incomingId!):null;

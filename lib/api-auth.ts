@@ -1,3 +1,5 @@
+import {incomingWorkRequestAllowed} from './incoming-work-gate';
+import {incomingWorkMessage} from './incoming-work-policy';
 import {journalIdentity} from './journal-author';
 import {impersonationBlocksPhone} from './impersonation';
 import {sharedIncomingClientAccess} from './incoming';
@@ -22,6 +24,7 @@ export function authenticated(handler:(req:Request)=>Promise<Response>){
    if(write){const raw=await readLimitedText(req,6000000);if(raw.length>1500000)throw new BodyTooLarge('Слишком большой запрос');body=JSON.parse(raw);}
    if(!mayCallEndpoint(employee,url,req.method,body))return Response.json({error:'Недостаточно прав'},{status:403});
    if((body?.actorId&&body.actorId!==employee.id)||(url.searchParams.has('actorId')&&url.searchParams.get('actorId')!==employee.id))return Response.json({error:'Нельзя действовать от имени другого сотрудника'},{status:403});
+   if(!await incomingWorkRequestAllowed(db(),employee,url,req.method,body))return Response.json({error:incomingWorkMessage,incomingWorkBlocked:true},{status:423});
    const crmOrderWrite=url.pathname==='/api/crm'&&(['confirmByHead','saveOrder','selectOrderPickupPoint','reportPostalBuyout','keepPostalSent','updateMoscowDetails','updateRecipientName','requestOrderCancellation','resolveOrderCancellation','clientWaiting','markPV','courierAccept','courierOutcome','courierWorkflow','receivePayment','savePostalTracking','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment','incomingResult'].includes(body?.action)||body?.action==='requestOrderEdit'&&!body?.incomingId);
    const orderId=body?.orderId||url.searchParams.get('orderId')||(crmOrderWrite?body.id:undefined);
    let order;
