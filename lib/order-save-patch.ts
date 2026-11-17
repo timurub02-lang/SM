@@ -1,7 +1,7 @@
 import type {State} from './crm.ts';
 
 // Order edits do not remove records. Other screens still use complete snapshots.
-export const orderPatchActions=new Set(['saveOrder','transition','contact','comment','updateOrder','updateDelivery','updateWaybillComment','updateLogisticComment','markPV']);
+export const orderPatchActions=new Set(['confirmByHead','saveOrder','transition','contact','comment','updateOrder','updateDelivery','updateWaybillComment','updateLogisticComment','markPV']);
 export function orderSavePatch(before:State,after:State,orderId:string):State{
  const order=after.orders.find(o=>o.id===orderId);
  const previousOrders=new Map(before.orders.map(o=>[o.id,o]));
