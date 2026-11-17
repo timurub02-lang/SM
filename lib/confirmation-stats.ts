@@ -1,11 +1,11 @@
 import {operatorStats} from './operator-stats.ts';
-import type {State,Employee,Order} from './crm.ts';
+import {orderShipmentAt,type State,type Employee,type Order} from './crm.ts';
 const moscowDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow'});
 export function confirmationOutcome(order:Order){
  if(order.status==='redeemed')return 'paid';
  if(order.status==='returned')return 'returned';
  if(order.status==='refused')return 'cancelled';
- if(order.shippedAt||order.cdekTransferredAt||['shipping','pickup'].includes(order.status))return 'sent';
+ if(orderShipmentAt(order)||['shipping','pickup'].includes(order.status))return 'sent';
  return 'waiting';
 }
 export function confirmationStats(state:Pick<State,'employees'|'orders'> & Partial<Pick<State,'events'>>,actor:Employee,from:string,to:string,department=''){

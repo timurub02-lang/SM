@@ -25,7 +25,7 @@ assert.equal(courierDeadline(base),undefined);assert.equal(orderGroup(base.statu
 assert.deepEqual(courierBalance([base],courier.id),{pending:10000,parcels:0,cash:0,total:0});
 assert.throws(()=>run(base,courier,'confirm'));assert.throws(()=>applyCourierCommand(base,{action:'courierAccept',confirmed:true},{...courier,id:'other'},policy,at));
 let accepted=applyCourierCommand(base,{action:'courierAccept',confirmed:true},courier,policy,later(100)).order;
-assert.equal(courierStage(accepted),'confirmation');assert.equal(accepted.status,'packing');assert.equal(courierDeadline(accepted),internalDeadline(later(100),48));assert.equal(courierBalance([accepted],courier.id).total,10000);
+assert.equal(accepted.courierHandedAt,later(100));assert.equal(accepted.shippedAt,undefined);assert.equal(courierStage(accepted),'confirmation');assert.equal(accepted.status,'packing');assert.equal(courierDeadline(accepted),internalDeadline(later(100),48));assert.equal(courierBalance([accepted],courier.id).total,10000);
 assert.equal(courierConfirmationStage(accepted,time+142*hour),'expiring');
 assert.equal(courierReminderNeedsAction({...notice,at:later(100)},accepted),false,'Physical acceptance is history, not a new task');
 const callOrder={...accepted,contact:'missed',due:later(101)},callNotice={...notice,kind:'call',due:callOrder.due,readAt:later(100)};
@@ -79,7 +79,7 @@ assert.throws(()=>run(recalled,courier,'confirm',104));assert.throws(()=>run(rec
 const physicallyReturned=run(recalled,courier,'returnRecall',104,{confirmed:true});
 assert.equal(packingStage(physicallyReturned),'new');assert.equal(courierBalance([physicallyReturned],courier.id).total,10000);assert.equal(courierReminderNeedsAction({...notice,at:later(104)},physicallyReturned),false);
 assert.throws(()=>run(physicallyReturned,courier,'receiveRecall',105,{confirmed:true}));
-const received=run(physicallyReturned,logistic,'receiveRecall',105,{confirmed:true});
+const received=run(physicallyReturned,logistic,'receiveRecall',105,{confirmed:true});assert.equal(received.courierHandedAt,accepted.courier.acceptedAt);
 assert.equal(received.courier,undefined);assert.equal(received.courierRecall.operatorBudgetMs,94*hour);assert.equal(received.packingWaybillAt,undefined);assert.equal(courierBalance([received],courier.id).total,0);assert.equal(received.warehouseReturnedAt,undefined);
 assert.throws(()=>run(received,logistic,'receiveRecall',106,{confirmed:true}));
 for(const status of ['redeemed','returned','refused'])assert.throws(()=>run({...accepted,status},logistic,'recall',101,{reason:'Invalid final order'}));
