@@ -13,7 +13,7 @@ async function call(path,cookie,body){const r=await fetch(base+path,{method:body
 try{
  db.exec(readFileSync('drizzle/0000_cynical_monster_badoon.sql','utf8'));for(const sql of authSchema)db.exec(sql);
  const hash=await hashPassword('synthetic-statistics-2026');
- for(const [id,role,department] of [['admin','admin','1'],['head','department_head','1'],['operator','operator','1'],['other','operator','2']]){
+ for(const [id,role,department] of [['admin','admin','1'],['head','department_head','1'],['operator','operator','1'],['other','operator','2'],['buyer','redemption','']]){
   db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify({id,login:id,name:id,role,department}));
   db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
  }
@@ -25,7 +25,7 @@ try{
  server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{PATH:process.env.PATH,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:'3398'},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<100;i++){try{if((await fetch(base+'/login')).status===200)break;}catch{}await new Promise(r=>setTimeout(r,100));}
- const cookies={};for(const id of ['admin','head','operator']){const r=await call('/api/auth/login',null,{login:id,password:'synthetic-statistics-2026'});assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
+ const cookies={};for(const id of ['admin','head','operator','buyer']){const r=await call('/api/auth/login',null,{login:id,password:'synthetic-statistics-2026'});assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
  const basePath='/api/operator-statistics?section=base';
  assert.equal((await call(basePath)).status,401);
  assert.equal((await call(basePath,cookies.head)).status,403);
@@ -34,6 +34,16 @@ try{
  const baseResponse=await call(basePath,cookies.admin);assert.equal(baseResponse.status,200,baseResponse.text);
  assert.equal(JSON.parse(baseResponse.text).rows.find(r=>r.id==='other').clients,1);
  assert.ok(!baseResponse.text.includes('private-client'));
+
+ const buyoutPath='/api/operator-statistics?section=buyouts&from=2026-11-11&to=2026-11-11';
+ const buyerResponse=await call(buyoutPath,cookies.buyer);assert.equal(buyerResponse.status,200,buyerResponse.text);
+ const buyerRow=JSON.parse(buyerResponse.text).rows.find(r=>r.id==='other');assert.equal(buyerRow.buyoutCdek,1);assert.equal(buyerRow.buyoutAmount,12345);
+ assert.deepEqual(Object.keys(buyerRow).sort(),['id','login','department','buyoutCount','buyoutAmount','buyoutCdek','buyoutPost','buyoutMoscow'].sort());
+ for(const secret of ['PRIVATE-PAID','PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001','orderLists'])assert.ok(!buyerResponse.text.includes(secret));
+ for(const section of ['base','created','shipped','confirmation',''])assert.equal((await call('/api/operator-statistics?section='+section,cookies.buyer)).status,403);
+ assert.equal((await call(buyoutPath+'&actorId=admin',cookies.buyer)).status,403);
+ const buyerDaily=await call(buyoutPath+'&groupBy=day&department=2',cookies.buyer);assert.equal(buyerDaily.status,200);assert.equal(JSON.parse(buyerDaily.text).rows[0].login,'2026-11-11');
+ assert.equal(JSON.parse((await call(buyoutPath+'&department=1',cookies.buyer)).text).rows.some(r=>r.buyoutCount>0),false);
  const path='/api/operator-statistics?from=2026-11-11&to=2026-11-11';
  assert.equal((await call(path)).status,401);
  assert.equal((await call(path,cookies.operator)).status,403);
