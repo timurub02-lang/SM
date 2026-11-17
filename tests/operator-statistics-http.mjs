@@ -37,8 +37,8 @@ try{
 
  const buyerPath='/api/operator-statistics?section=shipped&from=2026-11-11&to=2026-11-11';
  const buyerResponse=await call(buyerPath,cookies.buyer);assert.equal(buyerResponse.status,200,buyerResponse.text);
- const buyerRow=JSON.parse(buyerResponse.text).rows.find(r=>r.id==='other');assert.equal(buyerRow.sentCdek,1);assert.equal(buyerRow.redeemed,1);
- assert.deepEqual(Object.keys(buyerRow).sort(),['id','label','sentCdek','sentPost','sentMoscow','sent','redeemed','returned'].sort());
+ const buyerRow=JSON.parse(buyerResponse.text).rows.find(r=>r.id==='other');assert.equal(buyerRow.sentAmount,12345);assert.equal(buyerRow.sentCdek,1);assert.equal(buyerRow.redeemed,1);
+ assert.deepEqual(Object.keys(buyerRow).sort(),['id','label','sentCdek','sentPost','sentMoscow','sent','sentAmount','redeemed','returned'].sort());
  for(const secret of ['PRIVATE-PAID','PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001','orderLists'])assert.ok(!buyerResponse.text.includes(secret));
  for(const section of ['base','created','buyouts','confirmation',''])assert.equal((await call('/api/operator-statistics?section='+section,cookies.buyer)).status,403);
  assert.equal((await call(buyerPath+'&actorId=admin',cookies.buyer)).status,403);
@@ -66,8 +66,8 @@ try{
  const shippedPath='/api/operator-statistics?section=shipped&groupBy=day&department=2&from=2026-11-11&to=2026-11-11';
  assert.equal((await call(shippedPath,cookies.operator)).status,403);
  const shippedResponse=await call(shippedPath,cookies.head);assert.equal(shippedResponse.status,200,shippedResponse.text);
- const shippedRows=JSON.parse(shippedResponse.text).rows;assert.equal(shippedRows.length,1);assert.equal(shippedRows[0].label,'2026-11-11');assert.equal(shippedRows[0].sentCdek,1);assert.equal(shippedRows[0].sent,1);assert.equal(shippedRows[0].redeemed,1);
- assert.deepEqual(Object.keys(shippedRows[0]).sort(),['id','label','sentCdek','sentPost','sentMoscow','sent','redeemed','returned'].sort());
+ const shippedRows=JSON.parse(shippedResponse.text).rows;assert.equal(shippedRows.length,1);assert.equal(shippedRows[0].label,'2026-11-11');assert.equal(shippedRows[0].sentAmount,12345);assert.equal(shippedRows[0].sentCdek,1);assert.equal(shippedRows[0].sent,1);assert.equal(shippedRows[0].redeemed,1);
+ assert.deepEqual(Object.keys(shippedRows[0]).sort(),['id','label','sentCdek','sentPost','sentMoscow','sent','sentAmount','redeemed','returned'].sort());
  for(const secret of ['PRIVATE-PAID','PRIVATE CLIENT','79990000001'])assert.ok(!shippedResponse.text.includes(secret));
  assert.equal(JSON.parse((await call(shippedPath.replace('department=2','department=1'),cookies.head)).text).rows.length,0);
  const delayed={...paid,id:'DELAYED-ACCEPTANCE',cdekTransferredAt:'2026-11-13T10:00:00Z',shippedAt:'2026-11-13T10:00:00Z',cdekAcceptedAt:'2026-11-16T10:00:00Z'};
