@@ -397,7 +397,7 @@ export default function Page(){
  const canViewPermissions=employee.role==="admin";
  const permissionView=view==="orders"&&filter==="permissions"&&canViewPermissions;
  const scopedOrders=useMemo(()=>employee.role==="operator"?state.orders.filter(o=>o.manager===actor):employee.role==="department_head"?departmentOrders(state.orders,state.employees,employee):state.orders,[employee,actor,state.orders,state.employees]);
- const visibleOrders=useMemo(()=>view==="orders"?scopedOrders.filter(o=>showOrderInList(o,clientsById.get(o.clientId),employee.role,reminderNow)):["moscow","post","shipping"].includes(view)?scopedOrders.filter(o=>!operationalOrderHidden(o,employee.role,reminderNow)):scopedOrders,[view,scopedOrders,clientsById,employee.role,reminderNow]);
+ const visibleOrders=useMemo(()=>view==="orders"?scopedOrders.filter(o=>showOrderInList(o,clientsById.get(o.clientId),employee.role,reminderNow)):["moscow","post","shipping"].includes(view)?scopedOrders.filter(o=>!operationalOrderHidden(o,employee.role==='admin'?'logistic':employee.role,reminderNow)):scopedOrders,[view,scopedOrders,clientsById,employee.role,reminderNow]);
  const prioritizeRedemption=view==="orders"&&filter==="sent";
  const redemptionStatuses=state.redemptionStatuses||[];
  const awaitingBuyoutOperator=useMemo(()=>new Set(Object.entries(state.redemptionResults||{}).filter(([,r])=>r.awaitingOperator).map(([id])=>id)),[state.redemptionResults]);

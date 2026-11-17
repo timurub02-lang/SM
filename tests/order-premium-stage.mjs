@@ -102,3 +102,21 @@ for(const role of ['admin','operator','department_head','logistic','chief_logist
 }
 assert.equal(operationalOrderHidden({...cancelled,delivery:'moscow_courier',courier:{acceptedAt:cancelled.cancelledAt}},'logistic',cancelDeadline),false);
 console.log('Cancelled orders: visible 24 hours regardless of ownership/blacklist; warehouse receipt preserved');
+
+// Delivery workspaces give administrators the same warehouse-return window as logistics.
+for(const [view,delivery] of [['moscow','moscow_courier'],['post','russian_post'],['shipping','cdek_pickup'],['shipping','cdek_courier']]){
+ const order={id:'returned-workspace',clientId:'client',manager:'original',createdAt:returned.warehouseReturnedAt,items:[],...returned,delivery};
+ const state={clients:[{id:'client',name:'Test',phone:'',city:''}],employees:[],orders:[order],settings:{orderPolicy:{}}};
+ const q={view,filter:'warehouse_returned',query:'',showNextPremium:false};
+ for(const role of ['admin','logistic','chief_logistic']){
+  assert.equal(filteredOrderList(state,{id:role,role},q,returnDeadline-1).length,1,view+' '+role+' before archive');
+  assert.equal(filteredOrderList(state,{id:role,role},q,returnDeadline).length,0,view+' '+role+' after archive');
+  const awaiting={...state,orders:[{...order,warehouseReturnedAt:undefined}]};
+  assert.equal(filteredOrderList(awaiting,{id:role,role},{...q,filter:'returned'},returnDeadline).length,1,view+' '+role+' awaiting receipt');
+ }
+ assert.equal(filteredOrderList(state,{id:'admin',role:'admin'},{...q,view:'orders',filter:'all'},returnDeadline-1).length,0,'general order archive unchanged');
+}
+console.log('Admin delivery returns: Moscow/Post/CDEK match logistics until receipt +48h; general order archive unchanged');
+
+const refusedParcel={id:'physical-return',clientId:'client',manager:'original',status:'refused',delivery:'moscow_courier',createdAt:'2026-11-01T00:00:00Z',cancelledAt:'2026-11-01T00:00:00Z',items:[],courier:{acceptedAt:'2026-11-01T00:00:00Z'}};
+for(const role of ['admin','logistic','chief_logistic'])assert.equal(filteredOrderList({clients:[{id:'client',name:'Test'}],employees:[],orders:[refusedParcel],settings:{orderPolicy:{}}},{id:role,role},{view:'moscow',filter:'returned',query:'',showNextPremium:false},returnDeadline).length,1,'physical courier return remains visible until receipt');
