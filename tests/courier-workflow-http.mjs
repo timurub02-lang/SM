@@ -1,3 +1,4 @@
+import {packingStage,deliveryQueue} from '../lib/crm.ts';
 import {pickupPointContext} from '../lib/order-pickup-point.ts';
 import {addWeekdayMilliseconds} from '../lib/internal-timers.ts';
 import {courierDeadline} from '../lib/courier.ts';
@@ -178,7 +179,7 @@ try{
  // Logistics extra confirmation is dropped only on a switch to Moscow, not on the first confirmation.
  for(const from of ['russian_post','cdek_pickup']){
   const switchId=await create();await act(switchId,'operator',{action:'updateOrder',delivery:from,items:order(switchId).items,addressConfirmed:true});if(from==='cdek_pickup')fixturePickupPoint(switchId);await act(switchId,'operator',{action:'transition',to:'confirm'});
-  if(from==='russian_post')await act(switchId,'logistic',{action:'transition',to:'extra'});else{await act(switchId,'logistic',{action:'transition',to:'check'});await act(switchId,'admin',{action:'transition',to:'extra'});}
+  await act(switchId,'logistic',{action:'transition',to:'extra'},400);await act(switchId,'logistic',{action:'transition',to:'check'});await act(switchId,'logistic',{action:'transition',to:'packing'},400);await act(switchId,'admin',{action:'transition',to:'extra'});const scheduled=order(switchId);assert.equal(scheduled.contact,'callback');assert.equal(scheduled.confirmationStartedAt,scheduled.extraCallbackAt);assert.equal(scheduled.due,scheduled.extraCallbackAt);assert.equal(new Date(scheduled.due).toISOString().slice(11,16),'06:00');
   await act(switchId,'logistic',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});
   const action=from==='russian_post'?{action:'updateDelivery',delivery:'moscow_courier'}:{action:'updateOrder',delivery:'moscow_courier',addressConfirmed:true};
   await act(switchId,'logistic',action);const switched=order(switchId);assert.equal(switched.status,'packing');assert.equal(switched.extra,false);assert.equal(switched.due,'');assert.equal(switched.noAnswerDeadline,undefined);assert.equal(switched.confirmationStartedAt,undefined);assert.equal(switched.packingWaybillAt,undefined);assert.equal(switched.deliveryChange.to,'moscow_courier');
@@ -187,7 +188,7 @@ try{
  const firstId=await create();await act(firstId,'operator',{action:'updateOrder',delivery:'russian_post',items:order(firstId).items,addressConfirmed:true});await act(firstId,'operator',{action:'transition',to:'confirm'});await act(firstId,'logistic',{action:'updateDelivery',delivery:'moscow_courier'});assert.equal(order(firstId).status,'confirm');
  console.log('Courier recall/repack, guarded editing, stale clicks, custody, price/stock/cash and delivery-switch regressions passed.');
  // Department heads share the existing confirmation flow, never the courier's own stage.
- for(const [delivery,to] of [['cdek_pickup','check'],['russian_post','extra'],['moscow_courier','packing']]){
+ for(const [delivery,to] of [['cdek_pickup','check'],['russian_post','check'],['moscow_courier','packing']]){
   const headId=await create();await act(headId,'operator',{action:'updateOrder',delivery,items:order(headId).items,addressConfirmed:true});if(delivery==='cdek_pickup')fixturePickupPoint(headId);await act(headId,'operator',{action:'transition',to:'confirm'});
   assert.ok(!(await call('head')).data.tasks.some(t=>t.orderId===headId));assert.ok(!(await call('foreign-head')).data.tasks.some(t=>t.orderId===headId));
   await act(headId,'foreign-head',{action:'transition',to},403);
@@ -204,7 +205,7 @@ try{
   await act(headId,'head',{action:'confirmByHead',clientConfirmed:true},400);await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead'},400);await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');assert.equal(order(headId).deliveryConfirmationAuthor?.id,'head');
   await call('head','/api/order-access',{orderId:headId,token,action:'release'});
   if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,'packing');assert.equal(order(headId).deliveryConfirmationAuthor.id,'head');}
-  else if(to==='check'){await act(headId,'head',{action:'transition',to:'packing'},400);const consent=order(headId).deliveryConfirmationAuthor;const pendingStats=await call('head','/api/operator-statistics?section=confirmation&scope=own&actorId=head');assert.ok(pendingStats.data.rows.every(row=>!row.orderIds.includes(headId)));await act(headId,'admin',{action:'transition',to:'packing'});assert.deepEqual(order(headId).deliveryConfirmationAuthor,consent);assert.equal(order(headId).deliveryPackingAt,order(headId).updatedAt);assert.ok(Date.parse(order(headId).deliveryPackingAt)>Date.parse(consent.at));}
+  else if(to==='check'){await act(headId,'head',{action:'transition',to:'packing'},400);const consent=order(headId).deliveryConfirmationAuthor;const pendingStats=await call('head','/api/operator-statistics?section=confirmation&scope=own&actorId=head');assert.ok(pendingStats.data.rows.every(row=>!row.orderIds.includes(headId)));await act(headId,'admin',{action:'transition',to:'packing'});assert.deepEqual(order(headId).deliveryConfirmationAuthor,consent);assert.equal(order(headId).deliveryPackingAt,order(headId).updatedAt);assert.ok(Date.parse(order(headId).deliveryPackingAt)>Date.parse(consent.at));if(delivery==='russian_post'){assert.equal(deliveryQueue(order(headId),'post'),true);assert.equal(deliveryQueue(order(headId),'shipping'),false);assert.equal(packingStage(order(headId)),'new');}}
   else await act(headId,'head',{action:'markPackingWaybill'},400);
  }
  // Returned confirmation orders can be corrected and confirmed without another logistics call.
@@ -217,7 +218,7 @@ try{
   await act(rid,'head',{action:'confirmByHead',clientConfirmed:true},400);
   assert.equal(JSON.stringify(order(rid)),unchanged);
   await act(rid,'head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true});
-  assert.equal(order(rid).status,delivery.startsWith('cdek_')?'check':'packing');assert.equal(order(rid).confirmationAuthor.id,'head');assert.equal(order(rid).reworkDeadline,undefined);
+  assert.equal(order(rid).status,delivery!=='moscow_courier'?'check':'packing');assert.equal(order(rid).confirmationAuthor.id,'head');assert.equal(order(rid).reworkDeadline,undefined);
   assert.ok(db.prepare('SELECT data FROM events WHERE order_id=?').all(rid).some(r=>JSON.parse(r.data).text.includes('Check address')));
  }
  const requestId=await create();await act(requestId,'operator',{action:'transition',to:'confirm'});
