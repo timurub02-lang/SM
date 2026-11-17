@@ -893,3 +893,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .client-profile-dialog.has-header-call>[data-slot=dialog-header].has-call-dock{grid-template-columns:minmax(0,1fr)}
 .client-profile-dialog>[data-slot=dialog-header].has-call-dock>.call-route-buttons.card-header-call{display:none}
 .client-profile-dialog>[data-slot=dialog-header].has-call-dock>.browser-call-dock{grid-column:1/-1;grid-row:3;min-width:0;max-width:100%;box-sizing:border-box}
+
+.stats-date-arrows{display:flex;gap:6px;flex-shrink:0}

@@ -1,3 +1,4 @@
+import {shiftDate} from './premium-periods.ts';
 import {total,orderShipmentAt,type State,type Employee} from './crm.ts';
 const moscowDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow'});
 export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Employee,from:string,to:string){
@@ -57,4 +58,13 @@ export function buyoutStatsByDay(rows:ReturnType<typeof operatorStats>){
   result.orderLists.redeemed.push(order);
  }
  return [...days.values()];
+}
+
+export function shiftStatsPeriod(from:string,to:string,days:-1|1){
+ if(!from||!to||from>to)return null;
+ try{
+  if(shiftDate(from,0)!==from||shiftDate(to,0)!==to)return null;
+  const period={from:shiftDate(from,days),to:shiftDate(to,days)};
+  return /^\d{4}-\d{2}-\d{2}$/.test(period.from)&&/^\d{4}-\d{2}-\d{2}$/.test(period.to)&&period.from>='0001-01-01'&&period.to<='9999-12-31'?period:null;
+ }catch{return null;}
 }
