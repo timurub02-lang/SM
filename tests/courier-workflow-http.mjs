@@ -201,10 +201,10 @@ try{
   await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});assert.equal(order(headId).confirmationStartedAt,started);assert.equal(order(headId).noAnswerDeadline,deadline);
   await act(headId,'head',{action:'updateOrder',items:order(headId).items,comment:'Forbidden edit',addressConfirmed:true},400);
   if(to==='packing'){await act(headId,'head',{action:'transition',to},400);assert.equal(order(headId).status,'confirm');}
-  await act(headId,'head',{action:'confirmByHead',clientConfirmed:true},400);await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead'},400);await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');assert.equal(order(headId).deliveryConfirmationAuthor?.id,to==='packing'?'head':undefined);
+  await act(headId,'head',{action:'confirmByHead',clientConfirmed:true},400);await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead'},400);await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');assert.equal(order(headId).deliveryConfirmationAuthor?.id,'head');
   await call('head','/api/order-access',{orderId:headId,token,action:'release'});
   if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,'packing');assert.equal(order(headId).deliveryConfirmationAuthor.id,'head');}
-  else if(to==='check')await act(headId,'head',{action:'transition',to:'packing'},400);
+  else if(to==='check'){await act(headId,'head',{action:'transition',to:'packing'},400);const consent=order(headId).deliveryConfirmationAuthor;await act(headId,'admin',{action:'transition',to:'packing'});assert.deepEqual(order(headId).deliveryConfirmationAuthor,consent);}
   else await act(headId,'head',{action:'markPackingWaybill'},400);
  }
  // Returned confirmation orders can be corrected and confirmed without another logistics call.
