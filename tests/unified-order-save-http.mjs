@@ -69,5 +69,18 @@ try{
  await save('log',[{action:'updateLogisticComment',text:'Sent comment'}]);assert.equal(order().logisticComment,'Sent comment');before=order();
  await save('log',[{action:'updateLogisticComment',text:'Must not save'},{action:'updateRecipientName',name:'Forbidden',clientVersion:clientRow().version}],{},400);assert.deepEqual(order(),before);
  await save('admin',[{action:'deleteEmployee',id:'op'}],{},400);
+ for(const actor of ['admin','log','second'])for(const to of ['redeemed','returned']){
+  const fixture={...initial,delivery:'russian_post',status:'shipping',shippedAt:now,logisticComment:'почта ',legacyLv:{trial:false,orderId:'159393',track:'10939025501940',status:'Почта Физ'}};
+  db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify(fixture));
+  before=order();count=eventCount();
+  const changes=[{action:'updateLogisticComment',text:' Новый комментарий '},{action:'savePostalTracking',trackingNumber:'RA123456'},{action:'comment',text:'Заметка при смене статуса'},{action:'transition',to,reason:to==='returned'?'Клиент отказался':''}];
+  await save(actor,changes,{version:before.version-1},400);assert.deepEqual(order(),before);assert.equal(eventCount(),count);
+  await save('op',changes,{},400);assert.deepEqual(order(),before);
+  await save(actor,[{action:'updateLogisticComment',text:'Must not save'},{action:'transition',to:'packing'}],{},400);assert.deepEqual(order(),before);
+  await save(actor,changes);assert.equal(order().status,to);assert.equal(order().logisticComment,'Новый комментарий');assert.equal(order().postalTrackingNumber,'RA123456');assert.equal(order().version,before.version+1);assert.equal(eventCount(),count+1);
+  assert.match(db.prepare("SELECT data FROM events WHERE order_id='post' ORDER BY rowid DESC LIMIT 1").get().data,/Заметка при смене статуса/);
+ }
+ db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify({...initial,delivery:'cdek_courier',status:'shipping'}));
+ before=order();count=eventCount();await save('admin',[{action:'updateLogisticComment',text:'Must not save'},{action:'transition',to:'redeemed'}],{},400);assert.deepEqual(order(),before);assert.equal(eventCount(),count);
  console.log('Unified order save HTTP: operator PVZ/data/note, admin name and client version, logistic post/cost/tracking and Moscow fields, shipped comments, atomic failure and permission guards passed');
 }catch(error){console.error(logs);throw error;}finally{if(server&&server.exitCode===null){const exit=once(server,'exit');server.kill('SIGTERM');await exit;}db.close();rmSync(dir,{recursive:true,force:true});}

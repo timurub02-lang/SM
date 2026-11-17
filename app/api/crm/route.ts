@@ -231,6 +231,7 @@ async function handlePOST(request:Request){
   if(o.cdekDeleting)throw Error('СДЭК обрабатывает удаление. Дождитесь подтверждения');
   const shipment=await d.prepare("SELECT data FROM settings WHERE id=?").bind('cdek-shipment-'+o.id).first<{data:string}>(),shipmentState=shipment?JSON.parse(shipment.data).state:null;
   for(const change of form){
+   if(change.action==='transition'&&(o.delivery!=='russian_post'||!['shipping','pickup'].includes(o.status)))throw Error('Совместное сохранение и смена статуса доступны отправленному заказу Почты России');
    authorizeCrm(employee,{...change,id:o.id},s);
    if(o.zvd&&!['comment','updateLogisticComment','updateRecipientName','updateMoscowDetails'].includes(change.action))throw Error('Заказ на ЗВД. Сначала администратор должен разрешить отправку');
    if(['updateOrder','updateDelivery','updateRecipientName','updateMoscowDetails'].includes(change.action)&&!orderDataEditingEnabled(employee.role,change.action==='updateOrder'&&change.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees)?'draft':canEditRecalledCourierOrder(o,employee,s.employees)?'rework':o.status,s.settings.orderPolicy))throw Error('Редактирование данных заказа отключено администратором');
