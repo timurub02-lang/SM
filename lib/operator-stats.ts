@@ -23,7 +23,7 @@ export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Emplo
   // First-occurrence dates keep completed stages counted after the order moves on.
   const confirmed=created.filter(o=>!!o.confirmedAt);
   const sent=created.filter(o=>!!orderShipmentAt(o)||!!o.cdekAcceptedAt||['shipping','pickup','redeemed','returned'].includes(o.status));
-  const cancelled=created.filter(o=>!!o.cancelledAt||o.status==='refused');
+  const cancelled=created.filter(o=>(!!o.cancelledAt||o.status==='refused')&&!(o.delivery==='moscow_courier'&&o.status==='returned'&&!!o.warehouseReturnedAt));
   const awaitingShipment=confirmed.filter(o=>!sent.includes(o)&&!cancelled.includes(o));
   const inWork=created.filter(o=>!confirmed.includes(o)&&!cancelled.includes(o));
   const amount=created.reduce((sum,o)=>sum+Math.round(total(o)*100),0)/100;

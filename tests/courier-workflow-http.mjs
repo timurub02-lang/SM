@@ -324,7 +324,7 @@ try{
    assert.equal(received.status,'returned');assert.equal(received.returnedAt,received.warehouseReturnedAt);assert.equal(received.shippedAt,beforeReceipt.shippedAt);assert.equal(received.cancelledAt,beforeReceipt.cancelledAt);assert.equal(received.reason,beforeReceipt.reason);assert.equal(received.deliveryConfirmationAuthor.id,beforeReceipt.deliveryConfirmationAuthor.id);
    assert.deepEqual([afterSent.sentMoscow,afterSent.sent,afterSent.returned],[1,beforeSent.sent,1]);
    assert.deepEqual([afterConfirm.confirmed,afterConfirm.cancelled,afterConfirm.returned],[beforeConfirm.confirmed,0,1]);
-   const createdStats=operatorStats(statsState(received),{role:'admin'},'','')[0];assert.equal(createdStats.created,1);assert.equal(createdStats.confirmed,1);assert.equal(createdStats.sent,1);
+   const createdStats=operatorStats(statsState(received),{role:'admin'},'','')[0];assert.equal(createdStats.created,1);assert.equal(createdStats.confirmed,1);assert.equal(createdStats.sent,1);assert.equal(createdStats.cancelled,0);assert.deepEqual(createdStats.orderLists.cancelled,[]);
    const receivedVersion=received.version;
    await call('logistic','/api/crm',{action:'returnToWarehouse',id:doorId,version:beforeReceipt.version},400);assert.equal(order(doorId).version,receivedVersion);
    assert.ok(db.prepare('SELECT data FROM events WHERE order_id=?').all(doorId).some(r=>JSON.parse(r.data).text.includes('Статус: Отказ → Возврат')));
