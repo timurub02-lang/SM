@@ -487,3 +487,4 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .cdek-point-popup [data-disabled]{opacity:.5}
 
 .incoming-tab-pair{display:inline-flex;align-items:stretch;border:1px solid var(--border);border-radius:10px;overflow:hidden;flex-shrink:0}.incoming-tabs .incoming-tab-pair>button{border-radius:0;margin:0}.incoming-tabs .incoming-tab-pair>button+button{border-left:1px solid var(--border)}.incoming-missed-note{font-size:.9em;color:var(--muted-foreground);margin:0;overflow-wrap:anywhere}
+.sk-operator-pending{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:rgba(120,132,151,.09);color:var(--muted,#64748b)}

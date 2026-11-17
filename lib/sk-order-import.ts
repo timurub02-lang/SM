@@ -70,3 +70,12 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
  const result=await d.batch(statements);if(!result[existing?0:1].meta.changes)throw Error('Клиент или сотрудник изменился. Повторите обработку');
  return {state:'imported',orderId:id};
 }
+
+export async function operatorPendingSkOrders(d:Db,staff:Employee[],actorId:string){
+ const rows=await d.prepare("SELECT id,data,created_at FROM sk_order_transfers WHERE state='pending' ORDER BY created_at DESC").all();
+ return rows.results.flatMap((row:{id:string;data:string;created_at:string})=>{
+  const input:SkOrderInput=JSON.parse(String(row.data));
+  if(skSender(staff,input.email,input.userName,input.userNameUnique)?.id!==actorId)return [];
+  return [{id:String(row.id),name:input.name||'Клиент из Скорозвона',at:String(row.created_at),reason:'Ожидает разрешения администратора',canDecide:false,sender:''}];
+ });
+}
