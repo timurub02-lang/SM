@@ -599,6 +599,8 @@ try{
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(freeWork.id).data).owner,'one');assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE client_id=? AND id<>?').get(freeWork.id,freePast.id).data).manager,'one');assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(freeWorkIncoming).closed_at);
  assert.equal((await api(freeHistoryPath,undefined,cookies.one)).status,400,'Closed incoming revokes narrow history access');
  assert.equal((await api('/api/crm/history?'+freeHistoryQuery,undefined,cookies.one)).status,403);assert.equal((await api('/api/call-history?'+freeHistoryQuery,undefined,cookies.one)).status,403);assert.equal((await api(freeRecordingPath,undefined,cookies.one)).status,403,'Closed incoming revokes recording grant');
+ // Finish earlier independent incoming scenarios before testing ordinary order rework.
+ db.prepare("UPDATE incoming_calls SET missed_until=? WHERE closed_at IS NULL AND spam=0").run(new Date(Date.now()+3600000).toISOString());
  // Delegated operator requests edits; logistics approves; the owner edits and returns to the original stage.
  const editClient={...createClient,id:'incoming-edit-client',phone:'+79990000552'};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(editClient.id,editClient.phone,JSON.stringify(editClient));
