@@ -105,7 +105,7 @@ try{
    assert.deepEqual(page.clients,snapshot.clients.filter(c=>page.rows.some(o=>o.clientId===c.id)));
   }
   if(employee.role==='admin')continue;
-  for(const clientSort of ['name','amount'])for(const direction of ['asc','desc']){
+  for(const clientSort of ['name','amount','release'])for(const direction of ['asc','desc']){
    const q={filter:'all',query:'',clientWorkFilter:'all',clientSort,direction,timeZone:'Europe/Moscow'},expected=filteredClientList(snapshot,employee,q);
    for(const pageNumber of [0,1]){
     const result=await get('/api/crm?'+new URLSearchParams({list:'mine',view:'mine',...q,page:String(pageNumber)}),cookie);

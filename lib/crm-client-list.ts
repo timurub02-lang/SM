@@ -1,7 +1,7 @@
 import {assignedClients,orderGroup,total,type State,type Employee,type Client,type Order} from './crm.ts';
 import {clientRetentionExpiring} from './client-retention-label.ts';
 import {clientWorkStatus,clientWorkQueueOrder} from './client-work.ts';
-export function filteredClientList(state:State,employee:Employee,{filter,query,clientWorkFilter,clientSort='default',direction='asc',timeZone='Europe/Moscow'}:{filter:string;query:string;clientWorkFilter:string;clientSort?:'default'|'name'|'amount';direction?:'asc'|'desc';timeZone?:string},reminderNow=Date.now()){
+export function filteredClientList(state:State,employee:Employee,{filter,query,clientWorkFilter,clientSort='default',direction='asc',timeZone='Europe/Moscow'}:{filter:string;query:string;clientWorkFilter:string;clientSort?:'default'|'name'|'amount'|'release';direction?:'asc'|'desc';timeZone?:string},reminderNow=Date.now()){
  const day=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'});const today=day.format(reminderNow);
  const ordersByClient=new Map<string,Order[]>();for(const o of state.orders){const group=ordersByClient.get(o.clientId)||[];group.push(o);ordersByClient.set(o.clientId,group);}
  const mine=assignedClients(state.clients,state.employees,employee);const clientsWithActiveOrders=new Set(state.orders.filter(o=>["new","accepted","sent"].includes(orderGroup(o).id)).map(o=>o.clientId));const clientsInTransit=new Set(state.orders.filter(o=>orderGroup(o).id==="sent").map(o=>o.clientId));const mineIds=new Set(mine.map(c=>c.id));const myOrders=state.orders.filter(o=>mineIds.has(o.clientId));const active=(o:Order)=>!["redeemed","refused","returned"].includes(o.status);
@@ -19,7 +19,20 @@ export function filteredClientList(state:State,employee:Employee,{filter,query,c
  if(clientSort!=='default'){
   const amounts=new Map(clients.map(c=>[c.id,(ordersByClient.get(c.id)||[]).filter(o=>o.status==='redeemed').reduce((sum,o)=>sum+total(o),0)]));
   const byName=(a:Client,b:Client)=>a.name.localeCompare(b.name,'ru',{sensitivity:'base',numeric:true});
-  clients.sort((a,b)=>(clientSort==='amount'?(amounts.get(a.id)!-amounts.get(b.id)!):byName(a,b))*(direction==='asc'?1:-1)||byName(a,b)||a.id.localeCompare(b.id));
+  const releaseDates=new Map(clients.map(c=>{
+   const preview=state.retentionPreview?.[c.id],until=Date.parse(preview?.until||c.assignedUntil||'');
+   const date=clientsWithActiveOrders.has(c.id)?null:preview?.expiresAfterPremium?0:Number.isFinite(until)?until:null;
+   return [c.id,date];
+  }));
+  clients.sort((a,b)=>{
+   if(clientSort==='release'){
+    const left=releaseDates.get(a.id)!,right=releaseDates.get(b.id)!;
+    if(left===null&&right!==null)return 1;
+    if(right===null&&left!==null)return -1;
+    return ((left??0)-(right??0))*(direction==='asc'?1:-1)||byName(a,b)||a.id.localeCompare(b.id);
+   }
+   return (clientSort==='amount'?(amounts.get(a.id)!-amounts.get(b.id)!):byName(a,b))*(direction==='asc'?1:-1)||byName(a,b)||a.id.localeCompare(b.id);
+  });
  }
  return clients;
 }
