@@ -794,6 +794,7 @@ async function handlePOST(request:Request){
    text+=' · Клиент ждёт звонка'+(next.clientWaiting!.changes?.length?' · Есть изменения: '+next.clientWaiting!.changes.join(' | '):'')+(message?' · Сообщение логисту: '+message:'');
   }
   if(p.action==='confirmByHead'||o.status==='confirm'&&['check','extra'].includes(next.status)||next.status==='packing'&&['confirm','extra','rework'].includes(o.status)||p.action==='courierWorkflow'&&p.operation==='confirm'&&employee.role!=='courier')next.deliveryConfirmationAuthor={id:employee.id,name:employee.name,role:employee.role,at:now};
+  if(next.status==='packing'&&['confirm','check','extra','rework'].includes(o.status))next.deliveryPackingAt=now;
   text+=applyFormCost(next);
   const proposedAddress=p.action==="updateOrder"||p.action==="transition"&&["confirm","extra"].includes(next.status)?clientAddressFromOrder(next):null;
   const changedAddress=proposedAddress&&(c.address!==proposedAddress.address||JSON.stringify(c.addressParts??null)!==JSON.stringify(proposedAddress.addressParts)||c.city!==proposedAddress.city||c.addressReview)?proposedAddress:null;
