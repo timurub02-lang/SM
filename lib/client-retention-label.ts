@@ -4,6 +4,7 @@ import {draftDeadline,hasActiveOrder,reworkTimeLeft,type Client,type Order} from
 
 export function clientRetentionLabel(client:Client,orders:Order[],now=Date.now(),preview?:RetentionPreview){
  if(!client.owner)return 'Доступен всем';
+ if(client.permanentOwner===client.owner)return 'Без срока открепления · исключение';
  const related=orders.filter(o=>o.clientId===client.id);
  if(hasActiveOrder(related,client.id)){
   const handoff=related.filter(o=>o.manager===client.owner).map(draftDeadline).filter((x):x is string=>!!x).sort()[0];
@@ -21,7 +22,7 @@ export function clientRetentionLabel(client:Client,orders:Order[],now=Date.now()
 }
 
 export function clientRetentionExpiring(client:Client,activeOrder:boolean,now=Date.now(),preview?:RetentionPreview){
- if(!client.owner||activeOrder)return false;
+ if(!client.owner||client.permanentOwner===client.owner||activeOrder)return false;
  if(preview?.expiresAfterPremium)return true;
  const until=Date.parse(preview?.until||client.assignedUntil||'');
  return Number.isFinite(until)&&until-now<=3*86400000;
