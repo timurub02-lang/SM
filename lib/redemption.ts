@@ -9,8 +9,14 @@ export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOStrin
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
 export function redemptionDayAuthor(row:{author?:string;lastDay?:string},day:string){return row.lastDay===day?row.author||'':'';}
+export function redemptionRowAuthor(row:{author?:string;lastDay?:string},tab:string,day:string){return tab==='work'?redemptionDayAuthor(row,day):row.author||'';}
 export function redemptionNdCount(row:any,day:string){const entry=row.days?.[day];return entry?.ndCount||(entry?.action==='nd'||row.lastDay===day&&row.action==='nd'?1:0);}
-export function compareRedemptionRows(a:any,b:any,tab:string,day:string){return Number(tab==='returns'&&a.result==='returned')-Number(tab==='returns'&&b.result==='returned')||Number(tab==='confirm'&&dateConfirmedToday(a,day))-Number(tab==='confirm'&&dateConfirmedToday(b,day))||Number(awaitingOperator(a))-Number(awaitingOperator(b))||Number(['delivered','to_return','returned'].includes(a.result))-Number(['delivered','to_return','returned'].includes(b.result))||(tab==='work'?(a.result==='none'?redemptionNdCount(a,day):0)-(b.result==='none'?redemptionNdCount(b,day):0):0);}
+function compareRedemptionPriority(a:any,b:any,tab:string,day:string){return Number(tab==='returns'&&a.result==='returned')-Number(tab==='returns'&&b.result==='returned')||Number(tab==='confirm'&&dateConfirmedToday(a,day))-Number(tab==='confirm'&&dateConfirmedToday(b,day))||Number(awaitingOperator(a))-Number(awaitingOperator(b))||Number(['delivered','to_return','returned'].includes(a.result))-Number(['delivered','to_return','returned'].includes(b.result));}
+export function compareRedemptionRows(a:any,b:any,tab:string,day:string){return compareRedemptionPriority(a,b,tab,day)||(tab==='work'?(a.result==='none'?redemptionNdCount(a,day):0)-(b.result==='none'?redemptionNdCount(b,day):0):0);}
+export function compareRedemptionPeople(a:any,b:any,column:'operator'|'author',ascending:boolean,tab:string,day:string,showLogin=false){
+ const value=(row:any)=>column==='author'?redemptionRowAuthor(row,tab,day):showLogin&&!['delivered','returned'].includes(row.result)&&!awaitingOperator(row)?row.login||row.operator||'':row.operator||'';
+ return compareRedemptionPriority(a,b,tab,day)||(ascending?1:-1)*value(a).localeCompare(value(b),'ru',{sensitivity:'base',numeric:true});
+}
 export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 export function redemptionDateLimit(day:string,storageUntil='',action=''){
