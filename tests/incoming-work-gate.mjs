@@ -7,6 +7,8 @@ const d=openDatabase(':memory:'),now='2026-11-17T10:00:00.000Z';
 try{
  for(const sql of ['CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT,version INTEGER DEFAULT 1)','CREATE TABLE auth_accounts(employee_id TEXT,enabled INTEGER)','CREATE TABLE events(id TEXT PRIMARY KEY,client_id TEXT,order_id TEXT,at TEXT,data TEXT)'])await d.prepare(sql).run();
  const staff=[['op','operator','1'],['other','operator','2'],['head','department_head','1'],['head2','department_head','2'],['admin','admin',''],['logistic','logistic',''],['chief','chief_logistic',''],['redemption','redemption',''],['buyout','redemption',''],['courier','courier','']].map(([id,role,department])=>({id,role,department,name:id}));
+ assert.deepEqual(await readIncomingWorkGate({},staff[0]),{incomingIds:[],clientIds:[],orderIds:[],skOrders:[]},'Paused gate does not read the queue');
+ process.env.NEXT_PUBLIC_CRM_INCOMING_WORK_GATE='1';
  const e=id=>staff.find(e=>e.id===id);
  for(const person of staff)await d.prepare('INSERT INTO employees VALUES(?,?)').bind(person.id,JSON.stringify(person)).run();
  for(const [id,owner] of [['c','op'],['other','other'],['sk','op'],['ordinary','op']])await d.prepare('INSERT INTO clients VALUES(?,?)').bind(id,JSON.stringify({id,owner})).run();
