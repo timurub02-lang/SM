@@ -413,11 +413,12 @@ export default function Page(){
  const redemptionStatuses=state.redemptionStatuses||[];
  const awaitingBuyoutOperator=useMemo(()=>new Set(Object.entries(state.redemptionResults||{}).filter(([,r])=>r.awaitingOperator).map(([id])=>id)),[state.redemptionResults]);
  const workedBuyoutToday=useMemo(()=>new Set(Object.entries(state.redemptionResults||{}).filter(([,r])=>r.workedToday).map(([id])=>id)),[state.redemptionResults]);
- const orderList=useMemo(()=>filteredOrderList(state,employee,{view,filter,query,showNextPremium,manualSort:manualOrderSort,sort:orderSort,direction:orderDirection},reminderNow),[state,employee,view,filter,query,showNextPremium,manualOrderSort,orderSort,orderDirection,reminderNow]);
+ const orderListView=orderListViews.includes(view as typeof orderListViews[number]);
+ const orderList=useMemo(()=>orderListView?filteredOrderList(state,employee,{view,filter,query,showNextPremium,manualSort:manualOrderSort,sort:orderSort,direction:orderDirection},reminderNow):[],[orderListView,state,employee,view,filter,query,showNextPremium,manualOrderSort,orderSort,orderDirection,reminderNow]);
  const searchedStatus=view==="orders"&&query.trim()&&orderList.length===1?orderDisplayGroup(orderList[0]).id:null;
  useEffect(()=>{if(view!=="orders"||!query.trim())return;setShowNextPremium(false);const next=searchedStatus||"all";if(filter!==next)setFilter(next);},[view,query,searchedStatus,filter,setFilter]);
 
- const remotePage=useCrmOrderPage(ready&&personalAuth&&(view==="mine"||orderListViews.includes(view as typeof orderListViews[number]))&&!permissionView?{view,filter,query,showNextPremium,manualSort:manualOrderSort,sort:orderSort,direction:view==='mine'?clientDirection:orderDirection,page:listPage,clientWorkFilter,clientSort}:null,state,actor,shippingView?moscowDate(new Date(reminderNow)):'',splitReads?workspaceRevision:undefined);
+ const remotePage=useCrmOrderPage(ready&&personalAuth&&(!isAdmin||splitReads)&&(view==="mine"||orderListView)&&!permissionView?{view,filter,query,showNextPremium,manualSort:manualOrderSort,sort:orderSort,direction:view==='mine'?clientDirection:orderDirection,page:listPage,clientWorkFilter,clientSort}:null,state,actor,shippingView?moscowDate(new Date(reminderNow)):'',splitReads?workspaceRevision:undefined);
  const pageFinancialReadModel=remotePage.enabled?remotePage.data?.financialReadModel:undefined;
  const financialReadModel=[state.financialReadModel,pageFinancialReadModel].find(model=>model&&model.status!=='ready')||pageFinancialReadModel||state.financialReadModel;
  const dataStatusMessages=Array.from(new Set([
