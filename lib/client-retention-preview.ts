@@ -12,7 +12,7 @@ export function clientRetentionPreview(clients:Client[],orders:Order[],config:Ba
  const result:Record<string,RetentionPreview>={};
  for(const c of clients){
   const related=byClient.get(c.id)||[];
-  if(!c.owner||hasActiveOrder(related,c.id)||!related.some(o=>o.manager===c.owner&&o.status==='redeemed'&&!legacyPremiumPaid(o)&&o.premiumStage?.status!=='paid'))continue;
+  if(!c.owner||c.permanentOwner===c.owner||hasActiveOrder(related,c.id)||!related.some(o=>o.manager===c.owner&&o.status==='redeemed'&&!legacyPremiumPaid(o)&&o.premiumStage?.status!=='paid'))continue;
   const policy=config.retention.operators[c.owner];
   const preview=applyRetention(c,related,now,retentionDays(policy,sales[c.owner]?.percent),!!policy,false);
   result[c.id]=!preview.owner?{expiresAfterPremium:true}:preview.assignedUntil?{until:preview.assignedUntil}:{};

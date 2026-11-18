@@ -30,7 +30,7 @@ export const departments={"1":"SKP_","2":"POD_","3":"M31_","4":"UDL_","5":"A_"} 
 export const departmentIds=["1","2","3","4","5"] as const;
 export const roles={operator:"Оператор",logistic:"Логист",chief_logistic:"Главный логист",courier:"Курьер",admin:"Администратор",department_head:"Руководитель отдела",redemption:"Отдел выкупа",purchasing:"Отдел закупок"};
 export const isLogistic=(role?:string)=>role==="logistic"||role==="chief_logistic";
-export type Client={manualSheet?:{sheet:string;at:string};releasedFromOwner?:string;retentionExtensionUntil?:string;releaseBaseReview?:boolean;legacyOrderHistory?:import("./client-order-history").ClientOrderHistoryEntry[];biography?:string;linkedPhones?:string[];importFields?:Record<string,string>;baseType?:"M"|"J";distributedAt?:string;releasedAt?:string;importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string;decidedAt?:string;decidedBy?:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
+export type Client={permanentOwner?:string;manualSheet?:{sheet:string;at:string};releasedFromOwner?:string;retentionExtensionUntil?:string;releaseBaseReview?:boolean;legacyOrderHistory?:import("./client-order-history").ClientOrderHistoryEntry[];biography?:string;linkedPhones?:string[];importFields?:Record<string,string>;baseType?:"M"|"J";distributedAt?:string;releasedAt?:string;importRetentionUntil?:string;orderRequest?:{id:string;actorId:string;manager:string;department:string;status:"pending"|"approved"|"rejected";at:string;decidedAt?:string;decidedBy?:string};trialUntil?:string;trialReturnSheet?:string;id:string;name:string;phone:string;city:string;address:string;addressParts?:AddressParts;addressOriginal?:string;addressReview?:boolean;addressProcessed?:boolean;addressProcessingError?:boolean;source:string;sheet?:string;returnSheet?:string;assignmentStartedAt?:string;owner:string;assignedUntil:string;createdAt:string;version:number};
 export type Item={name:string;quantity:number;price:number};
 export const deliverySchema=z.enum(["", "cdek_pickup", "cdek_courier", "moscow_courier", "russian_post"]);
 export type DeliveryMethod=z.infer<typeof deliverySchema>;
@@ -171,12 +171,13 @@ export const sourceSheet=(source:string)=>source.match(/\.xlsx · (.+)$/i)?.[1]|
 export const clientSheet=(c:Client)=>{const sheet=c.sheet??sourceSheet(c.source);return sheet==="ТК"||sheet==="ТКП"?"П":sheet;};
 export function clientAssignment(c:Client,owner:string,now:string,firstSheet="Т1"):Partial<Client>{
  if(c.owner===owner)return {};
- if(!owner)return {retentionExtensionUntil:undefined,importRetentionUntil:undefined,owner:"",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined};
+ if(!owner)return {permanentOwner:undefined,retentionExtensionUntil:undefined,importRetentionUntil:undefined,owner:"",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined};
  const until=new Date(Date.parse(now)+86400000).toISOString();
- return {retentionExtensionUntil:undefined,importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:clientSheet(c)||firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
+ return {permanentOwner:undefined,retentionExtensionUntil:undefined,importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:clientSheet(c)||firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
 }
 function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35,explicitPolicy=false,unpaidPremium=false):Client{
  if(!c.owner)return c;
+ if(c.permanentOwner===c.owner)return {...c,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined};
  if(orders.some(o=>o.clientId===c.id&&o.zvd))return {...c,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined};
  const original=c.returnSheet??(clientSheet(c)==="К"?"П":clientSheet(c));
  const own=orders.filter(o=>o.clientId===c.id&&o.manager===c.owner&&(!c.assignmentStartedAt||o.createdAt>=c.assignmentStartedAt));
