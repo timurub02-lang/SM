@@ -27,11 +27,11 @@ export function operatorStats(state:Pick<State,'employees'|'orders'>,actor:Emplo
   const awaitingShipment=confirmed.filter(o=>!sent.includes(o)&&!cancelled.includes(o));
   const inWork=created.filter(o=>!confirmed.includes(o)&&!cancelled.includes(o));
   const amount=created.reduce((sum,o)=>sum+Math.round(total(o)*100),0)/100;
-  return {buyoutCount:redeemed.length,buyoutAmount:redeemed.reduce((n,o)=>n+Math.round(total(o)*100),0)/100,buyoutCdek,buyoutPost,buyoutMoscow,id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,awaitingShipment:awaitingShipment.length,sent:sent.length,orderLists:{redeemed,created,inWork,cancelled,confirmed,awaitingShipment,sent}};
+  return {buyoutCount:redeemed.length,buyoutAmount:redeemed.reduce((n,o)=>n+Math.round(total(o)*100),0)/100,buyoutCdek,buyoutPost,buyoutMoscow,id:employee.id,login:employee.login,department:employee.department||'',inWork:inWork.length,created:created.length,amount,average:created.length?amount/created.length:0,cancelled:cancelled.length,confirmed:confirmed.length,confirmedAmount:confirmed.reduce((sum,o)=>sum+Math.round(total(o)*100),0)/100,awaitingShipment:awaitingShipment.length,sent:sent.length,orderLists:{redeemed,created,inWork,cancelled,confirmed,awaitingShipment,sent}};
  });
 }
 
-export type StatsSortKey='login'|'created'|'inWork'|'average'|'amount'|'cancelled'|'confirmed'|'awaitingShipment'|'sent'|'buyoutCount'|'buyoutAmount'|'buyoutCdek'|'buyoutPost'|'buyoutMoscow';
+export type StatsSortKey='login'|'created'|'inWork'|'average'|'amount'|'cancelled'|'confirmed'|'confirmedAmount'|'awaitingShipment'|'sent'|'buyoutCount'|'buyoutAmount'|'buyoutCdek'|'buyoutPost'|'buyoutMoscow';
 export function sortOperatorStats(rows:ReturnType<typeof operatorStats>,key:StatsSortKey,ascending:boolean){
  return [...rows].sort((a,b)=>{
   const comparison=key==='login'?a.login.localeCompare(b.login,'ru',{numeric:true}):a[key]-b[key];
@@ -50,7 +50,7 @@ export function buyoutStatsByDay(rows:ReturnType<typeof operatorStats>){
  for(const row of rows)for(const order of row.orderLists.redeemed){
   const day=moscowDate.format(new Date(order.redeemedAt!));
   let result=days.get(day);
-  if(!result){result={...row,id:day,login:day,department:'',created:0,inWork:0,amount:0,average:0,cancelled:0,confirmed:0,awaitingShipment:0,sent:0,buyoutCount:0,buyoutAmount:0,buyoutCdek:0,buyoutPost:0,buyoutMoscow:0,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}};days.set(day,result);}
+  if(!result){result={...row,id:day,login:day,department:'',created:0,inWork:0,amount:0,average:0,cancelled:0,confirmed:0,confirmedAmount:0,awaitingShipment:0,sent:0,buyoutCount:0,buyoutAmount:0,buyoutCdek:0,buyoutPost:0,buyoutMoscow:0,orderLists:{redeemed:[],created:[],inWork:[],cancelled:[],confirmed:[],awaitingShipment:[],sent:[]}};days.set(day,result);}
   result.buyoutCount++;result.buyoutAmount=(Math.round(result.buyoutAmount*100)+Math.round(total(order)*100))/100;
   if(order.delivery==='cdek_pickup'||order.delivery==='cdek_courier')result.buyoutCdek++;
   if(order.delivery==='russian_post')result.buyoutPost++;
