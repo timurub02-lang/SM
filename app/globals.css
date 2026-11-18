@@ -496,7 +496,7 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 
 .redemption-track{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.redemption-grid .redemption-track-copy{width:26px;height:26px;padding:4px;color:inherit;flex:none}
 
-.redemption-tracks-only{user-select:none;-webkit-user-select:none}.redemption-tracks-only .redemption-track-link{user-select:text;-webkit-user-select:text}.redemption-track-mode{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;cursor:pointer}
+.redemption-tracks-only th,.redemption-tracks-only td:not(:nth-child(2)),.redemption-tracks-only td>small{user-select:none;-webkit-user-select:none}.redemption-tracks-only .redemption-track-link{user-select:text;-webkit-user-select:text;cursor:text}.redemption-track-mode{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;cursor:pointer}
 
 .redemption-column-sort{display:inline-flex;align-items:center;gap:6px;border:0;padding:0;background:transparent;color:inherit;font:inherit;cursor:pointer}.redemption-column-sort:focus-visible{outline:2px solid #075dc8;outline-offset:4px}
 .order-contact-phone{display:inline-flex;align-items:center;gap:6px}
