@@ -16,6 +16,7 @@ try{
  await add('one','c','op');
  const get=(who='op',time=Date.parse(now))=>readIncomingWorkGate(d,e(who),time);
  const allowed=async(path,body,who='op',method=body?'POST':'GET')=>incomingWorkRequestAllowed(d,e(who),new URL('http://crm'+path),method,body,await get(who));
+ assert.equal(await incomingWorkRequestAllowed({},e('op'),new URL('http://crm/api/crm'),'GET'),true,'Workspace reads never need the incoming queue');
  let g=await get();assert.deepEqual(g.incomingIds,['one']);assert.deepEqual(g.skOrders.map(o=>({...o})),[{id:'sk',clientId:'sk'}]);
  assert.equal(incomingWorkTarget(g,'order','sk'),true);assert.equal(incomingWorkTarget(g,'client','sk'),false);
  assert.equal(await allowed('/api/crm',{action:'transition',id:'sk',to:'confirm'}),true);

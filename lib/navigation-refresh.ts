@@ -2,8 +2,8 @@
 export class NavigationRefresh {
  private previous:{view:string;overlayOpen:boolean}|undefined;
  private pending=false;
- update(context:{view:string;overlayOpen:boolean;blocked:boolean}):boolean {
-  if(this.previous&&(this.previous.view!==context.view||this.previous.overlayOpen&&!context.overlayOpen))this.pending=true;
+ update(context:{view:string;overlayOpen:boolean;blocked:boolean;live?:boolean}):boolean {
+  if(this.previous&&(this.previous.view!==context.view&&!context.live||this.previous.overlayOpen&&!context.overlayOpen))this.pending=true;
   this.previous={view:context.view,overlayOpen:context.overlayOpen};
   if(!this.pending||context.blocked||context.overlayOpen)return false;
   this.pending=false;

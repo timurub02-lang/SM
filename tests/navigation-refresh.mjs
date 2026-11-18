@@ -20,3 +20,6 @@ assert.equal(preserveRefreshForm(true,true),true,'background GET keeps unsaved f
 assert.equal(preserveRefreshForm(true,false),false,'a GET begun with a form open applies fully after close');
 assert.equal(preserveRefreshForm(false,true),false,'explicit refresh after a mutation still applies');
 console.log('PASS: immediate navigation/close refresh, coalescing, writes, and response-time form protection');
+
+assert.equal(gate.update({view:'orders',overlayOpen:false,blocked:false,live:true}),false,'live changes already refresh the workspace');
+assert.equal(update('shipping'),true,'disconnected navigation still refreshes');
