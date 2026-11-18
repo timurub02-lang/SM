@@ -334,17 +334,19 @@ async function handlePOST(request:Request){
   const row=await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees);
   const target=s.employees.find(e=>e.id===p.operatorId&&e.role==='operator');
   if(!target)throw Error('Выберите оператора');
-  const client=row.client_id?s.clients.find(c=>c.id===row.client_id):undefined;
+  const storedClient=row.client_id?await d.prepare('SELECT data,version FROM clients WHERE id=?').bind(row.client_id).first<{data:string;version:number}>():null;
+  const client:Client|undefined=storedClient?{...JSON.parse(storedClient.data),version:storedClient.version}:undefined;
   if(!canTransferIncoming(employee,{clientOwnerId:client?.owner||'',assigneeId:row.assignee_id||''})||employee.role==='department_head'&&client?.owner&&target.id!==client.owner)throw Error('Закреплённого клиента обрабатывает его оператор или РК. Передача другому оператору доступна администратору');
   const comment=z.string().trim().min(1,'Напишите комментарий оператору').max(1900).parse(p.comment);
   const previous=row.handoff?JSON.parse(row.handoff):null;
   if(row.assignee_id===target.id&&previous?.by===employee.id&&previous.comment===comment)message='Обращение уже передано этому оператору';
   else{
-  const handoff=json({by:employee.id,name:employee.name,at:now,comment});
+  const freeClient=!!client&&!client.owner&&!s.orders.some(o=>o.clientId===client.id&&activeIncomingOrder(o));
+  const handoff=json({by:employee.id,name:employee.name,at:now,comment,...(freeClient?{freeClient:true}:{})});
   const event=ev(row.client_id||'','','Входящее обращение '+row.id+' передано оператору · '+target.name+' · '+comment);
   const result=await d.batch([
-   d.prepare("UPDATE incoming_calls SET assignee_id=?,department_id=?,shared_queue=0,handoff=? WHERE id=? AND client_id IS ? AND assignee_id IS ? AND department_id=? AND COALESCE(shared_queue,0)=? AND handoff=? AND closed_at IS NULL AND spam=0"+(employee.role==='department_head'?" AND (client_id IS NULL OR EXISTS(SELECT 1 FROM clients WHERE id=incoming_calls.client_id AND COALESCE(json_extract(data,'$.owner'),'') IN ('',?)))":""))
-    .bind(target.id,target.department||'',handoff,row.id,row.client_id,row.assignee_id,row.department_id,row.shared_queue||0,row.handoff||'',...(employee.role==='department_head'?[target.id]:[])),
+   d.prepare("UPDATE incoming_calls SET assignee_id=?,department_id=?,shared_queue=0,handoff=? WHERE id=? AND client_id IS ? AND assignee_id IS ? AND department_id=? AND COALESCE(shared_queue,0)=? AND handoff=? AND closed_at IS NULL AND spam=0"+(client?" AND EXISTS(SELECT 1 FROM clients WHERE id=? AND COALESCE(json_extract(data,'$.owner'),'')=?)":"")+(employee.role==='department_head'?" AND (client_id IS NULL OR EXISTS(SELECT 1 FROM clients WHERE id=incoming_calls.client_id AND COALESCE(json_extract(data,'$.owner'),'') IN ('',?)))":""))
+    .bind(target.id,target.department||'',handoff,row.id,row.client_id,row.assignee_id,row.department_id,row.shared_queue||0,row.handoff||'',...(client?[client.id,client.owner||'']:[]),...(employee.role==='department_head'?[target.id]:[])),
    d.prepare('INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE changes()>0').bind(event.id,event.clientId,'',now,json(event))
   ]);
   if(!result[0].meta.changes)throw Error('Обращение изменилось. Обновите данные перед передачей');
