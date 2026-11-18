@@ -9,8 +9,14 @@ export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOStrin
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
 export function redemptionDayAuthor(row:{author?:string;lastDay?:string},day:string){return row.lastDay===day?row.author||'':'';}
+export function redemptionRowAuthor(row:{author?:string;lastDay?:string},tab:string,day:string){return tab==='work'?redemptionDayAuthor(row,day):row.author||'';}
 export function redemptionNdCount(row:any,day:string){const entry=row.days?.[day];return entry?.ndCount||(entry?.action==='nd'||row.lastDay===day&&row.action==='nd'?1:0);}
-export function compareRedemptionRows(a:any,b:any,tab:string,day:string){return Number(tab==='returns'&&a.result==='returned')-Number(tab==='returns'&&b.result==='returned')||Number(tab==='confirm'&&dateConfirmedToday(a,day))-Number(tab==='confirm'&&dateConfirmedToday(b,day))||Number(awaitingOperator(a))-Number(awaitingOperator(b))||Number(['delivered','to_return','returned'].includes(a.result))-Number(['delivered','to_return','returned'].includes(b.result))||(tab==='work'?(a.result==='none'?redemptionNdCount(a,day):0)-(b.result==='none'?redemptionNdCount(b,day):0):0);}
+function compareRedemptionPriority(a:any,b:any,tab:string,day:string){return Number(tab==='returns'&&a.result==='returned')-Number(tab==='returns'&&b.result==='returned')||Number(tab==='confirm'&&dateConfirmedToday(a,day))-Number(tab==='confirm'&&dateConfirmedToday(b,day))||Number(awaitingOperator(a))-Number(awaitingOperator(b))||Number(['delivered','to_return','returned'].includes(a.result))-Number(['delivered','to_return','returned'].includes(b.result));}
+export function compareRedemptionRows(a:any,b:any,tab:string,day:string){return compareRedemptionPriority(a,b,tab,day)||(tab==='work'?(a.result==='none'?redemptionNdCount(a,day):0)-(b.result==='none'?redemptionNdCount(b,day):0):0);}
+export function compareRedemptionPeople(a:any,b:any,column:'operator'|'author',ascending:boolean,tab:string,day:string,showLogin=false){
+ const value=(row:any)=>column==='author'?redemptionRowAuthor(row,tab,day):showLogin&&!['delivered','returned'].includes(row.result)&&!awaitingOperator(row)?row.login||row.operator||'':row.operator||'';
+ return compareRedemptionPriority(a,b,tab,day)||(ascending?1:-1)*value(a).localeCompare(value(b),'ru',{sensitivity:'base',numeric:true});
+}
 export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 export function redemptionDateLimit(day:string,storageUntil='',action=''){
@@ -24,6 +30,8 @@ export function operatorReturnDeadline(storageUntil:string,now=new Date()){
 }
 export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:true};
 const redemptionSchemas=new WeakMap<Db,Promise<unknown>>();
+// Repeated CDEK checks still update their timestamp, but do not duplicate business history.
+const redemptionHistoryTrigger=`CREATE TRIGGER redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data AND NOT (json_extract(NEW.data,'$.changeKind') IS 'return_check' AND json_extract(OLD.data,'$.changeKind') IS 'return_check' AND json_remove(NEW.data,'$.updatedAt','$.returnCheck.at')=json_remove(OLD.data,'$.updatedAt','$.returnCheck.at')) BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`;
 export async function initRedemption(d:Db){let schema=redemptionSchemas.get(d);if(!schema){schema=d.batch([
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_entries(order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,entered_at TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)`),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_history(id INTEGER PRIMARY KEY AUTOINCREMENT,order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,at TEXT NOT NULL,data TEXT NOT NULL)`),
@@ -31,9 +39,8 @@ export async function initRedemption(d:Db){let schema=redemptionSchemas.get(d);i
  d.prepare('CREATE INDEX IF NOT EXISTS redemption_history_order_at ON redemption_history(order_id,at)'),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_archives(day TEXT PRIMARY KEY,at TEXT NOT NULL,data TEXT NOT NULL)`),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_dispatch(day TEXT PRIMARY KEY,state TEXT NOT NULL,data TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL)`),
- d.prepare(`CREATE TRIGGER IF NOT EXISTS redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`),
  ...['INSERT','UPDATE OF data'].map((event,i)=>d.prepare(`CREATE TRIGGER IF NOT EXISTS redemption_enter_${i} AFTER ${event} ON orders WHEN json_extract(NEW.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.statuses') WHERE settings.id='redemption-config' AND json_each.value=json_extract(NEW.data,'$.cdekStatus.code')) BEGIN INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(NEW.id,strftime('%Y-%m-%dT%H:%M:%fZ','now'),'{}'); END`))
-]);redemptionSchemas.set(d,schema);schema.catch(()=>redemptionSchemas.delete(d));}await schema;}
+]).then(async()=>{const current=await d.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='redemption_history_update'").first();if(current?.sql!==redemptionHistoryTrigger)await d.batch([d.prepare('DROP TRIGGER IF EXISTS redemption_history_update'),d.prepare(redemptionHistoryTrigger)]);});redemptionSchemas.set(d,schema);schema.catch(()=>redemptionSchemas.delete(d));}await schema;}
 export async function redemptionConfig(d:Db){return {...defaults,...JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='redemption-config'").first())?.data||'{}')};}
 export async function syncRedemption(d:Db,now=new Date()){
  await initRedemption(d);const at=now.toISOString();
@@ -66,6 +73,15 @@ export function operatorReturnScheduled(row:any,now=new Date()){return awaitingO
 export function awaitingDateConfirmation(row:any){return !awaitingOperator(row)&&row.dateConfirmation==='pending'&&row.result==='date';}
 export function awaitingReturn(row:any){return !awaitingOperator(row)&&row.result==='to_return';}
 export function canSeeRedemption(e:Employee,row:any,headsAll:boolean){if(awaitingOperator(row))return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department;if((awaitingDateConfirmation(row)||awaitingReturn(row))&&!['admin','redemption'].includes(e.role)&&!(awaitingDateConfirmation(row)&&(e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department)))return false;return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&(headsAll||!!e.department&&row.department===e.department);}
+export async function operatorReturnCount(d:Db,employee:Employee){
+ await initRedemption(d);
+ const rows=await d.prepare(`SELECT json_extract(o.data,'$.manager') manager,json_extract(e.data,'$.department') department
+  FROM redemption_entries r JOIN orders o ON o.id=r.order_id JOIN clients c ON c.id=o.client_id
+  LEFT JOIN employees e ON e.id=json_extract(o.data,'$.manager')
+  WHERE NOT COALESCE(json_extract(r.data,'$.pendingEnrollment'),0) AND json_type(r.data,'$.operatorReturn')='object'
+  AND COALESCE(json_extract(r.data,'$.operatorReturn.resolvedAt'),'')=''`).all();
+ return rows.results.filter((row:{manager:string;department:string})=>canSeeRedemption(employee,{...row,operatorReturn:{}},false)).length;
+}
 export function inWorkday(r:any,day:string){if(r.pendingEnrollment||r.incomingScheduled&&r.result==='date'&&r.resultDate>day)return false;if(awaitingOperator(r)||awaitingReturn(r)||r.result==='returned'||awaitingDateConfirmation(r))return false;if((r.dateConfirmation==='confirmed'||r.refusalRetryUsed&&r.action==='refusal')&&r.result==='date'&&r.resultDate>day)return false;if(dayOf(new Date(r.entered_at))>day)return false;if(r.result==='delivered')return r.lastDay===day;return r.lastDay===day||!r.resultDate||r.result!=='date'||r.resultDate<=day;}
 export function dateConfirmedToday(row:any,day:string){return row.dateConfirmation==='confirmed'&&row.result==='date'&&!!row.dateConfirmedAt&&dayOf(new Date(row.dateConfirmedAt))===day;}
 export function returnConfirmedToday(row:any,day:string){return row.result==='returned'&&!!row.returnConfirmedAt&&dayOf(new Date(row.returnConfirmedAt))===day;}
@@ -165,7 +181,7 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
   if(p.result==='returned'){if(typeof p.returnWaybill!=='string'||!p.returnWaybill.trim()||p.returnWaybill.trim().length>100)throw Error('Укажите номер возвратной накладной (до 100 символов)');Object.assign(next,{returnWaybill:p.returnWaybill.trim(),returnConfirmedAt:at,returnCheck:{state:'pending',at},returnVerifiedAt:null,returnVerifiedBy:null});}
   if((awaitingOperator(row)||incoming)&&p.action==='po'&&p.responsibilityConfirmed!==true)throw Error('Подтвердите, что клиент точно выкупит заказ после окончания срока хранения');
   const workHandoff=p.action==='work'&&p.result==='operator';
-  if(workHandoff&&(e.role!=='department_head'||!e.department||row.department!==e.department))throw Error('Передать можно только заказ оператора своего отдела');
+  if(workHandoff&&e.role!=='department_head')throw Error('Передать заказ через «В работе» может только руководитель отдела');
   let date='';if(p.result==='date'||workHandoff){
    if(!row.storageUntil&&(workHandoff||!['date','work'].includes(p.action))&&(p.action!=='po'||incoming))throw Error('СДЭК пока не передал срок хранения');
    date=p.action==='refusal'||workHandoff?day:p.date;

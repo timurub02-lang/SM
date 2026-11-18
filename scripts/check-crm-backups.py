@@ -79,6 +79,17 @@ def inspect(root, policy, now, get_unit=systemd):
         problems['backup_service'] = 'Последний запуск backup или сжатия завершился ошибкой; проверьте журнал sm-crm-backup.'
     if timer.get('LoadState') != 'loaded' or timer.get('ActiveState') != 'active':
         problems['backup_timer'] = 'Таймер ежедневного резервирования не работает.'
+    require_compaction = policy.get('require_compaction_timer', False)
+    if type(require_compaction) is not bool:
+        raise ValueError('Invalid compaction monitoring policy')
+    if require_compaction:
+        service = get_unit('sm-crm-backup-compact.service')
+        timer = get_unit('sm-crm-backup-compact.timer')
+        if service.get('LoadState') != 'loaded' or service.get('ActiveState') == 'failed' or (
+                service.get('ActiveState') not in ('active', 'activating') and service.get('Result') != 'success'):
+            problems['compaction_service'] = 'Сжатие копий не работает; проверьте журнал sm-crm-backup-compact.'
+        if timer.get('LoadState') != 'loaded' or timer.get('ActiveState') != 'active':
+            problems['compaction_timer'] = 'Таймер ежечасного сжатия копий не работает.'
     return problems, {'diskPercent': round(percent, 1), 'freeBytes': disk.free, 'backupBytes': total}
 
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {inRedemptionTab,initRedemption,redemptionRows,editRedemption,syncRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,canSeeRedemption,inWorkday,returnReasons} from '../lib/redemption.ts';
+import {operatorReturnCount,inRedemptionTab,initRedemption,redemptionRows,editRedemption,syncRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,canSeeRedemption,inWorkday,returnReasons} from '../lib/redemption.ts';
 import {redemptionLeads} from '../lib/redemption-dispatch.ts';
 const d=openDatabase(':memory:'),now=new Date('2026-10-16T10:00:00Z');
 const op={id:'op',name:'Operator',role:'operator',department:'1'},head={id:'head',name:'Head',role:'department_head',department:'1'},buyer={id:'buyer',name:'Buyer',role:'redemption'};
@@ -16,7 +16,14 @@ try{
  const edit=async(actor,p,t=now)=>editRedemption(d,actor,{id:'o',version:(await row()).version,comment:'Комментарий к действию',...p},t);
  const original=(await d.prepare("SELECT data FROM redemption_entries WHERE order_id='o'").first()).data;
  const workSend={action:'work',result:'operator',comment:'Уточнить получение у клиента'};
- for(const actor of [op,buyer,{...buyer,role:'admin'},{...head,department:'2'}])await assert.rejects(edit(actor,workSend));
+ for(const actor of [op,buyer,{...buyer,role:'admin'}])await assert.rejects(edit(actor,workSend));
+ await d.prepare('INSERT INTO settings VALUES(?,?)').bind('redemption-config',JSON.stringify({headsAll:false})).run();
+ await assert.rejects(edit({...head,department:'2'},workSend),/недоступен/);
+ await d.prepare("DELETE FROM settings WHERE id='redemption-config'").run();
+ await edit({...head,department:'2'},workSend);assert(awaitingOperator(await row()));assert.equal((await row()).manager,op.id);
+ for(const actor of [op,head,buyer,{...op,id:'other'},{...head,department:'2'}])assert.equal(await operatorReturnCount(d,actor),(await redemptionRows(d)).filter(r=>awaitingOperator(r)&&canSeeRedemption(actor,r,false)).length);
+ assert(canSeeRedemption(op,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),true));
+ await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(original).run();
  await edit(head,{action:'work',result:'date',date:'2026-10-17'});assert(!awaitingOperator(await row()));
  await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(original).run();
  await edit(head,workSend);assert(awaitingOperator(await row()));assert.equal((await row()).action,'work');assert.equal((await row()).result,'date');assert.equal((await row()).operatorReturn.deadline,'2026-10-18T10:00:00.000Z');assert.equal((await row()).operatorReturn.comment,workSend.comment);assert.equal((await row()).refusalRetryUsed,false);assert.equal(redemptionLeads([await row()],'2026-10-16','https://example.test').length,0);

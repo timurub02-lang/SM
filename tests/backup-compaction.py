@@ -146,11 +146,30 @@ class Compaction(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_policy(True)
 
-    def test_existing_daily_unit_orders_compaction_after_backup(self):
+    def test_twelve_hour_boundary_and_legacy_policy(self):
+        old = self.database('old.sqlite', 13 * 3600)
+        recent = self.database('recent.sqlite', 11 * 3600)
+        self.assertEqual(self.run_policy()['eligible'], [])
+        self.policy['archive_after_hours'] = 12
+        result = self.run_policy(True)
+        self.assertEqual(result['eligible'], [old.name])
+        self.assertTrue(recent.exists())
+        self.assertEqual(len(result['compacted']), 1)
+        for invalid in (11, True, 12.5):
+            self.policy['archive_after_hours'] = invalid
+            with self.assertRaises(ValueError): self.run_policy(True)
+
+    def test_daily_and_hourly_units_have_separate_jobs(self):
         unit = (repo / 'scripts/systemd/sm-crm-backup.service').read_text()
         self.assertIn('ExecStart=/usr/bin/python3 /usr/local/sbin/backup-sm-crm', unit)
-        self.assertIn('ExecStartPost=/usr/bin/python3 /usr/local/sbin/compact-sm-crm-backups --apply', unit)
+        self.assertNotIn('compact-sm-crm-backups', unit)
+        unit = (repo / 'scripts/systemd/sm-crm-backup-compact.service').read_text()
+        self.assertIn('ExecStart=/usr/bin/python3 /usr/local/sbin/compact-sm-crm-backups --apply', unit)
+        self.assertIn('ReadWritePaths=/srv/crm/backups', unit)
         self.assertIn('IOSchedulingClass=idle', unit)
+        timer = (repo / 'scripts/systemd/sm-crm-backup-compact.timer').read_text()
+        self.assertIn('OnCalendar=hourly', timer)
+        self.assertIn('Persistent=true', timer)
 
     @unittest.skipIf(os.name == 'nt', 'Linux root CLI')
     def test_cli_with_synthetic_policy_and_writable_backup_directory(self):

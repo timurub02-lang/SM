@@ -22,7 +22,7 @@ try{
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:30}));db.prepare('INSERT INTO settings VALUES(?,?)').run('oktell-browser-test',JSON.stringify({clientId:'test-card'}));
  const c={id:'test-card',name:'Тест связи Oktell',phone:'+79990000007',city:'',address:'',source:'Тест Oktell',owner:id,baseType:'M',sheet:'К',assignedUntil:new Date(Date.now()+86400000).toISOString(),assignmentStartedAt:new Date().toISOString(),trialUntil:new Date(Date.now()+86400000).toISOString(),createdAt:new Date().toISOString(),version:1};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));
  await new Promise(r=>bridge.listen(socket,r));
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_STAFF_ENABLED:'1',CRM_PHONE_RESULT_KEY:'synthetic-fixture-result-key-32-characters-only',CRM_PHONE_CALLER_ID:'79000000000',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),OKTELL_CONTROL_SOCKET:socket,HOSTNAME:process.env.PREVIEW?'10.20.0.10':'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
+ server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,NEXT_PUBLIC_CRM_INCOMING_WORK_GATE:'1',CRM_PHONE_STAFF_ENABLED:'1',CRM_PHONE_RESULT_KEY:'synthetic-fixture-result-key-32-characters-only',CRM_PHONE_CALLER_ID:'79000000000',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),OKTELL_CONTROL_SOCKET:socket,HOSTNAME:process.env.PREVIEW?'10.20.0.10':'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  const address=process.env.PREVIEW?'http://10.20.0.10:'+port:base;
  let ready=false;for(let i=0;i<150;i++){try{await fetch(address+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}assert.ok(ready,logs);
  async function req(path,body,cookie='',extra={}){const r=await fetch(address+path,{method:body?'POST':'GET',headers:{Cookie:cookie,Origin:origin,'Content-Type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
@@ -69,10 +69,13 @@ try{
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'client',clientId:'foreign-card',orderId:'own-order'},cookies.irina)).status,403);
  await req('/api/crm',null,cookies.irina);
  db.prepare('INSERT INTO incoming_calls(id,assignee_id,at,phone,called_number) VALUES(?,?,?,?,?)').run('unknown-incoming',id,c.createdAt,'+79990000099','');
+ assert.equal((await req('/api/oktell-phone',{action:'call',tab,clientId:'test-card'},cookies.irina)).status,403,'Incoming blocks unrelated native call');
+ assert.equal((await req('/api/telephony',{mode:'client',clientId:'test-card'},cookies.irina)).status,423,'Incoming blocks unrelated Beeline call');
  const incomingCall=await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'unknown-incoming'},cookies.irina);
  assert.equal(incomingCall.status,200,JSON.stringify(incomingCall.data));assert.equal(incomingCall.data.destination,'79990000099');
  assert.equal(db.prepare('SELECT incoming_id FROM phone_call_incoming WHERE call_id=?').get(incomingCall.data.callId).incoming_id,'unknown-incoming');closeCalls();
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'missing'},cookies.irina)).status,403);
+ assert.equal((await req('/api/crm',{action:'missIncoming',incomingId:'unknown-incoming'},cookies.irina)).status,200);
  // Created after startup: no test-card configuration, migration or per-card setup needed.
  addCard('new-card','+79990000004');
  const choices=await req('/api/telephony?mode=client&clientId=new-card',null,cookies.irina);assert.equal(choices.status,200);assert.equal(choices.data.phones.length,2);assert.equal(choices.data.phones[0].label.includes('79990000004'),false);
@@ -83,6 +86,8 @@ try{
   const result=await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'known-extra-incoming',phoneKey:choice.key},cookies.irina);assert.equal(result.status,200,JSON.stringify(result.data));assert.equal(result.data.destination,choice.label==='Основной'?'79990000004':'79990000002');closeCalls();
  }
  assert.equal((await req('/api/oktell-phone',{action:'call',tab,mode:'incoming',incomingId:'known-extra-incoming',phoneKey:'f'.repeat(64)},cookies.irina)).status,403);
+
+ assert.equal((await req('/api/crm',{action:'missIncoming',incomingId:'known-extra-incoming'},cookies.irina)).status,200);
 
  for(const route of ['mts','beeline']){
   const p=route==='mts'?{action:'call',tab,clientId:'new-card',phoneKey:extra}:{mode:'client',clientId:'new-card',phoneKey:extra};const res=await req(route==='mts'?'/api/oktell-phone':'/api/telephony',p,cookies.irina);assert.equal(res.status,200,JSON.stringify(res.data));assert.equal(route==='mts'?res.data.destination:db.prepare('SELECT destination FROM phone_call_targets WHERE call_id=?').get(res.data.callId).destination,'79990000002');closeCalls();

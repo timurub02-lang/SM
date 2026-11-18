@@ -69,5 +69,49 @@ try{
  await save('log',[{action:'updateLogisticComment',text:'Sent comment'}]);assert.equal(order().logisticComment,'Sent comment');before=order();
  await save('log',[{action:'updateLogisticComment',text:'Must not save'},{action:'updateRecipientName',name:'Forbidden',clientVersion:clientRow().version}],{},400);assert.deepEqual(order(),before);
  await save('admin',[{action:'deleteEmployee',id:'op'}],{},400);
+ for(const actor of ['admin','log','second'])for(const to of ['redeemed','returned']){
+  const fixture={...initial,delivery:'russian_post',status:'shipping',shippedAt:now,logisticComment:'почта ',legacyLv:{trial:false,orderId:'159393',track:'10939025501940',status:'Почта Физ'}};
+  db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify(fixture));
+  before=order();count=eventCount();
+  const changes=[{action:'updateLogisticComment',text:' Новый комментарий '},{action:'savePostalTracking',trackingNumber:'RA123456'},{action:'comment',text:'Заметка при смене статуса'},{action:'transition',to,reason:to==='returned'?'Клиент отказался':''}];
+  await save(actor,changes,{version:before.version-1},400);assert.deepEqual(order(),before);assert.equal(eventCount(),count);
+  await save('op',changes,{},400);assert.deepEqual(order(),before);
+  await save(actor,[{action:'updateLogisticComment',text:'Must not save'},{action:'transition',to:'packing'}],{},400);assert.deepEqual(order(),before);
+  await save(actor,changes);assert.equal(order().status,to);assert.equal(order().logisticComment,'Новый комментарий');assert.equal(order().postalTrackingNumber,'RA123456');assert.equal(order().version,before.version+1);assert.equal(eventCount(),count+1);
+  assert.match(db.prepare("SELECT data FROM events WHERE order_id='post' ORDER BY rowid DESC LIMIT 1").get().data,/Заметка при смене статуса/);
+ }
+ db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify({...initial,delivery:'cdek_courier',status:'shipping'}));
+ before=order();count=eventCount();await save('admin',[{action:'updateLogisticComment',text:'Must not save'},{action:'transition',to:'redeemed'}],{},400);assert.deepEqual(order(),before);assert.equal(eventCount(),count);
+ for(const actor of ['admin','log','second']){
+  const fixture={...initial,delivery:'moscow_courier',status:'confirm',shippedAt:undefined,confirmationStartedAt:now,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(now)+48*3600000).toISOString(),timerCalendar:'weekdays-v1'};
+  db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify(fixture));db.prepare("UPDATE orders SET version=version+1 WHERE id='post'").run();before=order();count=eventCount();
+  await save(actor,[{action:'updateDelivery',delivery:'russian_post'},{action:'updateLogisticComment',text:'Клиент согласовал Почту'}]);
+  assert.equal(order().delivery,'russian_post');assert.equal(order().logisticComment,'Клиент согласовал Почту');assert.equal(order().version,before.version+1);assert.equal(eventCount(),count+1);
+  db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify({...fixture,courier:{id:'courier',acceptedAt:now}}));before=order();
+  await save(actor,[{action:'updateDelivery',delivery:'russian_post'}],{},400);assert.deepEqual(order(),before);
+ }
+ // Reconciliation is shared between logisticians and never repeats stock or money mutations.
+ const receipt={...initial,status:'returned',delivery:'cdek_pickup',warehouseReturnedAt:now,cdekReturnReceipt:{deliveredAt:now,detectedAt:now}};
+ db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify(receipt));
+ const stockBefore=db.prepare('SELECT * FROM stock_movements ORDER BY id').all();
+ before=order();await act('op','reconcileWarehouseReturn',{state:'confirmed'},400);assert.deepEqual(order(),before);
+ await act('log','reconcileWarehouseReturn',{state:'discrepancy',note:''},400);assert.deepEqual(order(),before);
+ await act('log','reconcileWarehouseReturn',{state:'discrepancy',note:'Нет посылки'});assert.equal(order().cdekReturnReceipt.check.by,'log');
+ await act('second','reconcileWarehouseReturn',{state:'confirmed',version:before.version},400);
+ await act('second','reconcileWarehouseReturn',{state:'confirmed',note:'Нашли'});assert.equal(order().cdekReturnReceipt.check.by,'second');
+ before=order();await act('admin','reconcileWarehouseReturn',{state:'confirmed'},400);assert.deepEqual(order(),before);
+ assert.deepEqual(db.prepare('SELECT * FROM stock_movements ORDER BY id').all(),stockBefore);
+ const batchKey='warehouse-return-reconciliation-20261118',revision=crypto.randomUUID();
+ db.prepare('INSERT INTO settings VALUES(?,?)').run(batchKey,JSON.stringify({revision,rows:[{id:'LV-test',number:'123',deliveredAt:now,stockHandled:true}]}));
+ await call('op','/api/warehouse?returnReconciliation=1&actorId=admin',undefined,403);
+ const registry=(await call('log','/api/warehouse?returnReconciliation=1&actorId=log')).data;assert.equal(registry.rows.length,1);assert.equal(registry.rows[0].hasOrder,false);
+ await call('op','/api/warehouse',{action:'reconcileReturns',actorId:'admin',revision,ids:['LV-test'],state:'confirmed',note:''},403);
+ const payload={action:'reconcileReturns',actorId:'admin',revision,ids:['LV-test'],state:'discrepancy',note:'x'.repeat(3000)};
+ await call('log','/api/warehouse',payload,403);payload.actorId='log';
+ const changed=(await call('log','/api/warehouse',payload)).data;assert.equal(changed.rows[0].check.by,'log');
+ await call('second','/api/warehouse',{...payload,actorId:'second',state:'confirmed'},400);
+ await call('second','/api/warehouse',{...payload,actorId:'second',revision:changed.revision,state:'confirmed',note:''});
+ assert.deepEqual(db.prepare('SELECT * FROM stock_movements ORDER BY id').all(),stockBefore);
+ assert.equal(db.prepare("SELECT count(*) n FROM orders WHERE id='LV-test'").get().n,0);
  console.log('Unified order save HTTP: operator PVZ/data/note, admin name and client version, logistic post/cost/tracking and Moscow fields, shipped comments, atomic failure and permission guards passed');
 }catch(error){console.error(logs);throw error;}finally{if(server&&server.exitCode===null){const exit=once(server,'exit');server.kill('SIGTERM');await exit;}db.close();rmSync(dir,{recursive:true,force:true});}

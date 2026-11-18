@@ -1,3 +1,4 @@
+import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canSelectOrderPickupPoint} from './order-pickup-point.ts';
 import {canEditOrderRecipientName} from './crm.ts';
@@ -43,7 +44,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(['markZvd','markBlacklist'].includes(p.action))return allow(false);
  if(e.role==='purchasing')return allow(false);
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
- if(['readReminder','closeIncoming','transferIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
+ if(['missIncoming','readReminder','closeIncoming','transferIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
  if(['settings','import','normalizeImportedAddresses','releaseExpired'].includes(p.action))return allow(false);
@@ -57,6 +58,8 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(['createOrder','requestOrder','decideOrderRequest'].includes(p.action))return allow(!!client&&ownsClient(e,client,s.employees)&&(p.action!=='decideOrderRequest'||e.role==='department_head'));
  if(['incomingBuyoutInfo','requestShipmentReturn','requestShipmentChange','requestOrderCancellation','requestOrderEdit','incomingResult'].includes(p.action)&&typeof p.incomingId==='string'&&['operator','department_head'].includes(e.role))return;
  if(!order||!seesOrder(e,order,s.employees))return allow(false);
+ if(p.action==='requestOrderEdit')return allow(canHeadRequestEdit(e,order,s.employees));
+ if(p.action==='confirmByHead')return allow(isDepartmentOrder(e,order,s.employees)&&!!headConfirmationTarget(order));
  if(p.action==='requestOrderCancellation')return allow(['operator','department_head'].includes(e.role)&&typeof p.incomingId==='string');
  if(p.action==='resolveShipmentRequest')return allow(isLogistic(e.role)||e.role==='redemption');
  if(p.action==='resolveOrderEdit')return allow(isLogistic(e.role));
@@ -64,6 +67,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(p.action==='resolveOrderCancellation')return allow(isLogistic(e.role));
  if(p.action==='selectOrderPickupPoint')return allow(canSelectOrderPickupPoint(order,e,s.employees));
  if(p.action==='reportPostalBuyout')return allow(order.delivery==='russian_post'&&['shipping','pickup'].includes(order.status)&&(e.role==='operator'&&order.manager===e.id||e.role==='department_head'&&isDepartmentOrder(e,order,s.employees)));
+ if(p.action==='reconcileWarehouseReturn')return allow(isLogistic(e.role));
  if(p.action==='keepPostalSent')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
  if(p.action==='savePostalTracking')return allow(isLogistic(e.role)&&order.delivery==='russian_post');
  if(p.action==='updateRecipientName')return allow(canEditOrderRecipientName(e,order));
@@ -97,6 +101,7 @@ export function warehouseReadOnly(role:Employee['role']){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;
+ if(path==='/api/incoming-work-gate')return method==='GET'&&!['courier','purchasing'].includes(e.role);
  if(impersonationBlocksPhone(e,path))return false;
  if(path==='/api/base-search')return method==='GET'&&['admin','department_head','logistic','chief_logistic'].includes(e.role);
  if(path==='/api/sk-client-link')return method==='GET'&&!['courier','purchasing'].includes(e.role);
@@ -104,7 +109,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(e.role==='purchasing')return path==='/api/crm'&&method==='GET'||path==='/api/cash'&&['GET','POST'].includes(method)||path==='/api/warehouse'&&(method==='GET'&&!url.searchParams.has('points')||method==='POST'&&p?.action==='saveCost');
  if(path==='/api/redemption')return ['GET','POST'].includes(method)&&['admin','operator','department_head','redemption'].includes(e.role);if(e.role==='admin')return true;
  if(path==='/api/partner-cash')return ['GET','POST'].includes(method)&&e.login==='A_Emil';
- if(path==='/api/operator-statistics')return method==='GET'&&e.role==='department_head';
+ if(path==='/api/operator-statistics')return method==='GET'&&(e.role==='department_head'||e.role==='redemption'&&url.searchParams.get('section')==='shipped');
  if(path==='/api/timesheet')return ['GET','POST'].includes(method)&&e.role==='department_head';
  if(path==='/api/premium/archive')return method==='GET'&&['department_head','operator'].includes(e.role);
  if(path==='/api/exports')return ['GET','POST'].includes(method)&&e.role==='department_head';
@@ -112,7 +117,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/premium/statistics')return method==='GET'&&e.role==='department_head';
  if(path==='/api/premium/lifecycle')return method==='POST'&&e.role==='department_head';
  if(path==='/api/premium')return method==='GET'&&['operator','department_head'].includes(e.role)||method==='POST'&&e.role==='department_head';
- if(path==='/api/sk-orders')return false;
+ if(path==='/api/sk-orders')return method==='GET'&&e.role==='operator';
  if(path==='/api/incoming-order-client')return method==='GET'&&['operator','department_head'].includes(e.role);
  if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
  if(path==='/api/operator-state')return ['GET','POST'].includes(method)&&e.role==='operator';

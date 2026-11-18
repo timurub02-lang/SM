@@ -160,7 +160,7 @@ try{
  assert.equal((await api('/api/call-history?orderId=o-one')).data.calls[0].status,'completed','PBX result is authoritative');
  const recording='/api/call-history/recording?id='+callId;
  assert.equal((await call(recording)).status,401);assert.equal((await api(recording,undefined,cookies.two)).status,403);assert.equal((await api(recording,undefined,cookies.one)).status,200);
- const range=await call(recording,{cookie:cookies.admin,headers:{Range:'bytes=0-43'}});assert.equal(range.status,206);assert.equal(range.headers.get('content-length'),'44');
+ const range=await fetch(base+recording,{headers:{Cookie:cookies.admin,Range:'bytes=0-43'}});assert.equal(range.status,206);assert.equal(range.headers.get('content-range'),`bytes 0-43/${audio.length}`);assert.deepEqual(Buffer.from(await range.arrayBuffer()),audio.subarray(0,44));
  assert.equal((await call(recording,{cookie:cookies.admin,headers:{Range:`bytes=${audio.length}-`}})).status,416);
  const wavPath=join(dir,'recordings',callId+'.wav'),mp3Path=join(dir,'recordings',callId+'.mp3');
  renameSync(wavPath,wavPath+'.saved');writeFileSync(mp3Path,'ID3-synthetic-audio');
@@ -599,6 +599,8 @@ try{
  assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(freeWork.id).data).owner,'one');assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE client_id=? AND id<>?').get(freeWork.id,freePast.id).data).manager,'one');assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(freeWorkIncoming).closed_at);
  assert.equal((await api(freeHistoryPath,undefined,cookies.one)).status,400,'Closed incoming revokes narrow history access');
  assert.equal((await api('/api/crm/history?'+freeHistoryQuery,undefined,cookies.one)).status,403);assert.equal((await api('/api/call-history?'+freeHistoryQuery,undefined,cookies.one)).status,403);assert.equal((await api(freeRecordingPath,undefined,cookies.one)).status,403,'Closed incoming revokes recording grant');
+ // Finish earlier independent incoming scenarios before testing ordinary order rework.
+ db.prepare("UPDATE incoming_calls SET missed_until=? WHERE closed_at IS NULL AND spam=0").run(new Date(Date.now()+3600000).toISOString());
  // Delegated operator requests edits; logistics approves; the owner edits and returns to the original stage.
  const editClient={...createClient,id:'incoming-edit-client',phone:'+79990000552'};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(editClient.id,editClient.phone,JSON.stringify(editClient));
@@ -667,6 +669,23 @@ try{
  console.log('Unknown client creation, cross-department assignment, reassignment, validation and active-order protection passed.');
  console.log('Unknown caller search, Cyrillic names, owner labels, extra phone linking, future matching and duplicate protection passed.');
  console.log('Incoming HTTP: trusted ingress, linked phone matching, actual last caller/owner routing, role-scoped tasks, all heads unknown queue, required results, CSRF, no view closure, automatic outcome closure, shared deduplication passed.');
+ const ndClient={...createClient,id:'incoming-nd-client',phone:'+79990000654',owner:'one'};
+ db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(ndClient.id,ndClient.phone,JSON.stringify(ndClient));
+ const ndOrdersBefore=JSON.stringify(db.prepare('SELECT * FROM orders ORDER BY id').all());
+ for(const role of ['admin','one','head','logistic','chief','redemption']){
+  const ndId='nd-'+role;
+  db.prepare('INSERT INTO incoming_calls(id,client_id,assignee_id,department_id,at,phone,called_number) VALUES(?,?,?,?,?,?,?)').run(ndId,ndClient.id,role,'1',new Date().toISOString(),ndClient.phone,'');
+  const savedNd=await api('/api/crm',{action:'missIncoming',incomingId:ndId},cookies[role]);assert.equal(savedNd.status,200,savedNd.text);
+  const storedNd=db.prepare('SELECT * FROM incoming_calls WHERE id=?').get(ndId);
+  assert.equal(Date.parse(storedNd.missed_until)-Date.parse(storedNd.missed_at),3600000);assert.equal(storedNd.closed_at,null);assert.equal(storedNd.assignee_id,role);assert.equal(storedNd.missed_by,role);
+  const ndItem=(await state(role)).incoming.find(i=>i.id===ndId);assert.equal(ndItem.missedUntil,storedNd.missed_until);
+  assert.equal((await api('/api/crm',{action:'missIncoming',incomingId:ndId},cookies[role])).status,200);
+  assert.equal(db.prepare('SELECT missed_until FROM incoming_calls WHERE id=?').get(ndId).missed_until,storedNd.missed_until);
+ }
+ assert.equal((await api('/api/crm',{action:'missIncoming',incomingId:'nd-one'},cookies.two)).status,400,'Foreign operator cannot postpone an incoming');
+ assert.equal((await api('/api/crm',{action:'missIncoming',incomingId:'nd-one'},cookies.courier)).status,403,'Courier has no incoming workflow');
+ assert.equal(JSON.stringify(db.prepare('SELECT * FROM orders ORDER BY id').all()),ndOrdersBefore,'ND never changes orders');
+ console.log('Incoming ND HTTP: all six roles, persistent one-hour timeout, no extension on retry, isolation and unchanged orders passed. No calls placed.');
  console.log('Experimental classification, authorized manual correction, unchanged orders, call history, private recordings, byte ranges, PBX replay protection, detached clients, number pool import/replace/export and staff telephony: authentication, per-employee credentials, role and client access, CSRF, server destinations, card phone normalization, private config and no-store passed. No calls placed.');
 }catch(error){console.error(logs);throw error;}
 finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

@@ -37,7 +37,8 @@ export function paidOrderArchived(order:Order,now=Date.now()){
 export function returnedOrderHidden(order:Order,role:Employee['role'],now=Date.now()){
  if(order.status!=='returned'&&!(courierWarehouseReturn(order)&&['logistic','chief_logistic'].includes(role)))return false;
  if(!['logistic','chief_logistic'].includes(role))return true;
- const at=Date.parse(order.warehouseReturnedAt||'');
+ if(order.cdekReturnReceipt&&order.cdekReturnReceipt.check?.state!=='confirmed')return false;
+ const at=Date.parse(order.cdekReturnReceipt?.check?.at||order.warehouseReturnedAt||'');
  return Number.isFinite(at)&&now>=at+48*3600000;
 }
 

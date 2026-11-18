@@ -7,13 +7,15 @@ import {initReplacement,confirmReplacementCourier} from '@/lib/phone-replacement
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
-import {prepareIncomingRedemption,inRedemptionTab,syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,closedTime} from '@/lib/redemption';
+import {operatorReturnCount,prepareIncomingRedemption,inRedemptionTab,syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,closedTime} from '@/lib/redemption';
 import {cdekStatuses} from '@/lib/cdek-statuses';
 import {skorozvonToken} from '@/lib/skorozvon';
 export const dynamic='force-dynamic';
 async function actor(){const e=(await getChatGPTUser())?.employee;if(!e)throw Error('Требуется вход');return e;}
 export const GET=authenticated(async req=>{try{
- const e=await actor(),d=db();await syncRedemption(d);const cfg=await redemptionConfig(d),q=new URL(req.url).searchParams;
+ const e=await actor(),d=db(),q=new URL(req.url).searchParams;
+ if(q.get('count')==='operator')return Response.json({count:await operatorReturnCount(d,e)});
+ await syncRedemption(d);const cfg=await redemptionConfig(d);
  if(q.has('projects')){if(e.role!=='admin')return Response.json({error:'Недостаточно прав'},{status:403});const credentials=await d.prepare("SELECT data FROM settings WHERE id='skorozvon'").first<{data:string}>();if(!credentials)throw Error('Сначала подключите Скорозвон в интеграциях');const token=await skorozvonToken(JSON.parse(credentials.data));const projects=[];for(let page=1;page<=100;page++){const r=await fetch('https://api.skorozvon.ru/api/v2/call_projects?length=100&page='+page,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('Не удалось получить проекты СК');const data=await r.json() as any,part=Array.isArray(data)?data:data.data;if(!Array.isArray(part))throw Error('Неожиданный ответ СК');projects.push(...part.map((p:any)=>({id:String(p.id),title:p.title})));if(part.length<100)break;}return Response.json({projects});}
  if(q.get('incomingId'))await prepareIncomingRedemption(d,e,q.get('id')||'',q.get('incomingId')!);
  const all=await redemptionRows(d,!!q.get('id')),archives=(await d.prepare('SELECT day,at FROM redemption_archives ORDER BY day DESC').all()).results;

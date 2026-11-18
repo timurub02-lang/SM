@@ -1,3 +1,4 @@
+import {returnReconciliationView} from './return-reconciliation-batch.ts';
 import {recentPaidOrderNotices} from './paid-order-notice.ts';
 import {maintainReminders} from './reminder-maintenance';
 import {courierDoorNoticeId,courierDeadline,courierStage} from './courier.ts';
@@ -5,13 +6,14 @@ import {draftDeadline,scheduledCalls,type State,type Employee} from './crm';
 import {db} from './db';
 import {initReminderStore} from './reminder-store.ts';
 import {seesOrder,ownsClient} from './permissions';
-export type Reminder={acknowledgedAt?:string;incomingId?:string;kind?:"cash-change"|"buyout-info"|"shipment-result"|"order-edit"|"order-cancelled"|"client-released"|"order-blacklist"|"order-paid"|"order-cancellation"|"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
+export type Reminder={acknowledgedAt?:string;incomingId?:string;kind?:"incoming-owner"|"cash-change"|"buyout-info"|"shipment-result"|"order-edit"|"order-cancelled"|"client-released"|"order-blacklist"|"order-paid"|"order-cancellation"|"incoming"|"task"|"call"|"draft"|"order-decision"|"cdek-deletion"|"courier"|"courier-door"|"courier-receipt"|"courier-warning"|"courier-delivery";decision?:"approved"|"rejected";resolved?:boolean;id:string;clientId:string;orderId?:string;requestId?:string;title:string;text:string;at:string;due?:string;readAt?:string};
 export async function initReminders(){await initReminderStore(db());}
 export {orderDecisionReminder} from './reminder-maintenance';
 export async function saveReminders(s:State,employeeId?:string,clientId?:string){return maintainReminders(db(),s,employeeId,clientId);}
 export async function employeeReminders(s:State,e:Employee){
  const rows=await db().prepare('SELECT data,read_at FROM reminders WHERE employee_id=? ORDER BY at DESC,id DESC').bind(e.id).all<{data:string;read_at:string|null}>();
  const own=resolveEmployeeReminders(s,e,rows.results);
+ if(['admin','logistic','chief_logistic'].includes(e.role)){const batch=await returnReconciliationView(db());const pending=batch.rows.filter(r=>r.check?.state!=='confirmed');if(pending.length)own.push({kind:'task',id:'task:return-reconciliation-batch',clientId:'',title:'Сверьте возвраты · '+pending.length,text:'Полный список возвратов, включая историю без заказов CRM',at:pending[0].deliveredAt});}
  if(e.role!=='admin')return own;
  const merged=new Map(own.map(r=>[r.id,r]));
  for(const r of await recentPaidOrderNotices(db()))if(!merged.has(r.id))merged.set(r.id,r);
@@ -27,6 +29,7 @@ export function resolveEmployeeReminders(s:State,e:Employee,rows:{data:string;re
   // A personal receipt remains available after recall removes the courier's access to the order.
   if(r.kind==='buyout-info')return ['redemption','admin'].includes(e.role);
   if(r.kind==='shipment-result')return ['operator','department_head','admin'].includes(e.role);
+  if(r.kind==='incoming-owner')return e.role==='operator';
   if(r.kind==='order-cancelled'||r.kind==='client-released')return ['operator','department_head'].includes(e.role);
   if(r.kind==='courier-receipt')return e.role==='courier';
   if(r.kind==='cdek-deletion'&&!['admin','chief_logistic'].includes(e.role))return false;

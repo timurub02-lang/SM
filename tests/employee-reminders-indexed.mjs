@@ -15,6 +15,9 @@ try{
  const rows=values.map(v=>({data:JSON.stringify({clientId:'c',title:'Test',text:'Test',at:own.createdAt,...v}),read_at:v.id==='draft'?own.createdAt:null}));
  // Fail if indexed resolution regresses to per-reminder linear source searches.
  state.orders.find=()=>{throw Error('Repeated order lookup');};state.clients.find=()=>{throw Error('Repeated client lookup');};
+ const ownerNotice={data:JSON.stringify({id:'incoming-owner:event',kind:'incoming-owner',clientId:'foreign',title:'Transferred',text:'Now handled by owner',at:own.createdAt}),read_at:null};
+ assert.equal(resolveEmployeeReminders(state,op,[ownerNotice]).length,1,'Former handler sees transfer notice without client access');
+ assert.equal(resolveEmployeeReminders(state,head,[ownerNotice]).length,0);
  const result=resolveEmployeeReminders(state,op,rows),byId=new Map(result.map(r=>[r.id,r]));
  assert.deepEqual(result.map(r=>r.id),values.slice(0,10).map(v=>v.id).concat('client-only'));
  for(const id of ['draft','cancel:cancel:pending',`call:own:${own.due}`,courierDoorNoticeId(door),'delivery','warning'])assert.equal(byId.get(id).resolved,false,id);
@@ -31,7 +34,7 @@ try{
  globalThis.__employeeReminderDb={prepare:()=>({bind:()=>({all:async()=>({results:rows})})})};assert.deepEqual(await employeeReminders(state,op),result);
  const freshPaid={id:'order-paid:fresh',kind:'order-paid',clientId:'c',orderId:'own',at:'2026-11-12T12:00:00Z',title:'Paid',text:''};
  const oldPaid={...freshPaid,id:'order-paid:older',at:'2026-11-11T12:00:00Z'};
- globalThis.__employeeReminderDb={prepare:sql=>sql.includes('WHERE employee_id=')?{bind:()=>({all:async()=>({results:[{data:JSON.stringify(freshPaid),read_at:null}]})})}:{all:async()=>({results:[freshPaid,oldPaid].map(r=>({data:JSON.stringify(r),at:r.at}))})}};
+ globalThis.__employeeReminderDb={prepare:sql=>sql.includes("json_type(data,'$.cdekReturnReceipt')")?{bind:()=>({all:async()=>({results:[]})})}:sql.includes('FROM settings WHERE id=')?{bind:()=>({first:async()=>null})}:sql.includes('WHERE employee_id=')?{bind:()=>({all:async()=>({results:[{data:JSON.stringify(freshPaid),read_at:null}]})})}:{all:async()=>({results:[freshPaid,oldPaid].map(r=>({data:JSON.stringify(r),at:r.at}))})}};
  const adminPaid=await employeeReminders(state,admin);
  assert.deepEqual(adminPaid.map(r=>r.id),[freshPaid.id,oldPaid.id]);assert.equal(adminPaid[0].readAt,undefined,'Fresh personal notice stays unread');assert.equal(adminPaid[1].readAt,oldPaid.at,'Historical notices fill the tab without old popups');
  console.log('Employee reminders: indexed lookups preserve ownership, department rights, receipts, cancellation/calls/drafts/courier resolution, order and read state');

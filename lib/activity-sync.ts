@@ -43,7 +43,6 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
    if(page===100)throw Error('Скорозвон: список сотрудников неполный');
   }
   const previous=await read('activity-samples')||{},schedules=await read('activity-schedules')||{};
-  if(ids.some(id=>!seenUsers.has(id)&&!(previous[reverse.get(id)!]?.locked&&previous[reverse.get(id)!]?.skId===id)))throw Error('Скорозвон: не все связанные сотрудники доступны');
   const availableIds=ids.filter(id=>seenUsers.has(id));
   const firstSample=availableIds.some(skId=>previous[reverse.get(skId)!]?.day!==day);
   const cursor=firstSample?dayStart:Math.max(dayStart,(Date.parse(health?.lastSuccessAt||'')||dayStart)-900000);
@@ -74,7 +73,11 @@ export async function syncActivity(d:ActivityDb,request:typeof fetch=fetch,now=D
    const employee=staff.find((e:any)=>e.id===employeeId);if(!employee)continue;
    const old:ActivitySample|undefined=previous[employeeId]?.day===day?previous[employeeId]:undefined;
    const user=users.find((u:any)=>u.id===skId);
-   if(!user){samples[employeeId]=previous[employeeId];continue;}
+   if(!user){
+    const cached=previous[employeeId];
+    if(cached?.skId===skId)samples[employeeId]=cached.locked?cached:{...cached,observedAt:'',status:'unknown',statusAt:''};
+    continue;
+   }
    const live=presence.find((r:any)=>r.user_id===user.uuid);
    const statusAt=iso(live?.status_changed_at),serverTime=iso(live?.current_time);
    const freshLive=!!serverTime&&Math.abs(now-Date.parse(serverTime))<180000&&!!statusAt&&Date.parse(statusAt)<=now+60000;

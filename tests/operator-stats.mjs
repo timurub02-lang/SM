@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {buyoutStatsByDay,operatorStats,sortOperatorStats,operatorStatsSummary} from '../lib/operator-stats.ts';
+import {shiftStatsPeriod,buyoutStatsByDay,operatorStats,sortOperatorStats,operatorStatsSummary} from '../lib/operator-stats.ts';
 const employees=[{id:'a',login:'one',role:'operator',department:'1'},{id:'b',login:'two',role:'operator',department:'2'}];
 const order=(id,amount,fields={})=>({id,manager:'a',createdAt:'2026-11-10T21:30:00Z',status:'draft',items:[{name:'Item',quantity:1,price:amount}],...fields});
 const state={employees,events:[],orders:[
@@ -99,3 +99,47 @@ assert.equal(summaryDay[0].buyoutCount,1);assert.ok(!('orderLists' in summaryDay
 const twoDays=buyoutStatsByDay(operatorStats(state,{role:'admin'},'2026-11-11','2026-11-13'));
 assert.deepEqual(twoDays.map(r=>r.login).sort(),['2026-11-11','2026-11-12','2026-11-13']);
 assert.equal(buyoutStatsByDay([]).length,0);
+
+const physical={id:'physical',manager:'a',createdAt:'2026-11-12T07:00:00Z',confirmedAt:'2026-11-12T07:30:00Z',delivery:'moscow_courier',status:'packing',items:[],courier:{acceptedAt:'2026-11-12T08:00:00Z'}};
+const physicalStats=()=>operatorStats({employees:[{id:'a',role:'operator',login:'a'}],orders:[physical]},{role:'admin'},'2026-11-12','2026-11-12')[0];
+assert.equal(physicalStats().sent,1);assert.equal(physicalStats().awaitingShipment,0);
+for(const status of ['refused','returned','redeemed']){physical.status=status;assert.equal(physicalStats().sent,1);assert.equal(physicalStats().created,1);assert.equal(physicalStats().confirmed,1);}
+
+assert.deepEqual(shiftStatsPeriod('2026-11-17','2026-11-17',-1),{from:'2026-11-16',to:'2026-11-16'});
+assert.deepEqual(shiftStatsPeriod('2026-11-16','2026-11-16',1),{from:'2026-11-17',to:'2026-11-17'});
+assert.deepEqual(shiftStatsPeriod('2026-11-01','2026-11-17',-1),{from:'2026-10-31',to:'2026-11-16'});
+assert.deepEqual(shiftStatsPeriod('2026-12-31','2026-12-31',1),{from:'2027-01-01',to:'2027-01-01'});
+assert.deepEqual(shiftStatsPeriod('2028-03-01','2028-03-01',-1),{from:'2028-02-29',to:'2028-02-29'});
+for(const [from,to] of [['','2026-11-17'],['2026-11-17',''],['2026-11-18','2026-11-17'],['bad','bad'],['2026-02-30','2026-03-01']])assert.equal(shiftStatsPeriod(from,to,-1),null);
+assert.equal(shiftStatsPeriod('0001-01-01','0001-01-01',-1),null);
+assert.equal(shiftStatsPeriod('9999-12-31','9999-12-31',1),null);
+console.log('Statistics date arrows: yesterday/tomorrow, preserved range, year/leap transitions and incomplete/invalid boundaries passed');
+
+// Only physically received Moscow returns stop contributing to the cancelled counter.
+physical.cancelledAt='2026-11-13T10:00:00Z';physical.status='refused';assert.equal(physicalStats().cancelled,1);
+physical.status='returned';assert.equal(physicalStats().cancelled,1,'Awaiting physical receipt still retains its cancellation');
+physical.warehouseReturnedAt='2026-11-14T10:00:00Z';
+assert.deepEqual([physicalStats().created,physicalStats().confirmed,physicalStats().sent,physicalStats().cancelled],[1,1,1,0]);
+assert.deepEqual(physicalStats().orderLists.cancelled,[]);assert.equal(physicalStats().orderLists.sent[0].id,'physical');
+assert.equal(physical.cancelledAt,'2026-11-13T10:00:00Z','The historical cancellation remains on the order');
+for(const delivery of ['cdek_pickup','cdek_courier','russian_post']){physical.delivery=delivery;assert.equal(physicalStats().cancelled,1,'Other delivery methods keep their existing calculation');}
+console.log('Created statistics: received Moscow returns leave cancelled only; shipment, history and other deliveries are preserved');
+
+const confirmedMoneyState={employees,orders:[
+ order('confirmed-small',0.1,{confirmedAt:'2026-11-12T08:00:00Z'}),
+ order('confirmed-sent',0.2,{confirmedAt:'yes',status:'shipping',shippedAt:'yes'}),
+ order('unconfirmed',999),
+ order('other-operator',12.34,{manager:'b',confirmedAt:'yes'}),
+ order('outside-period',888,{createdAt:'2026-11-09T09:00:00Z',confirmedAt:'yes'}),
+ order('test-only',777,{confirmedAt:'yes',testOnly:true}),
+ order('legacy',666,{confirmedAt:'yes',legacyLv:{id:'legacy'}})
+]};
+confirmedMoneyState.orders.push({...confirmedMoneyState.orders[0]});
+const confirmedMoneyRows=operatorStats(confirmedMoneyState,{role:'admin'},'2026-11-11','2026-11-11');
+assert.deepEqual(confirmedMoneyRows.map(r=>[r.confirmed,r.confirmedAmount]),[[2,0.3],[1,12.34]]);
+assert.equal(confirmedMoneyRows.reduce((sum,r)=>sum+Math.round(r.confirmedAmount*100),0)/100,12.64);
+assert.deepEqual(sortOperatorStats(confirmedMoneyRows,'confirmedAmount',false).map(r=>r.id),['b','a']);
+assert.equal(operatorStatsSummary(confirmedMoneyState,{role:'department_head',department:'1'},'2026-11-11','2026-11-11',false,'1')[0].confirmedAmount,0.3);
+assert.equal(operatorStats(confirmedMoneyState,employees[0],'2026-11-20','2026-11-20')[0].confirmedAmount,0);
+assert.equal(buyoutStatsByDay(buyouts)[0].confirmedAmount,0);
+console.log('Confirmed amount: exact cohort, cents, total, sorting, scope, deduplication and exclusions passed');

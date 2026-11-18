@@ -2,7 +2,7 @@ import {seedSkDispatch} from './fixtures/sk-dispatch.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
-import {acceptSkOrder,initSkOrders,skMayDecide,skSender} from '../lib/sk-order-import.ts';
+import {operatorPendingSkOrders,acceptSkOrder,initSkOrders,skMayDecide,skSender} from '../lib/sk-order-import.ts';
 import {skClientPhone,syncSkOrders} from '../lib/sk-order-sync.ts';
 import {syncActivity} from '../lib/activity-sync.ts';
 import {mayCallEndpoint} from '../lib/permissions.ts';
@@ -58,8 +58,9 @@ await assert.rejects(acceptSkOrder(d,conflict,head),/Решение/);assert.equ
 const unknown={...input,callId:'3',phone:'79990000003',email:'missing@test.invalid',userName:'Missing'};assert.equal((await acceptSkOrder(d,unknown)).state,'pending');assert.equal((await acceptSkOrder(d,unknown,admin)).state,'pending');
 await d.prepare("UPDATE sk_order_transfers SET state='rejected' WHERE id='3'").run();assert.equal((await acceptSkOrder(d,unknown)).state,'rejected');
 await assert.rejects(acceptSkOrder(d,{...input,callId:'4',phone:'123'}),/Некорректный/);
-for(const role of ['courier','purchasing','logistic','chief_logistic','redemption','operator','department_head'])for(const method of ['GET','POST']){assert.equal(mayCallEndpoint({...sender,role},new URL('https://crm/api/sk-orders'),method,{}),false);assert.equal(skMayDecide({...sender,role},sender,other),false);}
+for(const role of ['courier','purchasing','logistic','chief_logistic','redemption','department_head'])for(const method of ['GET','POST']){assert.equal(mayCallEndpoint({...sender,role},new URL('https://crm/api/sk-orders'),method,{}),false);assert.equal(skMayDecide({...sender,role},sender,other),false);}
 for(const method of ['GET','POST'])assert.equal(mayCallEndpoint(admin,new URL('https://crm/api/sk-orders'),method,{}),true);
+assert.equal(mayCallEndpoint(sender,new URL('https://crm/api/sk-orders'),'GET',{}),true);
 assert.equal(mayCallEndpoint(sender,new URL('https://crm/api/sk-orders'),'POST',{}),false);
 assert.equal(mayCallEndpoint(head,new URL('https://crm/api/sk-orders'),'POST',{}),false);
 await seedSkDispatch(d,[['C-SK-5','+79990000005'],['C-SK-9','+79990000009']]);
@@ -114,6 +115,20 @@ let raced=false;
 const raceDb={...d,async batch(statements){if(!raced&&statements.some(s=>s.sql.startsWith('INSERT INTO orders'))){raced=true;await d.prepare('UPDATE auth_accounts SET enabled=0 WHERE employee_id=?').bind(sender.id).run();}return d.batch(statements);}};
 await assert.rejects(acceptSkOrder(raceDb,{...input,callId:'7',phone:'79990000007'}),/сотрудник изменился/);
 assert.equal(raced,true);assert.equal(await d.prepare("SELECT id FROM orders WHERE id=(SELECT order_id FROM sk_order_transfers WHERE id='7')").first(),null);assert.equal(await d.prepare("SELECT id FROM clients WHERE id='C-SK-7'").first(),null);
+// Pending operator rows never expose another sender, client link, phone, owner or decisions.
+await initSkOrders(d);
+await d.prepare('DELETE FROM sk_order_transfers').run();
+for(const [id,state,extra] of [['901','pending',{}],['902','pending',{userName:other.skLogin}],['903','imported',{}],['904','rejected',{}],['905','duplicate',{}],['906','pending',{userNameUnique:false}]]){
+ await d.prepare('INSERT INTO sk_order_transfers(id,data,state,created_at) VALUES(?,?,?,?)').bind(id,JSON.stringify({...input,...extra}),state,t).run();
+}
+const pending=await operatorPendingSkOrders(d,[sender,other],sender.id);
+assert.deepEqual(pending,[{id:'901',name:input.name,at:t,reason:'Ожидает разрешения администратора',canDecide:false,sender:''}]);
+assert.deepEqual((await operatorPendingSkOrders(d,[sender,other],other.id)).map(r=>r.id),['902']);
+assert.deepEqual(await operatorPendingSkOrders(d,[{...sender,accessEnabled:false},other],sender.id),[]);
+assert.deepEqual(await operatorPendingSkOrders(d,[sender,{...other,skLogin:sender.skLogin}],sender.id),[]);
+await d.prepare("UPDATE sk_order_transfers SET state='imported' WHERE id='901'").run();
+assert.deepEqual(await operatorPendingSkOrders(d,[sender,other],sender.id),[]);
+
 d.close();console.log('SK orders: assignment, sheet K, duplicate delivery, conflict approval, address preservation, unknown/disabled sender, permissions, polling and provider errors passed');
 
 const {skOrderReview}=await import('../lib/sk-order-review.ts');
@@ -134,3 +149,4 @@ const ownReview=skOrderReview('project',{id:'owner'},{...reviewClient,sheet:'К'
 assert.equal(ownReview.ownerIsSender,true);
 assert.deepEqual(ownReview.reasons,['Есть действующие заказы: SK-124 — Отправлен']);
 assert.equal(skOrderReview('project',undefined,reviewClient,reviewOwner,[]).ownerIsSender,false);
+
