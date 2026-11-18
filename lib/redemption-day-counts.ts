@@ -8,9 +8,12 @@ export async function redemptionDayCounts(d:Db,rows:any[],actor:Employee,headsAl
  const start=new Date(day+'T00:00:00+03:00').toISOString(),end=new Date(dayPlus(day,1)+'T00:00:00+03:00').toISOString();
  const archive=await d.prepare('SELECT data FROM redemption_archives WHERE day<? ORDER BY day DESC LIMIT 1').bind(day).first();
  const before=new Map<string,any>((JSON.parse(archive?.data||'[]') as any[]).map(r=>[r.order_id,r]));
- const events=(await d.prepare('SELECT order_id,at,data FROM redemption_history WHERE (at>=? AND at<?) OR id IN (SELECT MAX(id) FROM redemption_history WHERE at<? GROUP BY order_id) ORDER BY id').bind(start,end,start).all()).results;
+ // Membership needs states, not repeated polling timestamps or growing comment/day histories.
+ const fields=['pendingEnrollment','incomingScheduled','operatorReturn','result','resultDate','dateConfirmation','refusalRetryUsed','action','lastDay'];
+ const projection=`json_object(${fields.map(key=>`'${key}',json_extract(data,'$.${key}')`).join(',')},'changeKind',CASE WHEN json_extract(data,'$.changeKind')='action' THEN 'action' END)`;
+ const events=(await d.prepare(`SELECT DISTINCT order_id,at<? AS before_day,${projection} AS data FROM redemption_history WHERE (at>=? AND at<?) OR id IN (SELECT MAX(id) FROM redemption_history WHERE at<? GROUP BY order_id)`).bind(start,start,end,start).all()).results;
  const today=new Map<string,any[]>();
- for(const h of events){const v=JSON.parse(h.data);if(h.at<start)before.set(h.order_id,v);else today.set(h.order_id,[...(today.get(h.order_id)||[]),v]);}
+ for(const h of events){const v=JSON.parse(h.data);if(h.before_day)before.set(h.order_id,v);else{let changes=today.get(h.order_id);if(!changes){changes=[];today.set(h.order_id,changes);}changes.push(v);}}
  const writes=[];
  for(const row of rows){
   if(row.entered_at>=end)continue;

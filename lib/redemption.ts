@@ -24,6 +24,8 @@ export function operatorReturnDeadline(storageUntil:string,now=new Date()){
 }
 export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:true};
 const redemptionSchemas=new WeakMap<Db,Promise<unknown>>();
+// Repeated CDEK checks still update their timestamp, but do not duplicate business history.
+const redemptionHistoryTrigger=`CREATE TRIGGER redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data AND NOT (json_extract(NEW.data,'$.changeKind') IS 'return_check' AND json_extract(OLD.data,'$.changeKind') IS 'return_check' AND json_remove(NEW.data,'$.updatedAt','$.returnCheck.at')=json_remove(OLD.data,'$.updatedAt','$.returnCheck.at')) BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`;
 export async function initRedemption(d:Db){let schema=redemptionSchemas.get(d);if(!schema){schema=d.batch([
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_entries(order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,entered_at TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)`),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_history(id INTEGER PRIMARY KEY AUTOINCREMENT,order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,at TEXT NOT NULL,data TEXT NOT NULL)`),
@@ -31,9 +33,8 @@ export async function initRedemption(d:Db){let schema=redemptionSchemas.get(d);i
  d.prepare('CREATE INDEX IF NOT EXISTS redemption_history_order_at ON redemption_history(order_id,at)'),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_archives(day TEXT PRIMARY KEY,at TEXT NOT NULL,data TEXT NOT NULL)`),
  d.prepare(`CREATE TABLE IF NOT EXISTS redemption_dispatch(day TEXT PRIMARY KEY,state TEXT NOT NULL,data TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL)`),
- d.prepare(`CREATE TRIGGER IF NOT EXISTS redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`),
  ...['INSERT','UPDATE OF data'].map((event,i)=>d.prepare(`CREATE TRIGGER IF NOT EXISTS redemption_enter_${i} AFTER ${event} ON orders WHEN json_extract(NEW.data,'$.delivery') IN ('cdek_pickup','cdek_courier') AND EXISTS(SELECT 1 FROM settings,json_each(settings.data,'$.statuses') WHERE settings.id='redemption-config' AND json_each.value=json_extract(NEW.data,'$.cdekStatus.code')) BEGIN INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(NEW.id,strftime('%Y-%m-%dT%H:%M:%fZ','now'),'{}'); END`))
-]);redemptionSchemas.set(d,schema);schema.catch(()=>redemptionSchemas.delete(d));}await schema;}
+]).then(async()=>{const current=await d.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='redemption_history_update'").first();if(current?.sql!==redemptionHistoryTrigger)await d.batch([d.prepare('DROP TRIGGER IF EXISTS redemption_history_update'),d.prepare(redemptionHistoryTrigger)]);});redemptionSchemas.set(d,schema);schema.catch(()=>redemptionSchemas.delete(d));}await schema;}
 export async function redemptionConfig(d:Db){return {...defaults,...JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='redemption-config'").first())?.data||'{}')};}
 export async function syncRedemption(d:Db,now=new Date()){
  await initRedemption(d);const at=now.toISOString();
