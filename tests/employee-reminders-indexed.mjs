@@ -31,7 +31,7 @@ try{
  globalThis.__employeeReminderDb={prepare:()=>({bind:()=>({all:async()=>({results:rows})})})};assert.deepEqual(await employeeReminders(state,op),result);
  const freshPaid={id:'order-paid:fresh',kind:'order-paid',clientId:'c',orderId:'own',at:'2026-11-12T12:00:00Z',title:'Paid',text:''};
  const oldPaid={...freshPaid,id:'order-paid:older',at:'2026-11-11T12:00:00Z'};
- globalThis.__employeeReminderDb={prepare:sql=>sql.includes('WHERE employee_id=')?{bind:()=>({all:async()=>({results:[{data:JSON.stringify(freshPaid),read_at:null}]})})}:{all:async()=>({results:[freshPaid,oldPaid].map(r=>({data:JSON.stringify(r),at:r.at}))})}};
+ globalThis.__employeeReminderDb={prepare:sql=>sql.includes("json_type(data,'$.cdekReturnReceipt')")?{bind:()=>({all:async()=>({results:[]})})}:sql.includes('FROM settings WHERE id=')?{bind:()=>({first:async()=>null})}:sql.includes('WHERE employee_id=')?{bind:()=>({all:async()=>({results:[{data:JSON.stringify(freshPaid),read_at:null}]})})}:{all:async()=>({results:[freshPaid,oldPaid].map(r=>({data:JSON.stringify(r),at:r.at}))})}};
  const adminPaid=await employeeReminders(state,admin);
  assert.deepEqual(adminPaid.map(r=>r.id),[freshPaid.id,oldPaid.id]);assert.equal(adminPaid[0].readAt,undefined,'Fresh personal notice stays unread');assert.equal(adminPaid[1].readAt,oldPaid.at,'Historical notices fill the tab without old popups');
  console.log('Employee reminders: indexed lookups preserve ownership, department rights, receipts, cancellation/calls/drafts/courier resolution, order and read state');
