@@ -22,8 +22,9 @@ const incomingActions=new Set(['missIncoming','closeIncoming','incomingResult','
 const orderActions=new Set(['saveOrder','confirmByHead','selectOrderPickupPoint','reportPostalBuyout','keepPostalSent','updateMoscowDetails','updateRecipientName','resolveOrderCancellation','resolveOrderEdit','completeOrderEdit','resolveShipmentRequest','clientWaiting','markPV','courierWorkflow','receivePayment','savePostalTracking','saveManualDeliveryCost','returnToWarehouse','markPackingWaybill','updateWaybillComment','selectCdekTariff','updateDelivery','updateOrder','transition','contact','comment']);
 const skActions=new Set(['updateOrder','updateRecipientName','updateDelivery','selectOrderPickupPoint','selectCdekTariff','saveManualDeliveryCost','comment']);
 export async function incomingWorkRequestAllowed(d:ActivityDb,e:Employee,url:URL,method:string,p:any,gate?:IncomingWorkGate){
- const g=gate||await readIncomingWorkGate(d,e);if(!g.incomingIds.length)return true;
  const path=url.pathname,write=!['GET','HEAD'].includes(method);
+ if(!write&&['/api/crm','/api/incoming-work-gate','/api/crm/changes','/api/operator-state','/api/telephony','/api/dadata','/api/crm/history','/api/call-history','/api/call-history/recording'].includes(path))return true;
+ const g=gate||await readIncomingWorkGate(d,e);if(!g.incomingIds.length)return true;
  const value=(key:string)=>typeof p?.[key]==='string'?p[key]:url.searchParams.get(key)||'';
  const incomingId=value('incomingId'),orderId=value('orderId')||((path==='/api/crm'&&orderActions.has(p?.action)||path==='/api/redemption')?value('id'):''),clientId=value('clientId');
  // Incoming handlers validate the supplied ID, visibility and client/order linkage themselves.
@@ -35,8 +36,6 @@ export async function incomingWorkRequestAllowed(d:ActivityDb,e:Employee,url:URL
  }
 
  if(!write){
-  if(path==='/api/crm')return true; // Background state/card reads preserve mounted unsaved forms; all writes are checked below.
-  if(['/api/incoming-work-gate','/api/crm/changes','/api/operator-state','/api/telephony','/api/dadata','/api/crm/history','/api/call-history','/api/call-history/recording'].includes(path))return true;
   if(['/api/incoming-clients','/api/incoming-order-client'].includes(path))return incoming;
   if(path==='/api/warehouse'&&url.searchParams.has('catalog'))return true;
   if(path==='/api/redemption')return linkedOrder;
