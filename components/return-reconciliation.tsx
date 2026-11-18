@@ -20,7 +20,7 @@ export function ReturnReconciliation({employee,busy,mutate,openOrder}:{employee:
   }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить сверку');await load();}finally{setSaving(false);}
  }
  async function excel(){try{
-  const ExcelJS=await import('exceljs');const wb=new ExcelJS.Workbook(),sheet=wb.addWorksheet('Сверка возвратов');
+  const ExcelJS=(await import('exceljs')).default;const wb=new ExcelJS.Workbook(),sheet=wb.addWorksheet('Сверка возвратов');
   sheet.columns=[{header:'Заказ ЛВ / CRM',key:'order',width:27},{header:'Возвратная накладная',key:'waybill',width:25},{header:'Вручён СДЭК (МСК)',key:'delivered',width:26},{header:'Карточка CRM',key:'source',width:25},{header:'Склад',key:'stock',width:26},{header:'Сверка',key:'state',width:22},{header:'Комментарий',key:'note',width:60}];
   pending.forEach(o=>sheet.addRow({order:o.id,waybill:o.number,delivered:new Date(o.deliveredAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}),source:o.hasOrder?'Есть заказ CRM':'Без заказа CRM',stock:o.stockHandled?'Оприходован':'Приход не выполнялся',state:o.check?.state==='discrepancy'?'Расхождение':'Не сверен',note:o.check?.note||''}));
   const url=URL.createObjectURL(new Blob([await wb.xlsx.writeBuffer()],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const a=document.createElement('a');a.href=url;a.download='Сверка возвратов.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
