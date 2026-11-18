@@ -1,3 +1,4 @@
+import {reconcileIncomingOwners} from './incoming-owner-sync.ts';
 import type {SkProjectMembership} from './sk-project-membership.ts';
 import {skOrderReview} from './sk-order-review.ts';
 import {nextOrderId} from './order-number.ts';
@@ -68,6 +69,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
  d.prepare('INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=?)').bind(event.id,clientId,id,now,JSON.stringify(event),id),
  d.prepare("UPDATE sk_order_transfers SET state='imported',order_id=?,decided_by=? WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(id,decision?.id||'',input.callId,id)];
  const result=await d.batch(statements);if(!result[existing?0:1].meta.changes)throw Error('Клиент или сотрудник изменился. Повторите обработку');
+ await reconcileIncomingOwners(d,clientId,now);
  return {state:'imported',orderId:id};
 }
 

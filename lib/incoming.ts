@@ -1,3 +1,4 @@
+import {reconcileIncomingOwners} from './incoming-owner-sync.ts';
 import {shippedOrder} from './shipment-request.ts';
 import {beforeShipment} from './order-edit-request.ts';
 import {initProtection,incomingGate} from './incoming-protection.ts';
@@ -9,7 +10,7 @@ import {initPhone} from './phone-store.ts';
 
 type Row={missed_at?:string;missed_until?:string;missed_by?:string;assignee_role?:string;handoff?:string;spam?:number;spam_reason?:string;call_count?:number;last_at?:string;blocked?:number;shared_queue?:number;id:string;client_id:string|null;assignee_id:string|null;department_id:string;at:string;phone:string;called_number:string;closed_at:string|null;closed_by:string|null;reason:string;order_id:string|null};
 const incomingSchemas=new WeakMap<Db,Promise<void>>();
-export async function initIncoming(d:Db){let schema=incomingSchemas.get(d);if(!schema){schema=initializeIncoming(d);incomingSchemas.set(d,schema);schema.catch(()=>incomingSchemas.delete(d));}await schema;}
+export async function initIncoming(d:Db){let schema=incomingSchemas.get(d);if(!schema){schema=initializeIncoming(d);incomingSchemas.set(d,schema);schema.catch(()=>incomingSchemas.delete(d));}await schema;await reconcileIncomingOwners(d);}
 async function initializeIncoming(d:Db){
  await d.prepare(`CREATE TABLE IF NOT EXISTS incoming_calls(id TEXT PRIMARY KEY,client_id TEXT REFERENCES clients(id) ON DELETE CASCADE,assignee_id TEXT,department_id TEXT NOT NULL DEFAULT '',at TEXT NOT NULL,phone TEXT NOT NULL,called_number TEXT NOT NULL,closed_at TEXT,closed_by TEXT,reason TEXT NOT NULL DEFAULT '',order_id TEXT REFERENCES orders(id) ON DELETE SET NULL)`).run();
  const columns=await d.prepare('PRAGMA table_info(incoming_calls)').all();

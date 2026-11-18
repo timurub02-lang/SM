@@ -15,6 +15,9 @@ try{
  const rows=values.map(v=>({data:JSON.stringify({clientId:'c',title:'Test',text:'Test',at:own.createdAt,...v}),read_at:v.id==='draft'?own.createdAt:null}));
  // Fail if indexed resolution regresses to per-reminder linear source searches.
  state.orders.find=()=>{throw Error('Repeated order lookup');};state.clients.find=()=>{throw Error('Repeated client lookup');};
+ const ownerNotice={data:JSON.stringify({id:'incoming-owner:event',kind:'incoming-owner',clientId:'foreign',title:'Transferred',text:'Now handled by owner',at:own.createdAt}),read_at:null};
+ assert.equal(resolveEmployeeReminders(state,op,[ownerNotice]).length,1,'Former handler sees transfer notice without client access');
+ assert.equal(resolveEmployeeReminders(state,head,[ownerNotice]).length,0);
  const result=resolveEmployeeReminders(state,op,rows),byId=new Map(result.map(r=>[r.id,r]));
  assert.deepEqual(result.map(r=>r.id),values.slice(0,10).map(v=>v.id).concat('client-only'));
  for(const id of ['draft','cancel:cancel:pending',`call:own:${own.due}`,courierDoorNoticeId(door),'delivery','warning'])assert.equal(byId.get(id).resolved,false,id);
