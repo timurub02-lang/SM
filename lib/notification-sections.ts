@@ -9,5 +9,5 @@ export function notificationSections(tasks:Reminder[],events:Reminder[],now=Date
 }
 export function notificationPopupTab(fresh:Reminder[],tasks:Reminder[]):NotificationTab{
  if(fresh.every(isIncomingNotification))return 'incoming';
- return fresh.some(r=>r.kind==='cash-change'||!isIncomingNotification(r)&&tasks.some(t=>t.id===r.id))?'tasks':'events';
+ return fresh.some(r=>r.kind==='cash-change'||r.id==='task:return-reconciliation-batch'||!isIncomingNotification(r)&&tasks.some(t=>t.id===r.id))?'tasks':'events';
 }

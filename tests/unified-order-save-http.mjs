@@ -104,7 +104,7 @@ try{
  const batchKey='warehouse-return-reconciliation-20261118',revision=crypto.randomUUID();
  db.prepare('INSERT INTO settings VALUES(?,?)').run(batchKey,JSON.stringify({revision,rows:[{id:'LV-test',number:'123',deliveredAt:now,stockHandled:true}]}));
  await call('op','/api/warehouse?returnReconciliation=1&actorId=admin',undefined,403);
- const registry=(await call('log','/api/warehouse?returnReconciliation=1&actorId=log')).data;assert.equal(registry.rows.length,1);
+ const registry=(await call('log','/api/warehouse?returnReconciliation=1&actorId=log')).data;assert.equal(registry.rows.length,1);assert.equal(registry.rows[0].hasOrder,false);
  await call('op','/api/warehouse',{action:'reconcileReturns',actorId:'admin',revision,ids:['LV-test'],state:'confirmed',note:''},403);
  const payload={action:'reconcileReturns',actorId:'admin',revision,ids:['LV-test'],state:'discrepancy',note:'x'.repeat(3000)};
  await call('log','/api/warehouse',payload,403);payload.actorId='log';
