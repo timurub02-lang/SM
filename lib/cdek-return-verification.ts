@@ -15,7 +15,7 @@ export function verifiedReturn(original:any,returned:any,originalUuid:string,ori
 
 export async function syncCdekReturns(d:Db,request:typeof fetch=fetch){
  await initRedemption(d);
- const rows=(await d.prepare(`SELECT r.order_id,r.data,r.version,o.data order_data,o.version order_version,s.data shipment FROM redemption_entries r JOIN orders o ON o.id=r.order_id LEFT JOIN settings s ON s.id='cdek-shipment-'||r.order_id WHERE (json_extract(r.data,'$.result')='to_return' OR json_extract(r.data,'$.result')='returned' AND COALESCE(json_extract(r.data,'$.returnWaybill'),'')<>'') AND json_extract(r.data,'$.returnCheck.state') IS NOT 'verified' AND COALESCE(json_extract(o.data,'$.testOnly'),0)<>1 ORDER BY COALESCE(json_extract(r.data,'$.returnCheck.at'),''),r.order_id LIMIT 50`).all()).results;
+ const rows=(await d.prepare(`SELECT r.order_id,r.data,r.version,o.data order_data,o.version order_version,s.data shipment FROM redemption_entries r JOIN orders o ON o.id=r.order_id LEFT JOIN settings s ON s.id='cdek-shipment-'||r.order_id WHERE (json_extract(r.data,'$.result')='to_return' OR json_extract(r.data,'$.result')='returned' AND COALESCE(json_extract(r.data,'$.returnWaybill'),'')<>'') AND json_extract(r.data,'$.returnCheck.state') IS NOT 'verified' AND COALESCE(json_extract(o.data,'$.testOnly'),0)<>1 AND (COALESCE(json_extract(r.data,'$.returnWaybill'),'')<>'' OR COALESCE(json_extract(r.data,'$.returnCheck.at'),'')<=strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hour')) ORDER BY COALESCE(json_extract(r.data,'$.returnCheck.at'),''),r.order_id LIMIT 50`).all()).results;
  const tokens=new Map<number,Promise<string>>(),counts={checked:0,verified:0,failed:0};
  let cursor=0;
  async function work(){while(cursor<rows.length){

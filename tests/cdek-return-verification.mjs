@@ -46,9 +46,11 @@ try{
  await d.prepare("UPDATE orders SET data=?,version=version+1 WHERE id='o'").bind(JSON.stringify(order)).run();
  await d.prepare("UPDATE redemption_entries SET data=?,version=version+1 WHERE order_id='o'").bind(JSON.stringify({action:'refusal',result:'to_return'})).run();
  mode='absent';assert.equal((await syncCdekReturns(d,request)).verified,0);assert.equal((await entry()).result,'to_return');assert.equal((await entry()).returnWaybill,undefined);assert.equal((await entry()).returnCheck.state,'pending');
- mode='multiple';assert.equal((await syncCdekReturns(d,request)).failed,1);assert.equal((await readOrder()).status,'shipping');assert.equal((await entry()).returnWaybill,undefined);
- mode='wrong';assert.equal((await syncCdekReturns(d,request)).failed,1);assert.equal((await readOrder()).status,'shipping');assert.equal((await entry()).returnWaybill,undefined);
- mode='ok';assert.equal((await syncCdekReturns(d,request)).verified,1);assert.equal((await entry()).returnWaybill,'222');assert.equal((await entry()).result,'returned');assert.equal((await readOrder()).status,'returned');assert.equal((await readOrder()).warehouseReturnedAt,undefined);assert.equal((await readOrder()).paymentReceivedAmount,order.paymentReceivedAmount);assert.equal((await readOrder()).paymentReceivedAt,order.paymentReceivedAt);assert.deepEqual((await readOrder()).priorPremiumPaid,order.priorPremiumPaid);
+ const hourPassed=()=>d.prepare("UPDATE redemption_entries SET data=json_set(data,'$.returnCheck.at',strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hour'))").run();
+ assert.deepEqual(await syncCdekReturns(d,request),{checked:0,verified:0,failed:0});
+ await hourPassed();mode='multiple';assert.equal((await syncCdekReturns(d,request)).failed,1);assert.equal((await readOrder()).status,'shipping');assert.equal((await entry()).returnWaybill,undefined);
+ await hourPassed();mode='wrong';assert.equal((await syncCdekReturns(d,request)).failed,1);assert.equal((await readOrder()).status,'shipping');assert.equal((await entry()).returnWaybill,undefined);
+ await hourPassed();mode='ok';assert.equal((await syncCdekReturns(d,request)).verified,1);assert.equal((await entry()).returnWaybill,'222');assert.equal((await entry()).result,'returned');assert.equal((await readOrder()).status,'returned');assert.equal((await readOrder()).warehouseReturnedAt,undefined);assert.equal((await readOrder()).paymentReceivedAmount,order.paymentReceivedAmount);assert.equal((await readOrder()).paymentReceivedAt,order.paymentReceivedAt);assert.deepEqual((await readOrder()).priorPremiumPaid,order.priorPremiumPaid);
  assert.equal((await syncCdekReturns(d,request)).checked,0);
  await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(JSON.stringify({result:'courier'})).run();
  assert.equal((await syncCdekReturns(d,request)).checked,0,'Main-table orders are not discovered');

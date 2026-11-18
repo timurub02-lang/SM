@@ -104,8 +104,8 @@ export function RedemptionTable({employee,settings,setSettings,operatorQueue=fal
 export function RedemptionReturnCount(){
  const [count,setCount]=useState<number|null>(null);
  useEffect(()=>{
-  let active=true;
-  async function refresh(){try{const r=await fetch('/api/redemption?tab=operator');if(!r.ok)return;const v=await r.json() as {rows:unknown[]};if(active)setCount(v.rows.length);}catch{}}
+  let active=true,pending=false;
+  async function refresh(){if(pending||document.hidden)return;pending=true;try{const r=await fetch('/api/redemption?count=operator');if(!r.ok)return;const v=await r.json() as {count:number};if(active)setCount(v.count);}catch{}finally{pending=false;}}
   void refresh();const timer=setInterval(refresh,15000);window.addEventListener('focus',refresh);
   return()=>{active=false;clearInterval(timer);window.removeEventListener('focus',refresh);};
  },[]);

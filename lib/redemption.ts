@@ -66,6 +66,15 @@ export function operatorReturnScheduled(row:any,now=new Date()){return awaitingO
 export function awaitingDateConfirmation(row:any){return !awaitingOperator(row)&&row.dateConfirmation==='pending'&&row.result==='date';}
 export function awaitingReturn(row:any){return !awaitingOperator(row)&&row.result==='to_return';}
 export function canSeeRedemption(e:Employee,row:any,headsAll:boolean){if(awaitingOperator(row))return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department;if((awaitingDateConfirmation(row)||awaitingReturn(row))&&!['admin','redemption'].includes(e.role)&&!(awaitingDateConfirmation(row)&&(e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&!!e.department&&row.department===e.department)))return false;return ['admin','redemption'].includes(e.role)||e.role==='operator'&&row.manager===e.id||e.role==='department_head'&&(headsAll||!!e.department&&row.department===e.department);}
+export async function operatorReturnCount(d:Db,employee:Employee){
+ await initRedemption(d);
+ const rows=await d.prepare(`SELECT json_extract(o.data,'$.manager') manager,json_extract(e.data,'$.department') department
+  FROM redemption_entries r JOIN orders o ON o.id=r.order_id JOIN clients c ON c.id=o.client_id
+  LEFT JOIN employees e ON e.id=json_extract(o.data,'$.manager')
+  WHERE NOT COALESCE(json_extract(r.data,'$.pendingEnrollment'),0) AND json_type(r.data,'$.operatorReturn')='object'
+  AND COALESCE(json_extract(r.data,'$.operatorReturn.resolvedAt'),'')=''`).all();
+ return rows.results.filter((row:{manager:string;department:string})=>canSeeRedemption(employee,{...row,operatorReturn:{}},false)).length;
+}
 export function inWorkday(r:any,day:string){if(r.pendingEnrollment||r.incomingScheduled&&r.result==='date'&&r.resultDate>day)return false;if(awaitingOperator(r)||awaitingReturn(r)||r.result==='returned'||awaitingDateConfirmation(r))return false;if((r.dateConfirmation==='confirmed'||r.refusalRetryUsed&&r.action==='refusal')&&r.result==='date'&&r.resultDate>day)return false;if(dayOf(new Date(r.entered_at))>day)return false;if(r.result==='delivered')return r.lastDay===day;return r.lastDay===day||!r.resultDate||r.result!=='date'||r.resultDate<=day;}
 export function dateConfirmedToday(row:any,day:string){return row.dateConfirmation==='confirmed'&&row.result==='date'&&!!row.dateConfirmedAt&&dayOf(new Date(row.dateConfirmedAt))===day;}
 export function returnConfirmedToday(row:any,day:string){return row.result==='returned'&&!!row.returnConfirmedAt&&dayOf(new Date(row.returnConfirmedAt))===day;}
