@@ -1,3 +1,4 @@
+import {readReturnReconciliationBatch,reconcileReturnBatch} from '@/lib/return-reconciliation-batch';
 import {canEditProductCost,productCostSchema,productCostKey,readProductCosts} from '@/lib/warehouse-cost';
 import {warehouseReadOnly} from '@/lib/permissions';
 import {readLimitedText} from '@/lib/request-body';
@@ -22,6 +23,8 @@ async function handleGET(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(new URL(req.url).searchParams.has('catalog')){await init();const rows=await db().prepare('SELECT p.id,p.data,s.available,s.blocked FROM products p JOIN product_stock s ON s.id=p.id WHERE NOT EXISTS(SELECT 1 FROM lv_stock l WHERE l.product_id=p.id AND l.active=0) ORDER BY p.name_key').all<{id:string;data:string;available:number;blocked:number}>();return Response.json({products:rows.results.map(r=>{const p=JSON.parse(r.data);return {id:r.id,name:p.name,tag:p.tag||'',available:r.available,blocked:!!r.blocked};})},{headers:{'Cache-Control':'no-store'}});}
  if(!await permitted(new URL(req.url).searchParams.get('actorId')||'',true))return Response.json({error:'Склад доступен администратору и логисту'},{status:403});
+ if(new URL(req.url).searchParams.has('returnReconciliation')&&!await permitted(new URL(req.url).searchParams.get('actorId')||''))return Response.json({error:'Нет доступа к сверке возвратов'},{status:403});
+ if(new URL(req.url).searchParams.has('returnReconciliation'))return Response.json(await readReturnReconciliationBatch(db()),{headers:{'Cache-Control':'no-store'}});
  if(new URL(req.url).searchParams.has('movements')){await init();const r=await db().prepare(`SELECT m.id,m.quantity,m.reason,m.at,COALESCE(json_extract(e.data,'$.login'),m.actor_id) AS actor FROM stock_movements m LEFT JOIN employees e ON e.id=m.actor_id WHERE m.product_id=? ORDER BY m.at DESC LIMIT 30`).bind(new URL(req.url).searchParams.get('movements')).all();return Response.json({movements:r.results},{headers:{'Cache-Control':'no-store'}});}
  if(new URL(req.url).searchParams.has('points')){try{const postal=z.string().regex(/^\d{6}$/).parse(new URL(req.url).searchParams.get('postalCode'));return Response.json({points:await offices(new URLSearchParams({postal_code:postal,type:'PVZ',country_code:'RU',is_reception:'true'}))},{headers:{'Cache-Control':'no-store'}});}catch(e){return Response.json({error:e instanceof z.ZodError?'Укажите индекс из 6 цифр':e instanceof Error?e.message:'Не удалось загрузить ПВЗ'},{status:400});}}
  await init();const r=await db().prepare(`SELECT p.id,p.data,p.version,s.available,s.reserved,s.sold,s.supplied,s.blocked,l.lv_id,l.lv_name,l.synced_at,l.active AS lv_active,EXISTS(SELECT 1 FROM orders o,json_each(o.data,'$.items') i WHERE json_extract(i.value,'$.name')=json_extract(p.data,'$.name')) AS nameLocked FROM products p JOIN product_stock s ON s.id=p.id LEFT JOIN lv_stock l ON l.product_id=p.id WHERE l.product_id IS NULL OR l.active=1 ORDER BY p.name_key`).all<{id:string;data:string;version:number;available:number;reserved:number;sold:number;supplied:number;nameLocked:number;blocked:number;lv_id:string;lv_name:string;synced_at:string;lv_active:number}>();
@@ -33,7 +36,7 @@ async function handlePOST(req:Request){
  if(!await getChatGPTUser())return Response.json({error:'Требуется вход'},{status:401});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
-  const raw=await readLimitedText(req,16000);if(raw.length>4000)throw Error();const p=JSON.parse(raw);
+  const raw=await readLimitedText(req,16000);const p=JSON.parse(raw);if(raw.length>4000&&p.action!=='reconcileReturns')throw Error();
   if(p.action==='saveCost'){
    if(!await costAccess(z.string().parse(p.actorId)))return Response.json({error:'Недостаточно прав'},{status:403});
    const id=z.string().min(1).max(200).parse(p.productId),cost=productCostSchema.parse(p.cost);
@@ -44,6 +47,7 @@ async function handlePOST(req:Request){
    return Response.json({ok:true,cost:JSON.parse(data)});
   }
   if(!await permitted(z.string().parse(p.actorId)))return Response.json({error:'Склад доступен администратору и логисту'},{status:403});
+  if(p.action==='reconcileReturns'){const row=await db().prepare('SELECT data FROM employees WHERE id=?').bind(p.actorId).first<{data:string}>();if(!row)throw Error('Сотрудник не найден');return Response.json(await reconcileReturnBatch(db(),p,JSON.parse(row.data)));}
   await init();if(p.action==='stock'){
    const movement=z.object({id:z.string().uuid(),productId:z.string().min(1),quantity:z.number().int().min(1).max(1000000),kind:z.enum(['add','remove']),reason:z.string().trim().min(1,'Укажите основание движения').max(500)}).parse(p.movement);
    const quantity=movement.kind==='add'?movement.quantity:-movement.quantity;
@@ -55,7 +59,7 @@ async function handlePOST(req:Request){
   if(p.id){const id=z.string().parse(p.id),version=z.number().int().positive().parse(p.version);const r=await db().prepare('UPDATE products SET name_key=?,data=?,version=version+1 WHERE id=? AND version=?').bind(nameKey,JSON.stringify(product),id,version).run();if(!r.meta.changes)return Response.json({error:'Товар уже изменён. Обновите список и откройте его заново.'},{status:409});}
   else await db().prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').bind(crypto.randomUUID(),nameKey,JSON.stringify(product)).run();
   return Response.json({ok:true});
- }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(i=>i.message).join('; '):e instanceof Error&&/ПВЗ|СДЭК|остатк|склад|Товар|товар|Операция/.test(e.message)?e.message:'Не удалось сохранить данные склада. Возможно, товар с таким названием уже существует.'},{status:400});}
+ }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues.map(i=>i.message).join('; '):e instanceof Error&&/ПВЗ|СДЭК|остатк|склад|Товар|товар|Операция|Список|свер|расхожд|Позиция/.test(e.message)?e.message:'Не удалось сохранить данные склада. Возможно, товар с таким названием уже существует.'},{status:400});}
 }
 
 export const GET=authenticated(handleGET);

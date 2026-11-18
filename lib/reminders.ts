@@ -1,3 +1,4 @@
+import {readReturnReconciliationBatch} from './return-reconciliation-batch.ts';
 import {recentPaidOrderNotices} from './paid-order-notice.ts';
 import {maintainReminders} from './reminder-maintenance';
 import {courierDoorNoticeId,courierDeadline,courierStage} from './courier.ts';
@@ -12,6 +13,7 @@ export async function saveReminders(s:State,employeeId?:string,clientId?:string)
 export async function employeeReminders(s:State,e:Employee){
  const rows=await db().prepare('SELECT data,read_at FROM reminders WHERE employee_id=? ORDER BY at DESC,id DESC').bind(e.id).all<{data:string;read_at:string|null}>();
  const own=resolveEmployeeReminders(s,e,rows.results);
+ if(['admin','logistic','chief_logistic'].includes(e.role)){const batch=await readReturnReconciliationBatch(db());const automatic=new Set(s.orders.filter(o=>o.cdekReturnReceipt).map(o=>o.id));const pending=batch.rows.filter(r=>r.check?.state!=='confirmed'&&!automatic.has(r.id));if(pending.length)own.push({kind:'task',id:'task:return-reconciliation-batch',clientId:'',title:'Сверьте возвраты · '+pending.length,text:'Полный список возвратов, включая историю без заказов CRM',at:pending[0].deliveredAt});}
  if(e.role!=='admin')return own;
  const merged=new Map(own.map(r=>[r.id,r]));
  for(const r of await recentPaidOrderNotices(db()))if(!merged.has(r.id))merged.set(r.id,r);

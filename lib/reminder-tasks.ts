@@ -1,3 +1,4 @@
+import {returnNeedsCheck} from './return-reconciliation.ts';
 import {postalBuyoutPending} from './postal-buyout-report.ts';
 import {packingStage,draftDeadline,confirmationDeadline,scheduledCalls,canReceivePayment,isLogistic,type State,type Employee,type Order} from './crm.ts';
 import {courierDoorRefusal,canHandleCourierDoor,courierDoorNoticeId,courierDoorPhase,courierStage,courierPhase,courierDeadline,courierWarehouseReturn,courierPendingAction} from './courier.ts';
@@ -14,6 +15,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
  }
  for(const o of s.orders){
   if(!seesOrder(e,o,s.employees)||o.cdekDeleting)continue;
+  if((logistic||admin)&&returnNeedsCheck(o)){add(o,'return-reconciliation','Сверьте возврат на склад',undefined,o.cdekReturnReceipt!.detectedAt,'task',o.cdekReturnReceipt!.check?.state==='discrepancy'?'Есть расхождение':'По данным СДЭК, товары оприходованы');continue;}
   if(admin){if(o.status==='check')add(o,'check','Проверьте заказ перед сборкой');continue;}
   if(o.cancellationRequest?.status==='pending'&&(logistic||admin)){add(o,'cancel-request','СРОЧНО: обработайте запрос на отмену',o.cancellationRequest.at,o.cancellationRequest.at,'order-cancellation',o.cancellationRequest.name+' · '+o.cancellationRequest.reason);continue;}
   if(o.editRequest?.status==='pending'&&(logistic||admin)){add(o,'edit-request','Клиент просит редактирование заказа',o.editRequest.at,o.editRequest.at,'order-edit',o.editRequest.name+' · '+o.editRequest.reason);continue;}
