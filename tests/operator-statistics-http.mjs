@@ -50,10 +50,15 @@ try{
  for(const id of ['admin','head']){
   const response=await call(path,cookies[id]);assert.equal(response.status,200,response.text);
   const row=JSON.parse(response.text).rows.find(r=>r.id==='other');assert.equal(row.created,1);assert.equal(row.inWork,1);assert.equal(row.awaitingShipment,0);assert.equal(row.amount,12345);assert.equal(row.department,'2');
-  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','awaitingShipment','sent','buyoutCount','buyoutAmount','buyoutCdek','buyoutPost','buyoutMoscow'].sort());
+  assert.deepEqual(Object.keys(row).sort(),['id','login','department','inWork','created','amount','average','cancelled','confirmed','confirmedAmount','awaitingShipment','sent','buyoutCount','buyoutAmount','buyoutCdek','buyoutPost','buyoutMoscow'].sort());
   assert.equal(row.buyoutCdek,1);assert.equal(row.buyoutPost,0);assert.equal(row.buyoutMoscow,0);
   for(const privateValue of ['PRIVATE-PAID','PRIVATE-ORDER','private-client','PRIVATE CLIENT','PRIVATE ITEM','79990000001'])assert.ok(!response.text.includes(privateValue));
  }
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...order,confirmedAt:'2026-11-12T10:00:00Z'}),order.id);
+ const confirmedResponse=await call(path,cookies.head);assert.equal(confirmedResponse.status,200);
+ const confirmedRow=JSON.parse(confirmedResponse.text).rows.find(r=>r.id==='other');assert.equal(confirmedRow.confirmed,1);assert.equal(confirmedRow.confirmedAmount,12345);
+ for(const secret of ['PRIVATE-ORDER','PRIVATE ITEM','private-client','orderLists'])assert.ok(!confirmedResponse.text.includes(secret));
+ db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(order),order.id);
  assert.equal((await call(path+'&actorId=admin',cookies.head)).status,403);
  assert.equal((await call('/api/operator-statistics?from=bad',cookies.head)).status,400);
  const empty=await call('/api/operator-statistics?from=2026-11-12&to=2026-11-12',cookies.head);assert.ok(JSON.parse(empty.text).rows.every(r=>r.created===0));

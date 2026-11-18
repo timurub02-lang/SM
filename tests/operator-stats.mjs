@@ -124,3 +124,22 @@ assert.deepEqual(physicalStats().orderLists.cancelled,[]);assert.equal(physicalS
 assert.equal(physical.cancelledAt,'2026-11-13T10:00:00Z','The historical cancellation remains on the order');
 for(const delivery of ['cdek_pickup','cdek_courier','russian_post']){physical.delivery=delivery;assert.equal(physicalStats().cancelled,1,'Other delivery methods keep their existing calculation');}
 console.log('Created statistics: received Moscow returns leave cancelled only; shipment, history and other deliveries are preserved');
+
+const confirmedMoneyState={employees,orders:[
+ order('confirmed-small',0.1,{confirmedAt:'2026-11-12T08:00:00Z'}),
+ order('confirmed-sent',0.2,{confirmedAt:'yes',status:'shipping',shippedAt:'yes'}),
+ order('unconfirmed',999),
+ order('other-operator',12.34,{manager:'b',confirmedAt:'yes'}),
+ order('outside-period',888,{createdAt:'2026-11-09T09:00:00Z',confirmedAt:'yes'}),
+ order('test-only',777,{confirmedAt:'yes',testOnly:true}),
+ order('legacy',666,{confirmedAt:'yes',legacyLv:{id:'legacy'}})
+]};
+confirmedMoneyState.orders.push({...confirmedMoneyState.orders[0]});
+const confirmedMoneyRows=operatorStats(confirmedMoneyState,{role:'admin'},'2026-11-11','2026-11-11');
+assert.deepEqual(confirmedMoneyRows.map(r=>[r.confirmed,r.confirmedAmount]),[[2,0.3],[1,12.34]]);
+assert.equal(confirmedMoneyRows.reduce((sum,r)=>sum+Math.round(r.confirmedAmount*100),0)/100,12.64);
+assert.deepEqual(sortOperatorStats(confirmedMoneyRows,'confirmedAmount',false).map(r=>r.id),['b','a']);
+assert.equal(operatorStatsSummary(confirmedMoneyState,{role:'department_head',department:'1'},'2026-11-11','2026-11-11',false,'1')[0].confirmedAmount,0.3);
+assert.equal(operatorStats(confirmedMoneyState,employees[0],'2026-11-20','2026-11-20')[0].confirmedAmount,0);
+assert.equal(buyoutStatsByDay(buyouts)[0].confirmedAmount,0);
+console.log('Confirmed amount: exact cohort, cents, total, sorting, scope, deduplication and exclusions passed');
