@@ -131,7 +131,23 @@ await syncActivity(d,async(url,options)=>{
 assert.equal((await saved('activity-health')).ok,true);
 const changedIdentity=await saved('activity-samples');changedIdentity.e.skId=999;
 await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify(changedIdentity)).run();
-await assert.rejects(syncActivity(d,async(url,options)=>new URL(url).pathname==='/api/v2/users'?Response.json(users.filter(u=>u.id!==1)):request(url,options),now+990000),'A block from another SK identity cannot hide a missing account');
+const withoutFirst=async(url,options)=>{
+ const path=new URL(url).pathname;
+ if(path==='/api/v2/users')return Response.json(users.filter(u=>u.id!==1));
+ if(path==='/api/reports/calls_total.json'){assert.deepEqual(JSON.parse(options.body).filter.users_ids,[2]);return Response.json({data:[],total_pages:0});}
+ return request(url,options);
+};
+await syncActivity(d,withoutFirst,now+990000);
+assert.equal((await saved('activity-samples')).e,undefined,'A block from another SK identity must not hide a missing account');
+assert.equal((await saved('activity-health')).ok,true,'Missing employee without a cached sample must not stop synchronization');
+await d.prepare("UPDATE settings SET data=? WHERE id='activity-samples'").bind(JSON.stringify({e:{...sample,observedAt:new Date(now+1000000).toISOString()},m31:{...sample,employeeId:'m31',skId:2}})).run();
+await syncActivity(d,withoutFirst,now+1000000);
+const partial=await readActivity(d,now+1000000);
+assert.equal(partial.health.ok,true);
+assert.equal((await saved('activity-samples')).m31.observedAt,new Date(now+1000000).toISOString(),'Available employee continues refreshing');
+assert.equal(partial.rows.find(r=>r.id==='e').state,'unknown','Missing employee must not produce an idle alert from a cached live status');
+assert.equal(partial.rows.find(r=>r.id==='e').skStatus,'unknown');
+assert.equal((await saved('activity-samples')).e.observedAt,'');
 await syncActivity(d,request,now+1020000);
 assert.equal((await saved('activity-samples')).e.locked,false,'Restoring and unlocking the account resumes normal synchronization');
 d.close();console.log('Activity: schedules, live states, breaks, department isolation, pagination, UTC dates, idempotent alerts, rate-limit pacing, bounded retries, cooldown, recovery and outage checks passed');
