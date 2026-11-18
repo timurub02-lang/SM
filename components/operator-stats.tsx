@@ -33,7 +33,7 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
  const filtered=sourceRows.filter(r=>!department||summaryMode&&daily||r.department===department);
  const grouped=daily&&!summaryMode?buyoutStatsByDay(filtered):filtered;
  const invalid=!!from&&!!to&&from>to,rows=invalid||!visible?[]:sortOperatorStats(grouped.filter(r=>section==='buyouts'?r.buyoutCount>0:r.created>0),sort.key,sort.ascending);
- const columns: [StatsSortKey,string][]=section==='buyouts'?[["login",daily?"Дата":"Оператор"],["buyoutCdek","СДЭК"],["buyoutPost","Почта России"],["buyoutMoscow","Курьер Москва"],["buyoutCount","Всего выкуплено"],["buyoutAmount","Сумма выкупов"]]:[["login","Оператор"],["created","Создано"],["inWork","В работе"],["average","Средний чек"],["amount","Сумма"],["cancelled","Отменено"],["confirmed","Подтверждено"],["awaitingShipment","Ожидают отправки"],["sent","Отправлено"]];
+ const columns: [StatsSortKey,string][]=section==='buyouts'?[["login",daily?"Дата":"Оператор"],["buyoutCdek","СДЭК"],["buyoutPost","Почта России"],["buyoutMoscow","Курьер Москва"],["buyoutCount","Всего выкуплено"],["buyoutAmount","Сумма выкупов"]]:[["login","Оператор"],["created","Создано"],["inWork","В работе"],["average","Средний чек"],["amount","Сумма"],["cancelled","Отменено"],["confirmed","Подтверждено"],["confirmedAmount","Сумма подтверждённых"],["awaitingShipment","Ожидают отправки"],["sent","Отправлено"]];
  const colgroup=<colgroup><col style={{width:"28%"}}/>{Array.from({length:columns.length-1},(_,i)=><col key={i}/>)}</colgroup>;
  const headers=<thead><tr>{columns.map(([key,label])=><th key={key} aria-sort={sort.key===key?(sort.ascending?"ascending":"descending"):"none"}><button className="stats-sort" onClick={()=>setSort({key,ascending:sort.key===key?!sort.ascending:key==="login"})}>{label} <span aria-hidden="true">{sort.key===key?(sort.ascending?"↑":"↓"):"↕"}</span></button></th>)}</tr></thead>;
  function openOrder(id:string){onOpenOrder(id);}
@@ -69,13 +69,14 @@ export function OperatorStats({state,actor,onOpenOrder,detailOpen}:{state:State;
       <td title={r.login}>{r.login}</td><td>{metric(r.created,r.orderLists.created,"Создано заказов")}</td>
       <td>{metric(r.inWork,r.orderLists.inWork,"В работе")}</td>
       <td>{metric(money(r.average),r.orderLists.created,"Средний чек")}</td><td>{metric(money(r.amount),r.orderLists.created,"Сумма заказов")}</td>
-      <td>{metric(r.cancelled,r.orderLists.cancelled,"Отменено")}</td><td>{metric(r.confirmed,r.orderLists.confirmed,"Подтверждено логистом")}</td><td>{metric(r.awaitingShipment,r.orderLists.awaitingShipment,"Ожидают отправки")}</td><td>{metric(r.sent,r.orderLists.sent,"Отправлено")}</td>
+      <td>{metric(r.cancelled,r.orderLists.cancelled,"Отменено")}</td><td>{metric(r.confirmed,r.orderLists.confirmed,"Подтверждено логистом")}</td><td>{metric(money(r.confirmedAmount),r.orderLists.confirmed,"Сумма подтверждённых")}</td><td>{metric(r.awaitingShipment,r.orderLists.awaitingShipment,"Ожидают отправки")}</td><td>{metric(r.sent,r.orderLists.sent,"Отправлено")}</td>
      </tr>)}</tbody>
      <tfoot><tr><th>Итого</th><td>{metric(count,allOrders("created"),"Создано — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.inWork,0),allOrders("inWork"),"В работе — итого")}</td>
       <td>{metric(money(count?amount/count:0),allOrders("created"),"Средний чек — итого")}</td><td>{metric(money(amount),allOrders("created"),"Сумма — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.cancelled,0),allOrders("cancelled"),"Отменено — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.confirmed,0),allOrders("confirmed"),"Подтверждено — итого")}</td>
+      <td>{metric(money(rows.reduce((n,r)=>n+Math.round(r.confirmedAmount*100),0)/100),allOrders("confirmed"),"Сумма подтверждённых — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.awaitingShipment,0),allOrders("awaitingShipment"),"Ожидают отправки — итого")}</td>
       <td>{metric(rows.reduce((n,r)=>n+r.sent,0),allOrders("sent"),"Отправлено — итого")}</td>
      </tr></tfoot></>}
