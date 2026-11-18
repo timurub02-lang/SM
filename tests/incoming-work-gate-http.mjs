@@ -65,5 +65,12 @@ try{
  r=await request('head','/api/crm',{action:'incomingResult',incomingId:'second',id:'related',reason:'Resolved by head'});assert.equal(r.status,200,r.text);assert.equal((await status()).data.incomingIds.length,0,'Head close releases operator');
  assert.deepEqual(db.prepare('SELECT id,data,version FROM orders ORDER BY id').all(),ordersBefore,'Incoming results do not mutate orders');
  r=await request('one','/api/warehouse');assert.equal(r.status,200,r.text);
+ assert.equal((await request('admin','/api/redemption?tab=operator')).status,200);
+ for(const id of ['one','two'])db.prepare('INSERT INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').run('o-'+id,new Date().toISOString(),JSON.stringify({result:'date',operatorReturn:{resolvedAt:null,deadline:new Date(Date.now()+86400000).toISOString(),timerCalendar:'weekdays-v1',durationHours:48}}));
+ for(const [who,expected] of [['one',1],['two',1],['head',1],['head2',1],['admin',2],['redemption',2]]){
+  const count=await request(who,'/api/redemption?count=operator'),full=await request(who,'/api/redemption?tab=operator');
+  assert.equal(count.status,200,count.text);assert.deepEqual(count.data,{count:expected});assert.equal(count.data.count,full.data.rows.length,'Count and table use identical account scope');
+ }
+ assert.equal((await call('/api/redemption?count=operator')).status,401);
  console.log('HTTP incoming work gate: fresh authoritative scope, 423 direct-write guard, SK save/handoff, head ND/close release, expiry and multiple incoming passed');
 }catch(error){console.error(logs);throw error;}finally{if(server){server.kill('SIGTERM');await once(server,'exit');}db.close();rmSync(dir,{recursive:true,force:true});}

@@ -22,5 +22,13 @@ try{
  const next=await redemptionDayCounts(d,rows,admin,false,'2026-10-17');
  assert.equal(next.total,1);assert.equal(next.withoutAuthor,1);
  assert.equal(rows[3].author,'Yesterday','Historical source author is preserved');
+ // Polling a return must not make daily counting transfer and parse every repeated full snapshot.
+ const repeated={result:'to_return',changeKind:'return_check',returnCheck:{state:'pending'},comments:['x'.repeat(2000)],days:{}};
+ await d.batch(Array.from({length:2000},(_,i)=>d.prepare('INSERT INTO redemption_history VALUES(?,?,?,?)').bind(i+3,'old-return','2026-10-16T09:00:00Z',JSON.stringify({...repeated,updatedAt:String(i),returnCheck:{state:'pending',at:String(i)}}))));
+ let historyRows=0,historyBytes=0;
+ const measured={...d,prepare(sql){const wrap=statement=>({...statement,bind(...args){return wrap(statement.bind(...args));},execute:()=>statement.execute(),run:()=>statement.run(),first:()=>statement.first(),async all(){const result=await statement.all();if(sql.includes('FROM redemption_history')){historyRows+=result.results.length;historyBytes+=JSON.stringify(result.results).length;}return result;}});return wrap(d.prepare(sql));}};
+ assert.deepEqual(await redemptionDayCounts(measured,rows,admin,false,day),{total:3,morning:2,added:1,withoutAuthor:0});
+ assert(historyRows<=3,`Repeated check states must collapse, got ${historyRows}`);
+ assert(historyBytes<3000,`Comments and polling timestamps must not be hydrated, got ${historyBytes}`);
  console.log('Daily cohort: morning, additions, moved/verified orders retained, current authors, scopes and next day passed');
 }finally{d.close();}
