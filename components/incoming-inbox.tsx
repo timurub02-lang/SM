@@ -21,7 +21,7 @@ export function IncomingResult({item,busy,onSave,onRequestCancellation}:{item:In
 }
 export function IncomingHandoffNote({item}:{item:IncomingRequest}){
  if(!item.handoff)return null;
- return <div className="notice stack incoming-handoff-note"><strong>Комментарий при передаче · {item.handoff.name}</strong><small>{stamp(item.handoff.at,'Europe/Moscow')} МСК</small><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{item.handoff.comment}</p></div>;
+ return <div className="notice stack incoming-handoff-note"><strong>Комментарий при передаче · {item.handoff.name}</strong><small>{stamp(item.handoff.at,'Europe/Moscow')} МСК</small><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{item.handoff.comment}</p>{item.handoff.ownerSync&&<small>Автоматически передано владельцу клиента · {stamp(item.handoff.ownerSync.at,'Europe/Moscow')} МСК</small>}</div>;
 }
 export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item:IncomingRequest;employee:Employee;operators:Pick<Employee,'id'|'name'|'department'|'login'>[];busy:boolean;onTransfer:(incomingId:string,operatorId:string,comment:string)=>Promise<boolean>}){
  const [operator,setOperator]=useState(operators.some(e=>e.id===item.clientOwnerId)?item.clientOwnerId||'':operators.some(e=>e.id===item.assigneeId)?item.assigneeId||'':''),[comment,setComment]=useState('');

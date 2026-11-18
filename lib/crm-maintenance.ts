@@ -1,3 +1,4 @@
+import {reconcileIncomingOwners} from './incoming-owner-sync.ts';
 import type {ActivityDb} from './activity-store.ts';
 import type {State} from './crm.ts';
 import {workingClientsQuery} from './base-storage.ts';
@@ -21,6 +22,7 @@ export async function runCrmMaintenance(d:ActivityDb){
  if(ordersChanged)state.orders=await read('orders');
  const clientsChanged=await reconcileClients(d,state.clients,state.orders);
  if(clientsChanged)state.clients=await readClients();
+ await reconcileIncomingOwners(d);
  await maintainReminders(d,state);
  return {ordersChanged,clientsChanged};
 }
