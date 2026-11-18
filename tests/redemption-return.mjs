@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {inRedemptionTab,initRedemption,redemptionRows,editRedemption,syncRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,canSeeRedemption,inWorkday,returnReasons} from '../lib/redemption.ts';
+import {operatorReturnCount,inRedemptionTab,initRedemption,redemptionRows,editRedemption,syncRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,canSeeRedemption,inWorkday,returnReasons} from '../lib/redemption.ts';
 import {redemptionLeads} from '../lib/redemption-dispatch.ts';
 const d=openDatabase(':memory:'),now=new Date('2026-10-16T10:00:00Z');
 const op={id:'op',name:'Operator',role:'operator',department:'1'},head={id:'head',name:'Head',role:'department_head',department:'1'},buyer={id:'buyer',name:'Buyer',role:'redemption'};
@@ -21,6 +21,7 @@ try{
  await assert.rejects(edit({...head,department:'2'},workSend),/недоступен/);
  await d.prepare("DELETE FROM settings WHERE id='redemption-config'").run();
  await edit({...head,department:'2'},workSend);assert(awaitingOperator(await row()));assert.equal((await row()).manager,op.id);
+ for(const actor of [op,head,buyer,{...op,id:'other'},{...head,department:'2'}])assert.equal(await operatorReturnCount(d,actor),(await redemptionRows(d)).filter(r=>awaitingOperator(r)&&canSeeRedemption(actor,r,false)).length);
  assert(canSeeRedemption(op,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),true));
  await d.prepare("UPDATE redemption_entries SET data=? WHERE order_id='o'").bind(original).run();
  await edit(head,{action:'work',result:'date',date:'2026-10-17'});assert(!awaitingOperator(await row()));
