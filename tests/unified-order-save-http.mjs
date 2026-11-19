@@ -1,3 +1,4 @@
+import {internalDeadline} from '../lib/internal-timers.ts';
 import {pathToFileURL} from 'node:url';
 // Isolated application/API test: no real customer, payment or carrier access.
 import assert from 'node:assert/strict';
@@ -83,7 +84,7 @@ try{
  db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify({...initial,delivery:'cdek_courier',status:'shipping'}));
  before=order();count=eventCount();await save('admin',[{action:'updateLogisticComment',text:'Must not save'},{action:'transition',to:'redeemed'}],{},400);assert.deepEqual(order(),before);assert.equal(eventCount(),count);
  for(const actor of ['admin','log','second']){
-  const fixture={...initial,delivery:'moscow_courier',status:'confirm',shippedAt:undefined,confirmationStartedAt:now,confirmationHours:48,noAnswerDeadline:new Date(Date.parse(now)+48*3600000).toISOString(),timerCalendar:'weekdays-v1'};
+  const fixture={...initial,delivery:'moscow_courier',status:'confirm',shippedAt:undefined,confirmationStartedAt:now,confirmationHours:48,noAnswerDeadline:internalDeadline(now,48),timerCalendar:'weekdays-v1'};
   db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify(fixture));db.prepare("UPDATE orders SET version=version+1 WHERE id='post'").run();before=order();count=eventCount();
   await save(actor,[{action:'updateDelivery',delivery:'russian_post'},{action:'updateLogisticComment',text:'Клиент согласовал Почту'}]);
   assert.equal(order().delivery,'russian_post');assert.equal(order().logisticComment,'Клиент согласовал Почту');assert.equal(order().version,before.version+1);assert.equal(eventCount(),count+1);
