@@ -7,6 +7,11 @@ assert.equal(data.operator,'operator-login');
 assert(!data.address.includes('Старый'));
 assert.equal(data.callbackPhone,'—');
 assert.equal(data.items.reduce((s,i)=>s+i.quantity*i.price,0),11250);
+const moscowWaybill=internalWaybill({id:'MOSCOW-TEST',delivery:'moscow_courier',items:[]},{name:'Тест',phone:''});
+assert.equal(moscowWaybill.sender,'ООО «Симфония молодости»');
+for(const delivery of ['cdek_courier','cdek_pickup','russian_post']){
+ assert.equal(internalWaybill({id:'TEST',delivery,items:[]},{name:'Тест',phone:''}).sender,undefined);
+}
 const fonts={regular:readFileSync('public/fonts/LiberationSans-Regular.ttf').toString('base64'),bold:readFileSync('public/fonts/LiberationSans-Bold.ttf').toString('base64')};
 const doc=waybillPdf(data,fonts);
 assert.equal(doc.getNumberOfPages(),1);
