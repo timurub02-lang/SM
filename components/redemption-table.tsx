@@ -91,7 +91,7 @@ export function RedemptionTable({employee,settings,setSettings,operatorQueue=fal
    <div className="redemption-card-toolbar"><div className="tabs-line incoming-tabs"><button type="button" data-state={cardTab==='order'?'active':'inactive'} onClick={()=>setCardTab('order')}>Заказ и действия</button><button type="button" data-state={cardTab==='history'?'active':'inactive'} onClick={()=>setCardTab('history')}>История</button></div>{edit&&(
     <div className="order-header-actions">
      <SkClientLink key={edit.order_id} orderId={edit.order_id} actorId={employee.id}/>
-     <CallButton client={{address:edit.deliveryAddress}} target={{mode:'order',orderId:edit.order_id}} disabled={busy}/>
+     <CallButton timeZone={edit.timeZone} client={{address:edit.deliveryAddress}} target={{mode:'order',orderId:edit.order_id}} disabled={busy}/>
     </div>
    )}</div>
    {cardTab==='order'?<>
