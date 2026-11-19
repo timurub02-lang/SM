@@ -10,6 +10,7 @@ export default async function Page(){
  if(!personalAuth())redirect('/login');
  const actor=await sessionEmployee(new Headers(await headers()),true);
  if(!actor)redirect('/login');
+ if(process.env.OKTELL_PROJECT_SETTINGS==='1'&&actor.role==='admin'&&!actor.testOnly&&!actor.impersonation)redirect('/oktell-projects');
  if(!actor.testOnly&&actor.role!=='operator')redirect('/');
  if(!actor.testOnly)redirect('/?calls');
  return <OktellEmpty testOnly={!!actor.testOnly} operator={actor.role==='operator'}/>;
