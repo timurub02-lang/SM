@@ -1,11 +1,9 @@
 /* macOS-inspired materials. Native system fonts, accessible solid fallbacks. */
 /* Desktop density equivalent to 90% browser zoom, including portalled dialogs. */
 @media screen and (min-width: 1024px) {
-  html { --crm-desktop-scale: 0.9; zoom: var(--crm-desktop-scale); }
-  /* Match the existing desktop density at 70% browser zoom for operators. */
-  html:has([data-workspace-role="operator"]) { --crm-desktop-scale: 0.63; }
-  [data-slot=sidebar-wrapper] { min-height: calc(100svh / var(--crm-desktop-scale)); }
-  [data-slot=sidebar-container] { height: calc(100svh / var(--crm-desktop-scale)); }
+  html { zoom: 0.9; }
+  [data-slot=sidebar-wrapper] { min-height: calc(100svh / 0.9); }
+  [data-slot=sidebar-container] { height: calc(100svh / 0.9); }
 }
 :root {
   --background: #f3f5fa;
@@ -897,12 +895,3 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .client-profile-dialog>[data-slot=dialog-header].has-call-dock>.browser-call-dock{grid-column:1/-1;grid-row:3;min-width:0;max-width:100%;box-sizing:border-box}
 
 .stats-date-arrows{display:flex;gap:6px;flex-shrink:0}
-
-/* CSS zoom does not expand viewport units as browser zoom does. */
-@media screen and (min-width: 1024px) {
-  html:has([data-workspace-role="operator"]) .client-detail-dialog.order-detail-dialog {
-    width: calc(90vw / 0.7);
-    height: calc(90dvh / 0.7);
-    max-height: calc(100dvh / 0.7 - 32px);
-  }
-}
