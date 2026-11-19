@@ -369,7 +369,7 @@ try{
  db.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').run(JSON.stringify({action:'date',result:'date',resultDate:futureDate,dateConfirmation:'confirmed',dateConfirmedAt:oldDate,author:'Earlier result'}),detailOrder.id);
  let version=db.prepare('SELECT version FROM redemption_entries WHERE order_id=?').get(detailOrder.id).version;
  const replacement={id:detailOrder.id,version,action:'courier',result:'courier',comment:'Changed after project-wide search'};
- await setRedemptionClock(server,'20:00');
+ await setRedemptionClock(server,'00:00');
  for(const cookie of [cookies.admin,detailOperator.cookie,searchHead.cookie,redemptionOrdinary.cookie]){
   const read=await call('/api/redemption?tab=all',{cookie});assert.equal(read.status,200);assert.equal(read.data.closed,true);
   const write=await call('/api/redemption',{cookie,body:{...replacement,replaceConfirmed:true}});
