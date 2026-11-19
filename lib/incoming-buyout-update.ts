@@ -1,8 +1,9 @@
 import type {ActivityDb} from './activity-store.ts';
 import type {Order,Employee} from './crm.ts';
-import {initRedemption,dayOf,validDate} from './redemption.ts';
+import {requireRedemptionEditHours,initRedemption,dayOf,validDate} from './redemption.ts';
 // The order CAS also checks this version, so the entry and request commit together.
 export async function incomingBuyoutUpdate(d:ActivityDb,o:Order,e:Employee,mode:'return'|'date'|'comment',reason:string,incomingId:string,at:string,date=''){
+ requireRedemptionEditHours(new Date(at));
  await initRedemption(d);
  const row=await d.prepare('SELECT data,version FROM redemption_entries WHERE order_id=?').bind(o.id).first() as {data:string;version:number}|null,v=JSON.parse(row?.data||'{}');
  if(mode!=='comment'&&(['returned','delivered','client_delivered'].includes(v.result)||o.cdekStatus?.code==='DELIVERED'))throw Error('Заказ уже вручен или возвращён. Обновите данные');

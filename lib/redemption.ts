@@ -23,7 +23,15 @@ export function compareRedemptionPeople(a:any,b:any,column:'operator'|'author',a
  const value=(row:any)=>column==='author'?redemptionRowAuthor(row,tab,day):showLogin&&!['delivered','returned'].includes(row.result)&&!awaitingOperator(row)?row.login||row.operator||'':row.operator||'';
  return compareRedemptionPriority(a,b,tab,day)||(ascending?1:-1)*value(a).localeCompare(value(b),'ru',{sensitivity:'base',numeric:true});
 }
-export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
+export const redemptionNightNotice='С 20:00 до 08:00 МСК проект «Выкуп» доступен только для просмотра.';
+export function redemptionEditHours(now=new Date()){
+ const day=dayOf(now),opens=Date.parse(day+'T08:00:00+03:00'),closes=Date.parse(day+'T20:00:00+03:00'),at=now.getTime();
+ return {closed:at<opens||at>=closes,next:at<opens?opens:at<closes?closes:opens+86400000};
+}
+export function requireRedemptionEditHours(now=new Date()){
+ if(redemptionEditHours(now).closed)throw Error(redemptionNightNotice);
+}
+export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='20:00';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 export function redemptionDateLimit(day:string,storageUntil='',action=''){
  const [year,month,date]=day.split('-').map(Number),last=new Date(Date.UTC(year,month+1,0)).getUTCDate();
@@ -114,10 +122,12 @@ export async function prepareIncomingRedemption(d:Db,e:Employee,orderId:string,i
  if(!stored||e.role==='operator'&&(o.manager!==e.id||o.status!=='shipping')||e.role==='redemption'&&!['shipping','pickup'].includes(o.status)||!o.delivery?.startsWith('cdek_'))throw Error('Результат выкупа недоступен для этого заказа');
  const incoming=await incomingForAction(d,incomingId,e,[],stored.client_id);
  if(e.role==='redemption'&&incoming.order_id&&incoming.order_id!==orderId)throw Error('Обращение относится к другому заказу');
+ if(redemptionEditHours(now).closed)return;
  await initRedemption(d);
  await d.prepare('INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind(orderId,now.toISOString(),JSON.stringify({pendingEnrollment:e.role!=='redemption'})).run();
 }
 export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
+ requireRedemptionEditHours(now);
  if(p.incomingId!==undefined)await prepareIncomingRedemption(d,e,p.id,p.incomingId,now);
 
  const cfg=await redemptionConfig(d),row=(await redemptionRows(d,!!p.incomingId)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,redemptionHeadScope(now).headsAll))throw Error('Заказ недоступен');
@@ -134,7 +144,6 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  if(awaitingOperator(row)&&[row.operatorReturn.deadline,operatorReturnDeadline(row.storageUntil,now)].sort()[0]<=now.toISOString())throw Error('Срок обработки истёк. Заказ возвращён отделу выкупа; обновите список');
  if(awaitingOperator(row)&&['admin','redemption'].includes(e.role))throw Error('Заказ находится у оператора и недоступен для изменений');
  if(!(actionChange&&future)&&p.operation!=='verify_date'&&dateConfirmedToday(row,dayOf(now))&&row.resultDate>dayOf(now))throw Error('Подтверждение уже выполнено. Заказ доступен для работы в назначенную дату');
- if(closedTime(now)&&!row.testOnly&&!awaitingOperator(row))throw Error('День закрыт в 19:50. Изменения доступны завтра');
  if(!(p.operation==='return_waybill'&&row.result==='returned'&&row.returnCheck?.state!=='verified')&&['returned','delivered'].includes(row.result))throw Error('Работа с заказом завершена');
  const saved=await d.prepare('SELECT data FROM redemption_entries WHERE order_id=?').bind(p.id).first(),v=JSON.parse(saved.data),day=dayOf(now),at=now.toISOString();
  const next={...v,updatedAt:at,changedBy:e.name,changeKind:p.operation||'action',changeSource:incoming?'incoming':null,sourceIncomingId:incoming?.id||null};

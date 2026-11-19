@@ -89,12 +89,13 @@ try{
  await edit(buyer,send,new Date('2026-10-16T16:00:00Z'));
  assert.equal((await row()).operatorReturn.deadline,'2026-10-18T16:00:00.000Z');
  await syncRedemption(d,new Date('2026-10-17T00:00:00Z'));assert(awaitingOperator(await row()));
- await edit(op,{action:'date',result:'date',date:'2026-10-20'},new Date('2026-10-17T00:00:00Z'));assert(awaitingDateConfirmation(await row()));
+ await edit(op,{action:'date',result:'date',date:'2026-10-20'},new Date('2026-10-17T05:00:00Z'));assert(awaitingDateConfirmation(await row()));
  await d.prepare("UPDATE redemption_entries SET data='{}'").run();
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-16')").run();
  await edit(buyer,send);assert.equal((await row()).operatorReturn.deadline,'2026-10-16T20:59:59.999Z');
  const cappedVersion=(await row()).version;await syncRedemption(d,now);assert.equal((await row()).version,cappedVersion);
- await edit(op,{operation:'comment',text:'Last moment'},new Date('2026-10-16T20:59:59.998Z'));
+ await assert.rejects(edit(op,{operation:'comment',text:'Last moment'},new Date('2026-10-16T20:59:59.998Z')),/только для просмотра/);
+ assert.equal((await row()).version,cappedVersion);
  await syncRedemption(d,new Date('2026-10-16T21:00:00Z'));assert(!awaitingOperator(await row()));
  await d.prepare("UPDATE orders SET data=json_set(data,'$.cdekStorageUntil','2026-10-18')").run();
  await d.prepare("UPDATE redemption_entries SET data='{}'").run();await edit(buyer,send);

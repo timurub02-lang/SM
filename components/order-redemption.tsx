@@ -1,7 +1,8 @@
 'use client';
+import {useRedemptionReadonly} from './use-redemption-readonly';
 import {useEffect,useState} from 'react';
 import type {Employee} from '@/lib/crm';
-import {redemptionDateLimit,redemptionResultLabel,actions,results,allowedResults,futureRedemptionDate,operatorReturnScheduled,awaitingOperator,refusalRetryDate} from '@/lib/redemption';
+import {redemptionNightNotice,redemptionDateLimit,redemptionResultLabel,actions,results,allowedResults,futureRedemptionDate,operatorReturnScheduled,awaitingOperator,refusalRetryDate} from '@/lib/redemption';
 import {ReturnCountdown} from './return-countdown';
 import {toast} from 'sonner';
 import {CalendarDays,PhoneMissed,BriefcaseBusiness,Truck,PackageCheck,ShieldCheck,Undo2,Check} from 'lucide-react';
@@ -16,14 +17,16 @@ export function OrderRedemption({orderId,employee,incomingId,onSaved,onConsultat
  const row=data?.rows?.[0],future=row&&futureRedemptionDate(row,data.day);
  const choices=(a:string):string[]=>incomingId&&a==='po'&&row?.storageUntil?['date']:future&&a==='nd'?['none']:row?allowedResults(a,row,employee.role,data.day).filter(k=>k!=='operator'||!!employee.department&&row.department===employee.department):[];
  const title=redemptionResultLabel;
- const locked=!row||busy||operatorReturnScheduled(row)||['returned','delivered'].includes(row.result)||data.closed&&!row.testOnly&&!awaitingOperator(row);
- async function save(confirmed=false){if(future&&action!=='nd'&&!confirmed){setConfirm(true);return;}setBusy(true);try{
+ const nightLocked=useRedemptionReadonly(data?.serverTime);
+ const locked=!row||busy||operatorReturnScheduled(row)||['returned','delivered'].includes(row.result)||nightLocked;
+ async function save(confirmed=false){if(nightLocked){toast.error(redemptionNightNotice);return;}if(future&&action!=='nd'&&!confirmed){setConfirm(true);return;}setBusy(true);try{
   const response=await fetch('/api/redemption',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:orderId,version:draftVersion,source:'order',incomingId,action,result,date,comment,responsibilityConfirmed:responsibility,replaceConfirmed:confirmed})});const v=await response.json() as any;if(!response.ok)throw Error(v.error);
   onSaved?.();toast.success(incomingId?(action==='nd'?'Недозвон сохранён. Обращение остаётся открытым':'Результат сохранён, входящее обращение закрыто'):future&&action==='nd'?'Недозвон записан. Назначенная дата сохранена':'Результат сохранён в проекте «Выкуп»');setAction('');setResult('');setComment('');setDate('');setResponsibility(false);await load();
  }catch(e){toast.error(e instanceof Error?e.message:'Ошибка сохранения');setAction('');setResult('');await load();}finally{setBusy(false);setConfirm(false);}}
  if(consultation&&onConsultation)return <section className="stack incoming-result order-note"><h3>Вопрос решён / консультация</h3><p>Обращение закроется, ответ сохранится в истории клиента. Результат и дата в «Выкупе» останутся прежними.</p><textarea aria-label="Итог консультации" rows={3} maxLength={1900} value={consultationText} onChange={e=>setConsultationText(e.target.value)}/><button className="primary" disabled={busy||!consultationText.trim()} onClick={async()=>{setBusy(true);try{if(await onConsultation('Консультация: '+consultationText.trim())){setConsultation(false);setConsultationText('');onSaved?.();}}finally{setBusy(false);}}}>Сохранить итог и закрыть обращение</button><button className="secondary" disabled={busy} onClick={()=>setConsultation(false)}>К результату выкупа</button></section>;
  return <section className="stack order-note order-redemption"><h3>{incomingId?'Итог обращения / результат выкупа':'Результат работы · Выкуп'}</h3>{incomingId&&<p>Сохранение результата закроет входящее обращение и запишет итог в историю клиента. Недозвон оставит обращение открытым.</p>}
  {incomingId&&onConsultation&&<button className="primary" disabled={busy} onClick={()=>setConsultation(true)}>Вопрос решён / консультация</button>}
+ {nightLocked&&<p className="notice">{redemptionNightNotice}</p>}
  {error?<p role="alert">{error} <button className="secondary" onClick={()=>void load()}>Повторить загрузку</button></p>:!data?<p>Загрузка результата…</p>:!row?<p>Заказ пока недоступен в проекте «Выкуп».</p>:<>
  <div className="notice"><div><strong>{title(row)}</strong>{row.resultSource==='incoming'&&<span className="badge purple">Из входящего обращения</span>}<small className="muted" style={{display:'block'}}>{row.author||'Результат ещё не оставляли'}{row.author&&` · ${stamp(row.days?.[row.lastDay]?.at||row.updatedAt)} МСК`}</small></div></div>
  {awaitingOperator(row)&&<ReturnCountdown deadline={row.operatorReturn.deadline} startsAt={row.operatorReturn.startsAt}/>}
