@@ -1,9 +1,7 @@
 /* macOS-inspired materials. Native system fonts, accessible solid fallbacks. */
 /* Desktop density equivalent to 90% browser zoom, including portalled dialogs. */
 @media screen and (min-width: 1024px) {
-  html { --crm-desktop-scale: 0.9; zoom: var(--crm-desktop-scale); }
-  /* Match the existing desktop density at 70% browser zoom for operators. */
-  html:has([data-workspace-role="operator"]) { --crm-desktop-scale: 0.63; }
+  html { --crm-desktop-scale: calc(0.9 * var(--crm-user-scale, 1)); zoom: var(--crm-desktop-scale); }
   [data-slot=sidebar-wrapper] { min-height: calc(100svh / var(--crm-desktop-scale)); }
   [data-slot=sidebar-container] { height: calc(100svh / var(--crm-desktop-scale)); }
 }
@@ -898,11 +896,12 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 
 .stats-date-arrows{display:flex;gap:6px;flex-shrink:0}
 
-/* CSS zoom does not expand viewport units as browser zoom does. */
-@media screen and (min-width: 1024px) {
-  html:has([data-workspace-role="operator"]) .client-detail-dialog.order-detail-dialog {
-    width: calc(90vw / 0.7);
-    height: calc(90dvh / 0.7);
-    max-height: calc(100dvh / 0.7 - 32px);
-  }
+/* Keep the order workspace tall when the operator changes interface density. */
+@media screen and (min-width:1024px){
+ .client-detail-dialog.order-detail-dialog{width:calc(90vw / var(--crm-user-scale,1));height:calc(90dvh / var(--crm-user-scale,1));max-height:calc(100dvh / var(--crm-user-scale,1) - 32px)}
+ .large-order-text .client-detail-dialog.order-detail-dialog{width:calc(96vw / var(--crm-user-scale,1));height:calc(94dvh / var(--crm-user-scale,1))}
 }
+.operator-scale-buttons{display:flex;align-items:center;gap:4px}
+.operator-scale-buttons button{display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:4px;border:1px solid var(--border);border-radius:7px;background:transparent;color:inherit;font:inherit}
+.operator-scale-buttons button:disabled{cursor:default}
+@media(max-width:1023px){.operator-scale{display:none}}
