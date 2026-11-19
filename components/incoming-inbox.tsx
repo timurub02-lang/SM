@@ -28,7 +28,7 @@ export function IncomingTransfer({item,employee,operators,busy,onTransfer}:{item
  if(!canTransferIncoming(employee,item))return null;
  return <form className="notice stack incoming-transfer" onSubmit={async e=>{e.preventDefault();if(operator&&comment.trim()&&await onTransfer(item.id,operator,comment.trim()))setComment('');}}>
   <strong>{incomingTransferLabel(employee,item)}</strong>
-  <OperatorSelect label="Оператор для передачи входящего" required disabled={busy} operators={employee.role==='department_head'&&item.clientOwnerId?operators.filter(e=>e.id===item.clientOwnerId):operators} value={operator} onChange={setOperator}/>
+  <OperatorSelect groupByDepartment label="Оператор для передачи входящего" required disabled={busy} operators={employee.role==='department_head'&&item.clientOwnerId?operators.filter(e=>e.id===item.clientOwnerId):operators} value={operator} onChange={setOperator}/>
   <label className="field"><span>Комментарий оператору *</span><textarea required maxLength={1900} rows={3} disabled={busy} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Что выяснили в разговоре и что нужно сделать оператору"/></label>
   <button type="submit" className="primary" disabled={busy||!operator||!comment.trim()}>Передать входящее с комментарием</button>
  </form>;
