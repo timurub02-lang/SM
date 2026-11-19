@@ -47,6 +47,13 @@ export function locationZone(location?:Location){
   const offset=region?sakhaOffsets.get(name):byCity.get(name);
   if(offset!==undefined)return 'Etc/GMT-'+offset;
  }
+ // Imported addresses may contain a region and a district in a single unpunctuated field.
+ const source=parts?.region?.trim()?[parts.region]:segments;
+ const tokenSets=source.map(words).filter(tokens=>tokens.some(t=>['область','город','республика','край','округ'].includes(t)));
+ if(tokenSets.length){
+  const matched=new Set(regionTokens.filter(r=>tokenSets.some(tokens=>r.tokens.every(t=>tokens.includes(t)))).flatMap(r=>r.zones));
+  if(matched.size===1)return [...matched][0];
+ }
  for(const segment of segments){
   const match=segment.match(/^(?:мск|по москве)\s*(?:([+-])\s*([0-9]))?$/i);
   if(match){
@@ -55,6 +62,7 @@ export function locationZone(location?:Location){
   }
  }
 }
+const regionTokens=Object.entries(regions).map(([name,zones])=>({tokens:words(name),zones}));
 const formats=new Map<string,Intl.DateTimeFormat>();
 function clock(zone:string,now:number){
  let format=formats.get(zone);if(!format){format=new Intl.DateTimeFormat('ru-RU',{timeZone:zone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'});formats.set(zone,format);}
