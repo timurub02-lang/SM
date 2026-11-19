@@ -1,3 +1,4 @@
+import {setRedemptionClock} from './fixtures/redemption-clock.mjs';
 // Run after the Miran standalone build. Uses only a temporary, synthetic database.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -26,7 +27,7 @@ try{
   const o={id:'o-'+id,clientId:c.id,manager:id,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,version:1};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
  }
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_STAFF_ENABLED:'1',CRM_PHONE_RESULT_KEY:pbxKey,CRM_PHONE_RECORDINGS_DIR:join(dir,'recordings'),CRM_PHONE_USER:'pilot-test',CRM_PHONE_PASSWORD:'fixture-secret',CRM_PHONE_TEST_NUMBER:'79990000001',CRM_PHONE_CALLER_ID:'79000000000',CRM_PHONE_EMPLOYEE:'admin',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,['--import',resolve('tests/fixtures/redemption-clock.mjs'),resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_STAFF_ENABLED:'1',CRM_PHONE_RESULT_KEY:pbxKey,CRM_PHONE_RECORDINGS_DIR:join(dir,'recordings'),CRM_PHONE_USER:'pilot-test',CRM_PHONE_PASSWORD:'fixture-secret',CRM_PHONE_TEST_NUMBER:'79990000001',CRM_PHONE_CALLER_ID:'79000000000',CRM_PHONE_EMPLOYEE:'admin',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe','ipc']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(ready,'Server failed to start');
@@ -627,7 +628,9 @@ try{
  sr=await api('/api/crm',{action:'requestShipmentChange',id:sentOrder.id,version:sentSnapshot().version,incomingId:sentIncoming,reason:'Ask CDEK to correct delivery instructions'},cookies.two);assert.equal(sr.status,200,sr.text);let so=sentSnapshot();assert.equal(so.status,'shipping');assert.equal(so.address,sentOrder.address);assert.equal(so.shipmentChange.status,'pending');assert.ok((await state('logistic')).tasks.some(t=>t.orderId===so.id&&t.title.includes('изменения')));
  sr=await api('/api/crm',{action:'resolveShipmentRequest',kind:'change',id:so.id,version:so.version,requestId:so.shipmentChange.id,decision:'failed',reason:'Carrier no longer permits changes'},cookies.logistic);assert.equal(sr.status,200,sr.text);so=sentSnapshot();assert.equal(so.status,'shipping');assert.equal(so.shipmentChange.status,'failed');assert.ok((await state('two')).reminders.some(r=>r.kind==='shipment-result'&&r.orderId===so.id&&r.text.includes('Carrier no longer permits changes')));
  const returnIncoming='ea'.repeat(16);await incoming(returnIncoming,'79990000553');
+ await setRedemptionClock(server,'12:00');
  sr=await api('/api/crm',{action:'requestShipmentReturn',id:so.id,version:so.version,incomingId:returnIncoming,reason:'Client refuses the parcel'},cookies.two);assert.equal(sr.status,200,sr.text);so=sentSnapshot();assert.equal(so.status,'shipping');assert.equal(so.shippedAt,sentOrder.shippedAt);assert.equal(so.shipmentReturn.status,'pending');
+ await setRedemptionClock(server,null);
  const buyout=JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(so.id).data);assert.equal(buyout.result,'to_return');assert.equal(buyout.pendingEnrollment,false);assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(returnIncoming).closed_at);assert.ok((await state('redemption')).tasks.some(t=>t.orderId===so.id&&t.title.includes('возврат')));
  assert.equal((await api('/api/crm',{action:'resolveShipmentRequest',kind:'return',id:so.id,version:so.version,requestId:so.shipmentReturn.id,decision:'done',reason:'Attempted return'},cookies.logistic)).status,400,'CDEK return is handled by redemption');
  sr=await api('/api/crm',{action:'resolveShipmentRequest',kind:'return',id:so.id,version:so.version,requestId:so.shipmentReturn.id,decision:'done',reason:'CDEK received the return request'},cookies.redemption);assert.equal(sr.status,200,sr.text);assert.equal(sentSnapshot().status,'shipping','Acknowledging a carrier request is not physical return');
@@ -640,13 +643,19 @@ try{
  const infoSnapshot=()=>{const r=db.prepare('SELECT data,version FROM orders WHERE id=?').get(infoOrder.id);return {...JSON.parse(r.data),version:r.version};};
  db.prepare("INSERT INTO phone_calls(id,client_id,actor_id,actor_name,caller_number,started_at,status,detail,claimed_at) VALUES(?,?,'head','Test head','',?,'no_answer','',?)").run('d7'.repeat(16),infoClient.id,new Date().toISOString(),new Date().toISOString());
  const firstInfo='e7'.repeat(16);await incoming(firstInfo,'79990000554');assert.equal(db.prepare('SELECT assignee_id FROM incoming_calls WHERE id=?').get(firstInfo).assignee_id,'one','Head callback never takes routing from owner');
+ await setRedemptionClock(server,'12:00');
  let ir=await api('/api/crm',{action:'incomingBuyoutInfo',id:infoOrder.id,version:infoSnapshot().version,incomingId:firstInfo,mode:'comment',reason:'Call before delivery'},cookies.one);assert.equal(ir.status,200,ir.text);
+ await setRedemptionClock(server,null);
  let infoBuyout=JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data);assert.equal(infoBuyout.result,undefined,'A comment on a new row must not invent a result');assert.equal(infoBuyout.resultDate,undefined);assert.equal(infoBuyout.comments.at(-1).text,'Call before delivery');
  const dateInfo='e6'.repeat(16);await incoming(dateInfo,'79990000554');
+ await setRedemptionClock(server,'12:00');
  ir=await api('/api/crm',{action:'incomingBuyoutInfo',id:infoOrder.id,version:infoSnapshot().version,incomingId:dateInfo,mode:'date',date:moscowDay(4),reason:'Client will collect in four days'},cookies.one);assert.equal(ir.status,200,ir.text);infoBuyout=JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data);assert.equal(infoBuyout.action,'date');assert.equal(infoBuyout.result,'date');assert.equal(infoBuyout.resultDate,moscowDay(4));assert.ok(infoBuyout.storageExtensionRequest);assert.equal(infoSnapshot().cdekStorageUntil,moscowDay(3),'A requested date cannot extend CDEK storage');assert.ok((await state('redemption')).reminders.some(r=>r.kind==='buyout-info'&&r.orderId===infoOrder.id&&r.title.includes('продление')));
+ await setRedemptionClock(server,null);
  const preservedInfo={action:infoBuyout.action,result:infoBuyout.result,resultDate:infoBuyout.resultDate,author:infoBuyout.author,days:infoBuyout.days,dateConfirmation:infoBuyout.dateConfirmation};
  const commentInfo='e5'.repeat(16);await incoming(commentInfo,'79990000554');
+ await setRedemptionClock(server,'12:00');
  ir=await api('/api/crm',{action:'incomingBuyoutInfo',id:infoOrder.id,version:infoSnapshot().version,incomingId:commentInfo,mode:'comment',reason:'Customer clarified delivery instructions'},cookies.one);assert.equal(ir.status,200,ir.text);infoBuyout=JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data);for(const [key,value] of Object.entries(preservedInfo))assert.deepEqual(infoBuyout[key],value,'Comment preserves '+key);assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(commentInfo).closed_at);
+ await setRedemptionClock(server,null);
  // A real callback to the last redemption caller opens that exact order in the shared form.
  db.prepare("INSERT INTO phone_calls(id,client_id,order_id,actor_id,actor_name,caller_number,started_at,status,detail,claimed_at) VALUES(?,?,?,'redemption','Buyout','',?,'no_answer','',?)").run('ad'.repeat(16),infoClient.id,infoOrder.id,new Date().toISOString(),new Date().toISOString());
  const buyerIncoming='e4'.repeat(16);await incoming(buyerIncoming,'79990000554');assert.equal(db.prepare('SELECT assignee_id FROM incoming_calls WHERE id=?').get(buyerIncoming).assignee_id,'redemption');assert.equal(db.prepare('SELECT order_id FROM incoming_calls WHERE id=?').get(buyerIncoming).order_id,infoOrder.id);assert.ok(!(await state('head')).incoming.some(i=>i.id===buyerIncoming),'Buyout callback is outside the head queue');assert.ok(!(await state('one')).incoming.some(i=>i.id===buyerIncoming));
@@ -657,8 +666,12 @@ try{
  const buyerPath='/api/redemption?'+new URLSearchParams({id:infoOrder.id,incomingId:buyerIncoming});
  const buyerForm=await api(buyerPath,undefined,cookies.redemption);assert.equal(buyerForm.status,200,buyerForm.text);assert.equal(buyerForm.data.rows[0].order_id,infoOrder.id);assert.equal((await api(buyerPath,undefined,cookies.logistic)).status,403);
  const beforeBuyerRead=db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data;await api(buyerPath,undefined,cookies.redemption);assert.equal(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data,beforeBuyerRead,'Opening/cancelling the existing form does not save a result');assert.equal(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(buyerIncoming).closed_at,null);
+ await setRedemptionClock(server,'12:00');
  let buyerSave=await api('/api/redemption',{id:infoOrder.id,incomingId:buyerIncoming,source:'order',version:buyerForm.data.rows[0].version,action:'nd',result:'none',comment:''},cookies.redemption);assert.equal(buyerSave.status,200,buyerSave.text);assert.equal(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(buyerIncoming).closed_at,null,'ND leaves incoming open');assert.equal(JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data).resultDate,preservedInfo.resultDate,'ND preserves a previously scheduled date');
+ await setRedemptionClock(server,null);
+ await setRedemptionClock(server,'12:00');
  const buyerNext=await api(buyerPath,undefined,cookies[buyerColleague.id]);assert.equal(buyerNext.status,200,buyerNext.text);buyerSave=await api('/api/redemption',{id:infoOrder.id,incomingId:buyerIncoming,source:'order',version:buyerNext.data.rows[0].version,action:'date',result:'date',date:moscowDay(2),comment:'Confirmed with customer',replaceConfirmed:true},cookies[buyerColleague.id]);assert.equal(buyerSave.status,200,buyerSave.text);assert.ok(db.prepare('SELECT closed_at FROM incoming_calls WHERE id=?').get(buyerIncoming).closed_at);assert.equal(JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(infoOrder.id).data).resultDate,moscowDay(2));assert.equal(infoSnapshot().status,'shipping');assert.equal(JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(infoClient.id).data).owner,'one');
+ await setRedemptionClock(server,null);
  assert.equal(db.prepare('SELECT closed_by FROM incoming_calls WHERE id=?').get(buyerIncoming).closed_by,buyerColleague.id);
  assert.equal(db.prepare('SELECT assignee_id FROM incoming_calls WHERE id=?').get(buyerIncoming).assignee_id,'redemption');
  for(const member of ['redemption',buyerColleague.id])assert.ok(!(await state(member)).tasks.some(t=>t.incomingId===buyerIncoming),'Shared completion removes task for '+member);

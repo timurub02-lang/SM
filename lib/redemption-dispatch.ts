@@ -20,7 +20,7 @@ export async function runRedemptionDay(d:Db,now=new Date(),request:typeof fetch=
   job=await d.prepare('SELECT * FROM redemption_dispatch WHERE day=?').bind(tomorrow).first();
  }
  // Explicit opt-in and a user-selected project are both required. Test data never leaves CRM.
- if(!cfg.automatic||!cfg.projectId||new Date(now.getTime()+10800000).toISOString().slice(11,16)<'20:00'||job.state!=='prepared')return;
+ if(!cfg.automatic||!cfg.projectId||job.state!=='prepared')return;
  const snapshot=JSON.parse(job.data);if(!snapshot.enabled||snapshot.projectId!==cfg.projectId)return;
  const claimed=await d.prepare("UPDATE redemption_dispatch SET state='running',updated_at=? WHERE day=? AND state='prepared'").bind(now.toISOString(),tomorrow).run();if(!claimed.meta.changes)return;
  const journal=async(state:string,error='',extra={})=>{Object.assign(snapshot,extra);await d.prepare('UPDATE redemption_dispatch SET state=?,data=?,error=?,updated_at=? WHERE day=?').bind(state,JSON.stringify(snapshot),error,new Date().toISOString(),tomorrow).run();};

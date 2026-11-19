@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {openDatabase} from '../server/sqlite.ts';
-import {redemptionDateLimit,redemptionHeadScope,redemptionNdCount,compareRedemptionRows,redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
+import {redemptionEditHours,redemptionDateLimit,redemptionHeadScope,redemptionNdCount,compareRedemptionRows,redemptionDayAuthor,operatorReturnScheduled,awaitingOperator,initRedemption,syncRedemption,editRedemption,redemptionRows,archiveRedemption,inWorkday,allowedResults,refusalRetryDate,awaitingReturn,canSeeRedemption,dayOf,closedTime} from '../lib/redemption.ts';
 assert.equal(redemptionDayAuthor({author:'Иван',lastDay:'2026-10-18'},'2026-10-19'),'');
 assert.equal(redemptionDayAuthor({author:'Мария',lastDay:'2026-10-19'},'2026-10-19'),'Мария');
 assert.equal(redemptionDayAuthor({author:'API',lastDay:'2026-10-19'},'2026-10-19'),'API');
@@ -81,10 +81,17 @@ try{
  assert.deepEqual(allowedResults('po',{storageUntil:'2026-10-22'},'operator','2026-10-15'),[]);
  await assert.rejects(edit(admin,{action:'refusal',result:'returned'}),/недоступен/);
  await assert.rejects(edit(buyer,{action:'nd',result:'returned'}),/недоступен/);
- await edit(op,{action:'nd',result:'none'});
  await archiveRedemption(d,new Date('2026-10-15T16:50:00Z'));
+ assert.equal(await d.prepare('SELECT data FROM redemption_archives').first(),null);
+ await edit(op,{action:'nd',result:'none'},new Date('2026-10-15T16:59:59.999Z'));
+ await archiveRedemption(d,new Date('2026-10-15T17:00:00Z'));
  const snapshot=(await d.prepare('SELECT data FROM redemption_archives').first()).data;assert.equal(JSON.parse(snapshot)[0].result,'none');
- await assert.rejects(edit(admin,{action:'nd',result:'none'},new Date('2026-10-15T17:00:00Z')),/закрыт/);
+ const lockedVersion=(await row()).version;
+ for(const actor of [admin,head,op,buyer])for(const at of ['2026-10-15T17:00:00Z','2026-10-15T21:00:00Z','2026-10-16T04:59:59.999Z']){
+  await assert.rejects(edit(actor,{operation:'comment',text:'night'},new Date(at)),/только для просмотра/);
+ }
+ assert.equal((await row()).version,lockedVersion);
+ assert.equal(redemptionEditHours(new Date('2026-10-16T05:00:00Z')).closed,false);
  await syncRedemption(d,new Date('2026-10-16T09:00:00Z'));assert.equal((await row()).result,'');assert(inWorkday(await row(),'2026-10-16'));
  assert.equal((await d.prepare('SELECT data FROM redemption_archives').first()).data,snapshot);
  await assert.rejects(edit(op,{action:'nd',result:'to_return'}),/недоступен/);
@@ -144,7 +151,7 @@ try{
  await assert.rejects(edit(admin,{operation:'confirm_date'}),/Подтверждение/);await syncRedemption(d,now);assert.equal((await row()).dateConfirmation,'expired');assert.equal((await row()).resultDate,'2026-10-14');assert(inWorkday(await row(),'2026-10-15'));assert(canSeeRedemption(op,await row(),false));
  await syncRedemption(d,now);assert.equal((await row()).dateConfirmation,'expired');
  await d.prepare('UPDATE orders SET data=?').bind(JSON.stringify({...order,cdekStatus:{code:'DELIVERED'}})).run();await syncRedemption(d,now);assert.equal((await row()).author,'API');assert.equal((await row()).result,'delivered');
- assert.equal(dayOf(new Date('2026-10-15T21:01:00Z')),'2026-10-16');assert(!closedTime(now));assert(closedTime(new Date('2026-10-15T16:50:00Z')));
+ assert.equal(dayOf(new Date('2026-10-15T21:01:00Z')),'2026-10-16');assert(!closedTime(now));assert(!closedTime(new Date('2026-10-15T16:50:00Z')));
  assert(!inWorkday({entered_at:'2026-10-15T21:01:00Z'},'2026-10-15'));
  const archiveCases=[
   ['confirmed',{action:'date',result:'date',resultDate:'2026-10-20',dateConfirmation:'confirmed',lastDay:'2026-10-16'}],
@@ -159,7 +166,7 @@ try{
   await d.prepare('INSERT INTO orders VALUES(?,?,?)').bind(id,'c',JSON.stringify({...order,id})).run();
   await d.prepare('INSERT OR REPLACE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind(id,'2026-10-15T09:00:00Z',JSON.stringify(value)).run();
  }
- await archiveRedemption(d,new Date('2026-10-16T16:50:00Z'));
+ await archiveRedemption(d,new Date('2026-10-16T17:00:00Z'));
  const endOfDay=(await d.prepare("SELECT data FROM redemption_archives WHERE day='2026-10-16'").first()).data;
  const archived=JSON.parse(endOfDay);
  for(const [id,value] of archiveCases){const saved=archived.find(r=>r.order_id===id);if(id==='future-untouched')assert(!saved);else{assert(saved,id+' missing from archive');assert.equal(saved.result,value.result);assert.equal(saved.resultDate,value.resultDate);}}
