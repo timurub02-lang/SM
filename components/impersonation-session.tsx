@@ -1,4 +1,5 @@
 'use client';
+import {notifyAccountChange} from '@/lib/browser-account';
 import {createContext,useContext,useState,type ReactNode} from 'react';
 import {toast} from 'sonner';
 type Mode={id:string;name:string;adminName:string;ownerRole?:string}|null;
@@ -7,7 +8,7 @@ export const useImpersonationSession=()=>useContext(Context);
 async function switchSession(body:{action:'start';employeeId:string}|{action:'stop'}){
  const response=await fetch('/api/auth/impersonation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  const data=await response.json() as {error?:string};if(!response.ok)throw Error(data.error||'Не удалось переключить кабинет');
- window.location.replace('/');
+ notifyAccountChange();window.location.replace('/');
 }
 export function EnterEmployeeButton({employeeId,disabled=false}:{employeeId:string;disabled?:boolean}){
  const [busy,setBusy]=useState(false);const mode=useImpersonationSession();
