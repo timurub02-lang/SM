@@ -18,8 +18,8 @@ try{
  const workSend={action:'work',result:'operator',comment:'Уточнить получение у клиента'};
  for(const actor of [op,buyer,{...buyer,role:'admin'}])await assert.rejects(edit(actor,workSend));
  await d.prepare('INSERT INTO settings VALUES(?,?)').bind('redemption-config',JSON.stringify({headsAll:false})).run();
- await assert.rejects(edit({...head,department:'2'},workSend),/недоступен/);
- await d.prepare("DELETE FROM settings WHERE id='redemption-config'").run();
+ await assert.rejects(edit({...head,department:'2'},workSend,new Date('2026-10-16T13:01:00+03:00')),/недоступен/);
+
  await edit({...head,department:'2'},workSend);assert(awaitingOperator(await row()));assert.equal((await row()).manager,op.id);
  for(const actor of [op,head,buyer,{...op,id:'other'},{...head,department:'2'}])assert.equal(await operatorReturnCount(d,actor),(await redemptionRows(d)).filter(r=>awaitingOperator(r)&&canSeeRedemption(actor,r,false)).length);
  assert(canSeeRedemption(op,await row(),false));assert(!canSeeRedemption({...head,department:'2'},await row(),true));
