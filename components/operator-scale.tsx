@@ -13,7 +13,7 @@ export function OperatorScale({actor}:{actor:string}){
  useEffect(()=>{
   const style=document.documentElement.style;
   style.setProperty('--crm-user-scale',String(percent/100));
-  return()=>style.removeProperty('--crm-user-scale');
+  return()=>{style.removeProperty('--crm-user-scale');};
  },[percent]);
  function change(next:number){
   setPercent(next);
