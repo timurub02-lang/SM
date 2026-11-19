@@ -56,3 +56,36 @@ assert.equal((await autoDb.prepare("SELECT count(*) AS n FROM base_dispatch_impo
 bad=false;await runBaseDispatch(autoDb,delayedRequest);
 assert.equal(delayed.calls.filter(([u,o])=>u.endsWith('/leads/import')&&o.method==='POST').length,1);
 autoDb.close();console.log('Friday scheduling, floor quantity, one automatic run per day and uncertain-write protection passed');
+
+// SK may return HTML entities even though the import payload contains plain text.
+for(const [name,city,returnedName,returnedCity,valid] of [
+ ['Иванов','Россия. Курская ооласть. Железногорск городской <','Иванов','Россия. Курская ооласть. Железногорск городской &lt;',true],
+ ['"Иван" & Пётр',"дом > 1, O'Нил",'&quot;Иван&quot; &amp; Пётр','дом &gt; 1, O&#39;Нил',true],
+ ['Иванов','буквально &lt;','Иванов','буквально &amp;lt;',true],
+ ['Иванов','город <','Другой','город &lt;',false],
+ ['Иванов','город <','Иванов','другой город &lt;',false],
+ ['Иванов','город <','Иванов','город &amp;lt;',false],
+]){
+ const db=openDatabase(':memory:');
+ await db.prepare('CREATE TABLE clients(id TEXT PRIMARY KEY,phone TEXT UNIQUE,data TEXT,version INTEGER DEFAULT 1)').run();
+ await db.prepare('CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)').run();
+ await db.prepare('INSERT INTO settings VALUES(?,?)').bind('skorozvon','{}').run();
+ await db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind('escaped','79990000001',JSON.stringify({phone:'79990000001',name,city,sheet:'П',baseType:'M',owner:''})).run();
+ await queueBaseDispatch(db,{base:'M',sheet:'П',project:'1',count:1},new Date('2026-10-03T09:00:00Z'));
+ const mock=mockImport();
+ const request=async(u,o)=>{
+  const response=await mock.request(u,o);
+  if(u.includes('stored_file_id')&&new URL(u).searchParams.get('page')==='1'){
+   const result=await response.json();Object.assign(result.data[0],{name:returnedName,city:returnedCity});return Response.json(result);
+  }
+  return response;
+ };
+ const run=()=>runBaseDispatch(db,request,new Date('2026-10-03T09:01:00Z'));
+ if(valid){assert.deepEqual(await run(),{sent:1});await run();}
+ else {await assert.rejects(run,/проверку/);await assert.rejects(run,/проверку/);}
+ assert.equal(mock.calls.filter(([u,o])=>u.endsWith('/leads/import')&&o.method==='POST').length,1);
+ assert.equal((await db.prepare('SELECT state FROM base_dispatch_items').first()).state,valid?'sent':'sending');
+ const saved=JSON.parse((await db.prepare('SELECT data FROM clients').first()).data);assert.equal(saved.name,name);assert.equal(saved.city,city);
+ db.close();
+}
+console.log('HTML-escaped SK text accepted; real mismatches blocked; no resend or CRM text changes');
