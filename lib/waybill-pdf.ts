@@ -16,6 +16,7 @@ export function waybillPdf(input:WaybillData|WaybillData[],fonts:{regular:string
   startY:margin.top,margin,theme:'plain',
   styles:{font:'LiberationSans',fontSize:11,cellPadding:0.6,textColor:0,overflow:'linebreak'},
   body:[
+   ...(data.sender?[[`Отправитель: ${data.sender}`]]:[]),
    [{content:`Номер заказа: ${data.id}`,styles:{fontStyle:'bold'}}],
    [`Оператор: ${data.operator}`],
    [`Заказчик: ${data.client}`],

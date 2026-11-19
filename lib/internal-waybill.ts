@@ -4,6 +4,7 @@ import {packingStage,type Order,type Client,type Employee} from './crm.ts';
 export function internalWaybill(order:Order,client:Client,manager?:Employee,callbacks?:{printBoth?:boolean;phones:string[];departments:Record<string,string>}){
  return {
   id:order.id,
+  sender:order.delivery==='moscow_courier'?'ООО «Симфония молодости»':undefined,
   operator:manager?.login||'—',
   client:client.name,
   phone:client.phone,
