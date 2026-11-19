@@ -1,2 +1,3 @@
 cities.json — названия городов и UTC-смещения из https://github.com/hflabs/city (HFLabs, CC BY-SA 4.0). Названия нормализованы, неоднозначные смещения исключены. Производная таблица распространяется по https://creativecommons.org/licenses/by-sa/4.0/.
 postcodes.json — российские индексы GeoNames https://download.geonames.org/export/zip/ (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/), сопоставлены с regions.json и сгруппированы в непрерывные диапазоны.
+sakha.json и индексы Якутии учитывают район населённого пункта по GeoNames, часовые зоны по https://14.mchs.gov.ru/glavnoe-upravlenie/harakteristika-subekta и муниципальные сведения https://chulman.sakha.gov.ru/.

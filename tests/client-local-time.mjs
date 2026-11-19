@@ -30,3 +30,4 @@ assert.match(clientLocalTime(c('Россия, г. Москва и Московс
 assert.match(clientLocalTime(c('МСК +4'),now),/03:40 · МСК \+4$/);
 assert.match(clientLocalTime(c('г Омск ул. Ленина'),now),/МСК \+3$/);
 assert.equal(clientLocalTime({addressParts:{region:'Якутия',city:'Омск'}},now),'Местное время не определено');
+assert.match(clientLocalTime({addressParts:{region:'Респ Саха (Якутия)',city:'поселок Чульман'}},now),/МСК \+6$/);

@@ -1,4 +1,5 @@
 import regions from '../data/phone-timezones/regions.json' with {type:'json'};
+import sakha from '../data/phone-timezones/sakha.json' with {type:'json'};
 import cities from '../data/phone-timezones/cities.json' with {type:'json'};
 import postcodes from '../data/phone-timezones/postcodes.json' with {type:'json'};
 import type {Client,Order} from './crm.ts';
@@ -16,7 +17,7 @@ for(const [alias,name] of Object.entries({
 })){
  byRegion.set(regionKey(alias),byRegion.get(regionKey(name))!);
 }
-const sakhaCities=new Set(["алдан", "верхоянск", "вилюйск", "ленск", "мирный", "нерюнгри", "нюрба", "олекминск", "покровск", "среднеколымск", "томмот", "удачный", "якутск"]);
+const sakhaOffsets=new Map(Object.entries(sakha));
 const byCity=new Map(Object.entries(cities));
 function postalZone(code:string){
  const index=Number(code);
@@ -42,9 +43,9 @@ export function locationZone(location?:Location){
  if(postal&&(!region||region.includes(postal)))return postal;
  for(const segment of segments){
   const locality=segment.split(/\s+(?=(?:ул(?:ица)?|пр-кт|пр-т|переулок|шоссе|проспект)(?:\.|\s))/i)[0];
-  const name=words(locality).filter(t=>t!=='город').join(' ');
-  const offset=byCity.get(name);
-  if(offset!==undefined&&(!region||sakhaCities.has(name)))return 'Etc/GMT-'+offset;
+  const name=words(locality.replace(/^(?:пос[её]лок|пос|пгт|п|село|с|деревня|д)\.?\s+/i,'')).filter(t=>t!=='город').join(' ');
+  const offset=region?sakhaOffsets.get(name):byCity.get(name);
+  if(offset!==undefined)return 'Etc/GMT-'+offset;
  }
  for(const segment of segments){
   const match=segment.match(/^(?:мск|по москве)\s*(?:([+-])\s*([0-9]))?$/i);
