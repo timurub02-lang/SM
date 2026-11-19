@@ -8,6 +8,11 @@ export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В р
 export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера',client_delivered:'Вручен со слов клиента',operator:'Передать оператору'};
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
+export function redemptionHeadScope(now=new Date()){
+ const day=dayOf(now),cutoff=Date.parse(day+'T13:01:00+03:00');
+ const headsAll=now.getTime()<cutoff;
+ return {headsAll,until:headsAll?cutoff:Date.parse(dayPlus(day,1)+'T00:00:00+03:00')};
+}
 export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
 export function redemptionDayAuthor(row:{author?:string;lastDay?:string},day:string){return row.lastDay===day?row.author||'':'';}
 export function redemptionRowAuthor(row:{author?:string;lastDay?:string},tab:string,day:string){return tab==='work'?redemptionDayAuthor(row,day):row.author||'';}
@@ -29,7 +34,7 @@ export function operatorReturnDeadline(storageUntil:string,now=new Date()){
  const limit=internalDeadline(now.toISOString(),48);
  return validDate(storageUntil||'')?[limit,storageUntil+'T20:59:59.999Z'].sort()[0]:limit;
 }
-export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:true};
+export const defaults={statuses:[] as string[],projectId:'',automatic:false};
 const redemptionSchemas=new WeakMap<Db,Promise<unknown>>();
 // Repeated CDEK checks still update their timestamp, but do not duplicate business history.
 const redemptionHistoryTrigger=`CREATE TRIGGER redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data AND NOT (json_extract(NEW.data,'$.changeKind') IS 'return_check' AND json_extract(OLD.data,'$.changeKind') IS 'return_check' AND json_remove(NEW.data,'$.updatedAt','$.returnCheck.at')=json_remove(OLD.data,'$.updatedAt','$.returnCheck.at')) BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`;
@@ -115,7 +120,7 @@ export async function prepareIncomingRedemption(d:Db,e:Employee,orderId:string,i
 export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  if(p.incomingId!==undefined)await prepareIncomingRedemption(d,e,p.id,p.incomingId,now);
 
- const cfg=await redemptionConfig(d),row=(await redemptionRows(d,!!p.incomingId)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,cfg.headsAll))throw Error('Заказ недоступен');
+ const cfg=await redemptionConfig(d),row=(await redemptionRows(d,!!p.incomingId)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,redemptionHeadScope(now).headsAll))throw Error('Заказ недоступен');
  if(p.version!==row.version)throw Error('Заказ изменён другим сотрудником. Обновите результат');
  if(p.source==='order'){const stored=await d.prepare('SELECT data FROM orders WHERE id=?').bind(p.id).first();const order=JSON.parse(stored?.data||'{}');const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(order.manager||'').first();if(!(e.role==='redemption'&&p.incomingId)&&!canEditOrderRedemption(e,order,manager?{...JSON.parse(manager.data),id:order.manager}:undefined)||!p.incomingId&&!cfg.statuses.includes(order.cdekStatus?.code))throw Error('Результат выкупа недоступен для этого заказа');}
  let incoming:any=null;
