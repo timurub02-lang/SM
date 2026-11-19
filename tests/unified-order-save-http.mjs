@@ -1,4 +1,3 @@
-import {internalDeadline} from '../lib/internal-timers.ts';
 import {pathToFileURL} from 'node:url';
 // Isolated application/API test: no real customer, payment or carrier access.
 import assert from 'node:assert/strict';
