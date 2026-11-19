@@ -3,11 +3,13 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {ArrowLeft,Check,ChevronRight,Copy,History,Plus,Save,Trash2} from 'lucide-react';
 import {newProjectSettings,projectSettingsSchema,retryLabels,settingsChecklist,type ProjectSettings,type ProjectDraft,type ProjectHistory} from '@/lib/oktell-project-settings';
 import styles from './oktell-projects.module.css';
+import type {NativeProjectState} from '@/lib/oktell-settings-native';
 
 const sections=[['overview','Основное'],['operators','Операторы'],['source','База клиентов'],['dialing','Обзвон и повторы'],['schedule','Расписание'],['queue','Очередь'],['results','Сценарий и результаты'],['history','История изменений']] as const;
 type Section=typeof sections[number][0];
 type Operator={id:string;name:string;linked:boolean};
 type State={projects:ProjectDraft[];operators:Operator[];native:{connected:boolean;canApply:boolean;message:string}};
+type NativeStatus={state:NativeProjectState|null;pending:boolean;creating:boolean;appliedRevision?:number};
 const days=['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
 const modes={preview:'Сначала карточка, затем звонок',progressive:'По одному вызову на свободного оператора',predictive:'Предиктивный обзвон'};
 const date=(s:string)=>new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',dateStyle:'short',timeStyle:'short'});
@@ -21,11 +23,18 @@ export default function OktellProjects(){
  const [data,setData]=useState<State|null>(null),[loadError,setLoadError]=useState(''),[loading,setLoading]=useState(true);
  const [selected,setSelected]=useState<ProjectDraft|null>(null),[form,setForm]=useState<ProjectSettings|null>(null),[section,setSection]=useState<Section>('overview');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[history,setHistory]=useState<ProjectHistory[]>([]),[historyLoading,setHistoryLoading]=useState(false);
+ const [native,setNative]=useState<NativeStatus|null>(null),[nativeLoading,setNativeLoading]=useState(false);
  const createId=useRef(''),saveLock=useRef(false),heading=useRef<HTMLHeadingElement>(null);
  const baseline=useRef('');
  const dirty=!!form&&JSON.stringify(form)!==baseline.current;
  const load=async()=>{setLoading(true);setLoadError('');try{setData(await request<State>('/api/oktell-projects'));}catch(e){setLoadError((e as Error).message);}finally{setLoading(false);}};
  useEffect(()=>{void load();},[]);
+ useEffect(()=>{
+  setNative(null);if(!selected?.id||!data?.native.canApply)return;
+  let alive=true;setNativeLoading(true);
+  request<NativeStatus>('/api/oktell-projects/native?id='+selected.id).then(value=>{if(alive)setNative(value);}).catch(e=>{if(alive)setError(e.message);}).finally(()=>{if(alive)setNativeLoading(false);});
+  return()=>{alive=false;};
+ },[selected?.id,data?.native.canApply]);
  useEffect(()=>{if(!dirty)return;const warn=(e:BeforeUnloadEvent)=>e.preventDefault();window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
  useEffect(()=>{
   if(section!=='history'||!selected)return;
@@ -53,6 +62,21 @@ export default function OktellProjects(){
    setNotice('Черновик сохранён. Настройки в Oktell пока не применены.');
   }catch(e){setError((e as Error).message);}finally{setBusy(false);saveLock.current=false;}
  }
+ async function refreshNative(){
+  if(!selected||busy)return;setNativeLoading(true);setError('');
+  try{setNative(await request<NativeStatus>('/api/oktell-projects/native?id='+selected.id));}catch(e){setNative(null);setError((e as Error).message);}finally{setNativeLoading(false);}
+ }
+ async function applyNative(action:'apply'|'retry'){
+  if(!selected||saveLock.current||!native)return;
+  saveLock.current=true;setBusy(true);setError('');setNotice('');
+  try{
+   const result=await request<NativeStatus>('/api/oktell-projects/native',{action,id:selected.id,revision:selected.revision,expected:native.state?.snapshot||null});
+   setNative(result);setNotice(`Основные параметры версии ${result.appliedRevision} сохранены в Oktell. Задача остановлена. Остальные разделы остаются черновиком.`);
+  }catch(e){
+   try{setNative(await request<NativeStatus>('/api/oktell-projects/native?id='+selected.id));}catch{setNative({...native,pending:true});}
+   setError((e as Error).message);
+  }finally{setBusy(false);saveLock.current=false;}
+ }
  const number=(key:'ringSeconds'|'maxLines'|'maxAttempts',label:string,hint:string,min:number,max:number)=><NumberField label={label} hint={hint} min={min} max={max} value={form![key]} onChange={n=>patch(key,n)}/>;
  return <div className={styles.app}>
   <header className={styles.header}><a href="/oktell-projects" className={styles.brand} onClick={e=>{if(!leave())e.preventDefault();}}><span>см</span><b>Проекты Oktell</b></a><a href="/" onClick={e=>{if(!leave())e.preventDefault();}}><ArrowLeft size={16}/>В CRM</a></header>
@@ -67,7 +91,19 @@ export default function OktellProjects(){
    <main className={styles.main}>
     {loading?<div className={styles.empty} role="status">Загружаем проекты…</div>:loadError?<div className={styles.empty}><h1>Не удалось загрузить проекты</h1><p role="alert">{loadError}</p><button className={styles.primary} onClick={()=>void load()}>Повторить загрузку</button></div>:!form?<div className={styles.empty}><h1>Настройте свой проект</h1><p>Кто звонит, кому, когда и что делать после разговора — всё в одном месте.</p><div className={styles.emptyActions}><button className={styles.primary} onClick={()=>open(null,newProjectSettings())}><Plus size={18}/>С нуля</button><button className={styles.secondary} onClick={()=>open(null,newProjectSettings('t1'))}>По образцу Т1</button></div><p className={styles.templateNote}>Образец Т1 — сохранённые правила на 28 октября 2026 года. База клиентов, операторы и линии не копируются.</p></div>:<>
      <div className={styles.heading}><div><div className={styles.titleLine}><h1>{form.name||'Новый проект'}</h1><span className={styles.badge}>Черновик</span></div><p>{selected?`Сохранён ${date(selected.updatedAt)} МСК · версия ${selected.revision}`:'Новый проект ещё не сохранён'}</p></div><button className={styles.secondary} disabled={busy} onClick={()=>open(null,{...structuredClone(form),name:(form.name+' · копия').slice(0,100)})}><Copy size={16}/>Копировать</button></div>
-     <div className={styles.connection}><strong>Настройки ещё не связаны с Oktell</strong><p>{data?.native.message} Здесь можно подготовить проект; создание задачи в АТС и запуск появятся после проверки подключения.</p></div>
+     <div className={styles.connection}><strong>{data?.native.canApply?'Применение настроек на стенде':'Настройки ещё не связаны с Oktell'}</strong><p>{data?.native.message}</p>
+      {data?.native.canApply&&<>
+       <p>Применяются название задачи, progressive или predictive, время дозвона, предел линий и расписание по Москве. Предварительный просмотр, операторы, клиентская база, правила повторов, очередь, результаты и перезвоны пока остаются черновиком. Звонки здесь не запускаются.</p>
+       {!selected?<p>Сохраните черновик, чтобы создать проект и остановленную задачу в Oktell.</p>:<>
+        {nativeLoading?<p role="status">Проверяем состояние Oktell…</p>:native?.state?<p><strong>{native.state.active===0&&native.state.runtimeActivity==='0'?'Задача остановлена':'Состояние требует проверки'}</strong> · {native.state.ringSeconds} сек. дозвона · предел {native.state.maxLines} линий · {native.state.schedule.length} интервалов. Применена версия {native.appliedRevision??'—'}.<br/>Задача Oktell: <code>{native.state.taskId}</code></p>:native&&!native.pending?<p>Настройки ещё не применены в Oktell.</p>:null}
+        {native?.pending&&<p>Предыдущая операция не подтверждена. Проверка использует тот же запрос и защищает от повторного создания задачи.</p>}
+        <div className={styles.nativeActions}>
+         <button className={styles.secondary} disabled={busy||nativeLoading} onClick={()=>void refreshNative()}>Сверить с Oktell</button>
+         {native?.pending?<button className={styles.primary} disabled={busy||nativeLoading} onClick={()=>void applyNative('retry')}>Проверить предыдущую операцию</button>:<button className={styles.primary} disabled={busy||dirty||nativeLoading||!native} onClick={()=>void applyNative('apply')}>{native?.state?'Применить основные параметры':'Создать в Oktell'}</button>}
+        </div>
+       </>}
+      </>}
+     </div>
      <nav className={styles.sections} aria-label="Настройки проекта">{sections.map(([key,label])=><button key={key} aria-current={section===key?'page':undefined} onClick={()=>jump(key)}>{label}</button>)}</nav>
      <div className={styles.editor}>
       <div className={styles.form} aria-busy={busy}><h2 ref={heading} tabIndex={-1}>{sections.find(([key])=>key===section)?.[1]}</h2>

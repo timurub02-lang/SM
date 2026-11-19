@@ -17,8 +17,8 @@ const base='http://127.0.0.1:3438',origin='https://settings.test',password='synt
 const socket=controlSocket(join(dir,'control.sock'));let server,logs='',bridgeRequests=0;
 const bridge=http.createServer((_req,res)=>{bridgeRequests++;res.writeHead(500).end();});
 await new Promise(r=>bridge.listen(socket,r));
-async function boot(enabled){
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{PATH:process.env.PATH,CRM_RUNTIME:'miran',CRM_DATABASE_PATH:file,CRM_ORIGIN:origin,OKTELL_PROJECT_SETTINGS:enabled?'1':'0',OKTELL_CONTROL_SOCKET:socket,HOSTNAME:'127.0.0.1',PORT:'3438'},stdio:['ignore','pipe','pipe']});
+async function boot(enabled,native=false){
+ server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{PATH:process.env.PATH,CRM_RUNTIME:'miran',CRM_DATABASE_PATH:file,CRM_ORIGIN:origin,OKTELL_PROJECT_SETTINGS:enabled?'1':'0',OKTELL_SETTINGS_NATIVE:native?'lab-vm105':'',OKTELL_SETTINGS_CREDENTIALS:native?join(dir,'unused-private-file.json'):'',OKTELL_CONTROL_SOCKET:socket,HOSTNAME:'127.0.0.1',PORT:'3438'},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<200;i++){try{if((await fetch(base+'/login')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}
  throw Error('Server did not start');
@@ -38,6 +38,8 @@ try{
  sql.prepare('INSERT INTO auth_test_accounts VALUES(?)').run('tester');
  await boot(false);
  assert.equal((await call('/api/oktell-projects')).status,410);
+ assert.equal((await call('/api/oktell-projects/native')).status,410);
+ assert.equal((await call('/api/oktell-projects/native',null,{})).status,410);
  assert.equal(sql.prepare("SELECT count(*) n FROM sqlite_master WHERE name='oktell_project_drafts'").get().n,0);
  await stop();await boot(true);
  const cookies={};for(const id of ['admin','head','operator','tester']){const r=await call('/api/auth/login',null,{login:id,password});assert.equal(r.status,200);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
@@ -65,6 +67,19 @@ try{
  sql.prepare('INSERT INTO auth_impersonations(id,session_hash,target_id,started_at,expires_at) VALUES(?,?,?,?,?)').run(randomUUID(),tokenHash(token),'operator',Date.now(),Date.now()+60000);
  assert.equal((await call('/api/oktell-projects',cookies.admin)).status,403);
  assert.equal((await call('/api/oktell-projects',cookies.admin,cmd)).status,403);
+ await stop();await boot(true,true);
+ for(const id of [undefined,'head','operator','tester','admin']){
+  // The admin cookie is still impersonating an operator.
+  assert.equal((await call('/api/oktell-projects/native?id='+cmd.id,cookies[id])).status,403);
+  assert.equal((await call('/api/oktell-projects/native',cookies[id],{})).status,403);
+ }
+ sql.prepare('DELETE FROM auth_impersonations WHERE session_hash=?').run(tokenHash(token));
+ assert.equal((await call('/api/oktell-projects',cookies.admin)).data.native.canApply,true);
+ assert.equal((await call('/api/oktell-projects/native?id='+cmd.id,cookies.admin)).data.state,null);
+ assert.equal((await call('/api/oktell-projects/native',cookies.admin,{},'https://evil.test')).status,403);
+ assert.equal((await call('/api/oktell-projects/native',cookies.admin,{action:'start',id:cmd.id})).status,400);
+ assert.equal((await call('/api/oktell-projects/native',cookies.admin,{data:'x'.repeat(5000)})).status,413);
+ assert.equal((await call('/api/oktell-projects/native',cookies.admin,{action:'apply',id:randomUUID(),revision:1,expected:null})).status,404);
  assert.equal(bridgeRequests,0);assert.equal(sql.prepare('SELECT count(*) n FROM clients').get().n,0);assert.equal(sql.prepare('SELECT count(*) n FROM orders').get().n,0);
  console.log('PASS: flag-off isolation, admin/test/role/impersonation boundaries, Origin, body limit, CAS, history, restart persistence, no bridge calls or customer writes');
 }catch(e){console.error(logs);throw e;}finally{await stop();await new Promise(r=>bridge.close(r));sql.close();rmSync(dir,{recursive:true,force:true});}

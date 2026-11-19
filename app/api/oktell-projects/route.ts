@@ -3,6 +3,7 @@ import {sessionEmployee,trustedOrigin} from '@/lib/auth';
 import {db} from '@/lib/db';
 import {readLimitedText,BodyTooLarge} from '@/lib/request-body';
 import {readProjectDrafts,readProjectHistory,saveProjectDraft} from '@/lib/oktell-project-store';
+import {nativeSettingsEnabled} from '@/lib/oktell-settings-native';
 export const dynamic='force-dynamic';
 function retired(){return Response.json({error:'Прежний раздел Oktell закрыт. Откройте раздел заново.',redirect:'/oktell'},{status:410,headers:{'Cache-Control':'no-store'}});}
 const json=(body:unknown,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
@@ -22,7 +23,7 @@ export async function GET(req:Request){
   if(id)return json({history:await readProjectHistory(d,z.string().uuid().parse(id))});
   const employees=(await d.prepare("SELECT e.id,e.data FROM employees e JOIN auth_accounts a ON a.employee_id=e.id WHERE a.enabled=1 ORDER BY e.id").all()).results;
   const operators=employees.flatMap((row:any)=>{const e=JSON.parse(row.data);return e.role==='operator'?[{id:row.id,name:String(e.name||e.login||row.id),linked:e.oktell?.status==='linked'}]:[];});
-  return json({projects:await readProjectDrafts(d),operators,native:{connected:false,canApply:false,message:'Подключение редактора к Oktell ещё не настроено. Проекты сохраняются как черновики.'}});
+  return json({projects:await readProjectDrafts(d),operators,native:{connected:false,canApply:nativeSettingsEnabled(),message:nativeSettingsEnabled()?'Можно создать остановленную задачу и применить название, режим, время дозвона, предел линий и расписание. Остальные разделы сохраняются как черновик.':'Подключение редактора к Oktell ещё не настроено. Проекты сохраняются как черновики.'}});
  }catch(e){return failure(e);}
 }
 export async function POST(req:Request){
