@@ -19,8 +19,8 @@ export function redemptionRowAuthor(row:{author?:string;lastDay?:string},tab:str
 export function redemptionNdCount(row:any,day:string){const entry=row.days?.[day];return entry?.ndCount||(entry?.action==='nd'||row.lastDay===day&&row.action==='nd'?1:0);}
 function compareRedemptionPriority(a:any,b:any,tab:string,day:string){return Number(tab==='returns'&&a.result==='returned')-Number(tab==='returns'&&b.result==='returned')||Number(tab==='confirm'&&dateConfirmedToday(a,day))-Number(tab==='confirm'&&dateConfirmedToday(b,day))||Number(awaitingOperator(a))-Number(awaitingOperator(b))||Number(['delivered','to_return','returned'].includes(a.result))-Number(['delivered','to_return','returned'].includes(b.result));}
 export function compareRedemptionRows(a:any,b:any,tab:string,day:string){return compareRedemptionPriority(a,b,tab,day)||(tab==='work'?(a.result==='none'?redemptionNdCount(a,day):0)-(b.result==='none'?redemptionNdCount(b,day):0):0);}
-export function compareRedemptionPeople(a:any,b:any,column:'operator'|'author',ascending:boolean,tab:string,day:string,showLogin=false){
- const value=(row:any)=>column==='author'?redemptionRowAuthor(row,tab,day):showLogin&&!['delivered','returned'].includes(row.result)&&!awaitingOperator(row)?row.login||row.operator||'':row.operator||'';
+export function compareRedemptionPeople(a:any,b:any,column:'operator'|'author',ascending:boolean,tab:string,day:string){
+ const value=(row:any)=>column==='author'?redemptionRowAuthor(row,tab,day):row.login||'';
  return compareRedemptionPriority(a,b,tab,day)||(ascending?1:-1)*value(a).localeCompare(value(b),'ru',{sensitivity:'base',numeric:true});
 }
 export const redemptionNightNotice='С 20:00 до 08:00 МСК проект «Выкуп» доступен только для просмотра.';
