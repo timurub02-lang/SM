@@ -8,6 +8,11 @@ export const actions={date:'Дата',nd:'НД',refusal:'Отказ',work:'В р
 export const results={date:'Дата',none:'НД',to_return:'На возврат',returned:'Возврат',delivered:'Вручен',courier:'У курьера',client_delivered:'Вручен со слов клиента',operator:'Передать оператору'};
 export const dayOf=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(0,10);
 export const dayPlus=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
+export function redemptionHeadScope(now=new Date()){
+ const day=dayOf(now),cutoff=Date.parse(day+'T13:01:00+03:00');
+ const headsAll=now.getTime()<cutoff;
+ return {headsAll,until:headsAll?cutoff:Date.parse(dayPlus(day,1)+'T00:00:00+03:00')};
+}
 export function refusalRetryDate(day:string){let date=day;for(let count=0;count<2;){date=dayPlus(date,1);const weekday=new Date(date+'T12:00:00Z').getUTCDay();if(weekday!==0&&weekday!==6)count++;}return date;}
 export function redemptionDayAuthor(row:{author?:string;lastDay?:string},day:string){return row.lastDay===day?row.author||'':'';}
 export function redemptionRowAuthor(row:{author?:string;lastDay?:string},tab:string,day:string){return tab==='work'?redemptionDayAuthor(row,day):row.author||'';}
@@ -18,7 +23,15 @@ export function compareRedemptionPeople(a:any,b:any,column:'operator'|'author',a
  const value=(row:any)=>column==='author'?redemptionRowAuthor(row,tab,day):showLogin&&!['delivered','returned'].includes(row.result)&&!awaitingOperator(row)?row.login||row.operator||'':row.operator||'';
  return compareRedemptionPriority(a,b,tab,day)||(ascending?1:-1)*value(a).localeCompare(value(b),'ru',{sensitivity:'base',numeric:true});
 }
-export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='19:50';
+export const redemptionNightNotice='С 20:00 до 08:00 МСК проект «Выкуп» доступен только для просмотра.';
+export function redemptionEditHours(now=new Date()){
+ const day=dayOf(now),opens=Date.parse(day+'T08:00:00+03:00'),closes=Date.parse(day+'T20:00:00+03:00'),at=now.getTime();
+ return {closed:at<opens||at>=closes,next:at<opens?opens:at<closes?closes:opens+86400000};
+}
+export function requireRedemptionEditHours(now=new Date()){
+ if(redemptionEditHours(now).closed)throw Error(redemptionNightNotice);
+}
+export const closedTime=(now=new Date())=>new Date(now.getTime()+10800000).toISOString().slice(11,16)>='20:00';
 export const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 export function redemptionDateLimit(day:string,storageUntil='',action=''){
  const [year,month,date]=day.split('-').map(Number),last=new Date(Date.UTC(year,month+1,0)).getUTCDate();
@@ -29,7 +42,7 @@ export function operatorReturnDeadline(storageUntil:string,now=new Date()){
  const limit=internalDeadline(now.toISOString(),48);
  return validDate(storageUntil||'')?[limit,storageUntil+'T20:59:59.999Z'].sort()[0]:limit;
 }
-export const defaults={statuses:[] as string[],projectId:'',automatic:false,headsAll:true};
+export const defaults={statuses:[] as string[],projectId:'',automatic:false};
 const redemptionSchemas=new WeakMap<Db,Promise<unknown>>();
 // Repeated CDEK checks still update their timestamp, but do not duplicate business history.
 const redemptionHistoryTrigger=`CREATE TRIGGER redemption_history_update AFTER UPDATE OF data ON redemption_entries WHEN NEW.data<>OLD.data AND NOT (json_extract(NEW.data,'$.changeKind') IS 'return_check' AND json_extract(OLD.data,'$.changeKind') IS 'return_check' AND json_remove(NEW.data,'$.updatedAt','$.returnCheck.at')=json_remove(OLD.data,'$.updatedAt','$.returnCheck.at')) BEGIN INSERT INTO redemption_history(order_id,at,data) VALUES(NEW.order_id,COALESCE(json_extract(NEW.data,'$.updatedAt'),strftime('%Y-%m-%dT%H:%M:%fZ','now')),NEW.data); END`;
@@ -109,13 +122,15 @@ export async function prepareIncomingRedemption(d:Db,e:Employee,orderId:string,i
  if(!stored||e.role==='operator'&&(o.manager!==e.id||o.status!=='shipping')||e.role==='redemption'&&!['shipping','pickup'].includes(o.status)||!o.delivery?.startsWith('cdek_'))throw Error('Результат выкупа недоступен для этого заказа');
  const incoming=await incomingForAction(d,incomingId,e,[],stored.client_id);
  if(e.role==='redemption'&&incoming.order_id&&incoming.order_id!==orderId)throw Error('Обращение относится к другому заказу');
+ if(redemptionEditHours(now).closed)return;
  await initRedemption(d);
  await d.prepare('INSERT OR IGNORE INTO redemption_entries(order_id,entered_at,data) VALUES(?,?,?)').bind(orderId,now.toISOString(),JSON.stringify({pendingEnrollment:e.role!=='redemption'})).run();
 }
 export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
+ requireRedemptionEditHours(now);
  if(p.incomingId!==undefined)await prepareIncomingRedemption(d,e,p.id,p.incomingId,now);
 
- const cfg=await redemptionConfig(d),row=(await redemptionRows(d,!!p.incomingId)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,cfg.headsAll))throw Error('Заказ недоступен');
+ const cfg=await redemptionConfig(d),row=(await redemptionRows(d,!!p.incomingId)).find((r:any)=>r.order_id===p.id);if(!row||!canSeeRedemption(e,row,redemptionHeadScope(now).headsAll))throw Error('Заказ недоступен');
  if(p.version!==row.version)throw Error('Заказ изменён другим сотрудником. Обновите результат');
  if(p.source==='order'){const stored=await d.prepare('SELECT data FROM orders WHERE id=?').bind(p.id).first();const order=JSON.parse(stored?.data||'{}');const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(order.manager||'').first();if(!(e.role==='redemption'&&p.incomingId)&&!canEditOrderRedemption(e,order,manager?{...JSON.parse(manager.data),id:order.manager}:undefined)||!p.incomingId&&!cfg.statuses.includes(order.cdekStatus?.code))throw Error('Результат выкупа недоступен для этого заказа');}
  let incoming:any=null;
@@ -129,7 +144,6 @@ export async function editRedemption(d:Db,e:Employee,p:any,now=new Date()){
  if(awaitingOperator(row)&&[row.operatorReturn.deadline,operatorReturnDeadline(row.storageUntil,now)].sort()[0]<=now.toISOString())throw Error('Срок обработки истёк. Заказ возвращён отделу выкупа; обновите список');
  if(awaitingOperator(row)&&['admin','redemption'].includes(e.role))throw Error('Заказ находится у оператора и недоступен для изменений');
  if(!(actionChange&&future)&&p.operation!=='verify_date'&&dateConfirmedToday(row,dayOf(now))&&row.resultDate>dayOf(now))throw Error('Подтверждение уже выполнено. Заказ доступен для работы в назначенную дату');
- if(closedTime(now)&&!row.testOnly&&!awaitingOperator(row))throw Error('День закрыт в 19:50. Изменения доступны завтра');
  if(!(p.operation==='return_waybill'&&row.result==='returned'&&row.returnCheck?.state!=='verified')&&['returned','delivered'].includes(row.result))throw Error('Работа с заказом завершена');
  const saved=await d.prepare('SELECT data FROM redemption_entries WHERE order_id=?').bind(p.id).first(),v=JSON.parse(saved.data),day=dayOf(now),at=now.toISOString();
  const next={...v,updatedAt:at,changedBy:e.name,changeKind:p.operation||'action',changeSource:incoming?'incoming':null,sourceIncomingId:incoming?.id||null};

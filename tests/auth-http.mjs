@@ -1,3 +1,4 @@
+import {setRedemptionClock} from './fixtures/redemption-clock.mjs';
 import {internalDeadline,internalElapsed,addWeekdayMilliseconds} from '../lib/internal-timers.ts';
 // Run after the Miran standalone build. Uses only a temporary, synthetic database.
 import assert from 'node:assert/strict';
@@ -31,7 +32,7 @@ try{
   const o={id:'o-'+id,clientId:c.id,manager:id,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,version:1};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
  }
- server=spawn(process.execPath,[resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_ADDITIONAL_ORIGINS:' https://crm-alias.test, ',CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,['--import',resolve('tests/fixtures/redemption-clock.mjs'),resolve('.next/standalone/server.js')],{env:{...process.env,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_ADDITIONAL_ORIGINS:' https://crm-alias.test, ',CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe','ipc']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(ready,'Server failed to start');
@@ -357,21 +358,31 @@ try{
  for(const cookie of [detailOperator.cookie,searchHead.cookie]){const found=await call('/api/redemption?tab=all',{cookie});assert.equal(found.status,200,found.text);assert(found.data.rows.some(r=>r.order_id===detailOrder.id));assert(!found.data.rows.some(r=>r.phone||r.clientPhone));}
  const unrelatedOperator=await fixture('redemption-search-unrelated','2');
  assert(!(await call('/api/redemption?tab=all',{cookie:unrelatedOperator.cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Project-wide search preserves operator ownership');
- const previousSearchConfig=db.prepare("SELECT data FROM settings WHERE id='redemption-config'").get();
- db.prepare("INSERT INTO settings(id,data) VALUES('redemption-config',?) ON CONFLICT(id) DO UPDATE SET data=json_set(data,'$.headsAll',json('false'))").run(JSON.stringify({headsAll:false}));
  const unrelatedHead=await fixture('redemption-search-other-head','2','department_head');
- assert(!(await call('/api/redemption?tab=all',{cookie:unrelatedHead.cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Project-wide search preserves the configured department scope');
- if(previousSearchConfig)db.prepare("UPDATE settings SET data=? WHERE id='redemption-config'").run(previousSearchConfig.data);else db.prepare("DELETE FROM settings WHERE id='redemption-config'").run();
+ const scopedSearch=await call('/api/redemption?tab=all',{cookie:unrelatedHead.cookie});
+ assert.equal(scopedSearch.status,200,scopedSearch.text);
+ assert.equal(scopedSearch.data.rows.some(r=>r.order_id===detailOrder.id),scopedSearch.data.config.headsAll);
+ assert(Number.isFinite(scopedSearch.data.headScopeMs));
+ assert.equal((await call('/api/redemption',{cookie:redemptionOrdinary.cookie,body:{operation:'heads',value:false}})).status,400);
  db.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').run(JSON.stringify({action:'date',result:'delivered',lastDay:oldDate.slice(0,10)}),detailOrder.id);
  for(const cookie of [cookies.admin,detailOperator.cookie,searchHead.cookie])assert((await call('/api/redemption?tab=all',{cookie})).data.rows.some(r=>r.order_id===detailOrder.id),'Completed older orders remain searchable');
  db.prepare('UPDATE redemption_entries SET data=? WHERE order_id=?').run(JSON.stringify({action:'date',result:'date',resultDate:futureDate,dateConfirmation:'confirmed',dateConfirmedAt:oldDate,author:'Earlier result'}),detailOrder.id);
  let version=db.prepare('SELECT version FROM redemption_entries WHERE order_id=?').get(detailOrder.id).version;
  const replacement={id:detailOrder.id,version,action:'courier',result:'courier',comment:'Changed after project-wide search'};
+ await setRedemptionClock(server,'00:00');
+ for(const cookie of [cookies.admin,detailOperator.cookie,searchHead.cookie,redemptionOrdinary.cookie]){
+  const read=await call('/api/redemption?tab=all',{cookie});assert.equal(read.status,200);assert.equal(read.data.closed,true);
+  const write=await call('/api/redemption',{cookie,body:{...replacement,replaceConfirmed:true}});
+  assert.equal(write.status,400);assert.match(write.data.error,/только для просмотра/);
+ }
+ assert.equal(db.prepare('SELECT version FROM redemption_entries WHERE order_id=?').get(detailOrder.id).version,version);
+ await setRedemptionClock(server,'08:00');
  assert.equal((await call('/api/redemption',{cookie:redemptionOrdinary.cookie,body:replacement})).status,400,'Future result replacement still needs confirmation');
  const changedResult=await call('/api/redemption',{cookie:redemptionOrdinary.cookie,body:{...replacement,replaceConfirmed:true}});assert.equal(changedResult.status,200,changedResult.text);
  assert.equal(JSON.parse(db.prepare('SELECT data FROM redemption_entries WHERE order_id=?').get(detailOrder.id).data).result,'courier');
  assert(db.prepare("SELECT id FROM redemption_history WHERE order_id=? AND json_extract(data,'$.resultDate')=?").get(detailOrder.id,futureDate),'Prior scheduled result remains in history');
 
+ await setRedemptionClock(server,null);
  const buyerDetails=await call(detailUrl,{cookie:redemptionOrdinary.cookie});assert.equal(buyerDetails.status,200,buyerDetails.text);
  assert.equal(buyerDetails.data.rows[0].deliveryAddress,'Pickup address');assert.equal(buyerDetails.data.rows[0].clientPhone,'+79990000001');
  const operatorDetails=await call(detailUrl,{cookie:detailOperator.cookie});assert.equal(operatorDetails.status,200,operatorDetails.text);assert.equal(operatorDetails.data.rows[0].clientPhone,undefined);

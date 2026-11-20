@@ -7,7 +7,7 @@ import {initReplacement,confirmReplacementCourier} from '@/lib/phone-replacement
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
-import {operatorReturnCount,prepareIncomingRedemption,inRedemptionTab,syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,closedTime} from '@/lib/redemption';
+import {redemptionHeadScope,operatorReturnCount,prepareIncomingRedemption,inRedemptionTab,syncRedemption,redemptionRows,redemptionConfig,editRedemption,canSeeRedemption,awaitingOperator,awaitingReturn,awaitingDateConfirmation,inWorkday,dayOf,redemptionEditHours,requireRedemptionEditHours} from '@/lib/redemption';
 import {cdekStatuses} from '@/lib/cdek-statuses';
 import {skorozvonToken} from '@/lib/skorozvon';
 export const dynamic='force-dynamic';
@@ -22,7 +22,8 @@ export const GET=authenticated(async req=>{try{
  const confirmation=q.get('tab')==='confirm',returns=q.get('tab')==='returns',allOrders=q.get('tab')==='all';if((confirmation||returns)&&!['admin','redemption'].includes(e.role))return Response.json({error:'Access denied'},{status:403});
  let rows=all;if(allOrders)rows=all;else if(q.get('tab')==='operator')rows=all.filter(awaitingOperator);else if(returns)rows=all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf()));else if(confirmation)rows=all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf()));else if(q.get('archive')||q.get('tab')==='archive'){const a=await d.prepare('SELECT data FROM redemption_archives WHERE day=?').bind(q.get('archive')||'').first<{data:string}>();const zones=new Map(all.map((r:any)=>[r.order_id,r.timeZone]));rows=JSON.parse(a?.data||'[]').map((r:any)=>({...r,timeZone:zones.get(r.order_id)||r.timeZone}));}
  else if(!q.get('id'))rows=all.filter((r:any)=>inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role)));
- rows=rows.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&(!q.get('id')||r.order_id===q.get('id'))).map(({phone,...r}:any)=>r);
+ const {headsAll,until}=redemptionHeadScope();
+ rows=rows.filter((r:any)=>canSeeRedemption(e,r,headsAll)&&(!q.get('id')||r.order_id===q.get('id'))).map(({phone,...r}:any)=>r);
  if(q.get('id')&&rows.length){
   const order=await d.prepare('SELECT data FROM orders WHERE id=?').bind(q.get('id')).first<{data:string}>();
   const created=await d.prepare("SELECT data FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Создан заказ%' ORDER BY at LIMIT 1").bind(q.get('id')).first<{data:string}>();
@@ -40,7 +41,7 @@ export const GET=authenticated(async req=>{try{
   rows[0]={...rows[0],items:o.items||[],deliveryAddress,deliveryPoint:shipment.deliveryPoint||shipment.form?.deliveryPoint||o.cdekTariff?.deliveryPoint?.code||'',delivery:o.delivery,...(e.role==='redemption'?{clientPhone:all.find((r:any)=>r.order_id===q.get('id'))?.phone||''}:{}),orderCreatedAt:o.createdAt,orderCreatedBy:created?JSON.parse(created.data).actor:o.testOnly?'Тестовые данные':'Не указан'};
  }
  const history=q.get('id')&&rows.length?(await d.prepare('SELECT at,data FROM redemption_history WHERE order_id=? ORDER BY id DESC').bind(q.get('id')).all()).results.map((r:any)=>({at:r.at,...JSON.parse(r.data)})):[];
- const matches=q.get('id')&&rows.length?(await d.prepare('SELECT day,at,data FROM redemption_archives ORDER BY day DESC').all()).results.flatMap((a:any)=>JSON.parse(a.data).filter((r:any)=>r.order_id===q.get('id')&&canSeeRedemption(e,r,cfg.headsAll)).map(({phone,...r}:any)=>({day:a.day,...r}))):[];
+ const matches=q.get('id')&&rows.length?(await d.prepare('SELECT day,at,data FROM redemption_archives ORDER BY day DESC').all()).results.flatMap((a:any)=>JSON.parse(a.data).filter((r:any)=>r.order_id===q.get('id')&&canSeeRedemption(e,r,headsAll)).map(({phone,...r}:any)=>({day:a.day,...r}))):[];
  const jobs=['admin','redemption'].includes(e.role)?(await d.prepare('SELECT day,state,error,updated_at FROM redemption_dispatch ORDER BY day DESC LIMIT 10').all()).results:[];
  let calls:any[]=[],courier=null;
  if(q.get('id')&&rows.length&&['admin','redemption'].includes(e.role)){
@@ -48,11 +49,12 @@ export const GET=authenticated(async req=>{try{
   courier=await d.prepare('SELECT c.* FROM replacement_couriers c JOIN replacement_assignments a ON a.id=c.assignment_id WHERE a.order_id=? AND a.released_at IS NULL').bind(q.get('id')).first();
  }
  const stats=await redemptionStats(d,e,q.get('archive')||dayOf(),!!q.get('archive')||q.get('tab')==='archive');
- const workRows=all.filter((r:any)=>canSeeRedemption(e,r,cfg.headsAll)&&inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role)));
- const dayCounts=await redemptionDayCounts(d,all,e,cfg.headsAll);
- return Response.json({stats,dayCounts,workCount:workRows.length,returnCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf())).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf())).length:0,rows,archives,history,matches,config:cfg,day:dayOf(),closed:closedTime(),jobs,calls,courier});
+ const workRows=all.filter((r:any)=>canSeeRedemption(e,r,headsAll)&&inRedemptionTab(r,'work',dayOf())&&(!awaitingOperator(r)||['admin','redemption'].includes(e.role)));
+ const dayCounts=await redemptionDayCounts(d,all,e,headsAll);
+ const serverNow=new Date();
+ return Response.json({stats,dayCounts,workCount:workRows.length,returnCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'returns',dayOf())).length:0,confirmationCount:['admin','redemption'].includes(e.role)?all.filter((r:any)=>inRedemptionTab(r,'confirm',dayOf())).length:0,rows,archives,history,matches,config:{...cfg,headsAll},headScopeMs:e.role==='department_head'?Math.max(0,until-Date.now()):undefined,day:dayOf(),closed:redemptionEditHours(serverNow).closed,serverTime:serverNow.getTime(),jobs,calls,courier});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка загрузки'},{status:400});}});
-export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=await req.json() as any;await syncRedemption(d);
+export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=await req.json() as any;requireRedemptionEditHours();await syncRedemption(d);
  if(p.operation==='settings'){
   if(e.role!=='admin')throw Error('Настройки доступны администратору');
   const previous=await redemptionConfig(d);const statuses=Array.isArray(p.statuses)?p.statuses:[];
@@ -62,8 +64,7 @@ export const POST=authenticated(async req=>{try{const e=await actor(),d=db(),p=a
   const cfg={...previous,statuses:[...new Set(statuses)],projectId:p.projectId||'',automatic:!!p.automatic};
   await d.prepare("INSERT INTO settings(id,data) VALUES('redemption-config',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify(cfg)).run();await syncRedemption(d);
  }else if(p.operation==='heads'){
-  if(e.role!=='redemption')throw Error('Переключатель доступен сотруднику выкупа');
-  const cfg=await redemptionConfig(d);await d.prepare("INSERT INTO settings(id,data) VALUES('redemption-config',?) ON CONFLICT(id) DO UPDATE SET data=json_set(settings.data,'$.headsAll',json_extract(excluded.data,'$.headsAll'))").bind(JSON.stringify({...cfg,headsAll:!!p.value})).run();
+  return Response.json({error:'Видимость заказов для руководителей меняется по московскому времени'},{status:400});
  }else if(p.operation==='courier'){await confirmReplacementCourier(d,e,p.callId);}else {await editRedemption(d,{...e,name:journalAuthor(e.name,e.id).actor},p);}
  return Response.json({ok:true});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка сохранения'},{status:400});}});
