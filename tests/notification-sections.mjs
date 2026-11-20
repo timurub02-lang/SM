@@ -25,3 +25,9 @@ assert.deepEqual(notificationSections([call],[acknowledged],Date.parse(due),true
 const moved={...call,due:'2026-11-19T09:46:00Z'};
 assert.deepEqual(notificationSections([moved],[acknowledged],now,true).planned,[moved],'A new date requires a new acknowledgement');
 assert.deepEqual(notificationSections([call],[{...acknowledged,acknowledgedAt:undefined}],now,true).planned,[call],'Opening a reminder is not acknowledgement');
+
+const cash={id:'cash:1',kind:'cash-change'};
+assert.deepEqual(notificationSections([order],[cash],now,false,true).tasks,[order]);
+assert.deepEqual(notificationSections([order],[cash],now,false,true).acknowledge,[cash]);
+assert.deepEqual(notificationSections([],[{...cash,acknowledgedAt:due}],now,false,true).acknowledge,[]);
+assert.deepEqual(notificationSections([],[cash],now).tasks,[cash]);

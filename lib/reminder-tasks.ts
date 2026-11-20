@@ -14,7 +14,7 @@ export function employeeTasks(s:State,e:Employee,now=Date.now()):Reminder[]{
  }
  for(const o of s.orders){
   if(!seesOrder(e,o,s.employees)||o.cdekDeleting)continue;
-  if(admin){if(o.status==='check')add(o,'check','Проверьте заказ перед сборкой');continue;}
+  if(admin){if(o.status==='check'&&!o.zvd)add(o,'check','Проверьте заказ перед сборкой');continue;}
   if(o.cancellationRequest?.status==='pending'&&(logistic||admin)){add(o,'cancel-request','СРОЧНО: обработайте запрос на отмену',o.cancellationRequest.at,o.cancellationRequest.at,'order-cancellation',o.cancellationRequest.name+' · '+o.cancellationRequest.reason);continue;}
   if(o.editRequest?.status==='pending'&&(logistic||admin)){add(o,'edit-request','Клиент просит редактирование заказа',o.editRequest.at,o.editRequest.at,'order-edit',o.editRequest.name+' · '+o.editRequest.reason);continue;}
   if(logistic&&postalBuyoutPending(o)){const r=o.postalBuyoutReport!;add(o,'postal-buyout:'+r.id,'Проверьте выкуп заказа Почты России',undefined,r.at,'task',r.name+' сообщил: клиент выкупил заказ');continue;}

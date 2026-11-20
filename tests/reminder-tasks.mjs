@@ -79,3 +79,6 @@ for(const status of ['confirm','extra'])for(const contact of ['none','callback',
 }
 
 for(const order of [urgent,repack,atWarehouse,{...base,cancellationRequest:{status:'pending',at}},{...base,editRequest:{status:'pending',at}},{...base,contact:'callback',due:future}])assert.equal(tasks(admin,order).length,0,'Admin does not inherit operational tasks');
+
+assert.equal(tasks(admin,{...base,status:'check',zvd:true}).length,0,'ZVD is an admin decision, not a pending review');
+assert.equal(tasks(admin,{...base,status:'check',zvd:false}).length,1,'Removing ZVD restores the review task');
