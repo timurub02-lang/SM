@@ -385,7 +385,7 @@ async function handlePOST(request:Request){
   }
  }else if(p.action==='missIncoming'){
   if(!employee)throw Error('Требуется сотрудник');
-  await markIncomingMissed(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees,now);
+  await markIncomingMissed(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees,now,z.string().regex(/^[a-f0-9]{32}$/).optional().parse(p.callId));
   message='Недозвон сохранён. Обращение вернётся через час';
  }else if(p.action==="closeIncoming"||p.action==="incomingResult"){
   if(!employee||employee.role==='courier')throw Error('Обращение недоступно');
