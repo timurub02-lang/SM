@@ -48,6 +48,7 @@ try{
   assert.equal((await call('/api/oktell-projects',cookies[id])).status,403);
   assert.equal((await call('/api/oktell-projects',cookies[id],{})).status,403);
  }
+ const entry=await call('/oktell-pilot',cookies.admin);assert.equal(entry.status,307);assert.equal(entry.headers.get('location'),'/oktell-projects');
  const page=await call('/oktell-projects',cookies.admin);assert.equal(page.status,200);assert.match(page.text,/Проекты Oktell/);assert.match(page.headers.get('permissions-policy'),/microphone=\(\)/);
  const empty=await call('/api/oktell-projects',cookies.admin);assert.equal(empty.status,200);assert.equal(empty.data.native.canApply,false);assert.equal(empty.data.projects.length,0);assert.equal(empty.data.operators.length,1);
  const cmd={action:'create',id:randomUUID(),settings:newProjectSettings('t1')};

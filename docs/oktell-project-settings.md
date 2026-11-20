@@ -23,3 +23,9 @@ Working operators currently use the main CRM and Skorozvon. Do not merge or depl
 ## Verification
 
 `node --experimental-strip-types tests/oktell-project-settings.mjs` tests validation, T1 preset, conflicts, idempotent retries and transaction rollback. `tests/oktell-project-settings-http.mjs` checks authentication, roles, Origin, payload size, persistence and disabled-mode isolation. The existing `tests/oktell-reset-http.mjs` still exercises the default, disabled behavior.
+
+## Review and confirmation — 20 November 2026
+
+With the lab flag enabled, the existing admin pilot entry opens the project editor. Before applying, the editor compares the five supported fields with the latest native readback, including the full Moscow schedule. Reordering schedule rows does not count as a change. Unsaved drafts, unsupported modes/timezones and an empty schedule show an explanation before submission. Draft-only rules are labelled in each affected section.
+
+An apply response must match every submitted field as well as the stopped/isolated state. A mismatch retains the durable pending operation for reconciliation and never advances the applied revision. This is configuration verification, not a dialing test.

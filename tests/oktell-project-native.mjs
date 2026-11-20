@@ -8,6 +8,7 @@ import {saveProjectDraft} from '../lib/oktell-project-store.ts';
 import {newProjectSettings} from '../lib/oktell-project-settings.ts';
 import {applyNativeProject,readNativeProject} from '../lib/oktell-project-apply.ts';
 import {nativeSession} from '../lib/oktell-settings-native.ts';
+import {nativeSettingsDiff,nativeFieldValue} from '../lib/oktell-settings-diff.ts';
 
 const owner=randomUUID(),md5='A'.repeat(32),dir=mkdtempSync(join(tmpdir(),'native-settings-'));
 const credentials=join(dir,'credentials.json');writeFileSync(credentials,JSON.stringify({login:'synthetic',password:'synthetic',userId:owner,helperMd5:md5}));
@@ -15,7 +16,7 @@ Object.assign(process.env,{OKTELL_PROJECT_SETTINGS:'1',OKTELL_SETTINGS_NATIVE:'l
 const RealWebSocket=globalThis.WebSocket,sql=new DatabaseSync(':memory:');
 const wrap=(query,args=[])=>({bind:(...values)=>wrap(query,values),first:async()=>sql.prepare(query).get(...args),all:async()=>({results:sql.prepare(query).all(...args)}),run:async()=>({meta:sql.prepare(query).run(...args)})});
 const db={prepare:query=>wrap(query),batch:async statements=>{sql.exec('BEGIN');try{const out=[];for(const s of statements)out.push(await s.run());sql.exec('COMMIT');return out;}catch(e){sql.exec('ROLLBACK');throw e;}}};
-const projects=[],tasks=new Map(),operations=new Map(),methods=[];let lose='',wrongPin=false,wrongIdentity=false;
+const projects=[],tasks=new Map(),operations=new Map(),methods=[];let lose='',wrongPin=false,wrongIdentity=false,mismatch=false;
 class FakeSocket extends EventTarget{
  static OPEN=1;static CLOSED=3;readyState=0;
  constructor(url,protocol){super();assert.equal(url,'ws://10.21.103.2:4055');assert.equal(protocol,'json');queueMicrotask(()=>{this.readyState=1;this.dispatchEvent(new Event('open'));});}
@@ -39,7 +40,7 @@ class FakeSocket extends EventTarget{
      state={...b.settings,ok:true,taskId:b.taskId,projectId:b.projectId,active:0,assignedLines:0,runtimeActivity:'0',snapshot:createHash('sha256').update(JSON.stringify(b.settings)).digest('hex').toUpperCase()};
      tasks.set(b.taskId,state);operations.set(b.operationId,{body:b,state});
     }
-    if(!reply.result)reply={result:1,returnvalue:JSON.stringify(state)};
+    if(!reply.result)reply={result:1,returnvalue:JSON.stringify(mismatch?{...state,ringSeconds:state.ringSeconds+1}:state)};
    }
   }else throw Error('Unexpected native command: '+method);
   if(lose===method){lose='';queueMicrotask(()=>this.close());return;}
@@ -71,6 +72,20 @@ try{
  wrongIdentity=true;await assert.rejects(readNativeProject(db,id),e=>e.status===503);wrongIdentity=false;
  await assert.rejects(nativeSession(call=>call('cc_settaskactivity',{})),e=>e.status===403);
  assert.ok(!methods.includes('cc_settaskactivity'));assert.ok(!methods.includes('execpredefineddbstoredproc'));
+ const desired=newProjectSettings('t1');
+ assert.deepEqual(nativeSettingsDiff(desired,{...desired,schedule:[...desired.schedule].reverse()}),[]);
+ assert.deepEqual(nativeSettingsDiff({...desired,maxAttempts:10},desired),[]);
+ assert.deepEqual(nativeSettingsDiff({...desired,ringSeconds:51},desired),['ringSeconds']);
+ assert.equal(nativeSettingsDiff(desired,null).length,5);
+ assert.match(nativeFieldValue(desired,'schedule'),/Пн 07:00/);
+ // A success-shaped reply with wrong values must retain the durable command, not claim applied.
+ const mismatchId=await draft();mismatch=true;
+ await assert.rejects(applyNativeProject(db,command(mismatchId)),e=>e.status===503&&e.message.includes('не совпали'));
+ const uncertain=sql.prepare('SELECT pending,applied_revision FROM oktell_project_native WHERE id=?').get(mismatchId);
+ assert.ok(uncertain.pending);assert.equal(uncertain.applied_revision,null);
+ mismatch=false;
+ const reconciled=await applyNativeProject(db,{...command(mismatchId),action:'retry'});
+ assert.equal(reconciled.pending,false);assert.equal(reconciled.state.ringSeconds,50);
  process.env.OKTELL_SETTINGS_NATIVE='';const count=methods.length;await assert.rejects(nativeSession(()=>{}),e=>e.status===503);assert.equal(methods.length,count);
  console.log('PASS: isolated native contract, pinned helper/identity, durable lost-response recovery, no duplicate projects, CAS, disabled mode and no call commands');
 }finally{globalThis.WebSocket=RealWebSocket;sql.close();rmSync(dir,{recursive:true,force:true});}

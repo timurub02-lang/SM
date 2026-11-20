@@ -13,6 +13,7 @@ export default async function Page(){
  const actor=await sessionEmployee(new Headers(await headers()));
  if(!actor)redirect('/login');
  if(actor.role!=='admin')redirect('/');
+ if(process.env.OKTELL_PROJECT_SETTINGS==='1'&&!actor.testOnly&&!actor.impersonation)redirect('/oktell-projects');
  const row=await db().prepare('SELECT data FROM settings WHERE id=?').bind(pilotSetting).first<{data:string}>();
  if(!row)return <main className="workspace-content"><a href="/">Вернуться в CRM</a><h1>Тестовый проект Oktell</h1><p>Настройки проекта ещё не загружены.</p></main>;
  let stored:unknown;
