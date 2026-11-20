@@ -13,3 +13,5 @@
 .nativeActions{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
 
 .comparison{margin-top:18px;overflow-x:auto}.comparison table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px;line-height:1.6}.comparison caption{text-align:left;font-weight:600;margin-bottom:10px}.comparison th,.comparison td{text-align:left;vertical-align:top;padding:10px 8px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}.comparison thead th{color:var(--muted);font-weight:500}.comparison tbody th{font-weight:500}.comparison td{font-variant-numeric:tabular-nums}
+
+.importer{display:grid;gap:16px;min-width:0}.importer p{margin:0}.importer a{color:var(--accent);text-underline-offset:3px}.importer li{overflow-wrap:anywhere;margin-block:8px}.importer input[type=file]{width:100%;font-size:14px}.importColumns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.importer summary{cursor:pointer;font-size:14px}.importer .success,.importer .error{padding:12px;overflow-wrap:anywhere}.importer button{justify-self:start}@media(max-width:760px){.importColumns{grid-template-columns:1fr}.importer input,.importer select{font-size:16px}}

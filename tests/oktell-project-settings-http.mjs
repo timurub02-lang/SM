@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import ExcelJS from 'exceljs';
 import {DatabaseSync} from 'node:sqlite';
 import {randomUUID} from 'node:crypto';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
@@ -37,6 +38,8 @@ try{
  }
  sql.prepare('INSERT INTO auth_test_accounts VALUES(?)').run('tester');
  await boot(false);
+ assert.equal((await call('/api/oktell-projects/import')).status,410);
+ assert.equal((await call('/api/oktell-projects/import',null,{})).status,410);
  assert.equal((await call('/api/oktell-projects')).status,410);
  assert.equal((await call('/api/oktell-projects/native')).status,410);
  assert.equal((await call('/api/oktell-projects/native',null,{})).status,410);
@@ -45,6 +48,8 @@ try{
  const cookies={};for(const id of ['admin','head','operator','tester']){const r=await call('/api/auth/login',null,{login:id,password});assert.equal(r.status,200);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
  assert.equal((await call('/oktell-projects')).status,307);
  for(const id of [undefined,'head','operator','tester']){
+  assert.equal((await call('/api/oktell-projects/import?projectId='+randomUUID(),cookies[id])).status,403);
+  assert.equal((await call('/api/oktell-projects/import',cookies[id],{})).status,403);
   assert.equal((await call('/api/oktell-projects',cookies[id])).status,403);
   assert.equal((await call('/api/oktell-projects',cookies[id],{})).status,403);
  }
@@ -57,6 +62,24 @@ try{
  assert.equal((await call('/api/oktell-projects',cookies.admin,{...cmd,settings:{...cmd.settings,name:'x'.repeat(70000)}})).status,413);
  const created=await call('/api/oktell-projects',cookies.admin,cmd);assert.equal(created.status,200);assert.equal(created.data.project.updatedBy,'admin');assert.equal(created.data.project.revision,1);
  assert.equal((await call('/api/oktell-projects',cookies.admin,cmd)).data.project.revision,1);
+ const workbook=new ExcelJS.Workbook();workbook.addWorksheet('Контакты').addRows([['Телефон','Имя','Город'],['79990000001','Синтетический контакт','Москва'],['8 (999) 000-00-01','Дубль',''],['не номер','Ошибка','']]);
+ const bytes=Buffer.from(await workbook.xlsx.writeBuffer());
+ async function upload(extra={},cookie=cookies.admin,requestOrigin=origin,body=bytes){
+  const q=new URLSearchParams({projectId:cmd.id,filename:'контакты.xlsx',action:'preview',...extra});
+  const r=await fetch(base+'/api/oktell-projects/import?'+q,{method:'POST',headers:{cookie,Origin:requestOrigin,'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},body});return {status:r.status,data:await r.json()};
+ }
+ const template=await fetch(base+'/api/oktell-projects/import?template=1',{headers:{cookie:cookies.admin}});assert.equal(template.status,200);
+ const templateBook=new ExcelJS.Workbook();await templateBook.xlsx.load(Buffer.from(await template.arrayBuffer()));assert.equal(templateBook.worksheets[0].getCell('A1').text,'Телефон');
+ assert.equal((await upload({},cookies.operator)).status,403);assert.equal((await upload({},cookies.admin,'https://evil.test')).status,403);
+ assert.equal((await upload({filename:'старый.xls'})).status,400);
+ assert.equal((await upload({},cookies.admin,origin,Buffer.alloc(5*1024*1024+1))).status,413);
+ const preview=await upload();assert.equal(preview.status,200);assert.equal(preview.data.preview.added,1);assert.equal(preview.data.preview.duplicates,1);assert.equal(preview.data.preview.invalid,1);
+ assert.equal((await call('/api/oktell-projects/import?projectId='+cmd.id,cookies.admin)).data.total,0);
+ assert.equal((await upload({action:'confirm',token:'a'.repeat(64)})).status,409);
+ const confirm={action:'confirm',token:preview.data.preview.token,phone:'1',name:'2',city:'3',sheet:'1'};
+ assert.equal((await upload(confirm)).data.receipt.added,1);assert.equal((await upload(confirm)).data.replayed,true);
+ const inventory=(await call('/api/oktell-projects/import?projectId='+cmd.id,cookies.admin)).data;assert.equal(inventory.total,1);assert.equal(inventory.imports.length,1);
+ assert.equal((await upload({projectId:randomUUID()})).status,404);
  const changed={...cmd.settings,name:'Сохранённый проект'};
  assert.equal((await call('/api/oktell-projects',cookies.admin,{action:'save',id:cmd.id,revision:1,settings:changed})).status,200);
  assert.equal((await call('/api/oktell-projects',cookies.admin,{action:'save',id:cmd.id,revision:1,settings:{...changed,name:'Устаревший'}})).status,409);
@@ -64,9 +87,12 @@ try{
  const history=(await call('/api/oktell-projects?history='+cmd.id,cookies.admin)).data.history;assert.equal(history.length,2);assert.equal(history[1].settings.name,cmd.settings.name);
  await stop();await boot(true);
  assert.equal((await call('/api/oktell-projects',cookies.admin)).data.projects[0].settings.name,'Сохранённый проект');
+ assert.equal((await call('/api/oktell-projects/import?projectId='+cmd.id,cookies.admin)).data.total,1);
  const token=cookies.admin.split('=')[1];const {tokenHash}=await import('../lib/auth-crypto.ts');
  sql.prepare('INSERT INTO auth_impersonations(id,session_hash,target_id,started_at,expires_at) VALUES(?,?,?,?,?)').run(randomUUID(),tokenHash(token),'operator',Date.now(),Date.now()+60000);
  assert.equal((await call('/api/oktell-projects',cookies.admin)).status,403);
+ assert.equal((await call('/api/oktell-projects/import?projectId='+cmd.id,cookies.admin)).status,403);
+ assert.equal((await upload()).status,403);
  assert.equal((await call('/api/oktell-projects',cookies.admin,cmd)).status,403);
  await stop();await boot(true,true);
  for(const id of [undefined,'head','operator','tester','admin']){
