@@ -503,3 +503,11 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 
 /* Search results stay open while typing, then collapse after selection. */
 .operator-select select[size]{height:auto;min-height:0;background-image:none}
+
+.incoming-miss-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:22px}
+.incoming-miss-row>div{min-width:0}
+.incoming-miss-count,.incoming-miss-zero{flex:none;white-space:nowrap}
+.incoming-miss-zero{font-size:13px;color:inherit;opacity:.75}
+.incoming-miss-history{list-style:none;padding:0;margin:0;display:grid;gap:12px}
+.incoming-miss-history li{display:grid;gap:6px;padding:12px;border:1px solid var(--border);border-radius:10px}
+.incoming-miss-history audio{width:100%;max-width:100%}

@@ -1,4 +1,4 @@
-import {canReadIncomingClient} from '@/lib/incoming';
+import {canPlayMissedRecording,canReadIncomingClient} from '@/lib/incoming';
 import {open} from 'node:fs/promises';
 import {Readable} from 'node:stream';
 import {byteRange} from '@/lib/byte-range';
@@ -15,7 +15,13 @@ export const GET=authenticated(async req=>{
  const masked=new URL(req.url).searchParams.get('masked')==='1';
  if(masked&&!['admin','redemption'].includes(e.role))return new Response(null,{status:403});
  await initPhone(db());const c=await db().prepare(masked?'SELECT * FROM replacement_calls WHERE id=?':'SELECT * FROM phone_calls WHERE id=?').bind(id).first<PhoneCall>();
- if(!c||!c.recording||!masked&&!(incomingId?await canReadIncomingClient(db(),e,incomingId,c.client_id||''):await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
+ const missedId=new URL(req.url).searchParams.get('missedIncomingId');
+ if(missedId&&!masked){
+  if(!c?.recording||!await canPlayMissedRecording(db(),e,missedId,id))return new Response(null,{status:403});
+  // For calls placed in client mode, retain the normal client recording permissions.
+  const linked=await db().prepare('SELECT 1 FROM phone_call_incoming WHERE call_id=? AND incoming_id=?').bind(id,missedId).first();
+  if(!linked&&!await canReadIncomingClient(db(),e,missedId,c.client_id||'')&&!await phoneScope(db(),e,{clientId:c.client_id||undefined}))return new Response(null,{status:403});
+ }else if(!c||!c.recording||!masked&&!(incomingId?await canReadIncomingClient(db(),e,incomingId,c.client_id||''):await phoneScope(db(),e,{clientId:c.client_id||undefined})||c.order_id&&await phoneScope(db(),e,{orderId:c.order_id})))return new Response(null,{status:403});
  try{
   const dir=process.env.CRM_PHONE_RECORDINGS_DIR||'/var/lib/sm-crm/recordings';
   let extension='wav';
