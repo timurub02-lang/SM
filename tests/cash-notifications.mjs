@@ -18,7 +18,7 @@ assert.ok(rows.every(r=>r.employee_id.startsWith('admin')));
 assert.match(JSON.parse(rows[0].data).text,/Head.*123.45.*Test/);
 await d.prepare("UPDATE reminders SET read_at='2026-11-16T10:01:00Z' WHERE employee_id='admin'").run();
 const events=async id=>(await d.prepare('SELECT data FROM reminders WHERE employee_id=?').bind(id).all()).results.map(r=>JSON.parse(r.data));
-assert.equal(notificationPopupTab(await events('admin'),[]),'tasks');
+assert.equal(notificationPopupTab(await events('admin'),[]),'acknowledge');
 assert.equal(notificationSections([],await events('admin')).tasks.length,1,'Opening is not acknowledgement');
 await assert.rejects(acknowledgeCashNotice(d,{id:'head',role:'department_head'},'cash:new:created','2026-11-16T10:02:00Z'));
 await assert.rejects(acknowledgeCashNotice(d,{id:'admin',role:'admin'},'cash:missing:created','2026-11-16T10:02:00Z'));
