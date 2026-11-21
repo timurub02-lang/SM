@@ -22,7 +22,8 @@ globalThis.fetch=async(input,options={})=>{
   state.orders[uuid]={number:payload.number,cdek_number:'NEW-'+state.calls.length,status:'CREATED',create:'SUCCESSFUL'};save(state);
   return response({entity:{uuid,cdek_number:state.orders[uuid].cdek_number},requests:[{type:'CREATE',state:'SUCCESSFUL'}]},202);
  }
- const uuid=path.split('/').at(-1);let order=state.orders[uuid];
+ const lookup=new URL(url).searchParams.get('cdek_number');
+ const uuid=lookup?Object.keys(state.orders).find(key=>state.orders[key].cdek_number===lookup):path.split('/').at(-1);let order=state.orders[uuid];
  if(!order)return response({errors:[{message:'Unknown synthetic order'}]},404);
  if(method==='DELETE'){
   order.deletion=state.mode==='reject'?'INVALID':state.mode==='immediate'?'SUCCESSFUL':'ACCEPTED';order.deleteId=crypto.randomUUID();save(state);
@@ -34,7 +35,7 @@ globalThis.fetch=async(input,options={})=>{
   if(state.getFailureUuid===uuid)return response({errors:[{message:'Temporary outage'}]},503);
   if(order.gone)return response({requests:[{type:'GET',state:'INVALID',errors:[{code:order.goneCode||'v2_entity_not_found',message:'Entity is not found by uuid '+(order.goneUuid||uuid)}]}]},400);
   // Capture the response before waiting to reproduce an in-flight stale refresh.
-  const data={entity:{uuid,number:order.number,cdek_number:order.cdek_number,statuses:[{code:order.status,date_time:'2026-10-05T08:00:00Z'}]},requests:[{type:'CREATE',state:order.create||'SUCCESSFUL'},...(order.deletion?[{type:'DELETE',state:order.deletion,request_uuid:order.deleteId,...(order.deletion==='INVALID'?{errors:[{message:'Warehouse movement'}]}:{})}]:[])]};
+  const data={entity:{...order.amountFields,uuid,number:order.number,cdek_number:order.cdek_number,statuses:[{code:order.status,date_time:'2026-10-05T08:00:00Z'}]},requests:[{type:'CREATE',state:order.create||'SUCCESSFUL'},...(order.deletion?[{type:'DELETE',state:order.deletion,request_uuid:order.deleteId,...(order.deletion==='INVALID'?{errors:[{message:'Warehouse movement'}]}:{})}]:[])]};
   if(state.delayNextGet){delete state.delayNextGet;save(state);await new Promise(r=>setTimeout(r,1200));}
   return response(data);
  }

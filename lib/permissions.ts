@@ -105,6 +105,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;
  if(path==='/api/incoming-work-gate')return method==='GET'&&!['courier','purchasing'].includes(e.role);
  if(impersonationBlocksPhone(e,path))return false;
+ if(path==='/api/cdek/shipment'&&method==='POST'&&p?.action==='syncAmount')return isLogistic(e.role)||e.role==='department_head';
  if(path==='/api/base-search')return method==='GET'&&['admin','department_head','logistic','chief_logistic'].includes(e.role);
  if(path==='/api/sk-client-link')return method==='GET'&&!['courier','purchasing'].includes(e.role);
  if(path==='/api/crm/history')return method==='GET'&&!['courier','purchasing'].includes(e.role);

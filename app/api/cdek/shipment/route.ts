@@ -12,21 +12,30 @@ import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {cdekToken} from '@/lib/cdek';
 import {importedCdekShipment,shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,deletionRequestKey,type Shipment} from '@/lib/cdek-shipment';
-import type {Order,Client} from '@/lib/crm';
+import {money,isLogistic,type Order,type Client,type Employee} from '@/lib/crm';
+import {isDepartmentOrder} from '@/lib/department-orders';
+import {basketAmount} from '@/lib/basket-total';
+import {orderTracking} from '@/lib/order-tracking';
+import {canSyncCdekAmount,cdekPayableAmount,reconciledBasket} from '@/lib/cdek-order-amount';
 import type {Product} from '@/lib/warehouse';
 import {z} from 'zod';
 const uuidSchema=z.string().uuid();
-async function context(actorId:string,orderId:string){
+async function context(actorId:string,orderId:string,syncAmount=false){
  await initInventory();
  const actor=await db().prepare('SELECT data FROM employees WHERE id=?').bind(actorId).first<{data:string}>();
- if(!actor||!['logistic','chief_logistic','admin'].includes(JSON.parse(actor.data).role))throw Error('Отправления доступны только логисту');
+ const employee:Employee|null=actor?JSON.parse(actor.data):null;
+ if(!employee||!(isLogistic(employee.role)||(syncAmount?employee.role==='department_head':employee.role==='admin')))throw Error('Отправления доступны только логисту');
  const row=await db().prepare('SELECT data,version FROM orders WHERE id=?').bind(orderId).first<{data:string;version:number}>();
  if(!row)throw Error('Заказ не найден');
  const order={...JSON.parse(row.data),version:row.version} as Order;
+ if(syncAmount&&employee.role==='department_head'){
+  const manager=await db().prepare('SELECT data FROM employees WHERE id=?').bind(order.manager).first<{data:string}>();
+  if(!manager||!isDepartmentOrder(employee,order,[JSON.parse(manager.data)]))throw Error('Заказ другого отдела');
+ }
  if(order.testOnly)throw Error("Тестовый заказ: реальные операции СДЭК отключены");
  const record=await db().prepare('SELECT data FROM settings WHERE id=?').bind(`cdek-shipment-${orderId}`).first<{data:string}>();
  const shipment=record?JSON.parse(record.data) as Shipment:null;
- return {order,shipment,record,key:`cdek-shipment-${orderId}`,actor:JSON.parse(actor.data)};
+ return {order,shipment,record,key:`cdek-shipment-${orderId}`,actor:employee};
 }
 async function apiFor(slot:number){
  const config=await db().prepare('SELECT data FROM settings WHERE id=?').bind(`cdek-${slot}`).first<{data:string}>();
@@ -60,12 +69,48 @@ async function handlePOST(req:Request){
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
   const raw=await readLimitedText(req,24000);if(raw.length>6000)throw Error('Слишком большой запрос');
-  const p=z.object({actorId:z.string().min(1),orderId:z.string().min(1),action:z.enum(['create','refresh','print','delete']),version:z.number().int().optional(),form:shipmentFormSchema.optional(),recoveryUuid:uuidSchema.optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional()}).parse(JSON.parse(raw));
-  const c=await context(p.actorId,p.orderId);const d=db();
+  const p=z.object({actorId:z.string().min(1),orderId:z.string().min(1),action:z.enum(['create','refresh','print','delete','syncAmount']),version:z.number().int().optional(),form:shipmentFormSchema.optional(),recoveryUuid:uuidSchema.optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional()}).parse(JSON.parse(raw));
+  const c=await context(p.actorId,p.orderId,p.action==='syncAmount');const d=db();
   const save=async(next:Shipment,previous:string)=>{
    const result=await d.prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(JSON.stringify(next),c.key,previous).run();
    if(!result.meta.changes)throw Error('Отправление изменилось. Обновите карточку');
   };
+  if(p.action==='syncAmount'){
+   const {order,shipment}=c;
+   if(!canSyncCdekAmount(order,shipment?.state==='ready')||p.version!==order.version)throw Error('Обновите карточку и проверьте текущий статус заказа');
+   const track=orderTracking(order)?.number;
+   let entity;
+   if(shipment){
+    if(shipment.state!=='ready'||!shipment.uuid||shipment.form?.payment==='prepaid')throw Error('Для сверки нужна действующая накладная с наложенным платежом');
+    const api=await apiFor(shipment.slot);
+    entity=(await json(await api('/orders/'+uuidSchema.parse(shipment.uuid)))).entity;
+    if(entity?.uuid!==shipment.uuid||shipment.number&&String(entity.cdek_number)!==shipment.number)throw Error('СДЭК не подтвердил исходную накладную');
+   }else if(track&&order.legacyLv){
+    const accounts=await d.prepare("SELECT id FROM settings WHERE id GLOB 'cdek-[1-4]' ORDER BY id").all<{id:string}>();
+    for(const account of accounts.results){
+     const api=await apiFor(Number(account.id.slice(-1))),response=await api('/orders?cdek_number='+encodeURIComponent(track));
+     if(response.status===404||response.status===403)continue;
+     const data=await response.json() as {entity?:any;requests?:{errors?:{code:string}[]}[]};
+     if(response.status===400&&data.requests?.some(r=>r.errors?.some(e=>e.code==='v2_entity_not_found')))continue;
+     if(!response.ok)throw Error(cdekErrors(data)||'СДЭК временно недоступен');
+     entity=data.entity;break;
+    }
+   }
+   if(!entity?.uuid||!entity.cdek_number||track&&String(entity.cdek_number)!==track||
+     String(entity.number)!==String(order.legacyLv?.cdekOrderNumber||order.id))throw Error('СДЭК не подтвердил связь накладной с этим заказом');
+   const amount=cdekPayableAmount(entity),before=basketAmount(order.items);
+   if(amount===before)return reply({changed:false,message:'Суммы совпадают · '+money(amount)});
+   const mutation=crypto.randomUUID(),at=new Date().toISOString();
+   const text='Сумма заказа изменена по данным СДЭК: '+money(before)+' → '+money(amount)+' · накладная № '+entity.cdek_number;
+   const event={id:mutation,orderId:order.id,clientId:order.clientId,...journalAuthor(c.actor.name,c.actor.id),at,text};
+   const result=await d.batch([
+    d.prepare(`UPDATE orders SET data=json_set(data,'$.items',json(?),'$.updatedAt',?,'$._mutation',?,'$.version',version+1),version=version+1
+     WHERE id=? AND version=? AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?`).bind(JSON.stringify(reconciledBasket(order.items,amount)),at,mutation,order.id,order.version,c.key,c.record?.data||''),
+    d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(mutation,order.clientId,order.id,at,JSON.stringify(event),order.id,mutation)
+   ]);
+   if(!result[0].meta.changes)throw Error('Заказ или накладная изменились. Обновите карточку и повторите сверку');
+   return reply({changed:true,message:text});
+  }
   if(p.action==='create'&&importedCdekShipment(c.order))throw Error('Заказ уже отправлялся через ЛВ: повторная выгрузка недоступна');
   if(p.action==='delete'&&c.order.legacyLv)throw Error('Заказ перенесён из ЛВ: удаление отправления недоступно');
   if(p.action==='delete'){

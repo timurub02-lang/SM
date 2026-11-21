@@ -208,6 +208,42 @@ try{
  assert.equal(r.status,400);assert.match(r.data.error,/лимиты исчерпаны/);assert.equal(upstream().calls.length,beforeQuota);
  db.prepare("DELETE FROM settings WHERE id='cdek-routing'").run();
  console.log('Account changes do not require recalculation; current account, quota, saved tariff, PVZ and amounts verified.');
+ // A CDEK read updates just the payable total and its journal entry.
+ db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('total','итого',JSON.stringify({...product,id:'total',name:'ИТОГО'}));
+ db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('total-stock','total',100,'Test stock','admin',new Date().toISOString());
+ const cod=fixture('SM-COD'),sync=(role,version=readOrder(cod.order.id).version)=>call(path,role,{orderId:cod.order.id,version,action:'syncAmount'});
+ db.prepare("UPDATE orders SET data=json_set(data,'$.items',json(?)) WHERE id=?").run(JSON.stringify([{...cod.order.items[0],price:0},{name:'ИТОГО',quantity:1,price:100}]),cod.order.id);
+ const allocation=()=>db.prepare('SELECT product_id,quantity FROM order_stock WHERE order_id=? ORDER BY product_id').all(cod.order.id);
+ const previousAllocation=allocation();
+ const journal=()=>db.prepare('SELECT data FROM events WHERE order_id=?').all(cod.order.id);
+ const amountFields={packages:[{items:[{amount:2,payment:{value:4000}},{amount:1,payment:{value:2000}}]}],delivery_recipient_cost:{value:0}};
+ change(s=>{s.orders[cod.uuid].amountFields=amountFields;});
+ assert.equal((await sync('operator')).status,403);
+ db.prepare("UPDATE employees SET data=json_set(data,'$.department','2') WHERE id='department_head'").run();
+ assert.equal((await sync('department_head')).status,403);
+ db.prepare("UPDATE employees SET data=json_set(data,'$.department','1') WHERE id='department_head'").run();
+ r=await sync('department_head');assert.equal(r.status,200,r.text);assert.equal(r.data.changed,true);
+ assert.deepEqual(readOrder(cod.order.id).items,[{name:product.name,quantity:1,price:0},{name:'ИТОГО',quantity:1,price:10000}]);
+ assert.equal(readOrder(cod.order.id).status,'shipping');assert.equal(shipment(cod.order.id).uuid,cod.uuid);
+ assert.equal(journal().length,1);assert.equal(JSON.parse(journal()[0].data).actorId,'department_head');
+ for(const role of ['logistic','chief_logistic']){r=await sync(role);assert.equal(r.status,200,r.text);assert.equal(r.data.changed,false);}
+ assert.equal(journal().length,1);assert.equal((await sync('logistic',1)).status,400);
+ change(s=>{s.orders[cod.uuid].amountFields.delivery_recipient_cost.value=250;});
+ r=await sync('logistic');assert.equal(r.status,200,r.text);assert.equal(readOrder(cod.order.id).items.at(-1).price,10250);
+ change(s=>{delete s.orders[cod.uuid].amountFields.packages;});
+ assert.equal((await sync('chief_logistic')).status,400);
+ assert.equal(readOrder(cod.order.id).items.at(-1).price,10250);assert.equal(journal().length,2);
+ change(s=>{s.orders[cod.uuid].amountFields={...amountFields,recipient_currency:'KZT'};});
+ assert.equal((await sync('chief_logistic')).status,400);assert.equal(journal().length,2);assert.deepEqual(allocation(),previousAllocation);
+ const legacyCod=fixture('LV-SYNC');
+ db.prepare("UPDATE orders SET data=json_set(data,'$.items[0].quantity',3) WHERE id=?").run(legacyCod.order.id);
+ db.prepare("DELETE FROM settings WHERE id=?").run('cdek-shipment-'+legacyCod.order.id);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.legacyLv',json(?)) WHERE id=?").run(JSON.stringify({track:'OLD-LV-SYNC',cdekOrderNumber:'old-reference'}),legacyCod.order.id);
+ change(s=>{s.orders[legacyCod.uuid].amountFields=amountFields;s.orders[legacyCod.uuid].number='unrelated';});
+ const legacySync=()=>call(path,'chief_logistic',{orderId:legacyCod.order.id,version:1,action:'syncAmount'});
+ assert.equal((await legacySync()).status,400);
+ change(s=>{s.orders[legacyCod.uuid].number='old-reference';});
+ r=await legacySync();assert.equal(r.status,200,r.text);assert.deepEqual(readOrder(legacyCod.order.id).items,[{name:product.name,quantity:2,price:3333.33},{name:product.name,quantity:1,price:3333.34}]);
  // A network outage must not create a rejection; the next worker resumes after the web app stops.
  const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
  change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');

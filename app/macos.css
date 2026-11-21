@@ -907,3 +907,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 @media(max-width:1023px){.operator-scale{display:none}}
 
 .order-overview .notice.order-handoff-reason, .dark .order-overview .notice.order-handoff-reason { background: #fdf2d5; border-color: #ebd59e; color: #503719; }
+
+.cdek-amount-action { display: flex; justify-content: flex-end; margin-top: 10px; }
