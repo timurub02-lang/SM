@@ -1,6 +1,7 @@
 import {journalAuthor} from '@/lib/journal-author';
 import {cdekToken} from '@/lib/cdek';
 import {shipmentResult} from '@/lib/cdek-shipment';
+import {archiveOrderDays} from '@/lib/redemption-archive';
 import {redemptionDayCounts} from '@/lib/redemption-day-counts';
 import {redemptionStats} from '@/lib/redemption-stats';
 import {initReplacement,confirmReplacementCourier} from '@/lib/phone-replacement';
@@ -15,6 +16,7 @@ async function actor(){const e=(await getChatGPTUser())?.employee;if(!e)throw Er
 export const GET=authenticated(async req=>{try{
  const e=await actor(),d=db(),q=new URL(req.url).searchParams;
  if(q.get('count')==='operator')return Response.json({count:await operatorReturnCount(d,e)});
+ if(q.has('archiveOrder'))return Response.json({days:await archiveOrderDays(d,e,(q.get('archiveOrder')||'').trim())});
  await syncRedemption(d);const cfg=await redemptionConfig(d);
  if(q.has('projects')){if(e.role!=='admin')return Response.json({error:'Недостаточно прав'},{status:403});const credentials=await d.prepare("SELECT data FROM settings WHERE id='skorozvon'").first<{data:string}>();if(!credentials)throw Error('Сначала подключите Скорозвон в интеграциях');const token=await skorozvonToken(JSON.parse(credentials.data));const projects=[];for(let page=1;page<=100;page++){const r=await fetch('https://api.skorozvon.ru/api/v2/call_projects?length=100&page='+page,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('Не удалось получить проекты СК');const data=await r.json() as any,part=Array.isArray(data)?data:data.data;if(!Array.isArray(part))throw Error('Неожиданный ответ СК');projects.push(...part.map((p:any)=>({id:String(p.id),title:p.title})));if(part.length<100)break;}return Response.json({projects});}
  if(q.get('incomingId'))await prepareIncomingRedemption(d,e,q.get('id')||'',q.get('incomingId')!);
