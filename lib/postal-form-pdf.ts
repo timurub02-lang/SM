@@ -29,7 +29,9 @@ export function postalFormPdf(data:PostalFormData,assets:{font:string;template:U
   throw Error('Данные слишком длинные для почтового бланка. Проверьте ФИО, адрес и сумму заказа перед скачиванием.');
  };
  doc.setFontSize(13);doc.text('x',240.38,86.96); // Посылка
- doc.setFontSize(8.5);doc.text('x',337.32,91.84); // Наложенный платёж, как в образце
+ doc.setFontSize(8.5);
+ doc.text('x',337.32,84); // С объявленной ценностью
+ doc.text('x',337.32,91.84); // Наложенный платёж, как в образце
  fit(sender.name,128,170.5,164,2,8.5);
  fit(sender.address,90.71,204,198,4,9,12.5);
  fit(sender.phone,90.71,262,132,1,8);
