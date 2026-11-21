@@ -1,0 +1,40 @@
+.handoff-review[data-slot="dialog-content"] {
+  --review-paper: light-dark(#fff, #202c3e);
+  --review-ink: light-dark(#23314b, #edf3ff);
+  --review-sub: light-dark(#53637b, #b9c8dc);
+  --review-line: light-dark(#dce3ed, #455369);
+  width: min(600px, calc(100% - 24px));
+  max-width: none;
+  max-height: 90dvh;
+  overflow-y: auto;
+  display: block;
+  padding: 0;
+  border: 1px solid var(--review-line);
+  border-radius: 16px;
+  background: var(--review-paper);
+  color: var(--review-ink);
+  box-shadow: 0 5px 20px #18274712;
+  font: 14px/1.45 system-ui, sans-serif;
+}
+.handoff-review [data-slot="dialog-header"], .handoff-review .handoff-body, .handoff-review footer { padding: 16px 20px; }
+.handoff-review [data-slot="dialog-header"] { display: block; padding-right: 56px; text-align: left; }
+.handoff-review [data-slot="dialog-title"] { margin: 4px 0; font-size: 20px; font-weight: 650; line-height: 1.25; }
+.handoff-review small, .handoff-review [data-slot="dialog-description"] { color: var(--review-sub); }
+.handoff-review small { font-size: 12px; }
+.handoff-review .handoff-body { display: grid; gap: 14px; border-block: 1px solid var(--review-line); }
+.handoff-recipient strong { display: block; font-size: 16px; overflow-wrap: anywhere; }
+.handoff-warning { padding: 10px 12px; border-radius: 9px; color: light-dark(#764408, #ffd494); background: light-dark(#fff5e6, #3e3124); }
+.handoff-warning label { margin-top: 6px; }
+.handoff-body label:not(.field) { display: flex; align-items: flex-start; gap: 8px; }
+.handoff-body input[type="checkbox"] { flex: none; width: 16px; height: 16px; margin: 3px 0 0; accent-color: #376edd; }
+.handoff-basket { min-width: 0; overflow-x: auto; }
+.handoff-basket table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.handoff-basket caption { padding-bottom: 6px; font-weight: 600; text-align: left; }
+.handoff-basket :is(th, td) { padding: 5px 2px; border-bottom: 1px solid var(--review-line); text-align: right; white-space: nowrap; }
+.handoff-basket :is(th, td):first-child { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.handoff-basket thead th { font-size: 12px; font-weight: 400; color: var(--review-sub); }
+.handoff-basket tfoot :is(th, td) { padding-top: 9px; border: 0; font-weight: 650; }
+.handoff-review footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.handoff-review footer button { padding: 7px 10px; border: 1px solid var(--review-line); border-radius: 8px; color: var(--review-ink); background: var(--review-paper); font: inherit; font-weight: 550; }
+.handoff-review footer .handoff-submit { color: white; border-color: transparent; background: light-dark(#326ddc, #3467c3); }
+.handoff-review footer button:disabled { cursor: default; opacity: 1; background: light-dark(#e6eaf0, #344055); color: var(--review-sub); }
