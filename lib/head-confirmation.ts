@@ -1,4 +1,4 @@
-import {allowedOrderTransitions,orderMissingField,validateTransition,type Order,type Client,type Employee,type Status} from './crm.ts';
+import {isLogistic,allowedOrderTransitions,orderMissingField,validateTransition,type Order,type Client,type Employee,type Status} from './crm.ts';
 import {isDepartmentOrder} from './department-orders.ts';
 export function headConfirmationTarget(o:Order):Status|undefined{
  if(o.courier||o.courierRecall||o.shippedAt||o.cdekTransferredAt||o.cdekExported||o.cdekDeleting||o.zvd||o.cancellationRequest?.status==='pending'||o.packingReworkDelivery||o.editRequest?.status==='pending'||o.editRequest?.status==='editing'&&!o.editRequest.savedAt)return;
@@ -25,3 +25,8 @@ export function confirmByHead(o:Order,c:Client,e:Employee,staff:Employee[],at:st
 }
 
 export const canHeadRequestEdit=(e:Employee,o:Order,staff:Employee[])=>isDepartmentOrder(e,o,staff)&&['confirm','extra'].includes(o.status)&&!o.courier&&!o.shippedAt&&!o.cdekTransferredAt&&!o.cdekExported&&!o.cdekDeleting&&!['pending','editing'].includes(o.editRequest?.status||'');
+
+export function needsHandoffReview(role:string,status:Status,to:string,action:string){
+ if(action==='confirmByHead')return role==='department_head';
+ return action==='transition'&&isLogistic(role)&&['confirm','extra'].includes(status)&&['check','packing'].includes(to);
+}

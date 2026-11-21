@@ -1,3 +1,4 @@
+import {checkedHandoff} from './confirmation-review-fixture.mjs';
 import {packingStage,deliveryQueue} from '../lib/crm.ts';
 import {operatorStats} from '../lib/operator-stats.ts';
 import {confirmationStats} from '../lib/confirmation-stats.ts';
@@ -45,7 +46,7 @@ try{
  }
  // Unrelated delivery-switch fixtures start with a previously selected PVZ; the selection API has its own HTTP suite.
  function fixturePickupPoint(id){const o=order(id);o.cdekPickupPoint={code:'TEST',address:'Test PVZ',workTime:'',context:pickupPointContext(o),by:'operator',selectedAt:new Date().toISOString()};db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(o),id);}
- async function act(id,actor,body,expected=200){const result=await call(actor,'/api/crm',{id,version:order(id).version,...body},expected);return result.data;}
+ async function act(id,actor,body,expected=200){const result=await call(actor,'/api/crm',{id,version:order(id).version,...(['transition','confirmByHead'].includes(body.action)?checkedHandoff(db,id):{}),...body},expected);return result.data;}
  async function receipt(id,title,amount,{visible=true,read=true}={}){
   const state=(await call('courier')).data,notices=state.reminders.filter(r=>r.kind==='courier-receipt'&&r.orderId===id);
   assert.equal(notices.length,1,'Receipt is delivered exactly once');const notice=notices[0];
@@ -57,6 +58,15 @@ try{
   return notice.id;
  }
  async function assembled(id){await act(id,'operator',{action:'transition',to:'confirm'});await act(id,'logistic',{action:'transition',to:'extra'},400);await act(id,'logistic',{action:'transition',to:'refused',reason:'No'},400);await act(id,'logistic',{action:'transition',to:'packing'});await act(id,'logistic',{action:'transition',to:'shipping',courierId:'courier'},400);await act(id,'logistic',{action:'markPackingWaybill'});await act(id,'logistic',{action:'transition',to:'shipping',courierId:'courier'});assert.equal(order(id).status,'packing');assert.equal(order(id).shippedAt,undefined);}
+ const reviewId=await create();
+ await act(reviewId,'operator',{action:'transition',to:'confirm'});
+ const reviewOrder=order(reviewId),reviewClient=reviewOrder.clientId;
+ db.prepare("UPDATE clients SET data=json_set(data,'$.name','Тест Имя'),version=version+1 WHERE id=?").run(reviewClient);
+ for(const fields of [{},{amountConfirmed:true,reviewedRecipient:'Старое Имя',incompleteNameConfirmed:true},{amountConfirmed:true,reviewedRecipient:'Тест Имя'}]){
+  await call('logistic','/api/crm',{action:'transition',id:reviewId,version:reviewOrder.version,to:'packing',...fields},400);
+  assert.equal(order(reviewId).version,reviewOrder.version);
+ }
+ await act(reviewId,'logistic',{action:'transition',to:'packing'});
  const withoutHouse=await create();const missingAddress={...order(withoutHouse),address:'Москва, ул. 7 Ноября',addressParts:{postalCode:'125009',region:'Москва',city:'Москва',street:'7 Ноября',house:'',flat:'15'}};
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify(missingAddress),withoutHouse);
  const missingEvents=db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(withoutHouse).n;
@@ -205,7 +215,7 @@ try{
   await act(headId,'head',{action:'contact',contact:'callback',reason:'Later',due:hours(1)});assert.equal(order(headId).confirmationStartedAt,started);assert.equal(order(headId).noAnswerDeadline,deadline);
   await act(headId,'head',{action:'updateOrder',items:order(headId).items,comment:'Forbidden edit',addressConfirmed:true},400);
   if(to==='packing'){await act(headId,'head',{action:'transition',to},400);assert.equal(order(headId).status,'confirm');}
-  await act(headId,'head',{action:'confirmByHead',clientConfirmed:true},400);await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead'},400);await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');assert.equal(order(headId).deliveryConfirmationAuthor?.id,'head');
+  await act(headId,'head',{action:'confirmByHead',clientConfirmed:true},400);await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead'},400);await act(headId,'head',{action:'confirmByHead',clientConfirmed:true,amountConfirmed:false},400);await act(headId,'head',{action:'confirmByHead',clientConfirmed:true,incompleteNameConfirmed:false});assert.equal(order(headId).status,to);assert.equal(order(headId).confirmationAuthor.id,'head');assert.equal(order(headId).manager,'operator');assert.equal(order(headId).deliveryConfirmationAuthor?.id,'head');
   await call('head','/api/order-access',{orderId:headId,token,action:'release'});
   if(to==='extra'){await act(headId,'head',{action:'transition',to:'packing'},400);assert.equal(order(headId).status,'extra');await act(headId,'head',{action:'contact',contact:'missed',reason:'No answer'});await act(headId,'head',{action:'confirmByHead',clientConfirmed:true});assert.equal(order(headId).status,'packing');assert.equal(order(headId).deliveryConfirmationAuthor.id,'head');}
   else if(to==='check'){await act(headId,'head',{action:'transition',to:'packing'},400);const consent=order(headId).deliveryConfirmationAuthor;const pendingStats=await call('head','/api/operator-statistics?section=confirmation&scope=own&actorId=head');assert.ok(pendingStats.data.rows.every(row=>!row.orderIds.includes(headId)));await act(headId,'admin',{action:'transition',to:'packing'});assert.deepEqual(order(headId).deliveryConfirmationAuthor,consent);assert.equal(order(headId).deliveryPackingAt,order(headId).updatedAt);assert.ok(Date.parse(order(headId).deliveryPackingAt)>Date.parse(consent.at));if(delivery==='russian_post'){assert.equal(deliveryQueue(order(headId),'post'),true);assert.equal(deliveryQueue(order(headId),'shipping'),false);assert.equal(packingStage(order(headId)),'new');}}

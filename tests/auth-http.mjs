@@ -1,3 +1,4 @@
+import {checkedHandoff} from './confirmation-review-fixture.mjs';
 import {setRedemptionClock} from './fixtures/redemption-clock.mjs';
 import {internalDeadline,internalElapsed,addWeekdayMilliseconds} from '../lib/internal-timers.ts';
 // Run after the Miran standalone build. Uses only a temporary, synthetic database.
@@ -294,7 +295,7 @@ try{
  console.log('Product picker catalog: zero stock, reserved stock and reconciliation block passed.');
  async function step(cookie,to,expected=200,kind="refusal"){
   const version=db.prepare('SELECT version FROM orders WHERE id=?').get(flowId).version;
-  const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,returnKind:to==='rework'?kind:undefined,reason:'Test reason',incompleteNameReason:'Клиент пожелал не указывать фамилию',finalHandoffConfirmed:true}});
+  const r=await call('/api/crm',{cookie,body:{action:'transition',id:flowId,version,to,...checkedHandoff(db,flowId),returnKind:to==='rework'?kind:undefined,reason:'Test reason',incompleteNameReason:'Клиент пожелал не указывать фамилию',finalHandoffConfirmed:true}});
   assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(flowId).data);
  }
  const postalBefore=db.prepare('SELECT data,version FROM orders WHERE id=?').get(flowId);
@@ -405,7 +406,7 @@ try{
  for(const [delivery,section] of [['moscow_courier','moscow'],['russian_post','post']]){
   const id='manual-'+delivery,clientId='one-c-confirm';
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(id,clientId,JSON.stringify({...flow,id,clientId,status:'confirm',delivery,address:'101000, Москва, ул. Тестовая, дом 1',addressParts:undefined,items:[{name:'Test',quantity:1,price:1}]}));
-  async function manualStep(to,expected=200,cookie=editor.cookie){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie,body:{action:'transition',id,version,to,reason:'Test',courierId:dispatchCourier.e.id}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
+  async function manualStep(to,expected=200,cookie=editor.cookie){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(id).version;const r=await call('/api/crm',{cookie,body:{action:'transition',id,version,to,...checkedHandoff(db,id),reason:'Test',courierId:dispatchCourier.e.id}});assert.equal(r.status,expected,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(id).data);}
   if(delivery==='moscow_courier')await manualStep('check',400);else await manualStep('extra',400);await manualStep('refused',400);
   let saved=await manualStep(delivery==='moscow_courier'?'packing':'check');assert.equal(saved.adminReviewedAt,undefined);assert.ok(saved.confirmedAt);assert.equal(saved.finalHandoffAt,undefined);
   await manualStep('refused',400);if(delivery==='russian_post'){await manualStep('packing',400);saved=await manualStep('packing',200,cookies.admin);assert.ok(saved.adminReviewedAt);}assert.equal(saved.delivery,delivery);assert.equal(saved.cdekTariff,undefined);assert.equal(saved.manualDeliveryCost,undefined);assert.equal(saved.packingWaybillAt,undefined);
@@ -780,7 +781,7 @@ try{
  db.prepare('INSERT INTO stock_movements VALUES(?,?,?,?,?,?)').run('policy-stock','policy-product',10,'Fixture','admin',new Date().toISOString());
  let policyOrder=JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(policyId).data);
  db.prepare('UPDATE orders SET data=? WHERE id=?').run(JSON.stringify({...policyOrder,address:'101000, Москва, ул. Тестовая, дом 1',addressParts:undefined,delivery:'cdek_courier',items:[{name:'Policy product',quantity:1,price:100}]}),policyId);
- async function policyAction(cookie,body,status=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(body.id||policyId).version;const r=await call('/api/crm',{cookie,body:{id:policyId,version,incompleteNameReason:"Клиент так пожелал",...body}});assert.equal(r.status,status,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(body.id||policyId).data);}
+ async function policyAction(cookie,body,status=200){const version=db.prepare('SELECT version FROM orders WHERE id=?').get(body.id||policyId).version;const r=await call('/api/crm',{cookie,body:{id:policyId,version,...checkedHandoff(db,body.id||policyId),incompleteNameReason:"Клиент так пожелал",...body}});assert.equal(r.status,status,r.text);return JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(body.id||policyId).data);}
  await policyAction(editor.cookie,{action:'updateOrder',address:'Changed'},400);
  await policyAction(editor.cookie,{action:'updateDelivery',delivery:'moscow_courier'},400);
  await policyAction(policyOperator.cookie,{action:'updateOrder',id:'policy-operator-o-draft',items:[]},400);
@@ -1124,7 +1125,7 @@ try{
    const after=reviewed.data.state.orders.find(o=>o.id===id);assert.equal(after.status,decision);assert.ok(after.adminReviewedAt);assert.deepEqual(after.deliveryChange,next.deliveryChange);
    if(decision==='extra'){
     assert.ok(after.confirmationStartedAt);assert.ok(after.noAnswerDeadline);assert.equal(after.finalHandoffAt,undefined);
-    const packed=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version:after.version,to:'packing'}});assert.equal(packed.status,200,packed.text);
+    const packed=await call('/api/crm',{cookie:editor.cookie,body:{action:'transition',id,version:after.version,to:'packing',...checkedHandoff(db,id)}});assert.equal(packed.status,200,packed.text);
    }
   }
   db.prepare('DELETE FROM orders WHERE id=?').run(id);
