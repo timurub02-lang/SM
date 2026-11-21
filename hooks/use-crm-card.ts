@@ -16,6 +16,7 @@ export function useCrmCard(enabled:boolean,actor:string,target:{type:'client'|'o
    (!['click','keydown'].includes(event.type)||element.matches('button,[role="combobox"],[role="option"],[role="radio"],[role="checkbox"]')))draft.current.touched=true;
  };
  const preserve=()=>draft.current.key===targetKey&&draft.current.touched;
+ const acceptSavedChanges=()=>{if(draft.current.key===targetKey)draft.current.touched=false;};
  const revision=useRef(0);
  const checkController=useRef<AbortController|null>(null);
  useEffect(()=>{
@@ -44,5 +45,5 @@ export function useCrmCard(enabled:boolean,actor:string,target:{type:'client'|'o
   }catch{/* The next scoped notification or fallback retries without replacing unsaved fields. */}
  };
  // Keep the mounted lease owner during a refresh; unmounting it would release and reacquire forever.
- return {data:current?.data,latest:current?.latest,error:current?.error,stale:current?.stale,check,preserve,protect,loading:!!key&&!current,retry:()=>retry(n=>n+1),update:(change:(state:State)=>State)=>{revision.current++;setResult(previous=>previous.key===actor+key&&previous.data?{...previous,data:change(previous.data),latest:undefined,stale:false}:previous);}};
+ return {data:current?.data,latest:current?.latest,error:current?.error,stale:current?.stale,check,preserve,protect,acceptSavedChanges,loading:!!key&&!current,retry:()=>retry(n=>n+1),update:(change:(state:State)=>State)=>{revision.current++;setResult(previous=>previous.key===actor+key&&previous.data?{...previous,data:change(previous.data),latest:undefined,stale:false}:previous);}};
 }
