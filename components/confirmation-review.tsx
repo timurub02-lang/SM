@@ -1,7 +1,8 @@
 'use client';
 import {useState} from 'react';
+import './confirmation-review.css';
 import {Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle} from '@/components/ui/dialog';
-import {money,total,type Order,type Status} from '@/lib/crm';
+import {money,statuses,total,type Order,type Status} from '@/lib/crm';
 import {isBasketTotal} from '@/lib/basket-total';
 import {hasIncompleteName,needsNameExplanation} from '@/lib/incomplete-name';
 
@@ -18,26 +19,39 @@ export function ConfirmationReview({order,name,to,head,busy,onCancel,onSubmit}:P
  const action=to==='check'?'Передать на проверку':to==='extra'?'Передать на повторное подтверждение':channel==='Курьер Москва'?'Передать в «Курьер Москва»':`На упаковку в «${channel}»`;
  const ready=amountOk&&(!incomplete||nameOk)&&(!head||agreed)&&(!returned||corrected)&&(!explain||reason.trim());
  const amount=money(total(order));
- return <Dialog open onOpenChange={open=>{if(!open&&!busy)onCancel();}}><DialogContent className="form-dialog" style={{maxHeight:'90dvh',overflowY:'auto'}}>
-  <DialogHeader><DialogTitle>Проверьте заказ перед передачей</DialogTitle><DialogDescription>Заказ {order.id} · {to==='packing'?`${channel} → Новый`:to==='check'?'Проверка':'Повторное подтверждение'}</DialogDescription></DialogHeader>
-  <div className="stack">
-   <p>Получатель · <strong>{name||'ФИО не указано'}</strong></p>
-   {incomplete&&<div className="stack notice amber"><strong>Указано неполное ФИО</strong>
-    <label><input type="checkbox" checked={nameOk} onChange={e=>setNameOk(e.target.checked)}/> ФИО проверено. Заказ можно передать с указанным именем.</label>
-    {explain&&<label className="field"><span>Причина передачи без полного ФИО</span><textarea maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>}
-   </div>}
-   <div style={{overflowX:'auto'}}><table style={{width:'100%'}}><caption style={{textAlign:'left'}}>Состав заказа</caption>
-    <thead><tr><th>Товар</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr></thead>
-    <tbody>{order.items.filter(item=>!isBasketTotal(item)).map((item,i)=><tr key={i}><td>{item.name}</td><td>{item.quantity}</td><td>{money(item.price)}</td><td>{money(item.quantity*Math.round(item.price*100)/100)}</td></tr>)}</tbody>
-    <tfoot><tr><th colSpan={3}>Итого по заказу</th><td><strong>{amount}</strong></td></tr></tfoot>
-   </table></div>
-   <label><input type="checkbox" checked={amountOk} onChange={e=>setAmountOk(e.target.checked)}/> Корзину проверил(а). Сумма {amount} верна.</label>
-   {returned&&<><p>Замечания логиста · {order.returnReason||order.reason||order.editRequest?.reason||'Не указаны'}</p><label><input type="checkbox" checked={corrected} onChange={e=>setCorrected(e.target.checked)}/> Замечания логиста исправлены</label></>}
-   {head&&<label><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)}/> Я связался с клиентом, клиент согласен выкупить заказ</label>}
-   <div className="action-buttons"><button type="button" className="secondary" disabled={busy} onClick={onCancel}>Вернуться к заказу</button>
-    <button type="button" className="primary" disabled={busy||!ready} onClick={async()=>{
+ const source=order.status==='extra'?'Повторное подтверждение':statuses[order.status];
+ const destination=to==='packing'?`${channel} · ${channel==='Курьер Москва'?'Новый':'Упаковка'}`:statuses[to];
+ const items=order.items.filter(item=>!isBasketTotal(item));
+ const totalOnly=order.items.some(item=>isBasketTotal(item)&&item.price>0)&&items.every(item=>item.price===0);
+ return <Dialog open onOpenChange={open=>{if(!open&&!busy)onCancel();}}>
+  <DialogContent className="handoff-review">
+   <DialogHeader>
+    <small>Заказ {order.id}</small>
+    <DialogTitle>Проверьте заказ перед передачей</DialogTitle>
+    <DialogDescription>{source} → {destination}</DialogDescription>
+   </DialogHeader>
+   <div className="handoff-body">
+    <div className="handoff-recipient"><small>Получатель</small><strong>{name||'ФИО не указано'}</strong></div>
+    {incomplete&&<div className="handoff-warning">
+     <b>Указано неполное ФИО</b>
+     <label><input type="checkbox" checked={nameOk} onChange={e=>setNameOk(e.target.checked)}/>ФИО проверено. Заказ можно передать с указанным именем.</label>
+     {explain&&<label className="field"><span>Причина передачи без полного ФИО</span><textarea maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>}
+    </div>}
+    <div className="handoff-basket"><table><caption>Состав заказа</caption>
+     <thead><tr><th scope="col">Товар</th><th scope="col">Кол-во</th><th scope="col">Цена</th><th scope="col">Сумма</th></tr></thead>
+     <tbody>{items.map((item,i)=><tr key={i}><td>{item.name}</td><td>{item.quantity}</td><td>{totalOnly?'—':money(item.price)}</td><td>{totalOnly?'—':money(item.quantity*Math.round(item.price*100)/100)}</td></tr>)}</tbody>
+     <tfoot><tr><th scope="row" colSpan={3}>Итого по заказу</th><td>{amount}</td></tr></tfoot>
+    </table>{totalOnly&&<small>Цена указана за весь заказ.</small>}</div>
+    <label><input type="checkbox" checked={amountOk} onChange={e=>setAmountOk(e.target.checked)}/>Корзину проверил(а). Сумма {amount} верна.</label>
+    {returned&&<><p>Замечания логиста · {order.returnReason||order.reason||order.editRequest?.reason||'Не указаны'}</p><label><input type="checkbox" checked={corrected} onChange={e=>setCorrected(e.target.checked)}/>Замечания логиста исправлены</label></>}
+    {head&&<label><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)}/>Я связался с клиентом, клиент согласен выкупить заказ</label>}
+   </div>
+   <footer>
+    <button type="button" disabled={busy} onClick={onCancel}>Вернуться к заказу</button>
+    <button type="button" className="handoff-submit" disabled={busy||!ready} onClick={async()=>{
      if(await onSubmit({amountConfirmed:amountOk,reviewedRecipient:name,incompleteNameConfirmed:nameOk,...(head?{clientConfirmed:agreed,correctionsConfirmed:corrected}:{}),...(explain?{incompleteNameReason:reason.trim()}:{})}))onCancel();
-    }}>{action}</button></div>
-  </div>
- </DialogContent></Dialog>;
+    }}>{action}</button>
+   </footer>
+  </DialogContent>
+ </Dialog>;
 }
