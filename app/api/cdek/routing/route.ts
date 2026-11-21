@@ -11,11 +11,11 @@ async function handleGET(req:Request){try{
  const employee=await actor(req),orderId=new URL(req.url).searchParams.get('orderId');
  if(!['admin','logistic','chief_logistic'].includes(employee.role))return Response.json({error:'Нет доступа'},{status:403});
  if(orderId){const row=await db().prepare('SELECT data FROM orders WHERE id=?').bind(orderId).first<{data:string}>();if(!row)throw Error('Заказ не найден');const r=await orderRouting(JSON.parse(row.data) as Order);return Response.json({choice:r.choice,accounts:r.accounts});}
- if(employee.role!=='admin')return Response.json({error:'Настройки доступны администратору'},{status:403});
+ if(!['admin','chief_logistic'].includes(employee.role))return Response.json({error:'Настройки доступны администратору и главному логисту'},{status:403});
  const {config,accounts}=await routingSettings();await initInventory();const products=await db().prepare('SELECT data FROM products').all<{data:string}>();return Response.json({config,accounts,products:products.results.map(p=>JSON.parse(p.data).name).sort()});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось загрузить правила'},{status:400});}}
 async function handlePOST(req:Request){try{
- const employee=await actor(req);if(employee.role!=='admin')return Response.json({error:'Настройки доступны администратору'},{status:403});
+ const employee=await actor(req);if(!['admin','chief_logistic'].includes(employee.role))return Response.json({error:'Настройки доступны администратору и главному логисту'},{status:403});
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  const raw=await readLimitedText(req,400000);if(raw.length>100000)throw Error('Слишком много правил');const p=routingSchema.parse(JSON.parse(raw));
  const current=await routingSettings();if(p.revision!==current.config.revision)throw Error('Настройки изменены. Откройте их заново');

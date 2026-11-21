@@ -1,3 +1,4 @@
+import {canReviewOrders} from './order-review-access.ts';
 import {readPaidHistory} from './premium-paid-history.ts';
 import {preparedModelsEnabled} from './crm-read-model.ts';
 import {attachPreparedPremiumStages} from './crm-financial-projection.ts';
@@ -10,7 +11,8 @@ import {canOpenClientCard} from './permissions.ts';
 import {defaultOrderPolicy,orderPolicySchema} from './order-policy.ts';
 import {applyPremiumStages,nextPremiumPreview,ledgerKey,type PremiumLedger} from './premium-ledger.ts';
 
-export const splitWorkspaceEnabled=(employee?:Employee)=>process.env.CRM_SPLIT_READS==='1'&&!!employee&&['operator','department_head'].includes(employee.role);
+// shortcut: the delegated cross-department reviewer uses the existing full snapshot; extend SQL scoping if review delegation becomes general.
+export const splitWorkspaceEnabled=(employee?:Employee)=>process.env.CRM_SPLIT_READS==='1'&&!!employee&&!canReviewOrders(employee)&&['operator','department_head'].includes(employee.role);
 const decode=(row:{data:string;version:number})=>({...JSON.parse(row.data),version:row.version});
 // These fields are needed only by the independently loaded card, never by list selectors.
 const orderProjection="json_remove(o.data,'$.operatorComments','$.comment','$.logisticComment','$.waybillComment')";

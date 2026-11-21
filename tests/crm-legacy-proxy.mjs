@@ -35,6 +35,7 @@ try{
   assert.equal(response.status,200);assert.equal(response.headers.get('content-encoding'),null);assert.equal((await response.json()).orders[0].premiumStage.status,'paid');
   const last=received.at(-1);assert.equal(last.method,'GET');assert.equal(last.headers.cookie,'__Host-sm-session=synthetic-only');assert.equal(last.headers['if-none-match'],'W/"synthetic-v1"');assert.equal(last.headers['accept-encoding'],'identity');assert.equal(last.headers.authorization,undefined);assert.equal(last.headers['oai-authenticated-user-id'],undefined);
  }
+ const delegated=await proxyLegacySnapshot(request(),{id:'E-74ee9a8f-99d',role:'department_head'});assert.equal(delegated.status,200);
  const bootstrap=new Request(url.replace('?transport=compact-v1','?part=bootstrap'),{headers:{'Accept-Encoding':'br',Cookie:'__Host-sm-session=synthetic-only'}});
  assert.equal(legacySnapshotRequest(bootstrap),true);
  const boot=await proxyLegacySnapshot(bootstrap,actor);assert.equal(boot.status,200);assert.equal(boot.headers.get('content-encoding'),null);

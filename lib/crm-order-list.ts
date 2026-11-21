@@ -1,3 +1,4 @@
+import {canReviewOrders} from './order-review-access.ts';
 import {postalBuyoutPending} from './postal-buyout-report.ts';
 import {orderStageDate} from './order-stage-date.ts';
 import {orderNextAction} from './order-next-action.ts';
@@ -27,7 +28,7 @@ export function filteredOrderList(state:State,employee:Employee,{view,filter,que
  }};
  const compare=(a:Order,b:Order)=>{const av=value(a),bv=value(b);if(sort==='stageDate'&&(!av||!bv))return Number(!av)-Number(!bv)||(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0);return (typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'ru',{numeric:true,sensitivity:'base'}))*(direction==='asc'?1:-1)||(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0)||a.id.localeCompare(b.id);};
  const shippingView=['shipping','moscow','post'].includes(view);
- const scopedOrders=(employee.role==='operator'?state.orders.filter(o=>o.manager===actor):employee.role==='department_head'?departmentOrders(state.orders,state.employees,employee):state.orders).filter(o=>!o.zvd||['admin','operator','department_head'].includes(employee.role));
+ const scopedOrders=(view==='check'&&canReviewOrders(employee)?state.orders:employee.role==='operator'?state.orders.filter(o=>o.manager===actor):employee.role==='department_head'?departmentOrders(state.orders,state.employees,employee):state.orders).filter(o=>!o.zvd||['admin','operator','department_head'].includes(employee.role));
  const visibleOrders=view==='orders'?scopedOrders.filter(o=>showOrderInList(o,clientsById.get(o.clientId),employee.role,reminderNow)):['moscow','post','shipping'].includes(view)?scopedOrders.filter(o=>!operationalOrderHidden(o,employee.role==='admin'?'logistic':employee.role,reminderNow)):scopedOrders;
  const prioritizeRedemption=view==='orders'&&filter==='sent',redemptionStatuses=state.redemptionStatuses||[];
  const redemptionPriority=(a:Order,b:Order)=>manualSort?Number(eligibleForRedemption(b,redemptionStatuses))-Number(eligibleForRedemption(a,redemptionStatuses)):compareRedemptionPriority(a,b,redemptionStatuses,workedBuyoutToday,awaitingBuyoutOperator);
