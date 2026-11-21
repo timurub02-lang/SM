@@ -208,6 +208,26 @@ try{
  assert.equal(r.status,400);assert.match(r.data.error,/лимиты исчерпаны/);assert.equal(upstream().calls.length,beforeQuota);
  db.prepare("DELETE FROM settings WHERE id='cdek-routing'").run();
  console.log('Account changes do not require recalculation; current account, quota, saved tariff, PVZ and amounts verified.');
+ // A CDEK read updates just the payable total and its journal entry.
+ const cod=fixture('SM-COD'),sync=(role,version=readOrder(cod.order.id).version)=>call(path,role,{orderId:cod.order.id,version,action:'syncAmount'});
+ const journal=()=>db.prepare('SELECT data FROM events WHERE order_id=?').all(cod.order.id);
+ const amountFields={packages:[{items:[{amount:2,payment:{value:4000}},{amount:1,payment:{value:2000}}]}],delivery_recipient_cost:{value:0}};
+ change(s=>{s.orders[cod.uuid].amountFields=amountFields;});
+ assert.equal((await sync('operator')).status,403);
+ db.prepare("UPDATE employees SET data=json_set(data,'$.department','2') WHERE id='department_head'").run();
+ assert.equal((await sync('department_head')).status,403);
+ db.prepare("UPDATE employees SET data=json_set(data,'$.department','1') WHERE id='department_head'").run();
+ r=await sync('department_head');assert.equal(r.status,200,r.text);assert.equal(r.data.changed,true);
+ assert.deepEqual(readOrder(cod.order.id).items,[{name:product.name,quantity:1,price:0},{name:'ИТОГО',quantity:1,price:10000}]);
+ assert.equal(readOrder(cod.order.id).status,'shipping');assert.equal(shipment(cod.order.id).uuid,cod.uuid);
+ assert.equal(journal().length,1);assert.equal(JSON.parse(journal()[0].data).actorId,'department_head');
+ for(const role of ['logistic','chief_logistic']){r=await sync(role);assert.equal(r.status,200,r.text);assert.equal(r.data.changed,false);}
+ assert.equal(journal().length,1);assert.equal((await sync('logistic',1)).status,400);
+ change(s=>{s.orders[cod.uuid].amountFields.delivery_recipient_cost.value=250;});
+ r=await sync('logistic');assert.equal(r.status,200,r.text);assert.equal(readOrder(cod.order.id).items.at(-1).price,10250);
+ change(s=>{delete s.orders[cod.uuid].amountFields.packages;});
+ assert.equal((await sync('chief_logistic')).status,400);
+ assert.equal(readOrder(cod.order.id).items.at(-1).price,10250);assert.equal(journal().length,2);
  // A network outage must not create a rejection; the next worker resumes after the web app stops.
  const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
  change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');
