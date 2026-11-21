@@ -14,9 +14,9 @@ import {cdekToken} from '@/lib/cdek';
 import {importedCdekShipment,shipmentFormSchema,shipmentPayload,shipmentResult,cdekErrors,deletionRequestKey,type Shipment} from '@/lib/cdek-shipment';
 import {money,isLogistic,type Order,type Client,type Employee} from '@/lib/crm';
 import {isDepartmentOrder} from '@/lib/department-orders';
-import {basketAmount,withBasketTotal} from '@/lib/basket-total';
+import {basketAmount} from '@/lib/basket-total';
 import {orderTracking} from '@/lib/order-tracking';
-import {canSyncCdekAmount,cdekPayableAmount} from '@/lib/cdek-order-amount';
+import {canSyncCdekAmount,cdekPayableAmount,reconciledBasket} from '@/lib/cdek-order-amount';
 import type {Product} from '@/lib/warehouse';
 import {z} from 'zod';
 const uuidSchema=z.string().uuid();
@@ -105,7 +105,7 @@ async function handlePOST(req:Request){
    const event={id:mutation,orderId:order.id,clientId:order.clientId,...journalAuthor(c.actor.name,c.actor.id),at,text};
    const result=await d.batch([
     d.prepare(`UPDATE orders SET data=json_set(data,'$.items',json(?),'$.updatedAt',?,'$._mutation',?,'$.version',version+1),version=version+1
-     WHERE id=? AND version=? AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?`).bind(JSON.stringify(withBasketTotal(order.items,amount)),at,mutation,order.id,order.version,c.key,c.record?.data||''),
+     WHERE id=? AND version=? AND COALESCE((SELECT data FROM settings WHERE id=?),'')=?`).bind(JSON.stringify(reconciledBasket(order.items,amount)),at,mutation,order.id,order.version,c.key,c.record?.data||''),
     d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(mutation,order.clientId,order.id,at,JSON.stringify(event),order.id,mutation)
    ]);
    if(!result[0].meta.changes)throw Error('Заказ или накладная изменились. Обновите карточку и повторите сверку');

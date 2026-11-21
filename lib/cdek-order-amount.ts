@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {type Order} from './crm.ts';
+import {basketAmount,isBasketTotal,withBasketTotal} from './basket-total.ts';
 import {orderTracking} from './order-tracking.ts';
 
 export function canSyncCdekAmount(o:Order,exported=o.cdekExported){
@@ -27,4 +28,22 @@ export function cdekPayableAmount(entity:unknown){
  if(cents===0)throw Error('В накладной нет суммы к получению. Проверьте предоплату в СДЭК');
  if(!Number.isSafeInteger(cents)||cents>1000000000)throw Error('Сумма СДЭК выходит за допустимый диапазон заказа');
  return cents/100;
+}
+
+export function reconciledBasket(items:Order['items'],amount:number):Order['items']{
+ if(items.some(isBasketTotal))return withBasketTotal(items,amount);
+ // Older baskets carry the price on goods. Keep unit counts and apportion the new total in kopecks.
+ const original=Math.round(basketAmount(items)*100),target=Math.round(amount*100);
+ if(!items.length||original<=0||items.some(item=>!Number.isSafeInteger(item.quantity)||item.quantity<=0||item.price<0))
+  throw Error('В старой корзине не удалось распределить сумму по товарам');
+ let running=0,assigned=0;
+ return items.flatMap(item=>{
+  running+=Math.round(item.price*100)*item.quantity;
+  const cumulative=Math.round(target*(running/original)),line=cumulative-assigned;
+  assigned=cumulative;
+  const unit=Math.floor(line/item.quantity),extra=line%item.quantity;
+  const rows=[{...item,quantity:item.quantity-extra,price:unit/100}];
+  if(extra)rows.push({...item,quantity:extra,price:(unit+1)/100});
+  return rows;
+ });
 }
