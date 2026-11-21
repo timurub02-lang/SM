@@ -22,7 +22,8 @@ globalThis.fetch=async(input,options={})=>{
   state.orders[uuid]={number:payload.number,cdek_number:'NEW-'+state.calls.length,status:'CREATED',create:'SUCCESSFUL'};save(state);
   return response({entity:{uuid,cdek_number:state.orders[uuid].cdek_number},requests:[{type:'CREATE',state:'SUCCESSFUL'}]},202);
  }
- const uuid=path.split('/').at(-1);let order=state.orders[uuid];
+ const lookup=new URL(url).searchParams.get('cdek_number');
+ const uuid=lookup?Object.keys(state.orders).find(key=>state.orders[key].cdek_number===lookup):path.split('/').at(-1);let order=state.orders[uuid];
  if(!order)return response({errors:[{message:'Unknown synthetic order'}]},404);
  if(method==='DELETE'){
   order.deletion=state.mode==='reject'?'INVALID':state.mode==='immediate'?'SUCCESSFUL':'ACCEPTED';order.deleteId=crypto.randomUUID();save(state);

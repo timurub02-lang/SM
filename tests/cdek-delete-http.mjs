@@ -228,6 +228,16 @@ try{
  change(s=>{delete s.orders[cod.uuid].amountFields.packages;});
  assert.equal((await sync('chief_logistic')).status,400);
  assert.equal(readOrder(cod.order.id).items.at(-1).price,10250);assert.equal(journal().length,2);
+ change(s=>{s.orders[cod.uuid].amountFields={...amountFields,recipient_currency:'KZT'};});
+ assert.equal((await sync('chief_logistic')).status,400);assert.equal(journal().length,2);
+ const legacyCod=fixture('LV-SYNC');
+ db.prepare("DELETE FROM settings WHERE id=?").run('cdek-shipment-'+legacyCod.order.id);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.legacyLv',json(?)) WHERE id=?").run(JSON.stringify({track:'OLD-LV-SYNC',cdekOrderNumber:'old-reference'}),legacyCod.order.id);
+ change(s=>{s.orders[legacyCod.uuid].amountFields=amountFields;s.orders[legacyCod.uuid].number='unrelated';});
+ const legacySync=()=>call(path,'chief_logistic',{orderId:legacyCod.order.id,version:1,action:'syncAmount'});
+ assert.equal((await legacySync()).status,400);
+ change(s=>{s.orders[legacyCod.uuid].number='old-reference';});
+ r=await legacySync();assert.equal(r.status,200,r.text);assert.equal(readOrder(legacyCod.order.id).items.at(-1).price,10000);
  // A network outage must not create a rejection; the next worker resumes after the web app stops.
  const background=fixture('SM-BACKGROUND');r=await remove(background.order.id);assert.equal(r.data.shipment.state,'deleting');
  change(s=>s.getFailureUuid=background.uuid);assert.equal((await worker()).failed,1);assert.equal(notices(background.order.id).length,0);assert.equal(readOrder(background.order.id).status,'shipping');

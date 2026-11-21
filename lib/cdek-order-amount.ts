@@ -14,7 +14,7 @@ const invoice=z.object({
  packages:z.array(z.object({items:z.array(z.object({amount:z.number().int().positive(),payment})).min(1)})).min(1),
  delivery_recipient_cost:payment.optional(),
  delivery_recipient_cost_adv:z.array(z.unknown()).max(0).optional(),
- currency:z.literal('RUB').or(z.literal(1)).optional(),cash_on_delivery_currency:z.literal('RUB').optional(),
+ recipient_currency:z.literal('RUB').optional(),
  is_return:z.literal(false).optional(),is_reverse:z.literal(false).optional(),is_client_return:z.literal(false).optional()
 });
 
