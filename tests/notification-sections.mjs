@@ -31,3 +31,15 @@ assert.deepEqual(notificationSections([order],[cash],now,false,true).tasks,[orde
 assert.deepEqual(notificationSections([order],[cash],now,false,true).acknowledge,[cash]);
 assert.deepEqual(notificationSections([],[{...cash,acknowledgedAt:due}],now,false,true).acknowledge,[]);
 assert.deepEqual(notificationSections([],[cash],now).tasks,[cash]);
+
+{
+const {audibleNotifications}=await import('../lib/notification-sections.ts');
+const due='2026-11-21T11:30:00Z';
+const call={kind:'call',id:'callback',due};
+const signalAt=time=>{
+ const groups=notificationSections([call,{id:'task:incoming:1',incomingId:'1'}],[{kind:'incoming',id:'notice',incomingId:'1'}],time);
+ return audibleNotifications(groups.tasks,groups.incoming).map(r=>r.id);
+};
+assert.deepEqual(signalAt(Date.parse(due)-1),['incoming:1']);
+assert.deepEqual(signalAt(Date.parse(due)),['callback:'+due,'incoming:1']);
+}

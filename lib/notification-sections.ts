@@ -12,3 +12,11 @@ export function notificationPopupTab(fresh:Reminder[],tasks:Reminder[]):Notifica
  if(fresh.every(isIncomingNotification))return 'incoming';
  return fresh.some(r=>r.kind==='cash-change'||r.id==='task:return-reconciliation-batch'||!isIncomingNotification(r)&&tasks.some(t=>t.id===r.id))?'tasks':'events';
 }
+
+export function audibleNotifications(tasks:Reminder[],incoming:Reminder[]){
+ return [...tasks,...incoming].filter(r=>!r.resolved).map(r=>{
+  if(r.incomingId)return {...r,id:'incoming:'+r.incomingId};
+  if(r.kind==='call'&&r.due)return {...r,id:r.id+':'+r.due};
+  return r;
+ });
+}
