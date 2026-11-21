@@ -1,3 +1,4 @@
+import {handoffEntries} from './handoff-comments.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canReadIncomingClient} from './incoming.ts';
 import {redemptionTransferText} from './redemption-transfer-history.ts';
@@ -7,7 +8,7 @@ import type {Employee,Client,Order,Event} from './crm.ts';
 import {clientHistoryEntries} from './client-order-history.ts';
 import {visibleState,canOpenClientCard} from './permissions.ts';
 
-export type HistoryQuery={incomingId?:string;clientId?:string;orderId?:string;employeeId?:string;page:number;legacy?:boolean};
+export type HistoryQuery={incomingId?:string;clientId?:string;orderId?:string;employeeId?:string;page:number;handoff?:boolean;legacy?:boolean};
 export async function readCrmHistory(d:ActivityDb,actor:Employee,q:HistoryQuery){
  await initCrmReadIndexes(d);
  if(['courier','purchasing'].includes(actor.role))throw Error('История недоступна');
@@ -50,13 +51,20 @@ export async function readCrmHistory(d:ActivityDb,actor:Employee,q:HistoryQuery)
   clauses.push("(json_extract(e.data,'$.delegatedById')=? OR json_extract(e.data,'$.actorId')=? OR (COALESCE(json_extract(e.data,'$.actorId'),'')='' AND (json_extract(e.data,'$.actor')=? OR substr(json_extract(e.data,'$.actor'),-length(?))=?)))");args.push(e.id,e.id,e.login,suffix,suffix);
  }
  let source='events',sourceArgs:unknown[]=[];
- if(q.clientId&&await d.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redemption_history'").first()){
+ if(!q.handoff&&q.clientId&&await d.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redemption_history'").first()){
   const filter="json_extract(h.data,'$.operatorReturn') IS NOT NULL AND (json_extract(h.data,'$.changeKind') IN ('return_operator','operator_return_timeout','operator_nd','operator_return_start_now','operator_return_48_hours','operator_return_storage_limit') OR (json_extract(h.data,'$.changeKind')='action' AND json_extract(h.data,'$.operatorReturn.at')=json_extract(h.data,'$.updatedAt')) OR json_extract(h.data,'$.operatorReturn.resolvedAt')=json_extract(h.data,'$.updatedAt'))";
   source=`(SELECT id,client_id,order_id,at,data FROM events UNION ALL SELECT 'REDEMPTION-HISTORY-'||h.id,o.client_id,h.order_id,h.at,json_object('id','REDEMPTION-HISTORY-'||h.id,'clientId',o.client_id,'orderId',h.order_id,'at',h.at,'actor',COALESCE(json_extract(h.data,'$.changedBy'),json_extract(h.data,'$.author'),'Система'),'_redemption',json(h.data)) FROM redemption_history h JOIN orders o ON o.id=h.order_id WHERE o.client_id=? ${q.orderId?'AND h.order_id=?':''} AND ${filter})`;
   sourceArgs=[q.clientId,...(q.orderId?[q.orderId]:[])];
  }
  const from=`FROM ${source} e LEFT JOIN clients c ON c.id=e.client_id WHERE ${clauses.join(' AND ')}`;
  args.unshift(...sourceArgs);
+ if(q.handoff){
+  if(!q.orderId||!q.clientId)throw Error('Заказ не указан');
+  const records=await d.prepare(`SELECT e.data ${from} ORDER BY e.at DESC,e.id DESC`).bind(...args).all();
+  const entries=handoffEntries(records.results.map((r:{data:string})=>JSON.parse(r.data) as Event));
+  const rows=entries.map(e=>({...e,text:visibleOrderHistoryText(e.text,actor.role)}));
+  return {rows,total:rows.length,page:0};
+ }
  const count=await d.prepare(`SELECT COUNT(*) AS n ${from}`).bind(...args).first();
  const rows=(await d.prepare(`SELECT e.data ${from} ORDER BY e.at DESC,e.id DESC LIMIT 50 OFFSET ?`).bind(...args,q.page*50).all()).results.map((r:{data:string})=>{const {_redemption,...event}=JSON.parse(r.data);const text=_redemption?redemptionTransferText(_redemption):event.text;return {...event,text:visibleOrderHistoryText(String(text||''),actor.role)} as Event;});
  return {rows,total:Number(count.n),page:q.page};
