@@ -905,3 +905,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .operator-scale-buttons button{display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:4px;border:1px solid var(--border);border-radius:7px;background:transparent;color:inherit;font:inherit}
 .operator-scale-buttons button:disabled{cursor:default}
 @media(max-width:1023px){.operator-scale{display:none}}
+
+.order-overview .notice.order-handoff-reason, .dark .order-overview .notice.order-handoff-reason { background: #fdf2d5; border-color: #ebd59e; color: #503719; }

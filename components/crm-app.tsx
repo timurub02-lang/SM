@@ -610,7 +610,7 @@ function OrderDetail({workGateSkOnly=false,onResultSaved,beginFollowup,followupE
  <button type="button" className="icon-button" title="Скопировать 10 цифр номера" aria-label="Скопировать 10 цифр номера" onClick={async()=>{
   try{await navigator.clipboard.writeText(copyPhone);toast.success("Номер скопирован");}
   catch{toast.error("Не удалось скопировать номер");}
- }}><Copy size={16} aria-hidden="true"/></button>}</span>}<p>{(o.address??c.address)||"Адрес не заполнен"}</p></div>{cancellation&&<div className="notice amber order-cancellation-details"><strong>Причина отмены: {cancellation.reason}</strong><span>Отменил: {cancellation.author||"Не указан"}</span><span>Дата отмены: {cancellation.at?stamp(cancellation.at,"Europe/Moscow")+" МСК":"Не указана"}</span></div>}{o.status!=="refused"&&o.reason&&<div className="notice amber"><AlertCircle size={17}/>{o.contact==="missed"?"Недозвон: ":o.contact==="callback"?"Перезвон: ":"Причина: "}{o.reason}{o.due&&" · "+stamp(o.due)}</div>}
+ }}><Copy size={16} aria-hidden="true"/></button>}</span>}<p>{(o.address??c.address)||"Адрес не заполнен"}</p></div>{cancellation&&<div className="notice amber order-cancellation-details"><strong>Причина отмены: {cancellation.reason}</strong><span>Отменил: {cancellation.author||"Не указан"}</span><span>Дата отмены: {cancellation.at?stamp(cancellation.at,"Europe/Moscow")+" МСК":"Не указана"}</span></div>}{o.status!=="refused"&&o.reason&&<div className="notice amber order-handoff-reason"><AlertCircle size={17}/>{o.contact==="missed"?"Недозвон: ":o.contact==="callback"?"Перезвон: ":"Причина: "}{o.reason}{o.due&&" · "+stamp(o.due)}</div>}
 
 
 
