@@ -14,7 +14,7 @@ try{
  db.exec(readFileSync('drizzle/0000_cynical_monster_badoon.sql','utf8'));
  for(const sql of authSchema)db.exec(sql);
  const password='SyntheticReviewPassword123',hash=await hashPassword(password);
- for(const [id,role] of [['admin','admin'],['head','department_head'],['one','operator']]){
+ for(const [id,role] of [['admin','admin'],['head','department_head'],['one','operator'],['E-74ee9a8f-99d','department_head'],['chief','chief_logistic'],['logistic','logistic']]){
   const e={id,name:id,login:id,alias:'',skLogin:'',role,department:'1',salary:0,bonus:0,version:1};
   db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify(e));
   db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
@@ -22,7 +22,7 @@ try{
  const client={id:'c',name:'Synthetic client',phone:'+79990000001',owner:'one',address:'',city:'',source:'test',createdAt:new Date().toISOString(),sheet:'К',version:1};
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run('c',client.phone,JSON.stringify(client));
  db.prepare('INSERT INTO settings VALUES(?,?)').run('main',JSON.stringify({retentionDays:30}));
- server=spawn(process.execPath,['--require',resolve('tests/fixtures/sqlite-race.cjs'),resolve('.next/standalone/server.js')],{env:{...process.env,CRM_TEST_RACE_FILE:raceFile,CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,['--require',resolve('tests/fixtures/sqlite-race.cjs'),resolve('.next/standalone/server.js')],{env:{...process.env,CRM_TEST_RACE_FILE:raceFile,CRM_RUNTIME:'miran',CRM_SPLIT_READS:'1',CRM_ORIGIN:origin,CRM_DATABASE_PATH:file,HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  for(let i=0;i<100;i++){try{await fetch(base+'/login');break;}catch{await new Promise(r=>setTimeout(r,100));}}
  const login=await fetch(base+'/api/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({login:'admin',password})});
@@ -135,6 +135,34 @@ try{
  assert.equal(operatorState.status,200);assert.ok(opState.orders.some(o=>o.id===blackOrder.id&&o.status==='refused'));
  assert.ok(opState.reminders.some(r=>r.kind==='order-cancelled'&&r.orderId===blackOrder.id&&r.text.includes('ЧС')));
  assert.equal(JSON.parse(db.prepare("SELECT data FROM clients WHERE id='black-client'").get().data).sheet,'ЧС');
+
+ // Review delegation crosses departments without granting general administration.
+ async function asActor(id){
+  const r=await fetch(base+'/api/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({login:id,password})});assert.equal(r.status,200);
+  const actorCookie=r.headers.get('set-cookie').split(';')[0];
+  return async(path,body)=>{const response=await fetch(base+path,{method:body?'POST':'GET',headers:{cookie:actorCookie,Origin:origin,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,data:await response.json()};};
+ }
+ const review=await asActor('E-74ee9a8f-99d'),chief=await asActor('chief'),logistic=await asActor('logistic');
+ const delegated={...zvdOrder,id:'delegated',manager:'other'};
+ db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(delegated.id,'c',JSON.stringify(delegated));
+ const bootstrap=await review('/api/crm?part=bootstrap');assert.equal(bootstrap.status,200);assert.ok(!bootstrap.data.splitReads);
+ const reviewList=await review('/api/crm?list=orders&view=check&filter=all');
+ assert.equal(reviewList.status,200);assert.ok(reviewList.data.rows.some(o=>o.id===delegated.id));
+ const version=()=>db.prepare('SELECT version FROM orders WHERE id=?').get(delegated.id).version;
+ for(const [action,value] of [['markZvd',true],['markPV',true]]){
+  const r=await review('/api/crm',{action,id:delegated.id,version:version(),value,responseMode:'entity-patch'});assert.equal(r.status,200,JSON.stringify(r));
+ }
+ const packing=await review('/api/crm',{action:'transition',id:delegated.id,version:version(),to:'packing',responseMode:'entity-patch'});
+ assert.equal(packing.status,200,JSON.stringify(packing));
+ assert.equal(JSON.parse(db.prepare('SELECT data FROM orders WHERE id=?').get(delegated.id).data).status,'packing');
+ assert.equal((await review('/api/crm',{action:'markPV',id:delegated.id,version:version(),value:false})).status,403);
+ const routing=await chief('/api/cdek/routing');assert.equal(routing.status,200,JSON.stringify(routing));
+ const saved=await chief('/api/cdek/routing',{...routing.data.config,enabled:false,rules:[]});assert.equal(saved.status,200,JSON.stringify(saved));
+ assert.notEqual(saved.data.config.revision,routing.data.config.revision);
+ assert.equal((await chief('/api/cdek/routing',routing.data.config)).status,400,'Stale revision cannot overwrite settings');
+ assert.equal((await logistic('/api/cdek/routing')).status,403);
+ assert.equal((await logistic('/api/cdek/routing',saved.data.config)).status,403);
+ assert.equal((await review('/api/cdek/routing')).status,403);
  console.log('Review regressions: cash/delete races, no ghost orders/history, assignment rollback passed. No external services used.');
 }catch(e){console.error(logs);throw e;}finally{
  if(server){server.kill();await once(server,'exit');}

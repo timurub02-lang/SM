@@ -1,3 +1,4 @@
+import {canReviewOrders,reviewRole} from '@/lib/order-review-access';
 import {confirmByHead,canHeadRequestEdit} from '@/lib/head-confirmation';
 import {orderFormSchema,primaryOrderFormChange} from '@/lib/order-form-save';
 import {withOrderChanges} from '@/lib/order-change-history';
@@ -502,7 +503,7 @@ async function handlePOST(request:Request){
   if(!result[0].meta.changes)throw Error('Заказ или клиент уже изменены. Обновите карточку и повторите');
  }else if(["confirmByHead","selectOrderPickupPoint","reportPostalBuyout","keepPostalSent","incomingBuyoutInfo","requestShipmentReturn","requestShipmentChange","resolveShipmentRequest","requestOrderEdit","resolveOrderEdit","completeOrderEdit","requestOrderCancellation","resolveOrderCancellation","updateLogisticComment","clientWaiting","markZvd","markPV","markBlacklist","courierAccept","courierOutcome","courierWorkflow","receivePayment","savePostalTracking","saveManualDeliveryCost","reconcileWarehouseReturn","returnToWarehouse","markPackingWaybill","updateWaybillComment","selectCdekTariff","updateDelivery","updateOrder","transition","contact","comment"].includes(p.action)){
   const o=s.orders.find(x=>x.id===p.id);if(!o)throw new Error("Заказ не найден");const c=s.clients.find(c=>c.id===o.clientId)!;if(!employee||(orderEditingLocked(employee,o)&&!["incomingBuyoutInfo","requestShipmentReturn","requestShipmentChange","resolveShipmentRequest","requestOrderEdit","resolveOrderEdit","completeOrderEdit","requestOrderCancellation","resolveOrderCancellation"].includes(p.action)&&!(p.action==='reportPostalBuyout')&&!(p.action==='updateLogisticComment'&&['admin','logistic','chief_logistic'].includes(employee.role))&&!(p.action==='clientWaiting'&&canOperatorReachClient(employee,o,s.employees))&&!(p.action==='updateOrder'&&p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees))&&!(p.action==='updateOrder'&&canEditRecalledCourierOrder(o,employee,s.employees))&&!(p.action==='courierWorkflow'&&['claimDoor','resolveDoor'].includes(p.operation)&&canHandleCourierDoor(o,employee,s.employees))&&!(employee.role==="courier"&&["courierAccept","courierOutcome","courierWorkflow","contact"].includes(p.action))&&!(isLogistic(employee.role)&&p.action==="updateOrder"&&canLogisticEditOrder(o))))throw new Error("Этот заказ доступен вам только для просмотра");if(o.cdekDeleting)throw Error("СДЭК обрабатывает удаление. Дождитесь подтверждения");let next:Order & {_mutation:string}={...o,refusalHandoffAt:o.refusalHandoffAt||o.finalHandoffAt,updatedAt:now,_mutation:id("M-")};let text="";let cancellationIncoming:Awaited<ReturnType<typeof incomingForAction>>|undefined;let cashReceipt:ReturnType<typeof d.prepare>[]=[];let stockReturn:ReturnType<typeof d.prepare>[]=[];let incomingBuyout:Awaited<ReturnType<typeof incomingBuyoutUpdate>>|undefined;
-  if(o.zvd&&!['markZvd','markPV','markBlacklist','comment','updateLogisticComment'].includes(p.action)&&!(employee.role==='admin'&&p.action==='transition'&&p.to==='packing'))throw Error('Заказ на ЗВД. Сначала администратор должен разрешить отправку');
+  if(o.zvd&&!['markZvd','markPV','markBlacklist','comment','updateLogisticComment'].includes(p.action)&&!(canReviewOrders(employee)&&p.action==='transition'&&p.to==='packing'))throw Error('Заказ на ЗВД. Сначала администратор должен разрешить отправку');
   if(["updateOrder","updateDelivery"].includes(p.action)&&!orderDataEditingEnabled(employee.role,p.operatorFollowup===true&&canOperatorAmendMissed(employee,o,s.employees)?'draft':canEditRecalledCourierOrder(o,employee,s.employees)?'rework':o.status,s.settings.orderPolicy))throw Error("Редактирование данных заказа отключено администратором");
   if(courierDoorRefusal(o)){
    if(!(p.action==='courierWorkflow'&&['claimDoor','resolveDoor'].includes(p.operation)||['comment','updateOrder','updateLogisticComment'].includes(p.action)))throw Error('Отказ у двери: курьер ждёт окончательного ответа. Недозвон, перезвон и другие переходы недоступны');
@@ -565,12 +566,12 @@ async function handlePOST(request:Request){
    const value=z.boolean().parse(p.value);next={...next,...markZvd(o,employee,value,now),updatedAt:now};
    text=value?'ЗВД: отправка приостановлена администратором. Срок не ограничен':'ЗВД снят администратором. Заказ ожидает проверки';
   }else if(p.action==="markBlacklist"){
-   if(employee.role!=='admin'||o.status!=='check'||o.courier||o.cdekExported||o.shippedAt)throw Error('ЧС доступен администратору только для заказа на проверке до отправки');
+   if(!canReviewOrders(employee)||o.status!=='check'||o.courier||o.cdekExported||o.shippedAt)throw Error('ЧС доступен администратору только для заказа на проверке до отправки');
    if(p.confirmed!==true)throw Error('Подтвердите отмену заказа и открепление клиента');
    next={...next,status:'refused',blacklistedAt:now,cancelledAt:now,contact:'none',due:'',reason:'Заказ не прошёл проверку: клиент в ЧС',zvd:undefined,clientWaiting:undefined};
    text='Заказ не прошёл проверку: клиент в ЧС · клиент откреплён от оператора';
   }else if(p.action==="markPV"){
-   if(employee.role!=='admin'||o.status!=='check')throw Error('Метка ПВ ставится администратором на этапе проверки');next.pv=z.boolean().parse(p.value);next.pvMarkedAt=next.pv?now:undefined;text=next.pv?'Заказ отмечен ПВ':'Метка ПВ снята';
+   if(!canReviewOrders(employee)||o.status!=='check')throw Error('Метка ПВ ставится администратором на этапе проверки');next.pv=z.boolean().parse(p.value);next.pvMarkedAt=next.pv?now:undefined;text=next.pv?'Заказ отмечен ПВ':'Метка ПВ снята';
   }else if(p.action==="courierAccept"||p.action==="courierWorkflow"){
    const command=z.object({action:z.enum(['courierAccept','courierWorkflow']),operation:z.enum(['handoverMoney','confirm','toOperator','resume','recall','returnRecall','receiveRecall','requestRepack','doorRefusal','claimDoor','resolveDoor']).optional(),reason:z.string().trim().max(1000).optional(),confirmed:z.boolean().optional(),result:z.enum(['deliver','return']).optional()}).parse(p);
    const result=applyCourierCommand(o,command,employee,s.settings.orderPolicy!,now,s.employees);next={...result.order,_mutation:next._mutation};text=result.text;
@@ -662,9 +663,9 @@ async function handlePOST(request:Request){
    if(employee.role==='department_head'&&['confirm','extra'].includes(o.status)&&['check','extra','packing'].includes(p.to))throw Error('Используйте кнопку «Подтвердить заказ» после недозвона логиста');
    if(o.editRequest?.status==='editing')throw Error('После сохранения правок нажмите «Передать логисту»');
    const to=z.enum(["draft","confirm","rework","check","extra","packing","phone","shipping","pickup","redeemed","refused","returned"]).parse(p.to);
-   if(employee.role==='department_head'&&to==='packing'&&p.clientConfirmedByHead!==true)throw Error('Подтвердите, что вы связались с клиентом и он подтвердил заказ');
+   if(reviewRole(employee,o)==='department_head'&&to==='packing'&&p.clientConfirmedByHead!==true)throw Error('Подтвердите, что вы связались с клиентом и он подтвердил заказ');
    const returnKind=to==="rework"?z.enum(["clarification","refusal","delivery"],{error:"Выберите тип возврата: уточнение данных, отказ клиента или смена доставки. Обновите страницу, если выбора нет."}).parse(p.returnKind):undefined;
-   const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,employee.role,returnKind);
+   const reason=z.string().max(3000).parse(p.reason||"");validateTransition(o,to,c,reason,reviewRole(employee,o),returnKind);
    if(needsNameExplanation(o.status,to,c.name))next.incompleteNameExplanation={text:nameExplanationSchema.parse(p.incompleteNameReason??""),clientName:c.name,by:employee.id,name:employee.name,at:now};
    if((to==='rework'||to==='refused')&&(returnKind==='delivery'||canReturnFromPacking(o,employee.role))){
     if(!canReturnFromPacking(o,employee.role))throw Error('Смена доставки доступна логисту до отправки заказа');
@@ -688,7 +689,7 @@ async function handlePOST(request:Request){
    if(to==="extra"&&o.status!=="rework"){delete next.finalHandoffAt;delete next.reworkDeadline;delete next.returnReason;}if(o.status==="rework"&&["confirm","extra"].includes(to)){if(isRefusalRework(o)&&p.finalHandoffConfirmed!==true)throw Error("Подтвердите завершение работы с отказом клиента");Object.assign(next,reworkHandoff(o,now,s.settings.orderPolicy!));}if(["confirm","extra"].includes(to)&&o.status!=="rework"){next.confirmationStartedAt=now;next.confirmationHours=to==="extra"?s.settings.orderPolicy!.extraConfirmationHours:s.settings.orderPolicy!.confirmationHours;}
    delete next.noAnswerDeadline;Object.assign(next,orderDatesForTransition(o,to,now));next.status=to;if(to==='packing')delete next.packingReworkDelivery;if(o.zvd&&to==="packing"){delete next.zvd;}next.noAnswerDeadline=confirmationDeadline(next);next.timerCalendar="weekdays-v1";if(to==="rework"){next.returnKind=returnKind;next.returnReason=reason;next.reworkHours=s.settings.orderPolicy!.reworkHours;next.reworkDeadline=reworkDeadlineFrom(now,next.reworkHours);}if(to!==o.status)delete next.warehouseReturnedAt;next.reason=reason;next.contact="none";next.due="";if(to==="extra")next.extra=true;
    delete next.extraCallbackAt;
-   if(employee.role==='admin'&&o.status==='check'&&to==='extra'){
+   if(canReviewOrders(employee)&&o.status==='check'&&to==='extra'){
     next.extraCallbackAt=nextExtraConfirmationAt(now);next.contact='callback';next.due=next.extraCallbackAt;
     next.confirmationStartedAt=next.extraCallbackAt;next.noAnswerDeadline=confirmationDeadline(next);
    }

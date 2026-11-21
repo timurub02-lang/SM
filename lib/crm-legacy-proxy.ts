@@ -1,3 +1,4 @@
+import {canReviewOrders} from './order-review-access.ts';
 import type {Employee} from './crm.ts';
 
 const roles=new Set(['admin','logistic','chief_logistic','redemption','courier']);
@@ -12,7 +13,7 @@ const unavailable=()=>Response.json({error:'Рабочие данные врем
 
 // Snapshot CPU isolation, not a read-only database: existing GET maintenance semantics are retained.
 export async function proxyLegacySnapshot(request:Request,employee?:Employee,send:typeof fetch=fetch):Promise<Response|null>{
- const eligible=!!employee&&roles.has(employee.role)&&legacySnapshotRequest(request)&&
+ const eligible=!!employee&&(roles.has(employee.role)||canReviewOrders(employee))&&legacySnapshotRequest(request)&&
   (!new URL(request.url).searchParams.has('actorId')||new URL(request.url).searchParams.get('actorId')===employee.id);
  // Re-authentication on the worker must reject an actor whose role changed during the hop.
  if(legacySnapshotWorker())return eligible?null:Response.json({error:'Недостаточно прав'},{status:403});

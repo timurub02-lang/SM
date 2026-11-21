@@ -1,3 +1,4 @@
+import {canReviewOrders} from './order-review-access.ts';
 import {orderPickupPoint} from './order-pickup-point.ts';
 import {internalDeadline,internalElapsed} from './internal-timers.ts';
 import {nameBase} from './name-base.ts';
@@ -85,7 +86,7 @@ export const cdekReviewOnDeliveryChange=(o:Pick<Order,"delivery"|"status"|"extra
  ["cdek_pickup","cdek_courier"].includes(delivery||"")&&!["cdek_pickup","cdek_courier"].includes(o.delivery||"")&&(["extra","packing","phone"].includes(o.status)||o.status==="rework"&&o.extra);
 export const operatorReturnLabel=(o:Pick<Order,"round">)=>o.round>1?`После ${o.round-1}-го возврата оператору`:"";
 export function markZvd(o:Order,actor:Employee,value:boolean,now:string):Order{
- if(actor.role!=='admin'||o.status!=='check'||o.courier||o.cdekExported||o.shippedAt)throw Error('ЗВД доступен только администратору на проверке до отправки');
+ if(!canReviewOrders(actor)||o.status!=='check'||o.courier||o.cdekExported||o.shippedAt)throw Error('ЗВД доступен только администратору на проверке до отправки');
  return {...o,zvd:value?{at:now,by:actor.id}:undefined};
 }
 export const canReturnFromPacking=(o:Order,role?:string)=>['admin','logistic','chief_logistic'].includes(role||'')&&['packing','phone'].includes(o.status)&&!!o.delivery&&!o.cdekExported&&!o.cdekDeleting&&!o.shippedAt&&!o.courier&&!o.courierRecall&&!o.legacyLv?.track;
@@ -224,7 +225,7 @@ export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){
  return {address:o.address.trim(),addressParts:o.addressParts||null,city:o.addressParts?.city||'',addressReview:false,addressProcessingError:false};
 }
 
-export const orderEditingLocked=(employee:Pick<Employee,"role"|"id">,order:Pick<Order,"status"|"manager"|"courier"|"cdekExported"|"cdekDeleting">)=>employee.role==="department_head"?!(departmentWorkStage(order)||headDraftStage(order)):order.status==="check"&&employee.role!=="admin"?true:employee.role==="operator"?(order.manager!==employee.id||!["draft","rework"].includes(order.status)):!["logistic","chief_logistic","admin","redemption"].includes(employee.role);
+export const orderEditingLocked=(employee:Pick<Employee,"role"|"id">,order:Pick<Order,"status"|"manager"|"courier"|"cdekExported"|"cdekDeleting">)=>order.status==="check"&&canReviewOrders(employee)?false:employee.role==="department_head"?!(departmentWorkStage(order)||headDraftStage(order)):order.status==="check"&&employee.role!=="admin"?true:employee.role==="operator"?(order.manager!==employee.id||!["draft","rework"].includes(order.status)):!["logistic","chief_logistic","admin","redemption"].includes(employee.role);
 export const scheduledCalls=(orders:Order[],employee:Pick<Employee,"id"|"role"|"department">,staff:Employee[]=[])=>orders.filter(o=>["callback","missed"].includes(o.contact)&&!!o.due&&Number.isFinite(Date.parse(o.due))&&(employee.role==="department_head"?!(!o.courier&&["confirm","extra"].includes(o.status))&&isDepartmentOrder(employee,o,staff)&&(departmentWorkStage(o)||headDraftStage(o)):employee.role==="operator"?o.manager===employee.id&&["draft","rework"].includes(o.status):isLogistic(employee.role)?(!o.courier&&["confirm","extra","pickup"].includes(o.status)):employee.role==="courier"?o.courier?.id===employee.id&&courierPhase(o)==="confirmation":false)).sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
 export const callAuthor=(o:Order,employees:Employee[])=>o.contactAuthor?.name?(o.contactAuthor.role==="department_head"?"Руководитель · ":"")+o.contactAuthor.name:employees.find(e=>e.id===(["draft","rework"].includes(o.status)?o.manager:o.logistic))?.name||"";
 export const logisticCallsDue=(orders:Order[],actorId:string,now:number)=>scheduledCalls(orders,{id:actorId,role:"logistic"}).filter(o=>Date.parse(o.due)<=now);

@@ -1,3 +1,4 @@
+import {canReviewOrders} from './order-review-access.ts';
 import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canSelectOrderPickupPoint} from './order-pickup-point.ts';
@@ -10,7 +11,7 @@ import {headDraftStage,departmentWorkStage,isDepartmentOrder} from './department
 export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'owner'>){return !!c&&(e.role!=='operator'||c.owner===e.id);}
 export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
 export function seesOrder(e:Employee,o:Order,staff:Employee[]){
- if(e.role==='admin')return true;
+ if(e.role==='admin'||o.status==='check'&&canReviewOrders(e))return true;
  if(o.zvd&&!['operator','department_head'].includes(e.role))return false;
  if(e.role==='courier')return o.delivery==='moscow_courier'&&o.courier?.id===e.id;
  if(e.role==='operator')return o.manager===e.id;
@@ -41,6 +42,7 @@ export function visibleState(s:State,e:Employee):State{
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
  if(e.role==='admin')return;
+ if(canReviewOrders(e)&&s.orders.some(o=>o.id===p.id&&o.status==='check')&&['transition','markZvd','markPV','markBlacklist','comment'].includes(p.action))return;
  if(['markZvd','markBlacklist'].includes(p.action))return allow(false);
  if(e.role==='purchasing')return allow(false);
  if(e.role==='courier')return allow(p.action==='readReminder'||['courierOutcome','courierAccept','courierWorkflow','contact'].includes(p.action)&&s.orders.some(o=>o.id===p.id&&seesOrder(e,o,s.employees)));
@@ -130,7 +132,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(e.role==='courier')return path==='/api/crm'&&(method==='GET'||method==='POST'&&['courierOutcome','courierAccept','courierWorkflow','contact','readReminder'].includes(p?.action));
  if(path==='/api/crm')return true; // Object-level rules are applied inside the CRM handler.
  if(path==='/api/cdek/pickup-points')return method==='GET'&&['operator','department_head'].includes(e.role)&&url.searchParams.has('orderId');
- if(path==='/api/cdek/routing')return method==='GET'&&isLogistic(e.role)&&url.searchParams.has('orderId');
+ if(path==='/api/cdek/routing')return e.role==='chief_logistic'&&['GET','POST'].includes(method)||method==='GET'&&isLogistic(e.role)&&url.searchParams.has('orderId');
  if(path==='/api/cdek'||path==='/api/cdek/status-mapping')return method==='GET'&&isLogistic(e.role);
  if(path==='/api/callback-phones'||path==='/api/postal-form')return method==='GET'&&isLogistic(e.role);
  if(path==='/api/dadata')return method==='GET'||p?.action==='suggest';
