@@ -18,3 +18,6 @@ assert.throws(()=>confirmByHead({...base,address:''},{...c,address:''},e,staff,a
 assert.throws(()=>confirmByHead({...base,reworkDeadline:'2000-01-01T00:00:00Z'},c,e,staff,at,true,true),/истёк/);
 assert.equal(canHeadRequestEdit(e,{...base,status:'confirm'},staff),true);
 assert.equal(base.status,'rework');console.log('Head confirmation: routing, remarks, consent, ownership, saved edits and shipment boundaries passed.');
+
+const savedPending={...base,editRequest:{id:'r',status:'pending',from:'confirm',reason:'Correct amount',savedAt:at}};
+assert.equal(confirmByHead(savedPending,c,e,staff,at,true,true).editRequest.status,'completed');

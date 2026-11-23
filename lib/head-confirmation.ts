@@ -1,7 +1,8 @@
+import {handoffEditRequest} from './order-edit-request.ts';
 import {isLogistic,allowedOrderTransitions,orderMissingField,validateTransition,type Order,type Client,type Employee,type Status} from './crm.ts';
 import {isDepartmentOrder} from './department-orders.ts';
 export function headConfirmationTarget(o:Order):Status|undefined{
- if(o.courier||o.courierRecall||o.shippedAt||o.cdekTransferredAt||o.cdekExported||o.cdekDeleting||o.zvd||o.cancellationRequest?.status==='pending'||o.packingReworkDelivery||o.editRequest?.status==='pending'||o.editRequest?.status==='editing'&&!o.editRequest.savedAt)return;
+ if(o.courier||o.courierRecall||o.shippedAt||o.cdekTransferredAt||o.cdekExported||o.cdekDeleting||o.zvd||o.cancellationRequest?.status==='pending'||o.packingReworkDelivery||o.editRequest?.status==='pending'&&!(o.status==='rework'&&o.editRequest.savedAt)||o.editRequest?.status==='editing'&&!o.editRequest.savedAt)return;
  if(o.status==='rework')return o.returnKind&&o.delivery?(o.delivery!=='moscow_courier'?'check':'packing'):undefined;
  if(['confirm','extra'].includes(o.status)&&o.contact==='missed')return allowedOrderTransitions(o,'logistic').find(to=>['check','extra','packing'].includes(to));
 }
@@ -20,6 +21,7 @@ export function confirmByHead(o:Order,c:Client,e:Employee,staff:Employee[],at:st
  if(o.finalHandoffAt)next.refusalHandoffAt=o.refusalHandoffAt||o.finalHandoffAt;
  if(o.status==='rework'&&o.returnKind==='refusal'){next.round=o.round+1;next.refusalHandoffAt=o.refusalHandoffAt||o.finalHandoffAt||at;}
  if(to==='check')delete next.adminReviewedAt;
+ next.editRequest=handoffEditRequest(o,to,at);
  if(editing)next.editRequest={...o.editRequest!,status:'completed',completedAt:at};
  return next;
 }

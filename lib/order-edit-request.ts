@@ -23,3 +23,12 @@ export function completeOrderEdit(o:Order,e:Employee,requestId:string,at:string)
  delete next.reworkDeadline;delete next.reworkHours;delete next.returnKind;delete next.returnReason;
  return next;
 }
+
+// A normal return/rework handoff must finish the same request as the explicit edit flow.
+export function handoffEditRequest(o:Order,to:Status,at:string):OrderEditRequest|undefined{
+ const r=o.editRequest;
+ if(r?.status!=='pending')return r;
+ if(o.status==='rework'&&r.savedAt&&['confirm','extra','check','packing'].includes(to))return {...r,status:'completed',completedAt:at};
+ if(to!==o.status&&to!=='rework'&&beforeShipment({...o,status:to}))return {...r,from:to};
+ return r;
+}
