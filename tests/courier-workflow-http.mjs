@@ -275,6 +275,29 @@ try{
  await act(requestId,'head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true},400);
  await act(requestId,'head',{action:'updateOrder',items:order(requestId).items,addressConfirmed:true});
  await act(requestId,'head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true});assert.equal(order(requestId).editRequest.status,'completed');assert.equal(order(requestId).status,'packing');
+ // Ordinary logistics returns resolve a saved request too; moving stages alone keeps it actionable.
+ for(const actor of ['operator','head']){
+  const id=await create();await act(id,'operator',{action:'transition',to:'confirm'});
+  await act(id,'head',{action:'requestOrderEdit',reason:'Correct amount'});
+  await act(id,'logistic',{action:'transition',to:'rework',returnKind:'clarification',reason:'Correct amount'});
+  assert.equal(order(id).editRequest.status,'pending');
+  await act(id,actor,{action:'updateOrder',items:[{name:'Product',quantity:1,price:14500}],addressConfirmed:true});
+  assert.ok(order(id).editRequest.savedAt);
+  await act(id,actor,actor==='head'?{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true}:{action:'transition',to:'confirm'});
+  assert.equal(order(id).editRequest.status,'completed');assert.ok(order(id).editRequest.completedAt);
+ }
+ const movedRequest=await create();await act(movedRequest,'operator',{action:'updateOrder',delivery:'russian_post',items:order(movedRequest).items,addressConfirmed:true});
+ await act(movedRequest,'operator',{action:'transition',to:'confirm'});
+ await act(movedRequest,'head',{action:'requestOrderEdit',reason:'Correct recipient'});
+ await act(movedRequest,'logistic',{action:'transition',to:'check'});
+ assert.equal(order(movedRequest).editRequest.status,'pending');assert.equal(order(movedRequest).editRequest.from,'check');
+ await act(movedRequest,'admin',{action:'transition',to:'packing'});
+ assert.equal(order(movedRequest).editRequest.status,'pending');assert.equal(order(movedRequest).editRequest.from,'packing');
+ await act(movedRequest,'logistic',{action:'resolveOrderEdit',requestId:order(movedRequest).editRequest.id,decision:'edit'});
+ assert.equal(order(movedRequest).editRequest.status,'editing');
+ await act(movedRequest,'head',{action:'updateOrder',items:order(movedRequest).items,addressConfirmed:true});
+ await act(movedRequest,'head',{action:'confirmByHead',clientConfirmed:true,correctionsConfirmed:true});
+ assert.equal(order(movedRequest).status,'packing');assert.equal(order(movedRequest).editRequest.status,'completed');
  const ownConfirmations=await call('head','/api/operator-statistics?section=confirmation&actorId=head&scope=own');
  assert.ok(ownConfirmations.data.rows.some(row=>row.id==='head'&&row.confirmed>=2&&row.orderIds.length===row.confirmed));
  const summaryConfirmations=await call('head','/api/operator-statistics?section=confirmation&actorId=head');

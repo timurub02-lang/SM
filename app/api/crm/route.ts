@@ -42,7 +42,7 @@ import {canTransferIncoming} from '@/lib/incoming-transfer';
 import {orderRequestNotices,incomingBuyoutNotices} from '@/lib/order-request-notices';
 import {requestShipment,resolveShipment,shippedOrder} from '@/lib/shipment-request';
 import {incomingBuyoutUpdate} from '@/lib/incoming-buyout-update';
-import {requestOrderEdit,resolveOrderEdit,completeOrderEdit} from '@/lib/order-edit-request';
+import {requestOrderEdit,resolveOrderEdit,completeOrderEdit,handoffEditRequest} from '@/lib/order-edit-request';
 import {requestOrderCancellation,resolveOrderCancellation} from '@/lib/order-cancellation';
 import {readLimitedText} from '@/lib/request-body';
 import {canCreateRedemptionStaff} from '@/lib/crm';
@@ -833,7 +833,8 @@ async function handlePOST(request:Request){
   const changedAddress=proposedAddress&&(c.address!==proposedAddress.address||JSON.stringify(c.addressParts??null)!==JSON.stringify(proposedAddress.addressParts)||c.city!==proposedAddress.city||c.addressReview)?proposedAddress:null;
   const addressPatch=changedAddress||formFields.name!==undefined?{...(changedAddress||{}),...(formFields.name!==undefined?{name:formFields.name,updatedAt:now}:{})}:null;
   if(changedAddress)text+=" · адрес клиента обновлён из заказа";
-  if(p.action==='updateOrder'&&o.editRequest?.status==='editing')next.editRequest={...o.editRequest,savedAt:now};
+  if(p.action==='transition')next.editRequest=handoffEditRequest(o,next.status,now);
+  if(p.action==='updateOrder'&&(o.editRequest?.status==='editing'||o.status==='rework'&&o.editRequest?.status==='pending'))next.editRequest={...o.editRequest,savedAt:now};
   const closesIncoming=!!p.incomingId&&(['incomingBuyoutInfo','requestShipmentReturn','requestShipmentChange','requestOrderEdit','requestOrderCancellation','contact','transition','confirmByHead'].includes(p.action)||p.action==='courierWorkflow'&&['confirm','resolveDoor'].includes(p.operation));
   if(closesIncoming){if(!employee)throw Error('Требуется сотрудник');await incomingForAction(d,z.string().max(100).parse(p.incomingId),employee,s.employees,c.id);text+=' · входящее обращение обработано';}
   if(postalBuyoutPending(o)&&["redeemed","returned"].includes(next.status))Object.assign(next,resolvePostalBuyout(o,employee,now,next.status==="redeemed"?"paid":"returned"));
