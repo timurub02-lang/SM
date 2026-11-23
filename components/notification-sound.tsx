@@ -21,12 +21,34 @@ function ring(audio:AudioContext,incoming:boolean){
 
 export function NotificationSound({actor,ready,tasks,incoming,refresh}:{actor:string;ready:boolean;tasks:Reminder[];incoming:Reminder[];refresh:()=>Promise<boolean>}){
  const audio=useRef<AudioContext|null>(null),tracker=useRef(new NotificationPopups());
- const [enabled,setEnabled]=useState(false);
+ const preference='crm-notification-sound-enabled:'+actor;
+ const [enabled,setEnabled]=useState(false),[running,setRunning]=useState(false);
  const refreshRef=useRef(refresh);refreshRef.current=refresh;
  const leader=useRef(false);
+ useEffect(()=>{
+  const restore=()=>{try{setEnabled(localStorage.getItem(preference)==='1');}catch{}};
+  const sync=(event:StorageEvent)=>{if(!event.key||event.key===preference)restore();};
+  restore();window.addEventListener('storage',sync);
+  return ()=>window.removeEventListener('storage',sync);
+ },[preference]);
+ function context(){
+  if(!audio.current)audio.current=new AudioContext();
+  return audio.current;
+ }
  useEffect(()=>()=>{void audio.current?.close();audio.current=null;},[]);
  useEffect(()=>{
-  if(!enabled)return;
+  if(!enabled){setRunning(false);return;}
+  let ctx:AudioContext;
+  try{ctx=context();}catch{return;}
+  const update=()=>setRunning(ctx.state==='running');
+  // A restored preference cannot override the browser's autoplay policy.
+  const resume=()=>{if(ctx.state!=='running')void ctx.resume().catch(()=>{});};
+  update();ctx.addEventListener('statechange',update);resume();
+  document.addEventListener('click',resume,true);document.addEventListener('keydown',resume,true);
+  return ()=>{ctx.removeEventListener('statechange',update);document.removeEventListener('click',resume,true);document.removeEventListener('keydown',resume,true);};
+ },[enabled]);
+ useEffect(()=>{
+  if(!enabled||!running||!navigator.locks)return;
   const controller=new AbortController();
   let release:(()=>void)|undefined;
   // Only the tab holding the lock polls in the background and plays alerts.
@@ -37,7 +59,7 @@ export function NotificationSound({actor,ready,tasks,incoming,refresh}:{actor:st
    clearInterval(timer);leader.current=false;
   }).catch(()=>{if(!controller.signal.aborted){setEnabled(false);toast.error('Не удалось включить звук');}});
   return ()=>{controller.abort();release?.();};
- },[enabled,actor]);
+ },[enabled,running,actor]);
  useEffect(()=>{
   if(!ready)return;
   const fresh=tracker.current.update(actor,audibleNotifications(tasks,incoming));
@@ -53,15 +75,20 @@ export function NotificationSound({actor,ready,tasks,incoming,refresh}:{actor:st
   try{localStorage.setItem(key,JSON.stringify([...played].slice(-512)));}catch{}
  },[ready,actor,tasks,incoming,enabled]);
  async function toggle(){
-  if(enabled){setEnabled(false);return;}
+  if(enabled){
+   try{localStorage.setItem(preference,'0');}catch{}
+   setEnabled(false);return;
+  }
   try{
    if(!navigator.locks)throw Error();
-   const context=audio.current??=new AudioContext();
-   await context.resume();
-   if(context.state!=='running')throw Error();
-   ring(context,false);setEnabled(true);
+   const ctx=context();
+   await ctx.resume();
+   if(ctx.state!=='running')throw Error();
+   try{localStorage.setItem(preference,'1');}catch{}
+   ring(ctx,false);setEnabled(true);
   }catch{toast.error('Браузер не разрешил включить звук');}
  }
  const label=enabled?'Выключить звук уведомлений':'Включить звук уведомлений';
- return <button type="button" className="secondary" aria-pressed={enabled} aria-label={label} title={label} onClick={()=>void toggle()}>{enabled?<Volume2 size={18}/>:<VolumeX size={18}/>}</button>;
+ const hint=enabled&&!running?'Звук включён. Нажмите в окне CRM, чтобы браузер разрешил воспроизведение.':label;
+ return <button type="button" className="secondary" aria-pressed={enabled} aria-label={label} title={hint} onClick={()=>void toggle()}>{enabled?<Volume2 size={18}/>:<VolumeX size={18}/>}</button>;
 }
