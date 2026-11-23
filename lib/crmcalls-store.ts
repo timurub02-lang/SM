@@ -104,6 +104,7 @@ export async function runCRMCalls(d:Db,request:typeof fetch=fetch,now=new Date()
   if(!s.enabled||s.sendTime>time||await d.prepare("SELECT id FROM crmcalls_batches WHERE project=? AND state='unknown'").bind(s.projectId).first())continue;
   // Legacy snapshot schedules must be explicitly saved before switching their meaning.
   if(s.planning!=='daily')continue;
+  if(Date.parse(s.startedAt)>=Date.parse(today+'T'+s.sendTime+':00+03:00'))continue;
   let day=await d.prepare("SELECT quantity FROM crmcalls_days WHERE project=? AND day=?").bind(s.projectId,today).first();
   if(!day){
    const rows=await candidates(d,s,now),quantity=dailyDistributionCount(rows.length,s.cycleDays),available=await availableInProject(d,s.projectId,rows),date=workDate(today,1),cycle=crypto.randomUUID();
