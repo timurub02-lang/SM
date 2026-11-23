@@ -11,16 +11,32 @@ export async function initBaseDispatch(d:Db){
  // Keep a client free throughout an external dispatch, including an uncertain API outcome.
  await d.prepare(`CREATE TRIGGER IF NOT EXISTS base_dispatch_owner_guard BEFORE UPDATE OF data ON clients WHEN COALESCE(json_extract(NEW.data,'$.owner'),'')<>'' AND EXISTS(SELECT 1 FROM base_dispatch_items WHERE client_id=NEW.id AND state IN ('pending','sending','unknown')) BEGIN SELECT RAISE(ABORT,'Клиент отправляется в Скорозвон. Дождитесь завершения отправки'); END`).run();
 }
+// Both providers use the same free-client queue and retention gate.
+export async function distributionCandidates(d:Db,base:'M'|'J',sheet:string,today:string,ids?:string[]){
+ if(['К','ЧС','ПВ'].includes(sheet))return [];
+ const tables=new Set((await d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('orders','base_dispatch_items','crmcalls_items')").all()).results.map((r:any)=>r.name));
+ const rows=(await d.prepare(`SELECT c.id,c.data,c.version FROM clients c WHERE COALESCE(json_extract(c.data,'$.baseType'),'M')=? AND json_extract(c.data,'$.sheet')=? AND COALESCE(json_extract(c.data,'$.owner'),'')='' AND COALESCE(json_extract(c.data,'$.archived'),0)=0 AND COALESCE(json_extract(c.data,'$.archivedAt'),'')=''
+ ${tables.has('orders')?"AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.client_id=c.id AND json_extract(o.data,'$.status') NOT IN ('refused','redeemed','returned'))":''}
+ ${tables.has('base_dispatch_items')?"AND NOT EXISTS(SELECT 1 FROM base_dispatch_items i WHERE i.client_id=c.id AND i.state IN ('pending','sending','unknown'))":''}
+ ${tables.has('crmcalls_items')?"AND NOT EXISTS(SELECT 1 FROM crmcalls_items i WHERE i.client_id=c.id AND i.state IN ('sending','submitted','unknown'))":''}
+ ${ids?"AND c.id IN (SELECT value FROM json_each(?))":''}
+ ORDER BY COALESCE(json_extract(c.data,'$.distributedAt'),''),c.id`).bind(base,sheet,...(ids?[JSON.stringify(ids)]:[])).all()).results;
+ return rows.filter((r:any)=>{const c=JSON.parse(r.data);return distributionEligible(c,today)&&normalizedPhone(c.phone);});
+}
+export const dailyDistributionCount=(total:number,cycleDays:number)=>Math.floor(total/cycleDays);
+export async function crmcallsOwnsSheet(d:Db,base:string,sheet:string){
+ return !!await d.prepare("SELECT id FROM settings WHERE id LIKE 'crmcalls-project-%' AND json_extract(data,'$.enabled')=1 AND json_extract(data,'$.base')=? AND json_extract(data,'$.sheet')=?").bind(base,sheet).first();
+}
 export async function queueBaseDispatch(d:Db,p:{base:'M'|'J';sheet:string;project:string;count?:number;automaticKey?:string},now=new Date()){
  await initBaseDispatch(d);
  if(['К','ЧС','ПВ'].includes(p.sheet)||!/^\d+$/.test(p.project))throw Error('Выберите доступный лист и числовой ID проекта');
+ if(await crmcallsOwnsSheet(d,p.base,p.sheet))throw Error('Для этого листа включена выгрузка в CRMCalls. Сначала выключите её.');
  const {config}=await readBaseDestination(d);
  if(config.dispatchTarget==='oktell')throw Error(oktellDispatchPending);
  const sheet=config[p.base].sheets.find(s=>s.name===p.sheet);if(!sheet)throw Error('Лист не найден');
  const today=moscowDate(now),date=p.automaticKey?workDate(today,1):today;
- const rows=(await d.prepare(`SELECT id,data,version FROM clients WHERE COALESCE(json_extract(data,'$.baseType'),'M')=? AND json_extract(data,'$.sheet')=? AND COALESCE(json_extract(data,'$.owner'),'')='' AND NOT EXISTS(SELECT 1 FROM base_dispatch_items WHERE client_id=clients.id AND state IN ('pending','sending','unknown')) ORDER BY COALESCE(json_extract(data,'$.distributedAt'),''),id`).bind(p.base,p.sheet).all()).results;
- const eligible=rows.filter((r:any)=>distributionEligible(JSON.parse(r.data),today)&&normalizedPhone(JSON.parse(r.data).phone));
- const count=p.automaticKey?Math.floor(eligible.length/sheet.cycleDays):p.count||0;
+ const eligible=await distributionCandidates(d,p.base,p.sheet,today);
+ const count=p.automaticKey?dailyDistributionCount(eligible.length,sheet.cycleDays):p.count||0;
  if(!Number.isInteger(count)||count<0||(!p.automaticKey&&(count<1||count>100000)))throw Error('Укажите количество от 1 до 100000');
  const id='BD-'+crypto.randomUUID(),at=now.toISOString();
  const results=await d.batch([d.prepare("INSERT INTO base_dispatch_jobs(id,base,sheet,project,distribution_date,created_at,automatic_key) SELECT ?,?,?,?,?,?,? WHERE COALESCE((SELECT json_extract(data,'$.config.dispatchTarget') FROM settings WHERE id='base-settings'),'skorozvon')='skorozvon'").bind(id,p.base,p.sheet,p.project,date,at,p.automaticKey||null),...eligible.slice(0,count).map((r:any)=>d.prepare(`INSERT INTO base_dispatch_items(job_id,client_id,updated_at) SELECT ?,id,? FROM clients WHERE id=? AND version=? AND COALESCE(json_extract(data,'$.owner'),'')='' AND EXISTS(SELECT 1 FROM base_dispatch_jobs WHERE id=?)`).bind(id,at,r.id,r.version,id))]);
@@ -34,7 +50,7 @@ export async function runBaseDispatch(d:Db,request:typeof fetch=fetch,now=new Da
  const today=moscowDate(now),weekday=new Date(today+'T12:00:00Z').getUTCDay(),time=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit',hour12:false}).format(now);
  const {config}=await readBaseDestination(d);
  if(config.dispatchTarget==='oktell')return {sent:0,paused:true,reason:oktellDispatchPending};
- if(weekday!==0&&weekday!==6)for(const base of ['M','J'] as const)for(const s of config[base].sheets){if(!s.automatic||!s.projectId||s.sendTime>time||['К','ЧС','ПВ'].includes(s.name))continue;const key=JSON.stringify([today,base,s.name]);if(!await d.prepare('SELECT id FROM base_dispatch_jobs WHERE automatic_key=?').bind(key).first())await queueBaseDispatch(d,{base,sheet:s.name,project:s.projectId,automaticKey:key},now);}
+ if(weekday!==0&&weekday!==6)for(const base of ['M','J'] as const)for(const s of config[base].sheets){if(!s.automatic||!s.projectId||s.sendTime>time||['К','ЧС','ПВ'].includes(s.name)||await crmcallsOwnsSheet(d,base,s.name))continue;const key=JSON.stringify([today,base,s.name]);if(!await d.prepare('SELECT id FROM base_dispatch_jobs WHERE automatic_key=?').bind(key).first())await queueBaseDispatch(d,{base,sheet:s.name,project:s.projectId,automaticKey:key},now);}
  const active=(await d.prepare("SELECT * FROM base_dispatch_imports WHERE state IN ('sending','submitted') ORDER BY created_at LIMIT 1").first()) as any;
  const pending=active?[]:(await d.prepare("SELECT i.*,j.project,j.distribution_date,c.data FROM base_dispatch_items i JOIN base_dispatch_jobs j ON j.id=i.job_id JOIN clients c ON c.id=i.client_id WHERE i.state='pending' AND i.job_id=(SELECT job_id FROM base_dispatch_items WHERE state='pending' ORDER BY updated_at LIMIT 1) ORDER BY i.client_id LIMIT 1000").all()).results;
  if(!active&&!pending.length)return {sent:0};

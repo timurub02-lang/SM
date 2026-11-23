@@ -40,7 +40,7 @@ async function post(req:Request){
    await db().batch([db().prepare("UPDATE crmcalls_batches SET state='submitted',import_id=?,error='' WHERE id=? AND state='unknown'").bind(p.importId,p.batchId),db().prepare("UPDATE crmcalls_items SET state='submitted' WHERE batch_id=? AND state='unknown' AND EXISTS(SELECT 1 FROM crmcalls_batches WHERE id=? AND state='submitted')").bind(p.batchId,p.batchId)]);
    return Response.json({message:'Импорт поставлен на сверку. Повторной отправки нет.'});
   }
-  if(p.action==='preview'){const {rows,plan}=await previewCRMCalls(db(),p.schedule);return Response.json({count:rows.length,plan});}
+  if(p.action==='preview'){const {rows,total,dailyCount,plan}=await previewCRMCalls(db(),p.schedule);return Response.json({count:rows.length,total,dailyCount,plan});}
   if(p.schedule.enabled){
    const c=await readCRMCalls(db());if(!c?.apiKey)throw Error('Сначала подключите CRMCalls');
    const project=(await crmcallsProjects(crmcallsApi(c.apiKey))).find(v=>v.id===p.schedule.projectId);

@@ -1,11 +1,13 @@
+import {distributionCandidates,dailyDistributionCount} from './base-dispatch.ts';
 import type {ActivityDb as Db} from './activity-store.ts';
 import {readBaseDestination} from './base-destination.ts';
-import {distributionEligible,moscowDate,workDate} from './base-distribution.ts';
+import {moscowDate,workDate} from './base-distribution.ts';
 import {CRMCallsHttpError,crmcallsApi,crmcallsContact,crmcallsPlan,crmcallsProjects,type CRMCallsSchedule} from './crmcalls.ts';
 
 type Config={apiKey:string;revision:string;checkedAt:string};
-type Schedule=CRMCallsSchedule&{revision:string;startedAt:string;dailyLimit:number};
+type Schedule=CRMCallsSchedule&{revision:string;startedAt:string;dailyLimit:number;planning?:'daily'};
 export async function initCRMCalls(d:Db){
+ await d.prepare("CREATE TABLE IF NOT EXISTS crmcalls_days(project TEXT NOT NULL,day TEXT NOT NULL,distribution_date TEXT NOT NULL,quantity INTEGER NOT NULL,PRIMARY KEY(project,day))").run();
  await d.prepare("CREATE TABLE IF NOT EXISTS crmcalls_items(project TEXT NOT NULL,client_id TEXT NOT NULL,cycle TEXT NOT NULL,day TEXT NOT NULL,state TEXT NOT NULL,data TEXT NOT NULL,batch_id TEXT,error TEXT NOT NULL DEFAULT '',PRIMARY KEY(project,client_id))").run();
  await d.prepare("CREATE INDEX IF NOT EXISTS crmcalls_items_pending ON crmcalls_items(state,day,project)").run();
  await d.prepare("CREATE TABLE IF NOT EXISTS crmcalls_batches(id TEXT PRIMARY KEY,project TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL,import_id TEXT,error TEXT NOT NULL DEFAULT '')").run();
@@ -33,29 +35,31 @@ export async function saveCRMCallsKey(d:Db,key:string,revision:string,request:ty
 export async function crmcallsSchedules(d:Db):Promise<Schedule[]>{return (await d.prepare("SELECT data FROM settings WHERE id LIKE 'crmcalls-project-%'").all()).results.map((r:any)=>JSON.parse(r.data));}
 async function candidates(d:Db,s:CRMCallsSchedule,now:Date,ids?:string[]){
  const {config}=await readBaseDestination(d);if(!config[s.base].sheets.some(sheet=>sheet.name===s.sheet))throw Error('Лист не найден');
- const sk=!!await d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='base_dispatch_items'").first();
- const rows=(await d.prepare(`SELECT c.id,c.data,c.version FROM clients c WHERE COALESCE(json_extract(c.data,'$.baseType'),'M')=? AND json_extract(c.data,'$.sheet')=? AND COALESCE(json_extract(c.data,'$.owner'),'')='' AND COALESCE(json_extract(c.data,'$.archived'),0)=0 AND COALESCE(json_extract(c.data,'$.archivedAt'),'')='' AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.client_id=c.id AND json_extract(o.data,'$.status') NOT IN ('cancelled','redeemed','returned')) AND NOT EXISTS(SELECT 1 FROM crmcalls_items i WHERE i.client_id=c.id AND (i.project=? AND i.state NOT IN ('pending','skipped') OR i.state IN ('sending','submitted','unknown'))) ${sk?"AND NOT EXISTS(SELECT 1 FROM base_dispatch_items b WHERE b.client_id=c.id AND b.state IN ('pending','sending','unknown'))":''} ${ids?"AND c.id IN (SELECT value FROM json_each(?))":''} ORDER BY c.id`).bind(s.base,s.sheet,s.projectId,...(ids?[JSON.stringify(ids)]:[])).all()).results;
- return rows.filter((r:any)=>{try{return distributionEligible(JSON.parse(r.data),moscowDate(now))&&!!crmcallsContact(JSON.parse(r.data));}catch{return false;}});
+ return distributionCandidates(d,s.base,s.sheet,moscowDate(now),ids);
+}
+async function availableInProject(d:Db,project:string,rows:any[]){
+ const done=new Set((await d.prepare("SELECT client_id FROM crmcalls_items WHERE project=? AND state NOT IN ('pending','skipped')").bind(project).all()).results.map((r:any)=>r.client_id));
+ return rows.filter(r=>!done.has(r.id));
 }
 export async function previewCRMCalls(d:Db,s:CRMCallsSchedule,now=new Date()){
  const rows=await candidates(d,s,now),today=moscowDate(now),time=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit',hour12:false}).format(now);
  const start=time>=s.sendTime?workDate(today,1):today;
- return {rows,plan:crmcallsPlan(rows.length,s.cycleDays,start)};
+ const available=await availableInProject(d,s.projectId,rows);
+ return {rows:available,total:rows.length,dailyCount:dailyDistributionCount(rows.length,s.cycleDays),plan:crmcallsPlan(rows.length,s.cycleDays,start)};
 }
 export async function saveCRMCallsSchedule(d:Db,s:CRMCallsSchedule,revision:string,now=new Date()){
  const id='crmcalls-project-'+s.projectId,old=await setting<Schedule>(d,id);if((old?.revision||'')!==revision)throw Error('Настройки проекта изменились. Обновите раздел.');
  if(await d.prepare("SELECT id FROM crmcalls_batches WHERE project=? AND state IN ('sending','submitted','unknown')").bind(s.projectId).first())throw Error('Дождитесь проверки текущей отправки проекта');
  if(s.enabled&&(await crmcallsSchedules(d)).some(other=>other.projectId!==s.projectId&&other.enabled&&other.base===s.base&&other.sheet===s.sheet))throw Error('Этот лист уже включён в другом проекте CRMCalls. Сначала выключите его расписание.');
- const {rows,plan}=await previewCRMCalls(d,s,now),cycle=crypto.randomUUID(),next={...s,revision:cycle,startedAt:now.toISOString(),dailyLimit:Math.ceil(rows.length/s.cycleDays)};
+ if(s.enabled){
+  const {config}=await readBaseDestination(d),sheet=config[s.base].sheets.find(v=>v.name===s.sheet);
+  if(config.dispatchTarget==='skorozvon'&&sheet?.automatic&&sheet.projectId)throw Error('Для этого листа включена выгрузка в СК. Сначала выключите её.');
+ }
+ const {plan,dailyCount}=await previewCRMCalls(d,s,now),cycle=crypto.randomUUID(),next={...s,revision:cycle,startedAt:now.toISOString(),dailyLimit:dailyCount,planning:'daily'};
  const statements=[d.prepare("INSERT INTO settings(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE COALESCE(json_extract(settings.data,'$.revision'),'')=?").bind(id,JSON.stringify(next),revision),
  d.prepare("UPDATE crmcalls_items SET state='skipped',error='Расписание изменено' WHERE project=? AND state='pending' AND (SELECT json_extract(data,'$.revision') FROM settings WHERE id=?)=?").bind(s.projectId,id,cycle)];
- if(s.enabled){
-  const queued:{id:string;day:string}[]=[];let offset=0;
-  for(const day of plan)for(const r of rows.slice(offset,offset+=day.count))queued.push({id:r.id,day:day.date});
-  statements.push(d.prepare("INSERT INTO crmcalls_items(project,client_id,cycle,day,state,data) SELECT ?,json_extract(value,'$.id'),?,json_extract(value,'$.day'),'pending','{}' FROM json_each(?) WHERE (SELECT json_extract(data,'$.revision') FROM settings WHERE id=?)=? ON CONFLICT(project,client_id) DO UPDATE SET cycle=excluded.cycle,day=excluded.day,state='pending',data='{}',batch_id=NULL,error='' WHERE crmcalls_items.state IN ('pending','skipped')").bind(s.projectId,cycle,JSON.stringify(queued),id,cycle));
- }
  const results=await d.batch(statements);if(!results[0].meta.changes)throw Error('Настройки проекта изменились. Обновите раздел.');
- return {queued:s.enabled?results.slice(2).reduce((sum:number,r:any)=>sum+r.meta.changes,0):0,plan};
+ return {queued:0,plan};
 }
 export async function crmcallsDashboard(d:Db){
  await initCRMCalls(d);const connection=await readCRMCalls(d),{config}=await readBaseDestination(d);
@@ -91,22 +95,34 @@ export async function runCRMCalls(d:Db,request:typeof fetch=fetch,now=new Date()
   for(const item of items){const expected=JSON.parse(item.data),matches=contacts.filter(c=>String(c.external_id)===expected.external_id);const c=matches[0];
    if(matches.length!==1||c.full_name!==expected.full_name||c.address!==expected.address&&!(c.address==null&&expected.address==='')||c.city!==expected.city&&!(c.city==null&&expected.city==='')||!Array.isArray(c.phones)||expected.phones.some((phone:string)=>!c.phones.includes(phone)))throw Error('ФИО, телефон или адрес не прошли проверку CRMCalls');
   }
-  await d.batch([d.prepare("UPDATE crmcalls_batches SET state='verified',error='' WHERE id=?").bind(active.id),d.prepare("UPDATE crmcalls_items SET state='sent',error='' WHERE batch_id=?").bind(active.id)]);return;
+  await d.batch([...items.map((item:any)=>d.prepare("UPDATE clients SET data=json_set(data,'$.distributedAt',?),version=version+1 WHERE id=?").bind(item.day,item.client_id)),d.prepare("UPDATE crmcalls_batches SET state='verified',error='' WHERE id=?").bind(active.id),d.prepare("UPDATE crmcalls_items SET state='sent',error='' WHERE batch_id=?").bind(active.id)]);return;
  }
  const today=moscowDate(now),weekday=new Date(today+'T12:00:00Z').getUTCDay();if(weekday===0||weekday===6)return;
  const time=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit',hour12:false}).format(now);
  const last=await d.prepare('SELECT created_at FROM crmcalls_batches ORDER BY created_at DESC LIMIT 1').first();if(last&&now.getTime()-Date.parse(last.created_at)<30000)return;
  for(const s of await crmcallsSchedules(d)){
   if(!s.enabled||s.sendTime>time||await d.prepare("SELECT id FROM crmcalls_batches WHERE project=? AND state='unknown'").bind(s.projectId).first())continue;
+  // Legacy snapshot schedules must be explicitly saved before switching their meaning.
+  if(s.planning!=='daily')continue;
+  let day=await d.prepare("SELECT quantity FROM crmcalls_days WHERE project=? AND day=?").bind(s.projectId,today).first();
+  if(!day){
+   const rows=await candidates(d,s,now),quantity=dailyDistributionCount(rows.length,s.cycleDays),available=await availableInProject(d,s.projectId,rows),date=workDate(today,1),cycle=crypto.randomUUID();
+   const selected=available.slice(0,quantity).map((r:any)=>r.id);
+   await d.batch([
+    d.prepare("INSERT OR IGNORE INTO crmcalls_days(project,day,distribution_date,quantity) SELECT ?,?,?,? WHERE (SELECT json_extract(data,'$.revision') FROM settings WHERE id=?)=?").bind(s.projectId,today,date,quantity,'crmcalls-project-'+s.projectId,s.revision),
+    d.prepare("INSERT INTO crmcalls_items(project,client_id,cycle,day,state,data) SELECT ?,value,?,?,'pending','{}' FROM json_each(?) WHERE (SELECT json_extract(data,'$.revision') FROM settings WHERE id=?)=? ON CONFLICT(project,client_id) DO UPDATE SET cycle=excluded.cycle,day=excluded.day,state='pending',data='{}',batch_id=NULL,error='' WHERE crmcalls_items.state='skipped'").bind(s.projectId,cycle,date,JSON.stringify(selected),'crmcalls-project-'+s.projectId,s.revision)
+   ]);
+   day={quantity};
+  }
   const used=await d.prepare("SELECT COUNT(*) AS n FROM crmcalls_items i JOIN crmcalls_batches b ON b.id=i.batch_id WHERE i.project=? AND date(b.created_at,'+3 hours')=? AND b.state<>'rejected'").bind(s.projectId,today).first();
-  const allowance=Math.min(1000,Math.max(0,s.dailyLimit-Number(used.n)));if(!allowance)continue;
-  const pending=(await d.prepare("SELECT * FROM crmcalls_items WHERE project=? AND state='pending' AND day<=? ORDER BY day,client_id LIMIT ?").bind(s.projectId,today,allowance).all()).results;if(!pending.length)continue;
+  const allowance=Math.min(1000,Math.max(0,Number(day.quantity)-Number(used.n)));if(!allowance)continue;
+  const pending=(await d.prepare("SELECT * FROM crmcalls_items WHERE project=? AND state='pending' AND day<=? ORDER BY day,client_id LIMIT ?").bind(s.projectId,workDate(today,1),allowance).all()).results;if(!pending.length)continue;
   const project=(await crmcallsProjects(api)).find(p=>p.id===s.projectId);if(!project||project.status==='finished')throw Error('Проект CRMCalls недоступен для загрузки');
   const allowed=new Map((await candidates(d,s,now,pending.map((i:any)=>i.client_id))).map((r:any)=>[r.id,r]));
   const batch=crypto.randomUUID(),at=now.toISOString();
   const writes=[d.prepare("INSERT INTO crmcalls_batches(id,project,state,created_at) SELECT ?,?,'sending',? WHERE (SELECT json_extract(data,'$.revision') FROM settings WHERE id=?)=?").bind(batch,s.projectId,at,'crmcalls-project-'+s.projectId,s.revision)];
   for(const item of pending){const row:any=allowed.get(item.client_id);
-   writes.push(row?d.prepare("UPDATE crmcalls_items SET state='sending',batch_id=?,data=? WHERE project=? AND client_id=? AND state='pending' AND EXISTS(SELECT 1 FROM crmcalls_batches WHERE id=?) AND EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?) AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=crmcalls_items.client_id AND json_extract(data,'$.status') NOT IN ('cancelled','redeemed','returned'))").bind(batch,JSON.stringify(crmcallsContact(JSON.parse(row.data))),s.projectId,item.client_id,batch,item.client_id,row.version):d.prepare("UPDATE crmcalls_items SET state='skipped',error='Клиент больше не доступен для выгрузки' WHERE project=? AND client_id=? AND state='pending'").bind(s.projectId,item.client_id));
+   writes.push(row?d.prepare("UPDATE crmcalls_items SET state='sending',batch_id=?,data=? WHERE project=? AND client_id=? AND state='pending' AND EXISTS(SELECT 1 FROM crmcalls_batches WHERE id=?) AND EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?) AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=crmcalls_items.client_id AND json_extract(data,'$.status') NOT IN ('refused','redeemed','returned'))").bind(batch,JSON.stringify(crmcallsContact(JSON.parse(row.data))),s.projectId,item.client_id,batch,item.client_id,row.version):d.prepare("UPDATE crmcalls_items SET state='skipped',error='Клиент больше не доступен для выгрузки' WHERE project=? AND client_id=? AND state='pending'").bind(s.projectId,item.client_id));
   }
   const claimed=await d.batch(writes);if(!claimed[0].meta.changes)return;
   const items=(await d.prepare("SELECT data FROM crmcalls_items WHERE batch_id=? AND state='sending'").bind(batch).all()).results;

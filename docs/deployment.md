@@ -407,14 +407,28 @@ single-instance sync-base job runs CRMCalls in a separate error boundary. No new
 service, root installer or dependency is required. Deployment alone enables no
 exports: an administrator must connect an API key and enable each schedule.
 
-Each enabled cycle snapshots eligible client IDs, spreads them over the chosen
-number of Monday-Friday days at Moscow time, and skips protected sheets, owners,
-active orders and recent releases. Holidays on weekdays count as working days.
-The daily cap also applies after downtime, so overdue batches cannot flood a project.
-Saving an enabled schedule replans its unsent clients from the next scheduled time;
-sent contacts in that same project are excluded permanently. CRMCalls does not
-restart project attempts on an update. A new calling cycle therefore requires a
-new provider project, not silently duplicating contacts.
+Both providers use distributionCandidates and dailyDistributionCount: free,
+nonarchived clients outside protected sheets, no active orders (refused is cancelled),
+two working days after release, oldest distributedAt first, floor(eligible/cycleDays).
+Each weekday at Moscow sendTime CRMCalls snapshots only that day's portion; new
+clients enter future portions automatically. A durable crmcalls_days marker prevents
+repeated daily scheduling even after resaving or restarting. The verified import
+updates the same client distributedAt field as SK, using the next workday for an
+automatic delivery. Missed dates are not multiplied into a catch-up flood.
+
+An enabled CRMCalls sheet cannot also be enabled for SK: enabling CRMCalls rejects
+an existing SK schedule; subsequent SK queue attempts for that sheet are blocked
+(and its automatic worker skips that sheet). In-flight cross-provider guards remain.
+Legacy snapshot schedules need explicit resaving before the new planner runs.
+Sent contacts in the same CRMCalls project remain excluded: its documented update
+API does not restart attempts for existing members. This is a provider limitation,
+not a reset implemented by CRM. The forecast is indicative and uses today's count.
+
+The published provider guide only describes call.result_saved webhooks and reading
+call history. It does not document an answer event or a result-write command for an
+external CRM. No live screen-pop/result-write controls are exposed or simulated;
+these require a supported provider contract before implementation. Existing CRM
+order creation, ownership and retention stay unchanged.
 
 Imports use stable CRM external_id, update/error deduplication and explicit
 full_name, phones, city and address. Empty values cannot clear existing provider
@@ -426,8 +440,8 @@ provider import ID for read-only reconciliation in this same section. 429 retrie
 later; definite input/auth rejection is recorded without automatic resubmission.
 
 All metadata uses settings keys prefixed crmcalls-, crmcalls_items and
-crmcalls_batches. Client/order records, ownership, finances and SK distributedAt
-are untouched. Additive crmcalls_owner_guard and (when SK storage exists)
+crmcalls_batches and crmcalls_days. Verified exports update only the shared
+client distributedAt; ownership, orders, finances and SK-specific IDs are untouched. Additive crmcalls_owner_guard and (when SK storage exists)
 crmcalls_sk_guard/crmcalls_claim_guard prevent simultaneous claiming during
 external submissions; crmcalls_active_sheet prevents two enabled projects using
 the same sheet. Future module removal must stop new exports, reconcile in-flight

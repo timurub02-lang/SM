@@ -16,7 +16,7 @@ export function crmcallsContact(c:Pick<Client,'id'|'name'|'phone'|'linkedPhones'
 }
 export function crmcallsPlan(total:number,days:number,start:string){
  const weekday=new Date(start+'T12:00:00Z').getUTCDay();if(weekday===0||weekday===6)start=workDate(start,1);
- return Array.from({length:days},(_,i)=>({date:workDate(start,i),count:Math.floor(total/days)+(i<total%days?1:0)}));
+ return Array.from({length:days},(_,i)=>({date:workDate(start,i),count:Math.floor(total/days)}));
 }
 export function crmcallsApi(key:string,request:typeof fetch=fetch){
  let last=0;
