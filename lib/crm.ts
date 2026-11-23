@@ -214,10 +214,10 @@ export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,ex
  if(c.owner&&!next.owner)next.releasedFromOwner=c.owner;
  // Route only a new release; never redistribute already free clients or lift blacklist/PV restrictions.
  if(!c.owner||next.owner||['ЧС','ПВ'].includes(clientSheet(next)))return next;
- const base=nameBase(c.name||'');
+ const detectedBase=nameBase(c.name||''),base=detectedBase||c.baseType;
  if(!base)return {...next,releaseBaseReview:true};
  const hasPurchase=orders.some(o=>o.clientId===c.id&&o.status==='redeemed')||c.legacyOrderHistory?.some(o=>o.status==='paid');
- return {...next,baseType:base,sheet:hasPurchase?'П':base==='J'?'ж1':'Т1',releaseBaseReview:false};
+ return {...next,baseType:base,sheet:hasPurchase?'П':base==='J'?'ж1':'Т1',releaseBaseReview:!detectedBase};
 }
 
 export function clientAddressFromOrder(o:Pick<Order,'address'|'addressParts'>){

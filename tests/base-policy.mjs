@@ -80,3 +80,19 @@ assert.equal(applyRetention(extended,[settled],expiry+86400000,14,true).owner,''
 assert.equal(applyRetention(extended,[settled],expiry+86400000,14,true).retentionExtensionUntil,undefined);
 assert.equal(clientAssignment(extended,'different',new Date(expiry).toISOString()).retentionExtensionUntil,undefined);
 assert.equal(clientAssignment(extended,'',new Date(expiry).toISOString()).retentionExtensionUntil,undefined);
+
+// Unrecognized names must not send women to a male fallback sheet on release.
+for(const [baseType,sheet] of [['J','ж1'],['M','Т1']]){
+ const unknown={...assigned,name:'Клиент',baseType,trialReturnSheet:'Т1'};
+ const released=applyRetention(unknown,[],releaseNow);
+ assert.equal(released.owner,'');assert.equal(released.baseType,baseType);assert.equal(released.sheet,sheet);assert.equal(released.releaseBaseReview,true);
+ assert.equal(applyRetention({...unknown,legacyOrderHistory:[{status:'paid'}]},[],releaseNow).sheet,'П');
+ const cancelled={...cross,name:'Клиент',baseType,returnSheet:'Т1'};
+ assert.equal(applyRetention(cancelled,[{...settled,status:'refused'}],releaseNow,14,true).sheet,sheet);
+ assert.equal(applyRetention(cancelled,[settled],releaseNow,14,true).sheet,'П');
+ assert.equal(applyRetention(cancelled,[{...settled,status:'shipping'}],releaseNow,14,true).owner,'op');
+ assert.equal(applyRetention(cancelled,[settled],releaseNow,14,true,true).owner,'op');
+ const black=applyRetention(cancelled,[{...settled,status:'refused',blacklistedAt:'2026-11-01T00:00:00Z'}],releaseNow,14,true);
+ assert.equal(black.sheet,'ЧС');
+ assert.deepEqual(applyRetention(released,[],releaseNow),released);
+}
