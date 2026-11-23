@@ -987,6 +987,11 @@ try{
  assert.equal((await call('/api/base',{cookie:policyOperator.cookie})).status,403);
  const baseImport={action:'import',base:'J',filename:'test.xlsx',revision:baseOverview.data.revision,session:crypto.randomUUID(),rows:[{row:2,name:'Import test',phone:'8 (999) 123-98-76',city:'Тула',linkedPhones:['79991239875'],fields:{custom:'preserved'}}]};
  let imported=await call('/api/base',{cookie:cookies.admin,body:baseImport});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.added,1);assert.equal(imported.data.applied,false);
+
+ const beforePreview=db.prepare('SELECT COUNT(*) AS n FROM clients').get().n;
+ const fullPreview=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,fullPreview:true,routeByName:true,rows:[{...baseImport.rows[0],name:'Иванов Иван Иванович'},{...baseImport.rows[0],row:3,name:'Иванов Иван Иванович'}]}});
+ assert.equal(fullPreview.status,200,fullPreview.text);assert.equal(fullPreview.data.applied,false);assert.equal(fullPreview.data.previewRows.length,2);assert.equal(fullPreview.data.added,2);assert.deepEqual(fullPreview.data.previewRows[0].identities,fullPreview.data.previewRows[1].identities);
+ assert.equal(db.prepare('SELECT COUNT(*) AS n FROM clients').get().n,beforePreview,'Whole-file preview must not import clients');
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.status,200,imported.text);assert.equal(imported.data.applied,true);assert.ok(imported.data.backupId);
  assert.ok(db.prepare('SELECT COUNT(*) AS n FROM base_import_snapshots WHERE session=?').get(baseImport.session).n>0);
  imported=await call('/api/base',{cookie:cookies.admin,body:{...baseImport,apply:true}});assert.equal(imported.data.added,1,'Retry must return the original result');
