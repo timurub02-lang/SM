@@ -50,6 +50,7 @@ jobs:
       - name: Verify authentication and both calling routes without real calls
         run: |
           node tests/run-units.mjs
+          node --experimental-strip-types tests/crmcalls-http.mjs
           node --experimental-strip-types tests/incoming-work-gate-http.mjs
           node tests/exports-http.mjs
           node tests/cdek-unmatched-http.mjs
