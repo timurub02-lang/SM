@@ -46,6 +46,13 @@ try{
  const projects=await call('/api/crmcalls?projects=1',cookies.admin);assert.equal(projects.status,200,projects.text);assert.equal(JSON.parse(projects.text).projects.length,5);
  assert.equal((await call('/api/crmcalls',cookies.admin,{action:'connect',apiKey:key,revision:'v1'})).status,200);
  assert.ok(!(await call('/api/crmcalls',cookies.admin)).text.includes(key));
+ const current=JSON.parse((await call('/api/crmcalls',cookies.admin)).text).schedules[0];
+ assert.equal((await call('/api/crmcalls',cookies.admin,{action:'save',schedule:{...schedule,enabled:true},revision:current.revision})).status,200);
+ const conflicting=initialBaseSettings();Object.assign(conflicting.M.sheets.find(s=>s.name==='П'),{automatic:true,projectId:'123'});
+ const conflict=await call('/api/base',cookies.admin,{config:conflicting,revision:''});assert.equal(conflict.status,400,conflict.text);assert.match(conflict.text,/CRMCalls/);
+ const enabled=JSON.parse((await call('/api/crmcalls',cookies.admin)).text).schedules[0];
+ assert.equal((await call('/api/crmcalls',cookies.admin,{action:'save',schedule,revision:enabled.revision})).status,200);
+ assert.equal(d.prepare('SELECT COUNT(*) AS n FROM crmcalls_items').get().n,0,'Saving a schedule does not freeze or submit the whole base');
  console.log('CRMCalls HTTP: all non-admin roles denied, identity/CSRF, protected sheets, secret masking, preview, CAS and disabled scheduling passed');
  if(process.env.CRMCALLS_UI_TEST==='1'){
   console.log('Synthetic UI available on '+origin+'; admin / '+password);

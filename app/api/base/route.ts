@@ -1,3 +1,4 @@
+import {crmcallsOwnsSheet} from '@/lib/base-dispatch';
 import {baseImportHistory} from '@/lib/base-import-history';
 import {journalAuthor} from '@/lib/journal-author';
 import {releasedStats} from '@/lib/released-client-stats';
@@ -42,5 +43,6 @@ export const POST=authenticated(async req=>{if(!await admin(req))return Response
  const results=sql.length?await db().batch(sql):[];return Response.json({assigned:results.filter((_,i)=>i%2===0).reduce((n,r)=>n+(r.meta.changes||0),0)});
  }
  const p=z.object({revision:z.string().max(100),config:baseSettingsSchema}).parse(input);const old=await read();if(old.revision!==p.revision)return Response.json({error:'Настройки изменились. Обновите страницу.'},{status:409});const existing=await counts();for(const row of existing){const name=normalizeBaseSheet(row.sheet||row.source.match(/\.xlsx · (.+)$/i)?.[1]||'');if(!p.config[row.base].sheets.some(s=>s.name===name))throw Error('Нельзя удалить или переименовать лист с клиентами: '+name);}
+ if(p.config.dispatchTarget==='skorozvon')for(const base of ['M','J'] as const)for(const sheet of p.config[base].sheets)if(sheet.automatic&&await crmcallsOwnsSheet(db(),base,sheet.name))throw Error('Лист '+sheet.name+' уже выгружается в CRMCalls. Сначала выключите его расписание в разделе CRMCalls.');
  const next={config:p.config,revision:crypto.randomUUID()};const result=await db().prepare("INSERT INTO settings(id,data) VALUES('base-settings',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE COALESCE(json_extract(settings.data,'$.revision'),'')=?").bind(JSON.stringify(next),p.revision).run();if(!result.meta.changes)return Response.json({error:'Настройки изменились. Обновите страницу.'},{status:409});return Response.json(next);
  }catch(e){return Response.json({error:e instanceof z.ZodError?e.issues[0]?.message:e instanceof Error?e.message:'Не удалось сохранить'},{status:400});}});
