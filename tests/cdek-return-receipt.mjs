@@ -17,10 +17,10 @@ const d=openDatabase(':memory:');
 try{
  await d.batch(['CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE clients(id TEXT PRIMARY KEY,data TEXT)','CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,data TEXT,version INTEGER DEFAULT 1)','CREATE TABLE events(id TEXT PRIMARY KEY,client_id TEXT,order_id TEXT,at TEXT,data TEXT)'].map(s=>d.prepare(s)));
  await d.batch(inventorySQL.map(s=>d.prepare(s)));
- await d.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').bind('p','product',JSON.stringify({name:'Product'})).run();
+ await d.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').bind('p','аганон',JSON.stringify({name:'Аганон'})).run();
  await d.prepare('INSERT INTO settings VALUES(?,?)').bind('cdek-1',JSON.stringify({clientId:'synthetic',clientSecret:'synthetic'})).run();
  await d.prepare('INSERT INTO settings VALUES(?,?)').bind('cdek-shipment-o',JSON.stringify({slot:1,uuid:originalUuid,number:'111'})).run();
- const o={id:'o',clientId:'c',manager:'op',status:'returned',delivery:'cdek_pickup',legacyLv:{trial:false},items:[{name:'ИТОГО',quantity:1,price:100},{name:'Product',quantity:2,price:0}],cdekReturn:{number:'222',uuid:returnedUuid,originalUuid,verifiedAt:at},paymentReceivedAmount:1234,createdAt:'2026-11-01',updatedAt:'2026-11-01'};
+ const o={id:'o',clientId:'c',manager:'op',status:'returned',delivery:'cdek_pickup',legacyLv:{trial:false},items:[{name:'ИТОГО',quantity:1,price:100},{name:'Аганнон',quantity:2,price:0}],cdekReturn:{number:'222',uuid:returnedUuid,originalUuid,verifiedAt:at},paymentReceivedAmount:1234,createdAt:'2026-11-01',updatedAt:'2026-11-01'};
  await d.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').bind('o','c',JSON.stringify(o)).run();
  const request=async(url)=>{if(url.includes('/oauth/'))return Response.json({access_token:'synthetic'});if(fail)return Response.json({}, {status:503});if(url.endsWith(returnedUuid)){if(race)await d.prepare("UPDATE orders SET version=version+1 WHERE id='o'").run();return Response.json(returned());}return Response.json(original);};
  const read=async()=>JSON.parse((await d.prepare("SELECT data FROM orders WHERE id='o'").first()).data);
