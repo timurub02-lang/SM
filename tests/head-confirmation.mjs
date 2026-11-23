@@ -21,3 +21,8 @@ assert.equal(base.status,'rework');console.log('Head confirmation: routing, rema
 
 const savedPending={...base,editRequest:{id:'r',status:'pending',from:'confirm',reason:'Correct amount',savedAt:at}};
 assert.equal(confirmByHead(savedPending,c,e,staff,at,true,true).editRequest.status,'completed');
+
+for(const from of ['check','packing']){
+ const editing={...base,editRequest:{id:'r',status:'editing',from,reason:'Correct amount',savedAt:at}};
+ assert.equal(confirmByHead(editing,c,e,staff,at,true,true).status,from);
+}

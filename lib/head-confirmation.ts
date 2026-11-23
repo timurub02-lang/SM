@@ -3,6 +3,7 @@ import {isLogistic,allowedOrderTransitions,orderMissingField,validateTransition,
 import {isDepartmentOrder} from './department-orders.ts';
 export function headConfirmationTarget(o:Order):Status|undefined{
  if(o.courier||o.courierRecall||o.shippedAt||o.cdekTransferredAt||o.cdekExported||o.cdekDeleting||o.zvd||o.cancellationRequest?.status==='pending'||o.packingReworkDelivery||o.editRequest?.status==='pending'&&!(o.status==='rework'&&o.editRequest.savedAt)||o.editRequest?.status==='editing'&&!o.editRequest.savedAt)return;
+ if(o.status==='rework'&&o.editRequest?.status==='editing'&&['check','packing'].includes(o.editRequest.from))return o.editRequest.from;
  if(o.status==='rework')return o.returnKind&&o.delivery?(o.delivery!=='moscow_courier'?'check':'packing'):undefined;
  if(['confirm','extra'].includes(o.status)&&o.contact==='missed')return allowedOrderTransitions(o,'logistic').find(to=>['check','extra','packing'].includes(to));
 }
