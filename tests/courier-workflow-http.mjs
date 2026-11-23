@@ -76,6 +76,28 @@ try{
  assert.equal(order(withoutHouse).status,'draft');assert.equal(db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(withoutHouse).n,missingEvents);
  console.log('Courier handoff HTTP: no house cannot be bypassed by admin or manual address confirmation; no status/history mutation.');
  const id=await create();await assembled(id);const before=stock();
+ const privatePath='/api/courier-notes',setPrivate=(field,value,previous='')=>({orderId:id,field,value,previous});
+ const originalOrder=order(id);
+ await call('courier',privatePath,setPrivate('note','Use the side entrance'));
+ await call('courier',privatePath,setPrivate('intercom','00#1*'));
+ await call('courier',privatePath,setPrivate('note','stale replacement'),409);
+ assert.deepEqual((await call('courier',privatePath)).data.sort((a,b)=>a.field.localeCompare(b.field)),[
+  {orderId:id,field:'intercom',value:'00#1*'},{orderId:id,field:'note',value:'Use the side entrance'}]);
+ for(const role of ['logistic','operator','admin']){
+  await call(role,privatePath,undefined,403);
+  await call(role,privatePath,setPrivate('note','forbidden'),403);
+ }
+ await call('admin','/api/auth/impersonation',{action:'start',employeeId:'courier'});
+ await call('admin',privatePath,undefined,403);
+ await call('admin','/api/auth/impersonation',{action:'stop'});
+ assert.deepEqual((await call('stranger',privatePath)).data,[]);
+ await call('stranger',privatePath,setPrivate('note','not assigned'),409);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.courier.id','stranger') WHERE id=?").run(id);
+ for(const actor of ['stranger','courier'])assert.deepEqual((await call(actor,privatePath)).data,[]);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.courier.id','courier') WHERE id=?").run(id);
+ await call('courier',privatePath,setPrivate('note','','Use the side entrance'));
+ assert.deepEqual((await call('courier',privatePath)).data,[{orderId:id,field:'intercom',value:'00#1*'}]);
+ assert.deepEqual(order(id),originalOrder);
  await act(id,'courier',{action:'courierWorkflow',operation:'confirm'},400);
  await act(id,'stranger',{action:'courierAccept',confirmed:true},400);
  await act(id,'courier',{action:'courierAccept',confirmed:true});assert.equal(order(id).courier.phase,'confirmation');

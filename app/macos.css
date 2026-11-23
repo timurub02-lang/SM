@@ -909,3 +909,12 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .order-overview .notice.order-handoff-reason, .dark .order-overview .notice.order-handoff-reason { background: #fdf2d5; border-color: #ebd59e; color: #503719; }
 
 .cdek-amount-action { display: flex; justify-content: flex-end; margin-top: 10px; }
+
+.courier-recipient-heading{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.5rem 1rem}
+.courier-recipient-heading h2{flex:1 1 13rem;min-width:0}
+.courier-private-field{display:grid;gap:.35rem;min-width:0;margin:.35rem 0}
+.courier-intercom{width:9rem;max-width:100%;margin:0}
+.courier-private-field label{display:block}
+.courier-private-field small{margin-left:.5rem;color:inherit;opacity:.8}
+.courier-private-field :is(input,textarea){display:block;width:100%;box-sizing:border-box;margin-top:.25rem;padding:.45rem .6rem;border:1px solid currentColor;border-radius:.5rem;background:transparent;color:inherit;font:inherit}
+.courier-private-field button{justify-self:start}
