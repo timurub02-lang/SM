@@ -377,3 +377,23 @@ Existing operational return visibility applies: operator/head/admin lists hide r
 The existing shipment sync also checks up to 25 oldest unchecked returned orders per pass (three concurrent requests; at least 30 minutes between checks). It requires the original and return waybill's bidirectional relationship and the return's latest non-deleted status DELIVERED. It atomically sets warehouseReturnedAt and cdekReturnReceipt, releases native reservations or uses the existing exactly-once legacy-return stock movement IDs. Trial imports are excluded. Cash, premium and order items stay unchanged. Errors remain in cdek-receipt-check-<orderId> for retry.
 
 Pending or disputed receipts remain in logistics lists until a logistic confirms reconciliation; the 48-hour archive starts at confirmation. Admin and logistics receive the shared red reconciliation list and task with Excel export. A supplemental private settings registry can contain already received historical returns without creating orders or repeating stock movements. Its seed data is operational data and must never be committed. Reconciliation uses order versions or registry revision and does not adjust stock on discrepancies. No new service or schema migration is needed.
+
+### Carrier-side CRM recording
+
+The browser audiohook can omit the remote feed even when the same call's carrier
+feed contains audio. `crm-call-answered` starts another MixMonitor on the
+answered carrier channel, with separate client/read and staff/write WAV files.
+The browser recording remains a fallback for older calls and echo tests. The
+carrier hangup handler closes its recorder before writing a `-line.ready` marker;
+the uploader waits for that marker, validates mono PCM16/8kHz and uses the carrier
+mix plus its client feed for analysis. Failed uploads retain all files;
+acknowledgement removes spool files. Private diagnostic captures outside the
+spool are unaffected.
+
+Install the verified `scripts/pbx/crm-call.py` and
+`scripts/pbx/crm-browser-dialplan.conf` separately on VM101; a CRM runtime release
+does not install PBX files. Back up both files, check previous hashes, install the
+compatible uploader first, then the dialplan, and reload only the dialplan without
+restarting Asterisk or hanging up calls. Verify the loaded subroutine and compare
+carrier/client/staff plus CRM audio on an authorized test before claiming both
+voices are confirmed. Incoming delivery replacement contexts are unchanged.

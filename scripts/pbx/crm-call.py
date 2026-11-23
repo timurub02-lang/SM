@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """AGI writes a durable result; a timer uploads it after hangup, without delaying calls."""
 import base64
+import wave
 import hashlib
 from datetime import datetime, timezone
 import json
@@ -103,6 +104,8 @@ def run_agi():
             agi('SET VARIABLE CRM_CALL_OK 1')
         except Exception:
             print('CRM call preparation unavailable', file=sys.stderr)
+    elif mode == 'line-ready':
+        (ROOT / (call_id + '-line.ready')).touch(mode=0o600)
     elif mode == 'finish':
         get = lambda key: agi('GET VARIABLE ' + key)
         started, answered = get('CRM_STARTED'), get('CRM_ANSWERED')
@@ -136,8 +139,21 @@ def upload_one(path):
             if api('POST', payload=payload).get('ok'):
                 path.unlink()
             return
-        audio = ROOT / (payload['id'] + '.wav')
-        remote = ROOT / (payload['id'] + '-remote.wav')
+        browser_audio = ROOT / (payload['id'] + '.wav')
+        browser_remote = ROOT / (payload['id'] + '-remote.wav')
+        line = ROOT / (payload['id'] + '-line.wav')
+        line_client = ROOT / (payload['id'] + '-line-client.wav')
+        line_staff = ROOT / (payload['id'] + '-line-staff.wav')
+        line_ready = ROOT / (payload['id'] + '-line.ready')
+        audio, remote = browser_audio, browser_remote
+        if line.exists() or line_ready.exists():
+            # The called channel closes its recorder before publishing this marker.
+            if not line_ready.exists():
+                return
+            with wave.open(str(line), 'rb') as recording:
+                if recording.getnchannels() != 1 or recording.getsampwidth() != 2 or recording.getframerate() != 8000 or not recording.getnframes():
+                    raise ValueError('Invalid carrier recording')
+            audio, remote = line, line_client
         if payload['answered'] and 'analysis' not in payload and payload.get('event') != 'replacement':
             payload['analysis'] = classify_remote(remote)
             temp = path.with_suffix('.tmp')
@@ -154,8 +170,8 @@ def upload_one(path):
                 print('CRM recording retained locally: upload size limit exceeded', file=sys.stderr)
                 return
             path.unlink()
-            audio.unlink(missing_ok=True)
-            remote.unlink(missing_ok=True)
+            for recording in (browser_audio, browser_remote, line, line_client, line_staff, line_ready):
+                recording.unlink(missing_ok=True)
     except Exception as error:
         print('CRM call result pending: ' + type(error).__name__, file=sys.stderr)
 
