@@ -14,7 +14,7 @@ try{
  db.exec(readFileSync('drizzle/0000_cynical_monster_badoon.sql','utf8'));
  for(const sql of authSchema)db.exec(sql);
  const password='SyntheticReviewPassword123',hash=await hashPassword(password);
- for(const [id,role] of [['admin','admin'],['head','department_head'],['one','operator'],['E-74ee9a8f-99d','department_head'],['chief','chief_logistic'],['logistic','logistic']]){
+ for(const [id,role] of [['admin','admin'],['head','department_head'],['phone-head','department_head'],['one','operator'],['E-74ee9a8f-99d','department_head'],['chief','chief_logistic'],['logistic','logistic']]){
   const e={id,name:id,login:id,alias:'',skLogin:'',role,department:'1',salary:0,bonus:0,version:1};
   db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify(e));
   db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
@@ -147,7 +147,9 @@ try{
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(delegated.id,'c',JSON.stringify(delegated));
  const bootstrap=await review('/api/crm?part=bootstrap');assert.equal(bootstrap.status,200);assert.ok(!bootstrap.data.splitReads);
  const reviewList=await review('/api/crm?list=orders&view=check&filter=all');
- assert.equal(reviewList.status,200);assert.ok(reviewList.data.rows.some(o=>o.id===delegated.id));
+ assert.equal(reviewList.status,200);assert.ok(reviewList.data.rows.some(o=>o.id===delegated.id));assert.equal(reviewList.data.clients.find(c=>c.id==='c').phone,client.phone);
+ const reviewCard=await review('/api/crm');assert.equal(reviewCard.status,200);assert.equal(reviewCard.data.clients.find(c=>c.id==='c').phone,client.phone);
+ const regularHead=await asActor('phone-head');const hiddenCard=await regularHead('/api/crm');assert.ok(!hiddenCard.data.clients?.some(c=>c.phone));
  const version=()=>db.prepare('SELECT version FROM orders WHERE id=?').get(delegated.id).version;
  for(const [action,value] of [['markZvd',true],['markPV',true]]){
   const r=await review('/api/crm',{action,id:delegated.id,version:version(),value,responseMode:'entity-patch'});assert.equal(r.status,200,JSON.stringify(r));
