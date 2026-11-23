@@ -151,7 +151,7 @@ def upload_one(path):
             if not line_ready.exists():
                 return
             with wave.open(str(line), 'rb') as recording:
-                if recording.getnchannels() != 1 or recording.getsampwidth() != 2 or recording.getframerate() != 8000 or not recording.getnframes():
+                if recording.getnchannels() != 1 or recording.getsampwidth() != 2 or recording.getframerate() != 8000:
                     raise ValueError('Invalid carrier recording')
             audio, remote = line, line_client
         if payload['answered'] and 'analysis' not in payload and payload.get('event') != 'replacement':

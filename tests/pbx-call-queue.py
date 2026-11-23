@@ -162,7 +162,13 @@ with tempfile.TemporaryDirectory() as root:
         module.upload_one(result)
     send.assert_not_called()
     assert line.exists() and result.exists()
-    marker.unlink();line.unlink()
+    with wave.open(str(line),'wb') as w:
+        w.setnchannels(1);w.setsampwidth(2);w.setframerate(8000);w.writeframes(b'')
+    with patch.object(module,'api',return_value={'ok':True}) as send,patch.object(module,'classify_remote',return_value=analysis):
+        module.upload_one(result)
+    assert 'audio' not in send.call_args.kwargs['payload'],'An empty short call still uploads its outcome without fake audio'
+    assert not result.exists() and not line.exists() and not marker.exists()
+
     with patch.object(module.sys,'stdin',io.StringIO('agi_arg_1: line-ready\nagi_arg_2: ../../bad\n\n')):
         module.run_agi()
     assert not marker.exists(),'Completion requires a valid call ID'
