@@ -11,9 +11,9 @@ function ring(audio:AudioContext,incoming:boolean){
   const tone=audio.createOscillator(),volume=audio.createGain();
   const start=audio.currentTime+delay;
   tone.frequency.value=incoming?780:570;
-  volume.gain.setValueAtTime(0.001,start);
-  volume.gain.exponentialRampToValueAtTime(incoming?0.14:0.09,start+0.015);
-  volume.gain.exponentialRampToValueAtTime(0.001,start+0.16);
+  volume.gain.setValueAtTime(0.002,start);
+  volume.gain.exponentialRampToValueAtTime(incoming?0.28:0.18,start+0.015);
+  volume.gain.exponentialRampToValueAtTime(0.002,start+0.16);
   tone.connect(volume).connect(audio.destination);
   tone.start(start);tone.stop(start+0.17);
  }
