@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {canOpenClientCard,seesOrder,authorizeCrm} from '../lib/permissions.ts';
+import {canOpenClientCard,seesOrder,authorizeCrm,visibleState} from '../lib/permissions.ts';
 import {orderEditingLocked} from '../lib/crm.ts';
 for(const role of ['operator','logistic','department_head','redemption']) assert.equal(orderEditingLocked({id:'a',role},{status:'check',manager:'a'}),true);
 assert.equal(orderEditingLocked({id:'a',role:'admin'},{status:'check',manager:'a'}),false);
@@ -54,3 +54,12 @@ for(const method of ['GET','POST']){
 }
 assert.equal(mayCallEndpoint({role:'logistic'},new URL('https://crm.test/api/cdek/routing?orderId=x'),'GET',{}),true);
 console.log('Delegated review and chief-logistic routing permissions passed');
+
+const phoneClient={...state.clients[0],phone:'+79990000001',linkedPhones:['+79990000002'],importFields:{phone:'+79990000001'}};
+const phoneState={...state,clients:[phoneClient]};
+const shown=visibleState(phoneState,reviewer).clients[0];
+assert.equal(shown.phone,phoneClient.phone);assert.equal(shown.linkedPhones,undefined);assert.equal(shown.importFields,undefined);
+for(const status of ['packing','shipping','confirm'])assert.ok(!visibleState({...phoneState,orders:[{...check,status}]},reviewer).clients.some(c=>c.phone));
+const ownStaff=[...staff,{id:'foreign',role:'operator',department:'1'}].filter((e,i,a)=>a.findLastIndex(x=>x.id===e.id)===i);
+assert.equal(visibleState({...phoneState,employees:ownStaff},otherHead).clients[0].phone,'');
+assert.equal(visibleState(phoneState,{id:'foreign',role:'operator'}).clients[0].phone,'');
