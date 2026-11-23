@@ -377,3 +377,43 @@ Existing operational return visibility applies: operator/head/admin lists hide r
 The existing shipment sync also checks up to 25 oldest unchecked returned orders per pass (three concurrent requests; at least 30 minutes between checks). It requires the original and return waybill's bidirectional relationship and the return's latest non-deleted status DELIVERED. It atomically sets warehouseReturnedAt and cdekReturnReceipt, releases native reservations or uses the existing exactly-once legacy-return stock movement IDs. Trial imports are excluded. Cash, premium and order items stay unchanged. Errors remain in cdek-receipt-check-<orderId> for retry.
 
 Pending or disputed receipts remain in logistics lists until a logistic confirms reconciliation; the 48-hour archive starts at confirmation. Admin and logistics receive the shared red reconciliation list and task with Excel export. A supplemental private settings registry can contain already received historical returns without creating orders or repeating stock movements. Its seed data is operational data and must never be committed. Reconciliation uses order versions or registry revision and does not adjust stock on discrepancies. No new service or schema migration is needed.
+
+
+## CRMCalls pilot module
+
+The administrator-only CRMCalls sidebar owns its connection, projects, per-project
+base/sheet schedules, workday preview and import journal. Credentials live only in
+the private settings row crmcalls-connection; responses mask the key. The existing
+single-instance sync-base job runs CRMCalls in a separate error boundary. No new
+service, root installer or dependency is required. Deployment alone enables no
+exports: an administrator must connect an API key and enable each schedule.
+
+Each enabled cycle snapshots eligible client IDs, spreads them over the chosen
+number of Monday-Friday days at Moscow time, and skips protected sheets, owners,
+active orders and recent releases. Holidays on weekdays count as working days.
+The daily cap also applies after downtime, so overdue batches cannot flood a project.
+Saving an enabled schedule replans its unsent clients from the next scheduled time;
+sent contacts in that same project are excluded permanently. CRMCalls does not
+restart project attempts on an update. A new calling cycle therefore requires a
+new provider project, not silently duplicating contacts.
+
+Imports use stable CRM external_id, update/error deduplication and explicit
+full_name, phones, city and address. Empty values cannot clear existing provider
+fields; mismatches remain pending verification. Batches contain at most 1000
+contacts with at least 30 seconds between submissions. Final success requires
+completed import counts, project addition counts and per-contact field checks.
+Transport ambiguity never retries POST; the administrator can attach a known
+provider import ID for read-only reconciliation in this same section. 429 retries
+later; definite input/auth rejection is recorded without automatic resubmission.
+
+All metadata uses settings keys prefixed crmcalls-, crmcalls_items and
+crmcalls_batches. Client/order records, ownership, finances and SK distributedAt
+are untouched. Additive crmcalls_owner_guard and (when SK storage exists)
+crmcalls_sk_guard/crmcalls_claim_guard prevent simultaneous claiming during
+external submissions; crmcalls_active_sheet prevents two enabled projects using
+the same sheet. Future module removal must stop new exports, reconcile in-flight
+imports, back up the private module records, remove the worker call, sidebar and
+API, then remove only these named tables/triggers/index and settings keys. Never
+delete CRM clients/orders or remote CRMCalls contacts as part of that removal.
+Older application releases ignore the additive module tables; pause pilot schedules
+and reconcile in-flight batches before a manual rollback to a pre-module release.
