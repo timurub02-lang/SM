@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import base64
+import wave
 import io
 import os
 import tempfile
@@ -121,3 +123,58 @@ with tempfile.TemporaryDirectory() as root:
         module.run_agi()
     assert json.loads(next(module.ROOT.glob('incoming-*.json')).read_text())['screening'] == 'failed'
 print('Incoming screening: allow/challenge/block, offline fallback and failed challenge capture passed.')
+
+# Carrier audio must be closed and acknowledged before removing either feed.
+with tempfile.TemporaryDirectory() as root:
+    module.ROOT=Path(root)
+    call_id='c'*32
+    result=module.ROOT/(call_id+'.json')
+    browser=module.ROOT/(call_id+'.wav')
+    line=module.ROOT/(call_id+'-line.wav')
+    client=module.ROOT/(call_id+'-line-client.wav')
+    staff=module.ROOT/(call_id+'-line-staff.wav')
+    marker=module.ROOT/(call_id+'-line.ready')
+    result.write_text(json.dumps({**payload,'id':call_id}))
+    browser.write_bytes(b'RIFF'+bytes(100))
+    for path,value in [(line,300),(client,100),(staff,200)]:
+        with wave.open(str(path),'wb') as w:
+            w.setnchannels(1);w.setsampwidth(2);w.setframerate(8000)
+            w.writeframes(value.to_bytes(2,'little',signed=True)*160)
+    with patch.object(module,'api') as send,patch.object(module,'classify_remote') as classify:
+        module.upload_one(result)
+    send.assert_not_called();classify.assert_not_called()
+    assert result.exists() and line.exists(),'Never upload or delete an open recording'
+    with patch.object(module.sys,'stdin',io.StringIO('agi_arg_1: line-ready\nagi_arg_2: '+call_id+'\n\n')):
+        module.run_agi()
+    assert marker.exists()
+    expected=line.read_bytes()
+    with patch.object(module,'api',side_effect=OSError('offline')),patch.object(module,'classify_remote',return_value=analysis) as classify:
+        module.upload_one(result)
+    classify.assert_called_once_with(client)
+    assert all(p.exists() for p in [result,browser,line,client,staff,marker])
+    with patch.object(module,'api',return_value={'ok':True}) as send,patch.object(module,'classify_remote',side_effect=AssertionError('No duplicate analysis')):
+        module.upload_one(result)
+    assert base64.b64decode(send.call_args.kwargs['payload']['audio'])==expected
+    assert not any(p.exists() for p in [result,browser,line,client,staff,marker])
+    result.write_text(json.dumps({**payload,'id':call_id}))
+    line.write_bytes(b'invalid');marker.touch()
+    with patch.object(module,'api') as send,patch.object(module,'classify_remote'):
+        module.upload_one(result)
+    send.assert_not_called()
+    assert line.exists() and result.exists()
+    with wave.open(str(line),'wb') as w:
+        w.setnchannels(1);w.setsampwidth(2);w.setframerate(8000);w.writeframes(b'')
+    with patch.object(module,'api',return_value={'ok':True}) as send,patch.object(module,'classify_remote',return_value=analysis):
+        module.upload_one(result)
+    assert 'audio' not in send.call_args.kwargs['payload'],'An empty short call still uploads its outcome without fake audio'
+    assert not result.exists() and not line.exists() and not marker.exists()
+
+    with patch.object(module.sys,'stdin',io.StringIO('agi_arg_1: line-ready\nagi_arg_2: ../../bad\n\n')):
+        module.run_agi()
+    assert not marker.exists(),'Completion requires a valid call ID'
+print('Carrier recording: close-before-upload, exact audio, analysis feed, retry retention and cleanup passed.')
+plan=(Path(__file__).resolve().parents[1]/'scripts/pbx/crm-browser-dialplan.conf').read_text()
+answered=plan.split('[crm-call-answered]')[1].split('[crm-call-ended]')[0]
+assert 'MASTER_CHANNEL(CRM_CALL_ID)' in answered and 'crm-line-recording-ended' in answered
+assert '-line.wav,br(' in answered and '-line-client.wav)t(' in answered and '-line-staff.wav)' in answered
+assert answered.index('StopMixMonitor()')<answered.index('crm-call.py,line-ready')
