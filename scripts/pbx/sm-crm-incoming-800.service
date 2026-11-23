@@ -1,0 +1,23 @@
+[Unit]
+Description=Durable Asterisk 8-800 callback delivery (prerelease)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=asterisk
+Group=asterisk
+UMask=0077
+StateDirectory=sm-crm-incoming-800
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /usr/local/libexec/crm-incoming-800.py worker
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sm-crm-incoming-800
+
+[Install]
+WantedBy=multi-user.target
