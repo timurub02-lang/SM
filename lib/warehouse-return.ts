@@ -8,7 +8,9 @@ export function canReceiveWarehouseReturn(o:Order,role:Employee['role']){
 export function legacyReturnItems(o:Order,products:{id:string;name:string;blocked?:boolean}[]){
  const quantities=new Map<string,number>();
  for(const item of o.items.filter(item=>!isBasketTotal(item))){
-  const matches=products.filter(p=>p.name.trim().toLocaleLowerCase('ru')===item.name.trim().toLocaleLowerCase('ru'));
+  const legacyName=item.name.trim().toLocaleLowerCase('ru');
+  const warehouseName=legacyName==='аганнон'?'аганон':legacyName;
+  const matches=products.filter(p=>p.name.trim().toLocaleLowerCase('ru')===warehouseName);
   if(matches.length!==1)throw Error('Не найден однозначный складской товар: '+item.name);
   const product=matches[0];
   if(product.blocked)throw Error('Сначала сверьте незавершённую складскую операцию ЛВ: '+item.name);
