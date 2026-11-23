@@ -918,3 +918,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .courier-private-field small{margin-left:.5rem;color:inherit;opacity:.8}
 .courier-private-field :is(input,textarea){display:block;width:100%;box-sizing:border-box;margin-top:.25rem;padding:.45rem .6rem;border:1px solid currentColor;border-radius:.5rem;background:transparent;color:inherit;font:inherit}
 .courier-private-field button{justify-self:start}
+.courier-address-pencil{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;width:2rem;height:2rem;border-radius:.5rem;color:inherit;background:transparent;cursor:pointer}
+.courier-address-editor{margin:.5rem 0}.courier-address-editor .courier-buttons{margin-top:.5rem}

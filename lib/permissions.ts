@@ -130,6 +130,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/order-access')return (isLogistic(e.role)||['operator','department_head'].includes(e.role))&&method==='POST';
  if(path==='/api/cash')return ['department_head','chief_logistic'].includes(e.role);
  if(path==='/api/activity')return method==='GET'&&e.role==='department_head'&&!!e.department;
+ if(e.role==='courier'&&path==='/api/dadata')return method==='POST'&&p?.action==='suggest';
  if(e.role==='courier')return path==='/api/crm'&&(method==='GET'||method==='POST'&&['courierOutcome','courierAccept','courierWorkflow','contact','readReminder'].includes(p?.action));
  if(path==='/api/crm')return true; // Object-level rules are applied inside the CRM handler.
  if(path==='/api/cdek/pickup-points')return method==='GET'&&['operator','department_head'].includes(e.role)&&url.searchParams.has('orderId');
