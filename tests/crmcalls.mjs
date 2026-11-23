@@ -119,3 +119,6 @@ console.log('Shared SK/CRMCalls eligibility, refused orders, daily recalculation
 const resaved=await fixture(),rMock=mock();await saveCRMCallsSchedule(resaved,s,'',before);await runCRMCalls(resaved,rMock.request,friday);await runCRMCalls(resaved,rMock.request,friday);
 const revision=(await crmcallsDashboard(resaved)).schedules[0].revision;
 await saveCRMCallsSchedule(resaved,s,revision,friday);await runCRMCalls(resaved,rMock.request,new Date(friday.getTime()+60000));assert.equal(rMock.posts,1,'Resaving cannot reset the daily allowance');resaved.close();
+
+// Saving after today's send time must honor the next-workday preview.
+const future=await fixture(),fMock=mock();await saveCRMCallsSchedule(future,s,'',friday);await runCRMCalls(future,fMock.request,friday);assert.equal(fMock.posts,0);await runCRMCalls(future,fMock.request,monday);assert.equal(fMock.posts,1);future.close();
