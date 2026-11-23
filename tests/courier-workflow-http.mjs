@@ -76,6 +76,37 @@ try{
  assert.equal(order(withoutHouse).status,'draft');assert.equal(db.prepare('SELECT COUNT(*) n FROM events WHERE order_id=?').get(withoutHouse).n,missingEvents);
  console.log('Courier handoff HTTP: no house cannot be bypassed by admin or manual address confirmation; no status/history mutation.');
  const id=await create();await assembled(id);const before=stock();
+ const privatePath='/api/courier-notes',setPrivate=(field,value,previous='')=>({orderId:id,field,value,previous});
+ const originalOrder=order(id);
+ await call('courier',privatePath,setPrivate('note','Use the side entrance'));
+ await call('courier',privatePath,setPrivate('intercom','00#1*'));
+ await call('courier',privatePath,setPrivate('note','stale replacement'),409);
+ assert.deepEqual((await call('courier',privatePath)).data.sort((a,b)=>a.field.localeCompare(b.field)),[
+  {orderId:id,field:'intercom',value:'00#1*'},{orderId:id,field:'note',value:'Use the side entrance'}]);
+ for(const role of ['logistic','operator','admin']){
+  await call(role,privatePath,undefined,403);
+  await call(role,privatePath,setPrivate('note','forbidden'),403);
+ }
+ await call('admin','/api/auth/impersonation',{action:'start',employeeId:'courier'});
+ await call('admin',privatePath,undefined,403);
+ await call('admin','/api/auth/impersonation',{action:'stop'});
+ assert.deepEqual((await call('stranger',privatePath)).data,[]);
+ await call('stranger',privatePath,setPrivate('note','not assigned'),409);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.courier.id','stranger') WHERE id=?").run(id);
+ for(const actor of ['stranger','courier'])assert.deepEqual((await call(actor,privatePath)).data,[]);
+ db.prepare("UPDATE orders SET data=json_set(data,'$.courier.id','courier') WHERE id=?").run(id);
+ await call('courier',privatePath,setPrivate('note','','Use the side entrance'));
+ assert.deepEqual((await call('courier',privatePath)).data,[{orderId:id,field:'intercom',value:'00#1*'}]);
+ assert.deepEqual(order(id),originalOrder);
+ const corrected='123456, Москва, Тестовая улица, д. 5, кв. 2',addressChange={action:'courierWorkflow',operation:'editAddress',address:corrected,addressParts:{postalCode:'123456',region:'',city:'Москва',street:'Тестовая улица',house:'д. 5',flat:'кв. 2'}};
+ const clientAddress=()=>db.prepare("SELECT json_extract(data,'$.address') AS address FROM clients WHERE id=?").get(originalOrder.clientId).address;
+ const beforeAddress=clientAddress();
+ await act(id,'stranger',addressChange,400);await act(id,'logistic',addressChange,400);
+ await act(id,'courier',addressChange);
+ assert.equal(order(id).address,corrected);assert.deepEqual(order(id).addressParts,addressChange.addressParts);
+ assert.equal(order(id).status,originalOrder.status);assert.deepEqual(order(id).courier,originalOrder.courier);assert.equal(clientAddress(),beforeAddress);
+ assert.equal(db.prepare("SELECT count(*) n FROM events WHERE order_id=? AND json_extract(data,'$.text') LIKE 'Курьер изменил адрес доставки%'").get(id).n,1);
+ await call('courier','/api/crm',{...addressChange,id,version:originalOrder.version},400);
  await act(id,'courier',{action:'courierWorkflow',operation:'confirm'},400);
  await act(id,'stranger',{action:'courierAccept',confirmed:true},400);
  await act(id,'courier',{action:'courierAccept',confirmed:true});assert.equal(order(id).courier.phase,'confirmation');
@@ -120,6 +151,9 @@ try{
  await act(id,'courier',{action:'courierWorkflow',operation:'toOperator',reason:'One more question'});assert.equal(order(id).courier.operatorBudgetMs,remaining);
  await act(id,'operator',{action:'courierWorkflow',operation:'confirm'});await act(id,'courier',{action:'courierWorkflow',operation:'resume'});
  await act(id,'courier',{action:'courierOutcome',to:'redeemed',confirmed:true});assert.equal(stock(),before);
+ const paidAssignment=order(id).courier;
+ await act(id,'courier',{...addressChange,address:corrected.replace('кв. 2','кв. 3'),addressParts:{...addressChange.addressParts,flat:'кв. 3'}});
+ assert.equal(order(id).status,'redeemed');assert.deepEqual(order(id).courier,paidAssignment);
  await act(id,'logistic',{action:'receivePayment'});await act(id,'logistic',{action:'receivePayment'},400);
  const moneyReceipt=await receipt(id,'Деньги приняты логистом',10000,{read:false});
  assert.equal(db.prepare('SELECT amount FROM cash_operations WHERE order_id=?').get(id).amount,1000000);

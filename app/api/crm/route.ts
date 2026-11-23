@@ -481,6 +481,22 @@ async function handlePOST(request:Request){
   const created=ev(c.id,o.id,(sourceIncoming?"Создан заказ "+o.id+" из входящего · "+sourceIncoming.id+" · Оформление":"Создан заказ · Оформление")+(addressWarnings.length?" · адрес проверен вручную, создание подтверждено несмотря на предупреждение: "+addressWarnings.map(w=>w.message).join(" "):"")+(clientAddressFromOrder(o)?" · адрес клиента обновлён из заказа":""));
   const workStatements=await orderClientWorkStatements(d,c.id,manager,o.id,now);
   const result=await d.batch([d.prepare("INSERT INTO orders(id,client_id,data) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?)"+(sourceIncoming?" AND EXISTS(SELECT 1 FROM incoming_calls WHERE id=? AND closed_at IS NULL AND spam=0 AND client_id=? AND assignee_id IS ? AND department_id=? AND shared_queue=?) AND NOT EXISTS(SELECT 1 FROM orders WHERE client_id=? AND json_extract(data,'$.status') NOT IN ('redeemed','refused','returned'))":"")).bind(o.id,c.id,json(o),c.id,c.version,...(sourceIncoming?[sourceIncoming.id,c.id,sourceIncoming.assignee_id,sourceIncoming.department_id,sourceIncoming.shared_queue||0,c.id]:[])),d.prepare("UPDATE clients SET data=json_patch(json_set(json_remove(data,'$.orderRequest'),'$.owner',?,'$.assignedUntil',?,'$.assignmentStartedAt',?),json(?)),version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(manager,assignedUntil(),c.assignmentStartedAt||now,json(clientAddressFromOrder(o)||{}),c.id,o.id),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=?)").bind(created.id,c.id,o.id,now,json(created),o.id),...(sourceIncoming?[incomingCloseStatement(d,sourceIncoming.id,employee!.id,now,'Оформлен новый заказ '+o.id,o.id,o.id)]:[]),...workStatements]);if(!result[0].meta.changes)throw Error("Клиент изменился. Обновите данные перед оформлением");message=sourceIncoming?"Создан заказ "+o.id+", входящее закрыто":"Заказ создан";
+ }else if(p.action==='courierWorkflow'&&p.operation==='editAddress'){
+  const order=s.orders.find(o=>o.id===p.id);
+  if(employee?.role!=='courier'||!order||order.zvd||order.delivery!=='moscow_courier'||order.courier?.id!==employee.id)throw Error('Адрес может изменить назначенный курьер');
+  const address=z.string().trim().min(1,'Укажите адрес доставки').max(500).parse(p.address);
+  const parts=addressPartsSchema.parse(p.addressParts),version=z.number().int().positive().parse(p.version);
+  const warnings=orderAddressWarnings(address,parts);
+  if(warnings.length&&p.addressConfirmed!==true)throw Error('Проверьте адрес перед сохранением');
+  const previous=order.address||s.clients.find(c=>c.id===order.clientId)?.address||'';
+  const event=ev(order.clientId,order.id,'Курьер изменил адрес доставки: '+previous+' → '+address);
+  const patch={address,addressParts:Object.values(parts).some(Boolean)?parts:null,updatedAt:now,_mutation:event.id};
+  const result=await d.batch([
+   d.prepare("UPDATE orders SET data=json_patch(data,json(?)),version=version+1 WHERE id=? AND version=? AND json_extract(data,'$.courier.id')=? AND json_extract(data,'$.delivery')='moscow_courier'").bind(json(patch),order.id,version,employee.id),
+   d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(event.id,order.clientId,order.id,now,json(event),order.id,event.id)
+  ]);
+  if(!result[0].meta.changes)throw Error('Заказ изменился. Откройте редактирование адреса заново');
+  message='Адрес доставки сохранён';
  }else if(['updateMoscowDetails','updateRecipientName'].includes(p.action)){
   const o=s.orders.find(o=>o.id===p.id),c=o&&s.clients.find(c=>c.id===o.clientId);
   const nameOnly=p.action==='updateRecipientName';
