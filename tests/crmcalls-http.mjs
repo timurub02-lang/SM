@@ -65,6 +65,34 @@ try{
  assert.equal((await call('/api/crmcalls-incoming',null,payload,eventHeaders)).status,200);
  const received=JSON.parse((await call('/api/crmcalls?incoming=1',cookies.admin)).text);assert.equal(received.transfers[0].state,'imported');assert.ok(!JSON.stringify(received).includes(incomingSecret));
  const incomingOrders=d.prepare('SELECT data FROM orders').all().map(r=>JSON.parse(r.data));assert.equal(incomingOrders.length,1);assert.equal(incomingOrders[0].manager,'operator');assert.equal(incomingOrders[0].status,'draft');assert.deepEqual(incomingOrders[0].items,[]);
+ const bothConfig={...received.config,additionalScenarios:[{scenarioId:'22222222-2222-4222-8222-222222222222',resultId:'sm-j'}]};
+ assert.equal((await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:{...bothConfig,additionalScenarios:[{...bothConfig.additionalScenarios[0],resultId:'sm-result'}]},revision:received.config.revision})).status,400);
+ const saveBoth=await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:bothConfig,revision:received.config.revision});assert.equal(saveBoth.status,200,saveBoth.text);
+ const second={...payload,event_id:crypto.randomUUID(),scenario:{id:bothConfig.additionalScenarios[0].scenarioId},result:{id:'sm-j'},call:{id:crypto.randomUUID()},contact:{id:crypto.randomUUID(),phone:'79990000777'}};
+ assert.equal((await call('/api/crmcalls-incoming',null,second,{...eventHeaders,'Idempotency-Key':second.event_id})).status,200);
+ assert.equal(d.prepare('SELECT COUNT(*) n FROM orders').get().n,2);
+ const bothDashboard=JSON.parse((await call('/api/crmcalls?incoming=1',cookies.admin)).text);assert.deepEqual(bothDashboard.config.operators,incomingConfig.operators);assert.deepEqual(bothDashboard.config.additionalScenarios,bothConfig.additionalScenarios);
+ // The shared approval endpoint protects ownership and performs both decisions atomically.
+ const owned={id:'protected-cc',name:'Чужой клиент',phone:'+79990000999',owner:'original-owner',sheet:'К',baseType:'M',city:'',address:'',createdAt:new Date().toISOString(),version:1};
+ d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(owned.id,owned.phone,JSON.stringify(owned));
+ const conflictEvent={...payload,event_id:crypto.randomUUID(),call:{id:crypto.randomUUID()},contact:{id:crypto.randomUUID(),phone:owned.phone,full_name:owned.name}};
+ const submitConflict=async e=>{const r=await call('/api/crmcalls-incoming',null,e,{...eventHeaders,'Idempotency-Key':e.event_id});assert.equal(r.status,200,r.text);};
+ await submitConflict(conflictEvent);
+ let pending=JSON.parse((await call('/api/sk-orders',cookies.admin)).text).rows;
+ const transferId='cc:'+conflictEvent.call.id;assert.equal(pending.length,1);assert.equal(pending[0].id,transferId);assert.equal(pending[0].source,'CRMCalls');assert.match(pending[0].reason,/другому оператору/);
+ const operatorRows=JSON.parse((await call('/api/sk-orders',cookies.operator)).text).rows;assert.equal(operatorRows[0].id,transferId);assert.equal(operatorRows[0].canDecide,false);assert.equal(operatorRows[0].phone,undefined);
+ for(const role of ['operator','department_head'])for(const action of ['approve','reject'])assert.equal((await call('/api/sk-orders',cookies[role],{id:transferId,action})).status,403);
+ assert.equal(d.prepare('SELECT COUNT(*) n FROM orders').get().n,2);
+ const rejected=await call('/api/sk-orders',cookies.admin,{id:transferId,action:'reject'});assert.equal(rejected.status,200,rejected.text);
+ await submitConflict(conflictEvent);
+ assert.equal(d.prepare('SELECT state FROM crmcalls_incoming WHERE call_id=?').get(conflictEvent.call.id).state,'rejected');
+ assert.equal(JSON.parse(d.prepare('SELECT data FROM clients WHERE id=?').get(owned.id).data).owner,'original-owner');
+ const approveEvent={...conflictEvent,event_id:crypto.randomUUID(),call:{id:crypto.randomUUID()}};await submitConflict(approveEvent);
+ const approved=await call('/api/sk-orders',cookies.admin,{id:'cc:'+approveEvent.call.id,action:'approve'});assert.equal(approved.status,200,approved.text);assert.equal(JSON.parse(approved.text).state,'imported');
+ assert.equal(d.prepare('SELECT COUNT(*) n FROM orders').get().n,3);
+ assert.equal(JSON.parse(d.prepare('SELECT data FROM clients WHERE id=?').get(owned.id).data).owner,'operator');
+ assert.equal((await call('/api/sk-orders',cookies.admin,{id:'cc:'+approveEvent.call.id,action:'approve'})).status,400);
+ await submitConflict(approveEvent);assert.equal(d.prepare('SELECT COUNT(*) n FROM orders').get().n,3);
  console.log('CRMCalls HTTP: all non-admin roles denied, identity/CSRF, protected sheets, secret masking, preview, CAS and disabled scheduling passed');
  if(process.env.CRMCALLS_UI_TEST==='1'){
   console.log('Synthetic UI available on '+origin+'; admin / '+password);
