@@ -1,3 +1,4 @@
+import {canReviewCalls} from '@/lib/call-review-access';
 import {canPlayMissedRecording,canReadIncomingClient} from '@/lib/incoming';
 import {open} from 'node:fs/promises';
 import {Readable} from 'node:stream';
@@ -13,10 +14,14 @@ export const GET=authenticated(async req=>{
  if(!e||!/^[a-f0-9]{32}$/.test(id))return new Response(null,{status:404});
  const incomingId=new URL(req.url).searchParams.get('incomingId');
  const masked=new URL(req.url).searchParams.get('masked')==='1';
- if(masked&&!['admin','redemption'].includes(e.role))return new Response(null,{status:403});
+ const review=new URL(req.url).searchParams.get('review')==='1';
+ if(review&&!canReviewCalls(e))return new Response(null,{status:403});
+ if(masked&&!review&&!['admin','redemption'].includes(e.role))return new Response(null,{status:403});
  await initPhone(db());const c=await db().prepare(masked?'SELECT * FROM replacement_calls WHERE id=?':'SELECT * FROM phone_calls WHERE id=?').bind(id).first<PhoneCall>();
  const missedId=new URL(req.url).searchParams.get('missedIncomingId');
- if(missedId&&!masked){
+ if(review){
+  if(!c?.recording||(!c.order_id&&!c.client_id))return new Response(null,{status:403});
+ }else if(missedId&&!masked){
   if(!c?.recording||!await canPlayMissedRecording(db(),e,missedId,id))return new Response(null,{status:403});
   // For calls placed in client mode, retain the normal client recording permissions.
   const linked=await db().prepare('SELECT 1 FROM phone_call_incoming WHERE call_id=? AND incoming_id=?').bind(id,missedId).first();

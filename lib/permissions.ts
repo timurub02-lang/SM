@@ -1,3 +1,4 @@
+import {canReviewCalls} from './call-review-access.ts';
 import {managesWorkDepartment} from './head-vacation.ts';
 import {canReviewOrders} from './order-review-access.ts';
 import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
@@ -112,6 +113,8 @@ export function warehouseReadOnly(role:Employee['role']){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;
+ if(path==='/api/call-reviews')return canReviewCalls(e)&&['GET','POST'].includes(method);
+ if(path==='/api/call-history/recording'&&url.searchParams.get('review')==='1')return canReviewCalls(e)&&method==='GET';
  if(path==='/api/incoming-work-gate')return method==='GET'&&!['courier','purchasing'].includes(e.role);
  if(impersonationBlocksPhone(e,path))return false;
  if(path==='/api/cdek/shipment'&&method==='POST'&&p?.action==='syncAmount')return isLogistic(e.role)||e.role==='department_head';
