@@ -150,3 +150,9 @@ assert.equal(ownReview.ownerIsSender,true);
 assert.deepEqual(ownReview.reasons,['Есть действующие заказы: SK-124 — Отправлен']);
 assert.equal(skOrderReview('project',undefined,reviewClient,reviewOwner,[]).ownerIsSender,false);
 
+
+const artem={...head,id:'E-74ee9a8f-99d'};
+assert.equal(skMayDecide(artem,sender,other),true);
+for(const method of ['GET','POST'])assert.equal(mayCallEndpoint(artem,new URL('https://crm/api/sk-orders'),method,{}),true);
+assert.equal(skMayDecide({...artem,role:'operator'},sender,other),false);
+assert.equal(skMayDecide({...head,login:'SKP_Artem'},sender,other),false);
