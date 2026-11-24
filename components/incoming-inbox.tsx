@@ -54,7 +54,10 @@ export function IncomingInbox({now=Date.now(),onMissed,items,clients,employees,e
  const history=tab==='closed';
  const sharedCallback=(item:IncomingRequest)=>!!item.sharedQueue&&!item.closedAt&&!item.hasActiveOrder&&['admin','department_head'].includes(employee.role);
  const delegated=(item:IncomingRequest)=>employee.role==='operator'&&item.assigneeId===employee.id&&!!item.handoff;
- const assignedCallback=(item:IncomingRequest)=>employee.role==='operator'&&item.assigneeId===employee.id||employee.role==='department_head'&&!!item.clientId&&!item.sharedQueue&&!!item.hasActiveOrder;
+ const assignedCallback=(item:IncomingRequest)=>
+  (employee.role==='operator'&&item.assigneeId===employee.id)||
+  (employee.role==='department_head'&&!!item.clientId&&!item.sharedQueue&&
+   (item.hasActiveOrder||(!item.closedAt&&free(item))));
 
  const inCategory=(i:IncomingRequest,category:string)=>category==='spam'?!!i.spam:!i.spam&&(category==='closed'?!!i.closedAt:!i.closedAt&&(category==='mine'?i.assigneeId===employee.id:category==='free'?free(i):category==='known'?!!i.clientId&&(!canSeeFree||!free(i)):!i.clientId));
  const shown=items.filter(i=>inCategory(i,tab)&&(['closed','spam'].includes(tab)||incomingIsMissed(i,now)===missedTab)).sort((a,b)=>Number(!!b.hasActiveOrder)-Number(!!a.hasActiveOrder));
