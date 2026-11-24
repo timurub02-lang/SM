@@ -1,3 +1,4 @@
+import {canDecideSkOrders} from './order-review-access.ts';
 import {managesWorkDepartment} from './head-vacation.ts';
 import {reconcileIncomingOwners} from './incoming-owner-sync.ts';
 import type {SkProjectMembership} from './sk-project-membership.ts';
@@ -27,7 +28,7 @@ export function skSender(staff:Employee[],email:string,userName='',userNameUniqu
  const found=staff.filter(e=>{const key=clean(e.skLogin||'');return key&&userNameUnique&&!!userName&&key===clean(userName);});
  return found.length===1&&found[0].role==='operator'&&found[0].accessEnabled!==false?found[0]:undefined;
 }
-export function skMayDecide(actor:Employee,_sender?:Employee,_owner?:Employee){return actor.role==='admin';}
+export function skMayDecide(actor:Employee,_sender?:Employee,_owner?:Employee){return canDecideSkOrders(actor);}
 export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,now=new Date().toISOString()){
  if(!/^\d+$/.test(input.callId)||!normalizePhone(input.phone))throw Error('Некорректный звонок или телефон СК');
  now=new Date(now).toISOString();
@@ -51,7 +52,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
  }
  const orders:Order[]=existing?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(existing.id).all()).results.map((r:any)=>JSON.parse(r.data)):[];
  const reason=skOrderReview(input.projectId,sender,existing,owner,orders,!!input.projectMembership,input.dispatchVerified).reasons.join('; ');
- if(reason&&(!decision||!sender||existing&&['ЧС','ПВ'].includes(clientSheet(existing))&&decision.role!=='admin')){
+ if(reason&&(!decision||!sender||existing&&['ЧС','ПВ'].includes(clientSheet(existing))&&!canDecideSkOrders(decision))){
   await d.prepare("UPDATE sk_order_transfers SET reason=? WHERE id=? AND state='pending'").bind(reason,input.callId).run();return {state:'pending',reason};
  }
  if(!sender)throw Error('Укажите ФИО Скорозвона в карточке оператора');
