@@ -4,9 +4,9 @@ export const calculationSchema=z.object({actorId:z.string().min(1),orderId:z.str
 export type CalculationInput=z.infer<typeof calculationSchema>;
 export const canManageDelivery=(role:string,status:string)=>['admin','logistic','chief_logistic'].includes(role)&&['draft','rework','confirm','extra','check','packing','phone'].includes(status);
 export const tariffMode=(p:Pick<CalculationInput,'originMode'|'delivery'>)=>p.originMode==='warehouse'?(p.delivery==='cdek_pickup'?4:3):(p.delivery==='cdek_pickup'?2:1);
-export function calculationPayload(p:CalculationInput,destinationPostalCode:string){
+export function calculationPayload(p:Pick<CalculationInput,'originPostalCode'|'weight'>&Partial<Pick<CalculationInput,'length'|'width'|'height'>>,destinationPostalCode:string){
  if(!/^\d{6}$/.test(destinationPostalCode))throw new Error('Заполните индекс получателя в адресе заказа');
- return {type:1,currency:1,lang:'rus',from_location:{postal_code:p.originPostalCode,country_code:'RU'},to_location:{postal_code:destinationPostalCode,country_code:'RU'},packages:[{weight:Math.ceil(p.weight*1000),length:p.length,width:p.width,height:p.height}]};
+ return {type:1,currency:1,lang:'rus',from_location:{postal_code:p.originPostalCode,country_code:'RU'},to_location:{postal_code:destinationPostalCode,country_code:'RU'},packages:[{weight:Math.ceil(p.weight*1000),...(p.length&&p.width&&p.height?{length:p.length,width:p.width,height:p.height}:{})}]};
 }
 export function calculationError(status:number,errors?:{code?:string}[]){
  const code=errors?.[0]?.code;

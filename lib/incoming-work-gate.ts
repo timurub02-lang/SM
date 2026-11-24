@@ -44,6 +44,7 @@ export async function incomingWorkRequestAllowed(d:ActivityDb,e:Employee,url:URL
  if(path==='/api/telephony'&&method==='PATCH'||path==='/api/order-access'&&p?.action==='release'||path==='/api/operator-state'&&['break','finish'].includes(p?.action))return true;
  if(path==='/api/telephony')return p?.mode==='incoming'?incoming:p?.mode==='order'?linkedOrder||sk:p?.mode==='client'?linkedClient:false;
  if(path==='/api/order-access')return linkedOrder||sk;
+ if(path==='/api/cdek/operator-estimate')return linkedClient;
  if(path==='/api/dadata'&&p?.action==='suggest')return true;
  if(path==='/api/crm'){
   if(incomingActions.has(p?.action))return incoming;

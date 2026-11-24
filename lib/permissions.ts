@@ -134,7 +134,8 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(e.role==='courier'&&path==='/api/dadata')return method==='POST'&&p?.action==='suggest';
  if(e.role==='courier')return path==='/api/crm'&&(method==='GET'||method==='POST'&&['courierOutcome','courierAccept','courierWorkflow','contact','readReminder'].includes(p?.action));
  if(path==='/api/crm')return true; // Object-level rules are applied inside the CRM handler.
- if(path==='/api/cdek/pickup-points')return method==='GET'&&['operator','department_head'].includes(e.role)&&url.searchParams.has('orderId');
+ if(path==='/api/cdek/operator-estimate'&&method==='POST')return ['department_head','operator'].includes(e.role)&&!!p?.clientId&&!p?.orderId;
+ if(path==='/api/cdek/pickup-points'||path==='/api/cdek/operator-estimate')return method==='GET'&&['operator','department_head'].includes(e.role)&&url.searchParams.has('orderId');
  if(path==='/api/cdek/routing')return e.role==='chief_logistic'&&['GET','POST'].includes(method)||method==='GET'&&isLogistic(e.role)&&url.searchParams.has('orderId');
  if(path==='/api/cdek'||path==='/api/cdek/status-mapping')return method==='GET'&&isLogistic(e.role);
  if(path==='/api/callback-phones'||path==='/api/postal-form')return method==='GET'&&isLogistic(e.role);
