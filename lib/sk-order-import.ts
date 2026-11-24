@@ -8,7 +8,7 @@ import {normalizePhone,clientSheet,hasActiveOrder,type Client,type Order,type Em
 import type {ActivityDb as Db} from './activity-store.ts';
 import {initBaseStorage} from './base-storage.ts';
 import {defaultOrderPolicy,orderPolicySchema} from './order-policy.ts';
-export type SkOrderInput={callId:string;leadId:string;projectId?:string|null;projectMembership?:SkProjectMembership;projectCheckedAt?:string;dispatchVerified?:boolean;email:string;userName?:string;userNameUnique?:boolean;name:string;phone:string;address:string;city:string;comment:string};
+export type SkOrderInput={source?:'CRMCalls';employeeId?:string;callId:string;leadId:string;projectId?:string|null;projectMembership?:SkProjectMembership;projectCheckedAt?:string;dispatchVerified?:boolean;email:string;userName?:string;userNameUnique?:boolean;name:string;phone:string;address:string;city:string;comment:string};
 export async function initSkOrders(d:Db){
  await initBaseStorage(d);
  await d.prepare("CREATE TABLE IF NOT EXISTS sk_order_cooldowns(phone TEXT NOT NULL,operator_id TEXT NOT NULL,call_id TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(phone,operator_id))").run();
@@ -28,6 +28,7 @@ export function skSender(staff:Employee[],email:string,userName='',userNameUniqu
  const found=staff.filter(e=>{const key=clean(e.skLogin||'');return key&&userNameUnique&&!!userName&&key===clean(userName);});
  return found.length===1&&found[0].role==='operator'&&found[0].accessEnabled!==false?found[0]:undefined;
 }
+export function transferSender(staff:Employee[],input:SkOrderInput){return input.source==='CRMCalls'?staff.find(e=>e.id===input.employeeId&&e.role==='operator'&&e.accessEnabled!==false):skSender(staff,input.email,input.userName,input.userNameUnique);}
 export function skMayDecide(actor:Employee,_sender?:Employee,_owner?:Employee){return canDecideSkOrders(actor);}
 export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,now=new Date().toISOString()){
  if(!/^\d+$/.test(input.callId)||!normalizePhone(input.phone))throw Error('Некорректный звонок или телефон СК');
@@ -79,7 +80,7 @@ export async function operatorPendingSkOrders(d:Db,staff:Employee[],actorId:stri
  const rows=await d.prepare("SELECT id,data,created_at FROM sk_order_transfers WHERE state='pending' ORDER BY created_at DESC").all();
  return rows.results.flatMap((row:{id:string;data:string;created_at:string})=>{
   const input:SkOrderInput=JSON.parse(String(row.data));
-  const actor=staff.find(e=>e.id===actorId),sender=skSender(staff,input.email,input.userName,input.userNameUnique);
+  const actor=staff.find(e=>e.id===actorId),sender=transferSender(staff,input);
   if(!actor||!sender||(actor.role==='department_head'?sender.role!=='operator'||!managesWorkDepartment(actor,sender.department,staff):sender.id!==actorId))return [];
   return [{id:String(row.id),name:input.name||'Клиент из Скорозвона',at:String(row.created_at),reason:'Ожидает разрешения администратора',canDecide:false,sender:''}];
  });

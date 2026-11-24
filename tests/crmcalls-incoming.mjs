@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {openDatabase} from '../server/sqlite.ts';
-import {saveIncomingConfig,receiveCRMCallsIncoming,runCRMCallsIncoming,incomingDashboard} from '../lib/crmcalls-incoming.ts';
+import {saveIncomingConfig,receiveCRMCallsIncoming,runCRMCallsIncoming,incomingDashboard,processCRMCallsIncoming} from '../lib/crmcalls-incoming.ts';
 const d=openDatabase(':memory:');
 for(const sql of readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8').split('--> statement-breakpoint'))await d.prepare(sql).run();
 const staff={id:'op',name:'Operator',login:'op',role:'operator',version:1,baseAccess:'M'};
@@ -18,7 +18,7 @@ assert.equal(JSON.parse((await d.prepare('SELECT data FROM clients').first()).da
 await Promise.all([send(first),send({...first,event_id:crypto.randomUUID()})]);
 assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,1);
 assert.equal((await send({...event(),event_id:first.event_id})).status,409);
-await send(event());assert.match((await incomingDashboard(d)).transfers.find(t=>t.state==='review').reason,/действующий заказ/);
+await send(event());assert.match((await incomingDashboard(d)).transfers.find(t=>t.state==='permission').reason,/действующие заказы/);
 const unknown=event({user:{id:'unknown',name:'Same name'},contact:{...first.contact,id:crypto.randomUUID(),phone:'79990000200'}});
 await send(unknown);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,1);
 assert.match((await incomingDashboard(d)).transfers.find(t=>t.call_id===unknown.call.id).reason,/Сопоставьте/);
@@ -44,6 +44,23 @@ await send({...second,result:{id:'result-sm'}});assert.equal((await d.prepare('S
 await send(second);await send(second);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,4);
 await send(event({contact:{id:crypto.randomUUID(),phone:'79990000600'}}));assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,5);
 assert.equal((await incomingDashboard(d)).config.additionalScenarios[0].scenarioId,secondScenario);
+// Ownership conflicts use the same approval queue and cannot be bypassed by retries.
+const protectedClient={...blocked,id:'owned',phone:'+79990000700',sheet:'К',owner:'other',assignedUntil:'2030-01-01'};
+await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(protectedClient.id,protectedClient.phone,JSON.stringify(protectedClient)).run();
+const owned=event({contact:{id:crypto.randomUUID(),phone:'79990000700'}});
+await send(owned);await send(owned);await runCRMCallsIncoming(d,true);
+const approval=await d.prepare('SELECT * FROM sk_order_transfers WHERE id=?').bind('cc:'+owned.call.id).first();
+assert.equal(approval.state,'pending');assert.match(approval.reason,/другому оператору/);
+assert.equal(JSON.parse(approval.data).employeeId,'op');
+assert.equal((await d.prepare("SELECT COUNT(*) n FROM orders WHERE client_id='owned'").first()).n,0);
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='owned'").first()).data).owner,'other');
+await assert.rejects(()=>processCRMCallsIncoming(d,owned.call.id,undefined,staff),/прав/);
+const granted=await processCRMCallsIncoming(d,owned.call.id,undefined,{id:'E-74ee9a8f-99d',name:'Delegated head',role:'department_head'});
+assert.equal(granted.state,'imported');
+assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='owned'").first()).data).owner,'op');
+assert.equal((await d.prepare('SELECT state FROM sk_order_transfers WHERE id=?').bind('cc:'+owned.call.id).first()).state,'imported');
+await send(owned);await processCRMCallsIncoming(d,owned.call.id,undefined,{id:'admin',role:'admin'});
+assert.equal((await d.prepare("SELECT COUNT(*) n FROM orders WHERE client_id='owned'").first()).n,1);
 await saveIncomingConfig(d,{...config,enabled:false},both.revision);
 assert.equal((await send(event())).status,503);
 assert.equal((await send(event(),saved.secret,{'content-type':'text/plain'})).status,415);
