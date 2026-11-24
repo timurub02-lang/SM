@@ -1,3 +1,4 @@
+import {managesWorkDepartment} from './head-vacation.ts';
 import {canReviewOrders} from './order-review-access.ts';
 import {readPaidHistory} from './premium-paid-history.ts';
 import {preparedModelsEnabled} from './crm-read-model.ts';
@@ -31,7 +32,7 @@ async function workspaceScope(d:ActivityDb,e:Employee){
  if(!['operator','department_head'].includes(e.role))throw Error('Рабочая область недоступна');
  await initCrmReadIndexes(d);await initIncoming(d);
  const staff:Employee[]=(await d.prepare('SELECT data,version FROM employees ORDER BY id').all()).results.map(decode);
- const owners=e.role==='operator'?[e.id]:staff.filter(x=>x.role==='operator'&&!!e.department&&x.department===e.department).map(x=>x.id);
+ const owners=e.role==='operator'?[e.id]:staff.filter(x=>x.role==='operator'&&managesWorkDepartment(e,x.department,staff)).map(x=>x.id);
  const shared:string[]=e.role==='department_head'?(await d.prepare('SELECT DISTINCT client_id FROM incoming_calls WHERE shared_queue=1 AND spam=0 AND closed_at IS NULL AND client_id IS NOT NULL').all()).results.map((r:{client_id:string})=>r.client_id):[];
  const args=[JSON.stringify(owners),JSON.stringify(shared)];
  // UNION lets SQLite use the manager and client indexes before decoding any order JSON.

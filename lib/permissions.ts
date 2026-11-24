@@ -1,3 +1,4 @@
+import {managesWorkDepartment} from './head-vacation.ts';
 import {canReviewOrders} from './order-review-access.ts';
 import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
@@ -9,13 +10,13 @@ import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
 import {canOperatorAmendMissed,canOperatorReachClient,canLogisticEditBasket,canLogisticEditOrder,orderEditingLocked,type Employee,type State,type Client,type Order} from './crm.ts';
 import {headDraftStage,departmentWorkStage,isDepartmentOrder} from './department-orders.ts';
 export function canOpenClientCard(e:Pick<Employee,'id'|'role'>,c?:Pick<Client,'owner'>){return !!c&&(e.role!=='operator'||c.owner===e.id);}
-export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&x.department===e.department);}
+export function ownsClient(e:Employee,c:Client,staff:Employee[]){return e.role==='admin'||e.role==='operator'&&c.owner===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===c.owner&&x.role==='operator'&&managesWorkDepartment(e,x.department,staff));}
 export function seesOrder(e:Employee,o:Order,staff:Employee[]){
  if(e.role==='admin'||o.status==='check'&&canReviewOrders(e))return true;
  if(o.zvd&&!['operator','department_head'].includes(e.role))return false;
  if(e.role==='courier')return o.delivery==='moscow_courier'&&o.courier?.id===e.id;
  if(e.role==='operator')return o.manager===e.id;
- if(e.role==='department_head')return !!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&x.department===e.department);
+ if(e.role==='department_head')return !!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&managesWorkDepartment(e,x.department,staff));
  if(isLogistic(e.role))return true;
  return e.role==='redemption'&&['shipping','pickup','redeemed','returned'].includes(o.status);
 }
@@ -35,13 +36,20 @@ export function visibleState(s:State,e:Employee):State{
  const orderClientIds=new Set(orders.map(o=>o.clientId));
  const clients=s.clients.filter(c=>ownedClientIds.has(c.id)||orderClientIds.has(c.id));const ids=new Set(clients.map(c=>c.id));
  const staffIds=new Set([e.id,...orders.flatMap(o=>[o.manager,o.logistic]),...clients.map(c=>c.owner)]);
- const employees=s.employees.filter(x=>staffIds.has(x.id)||canCreateRedemptionStaff(e)&&x.role==='redemption'||isLogistic(e.role)&&x.role==='courier'||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&!!e.department&&x.department===e.department).map(x=>({...x,leaderPremium:x.id===e.id?x.leaderPremium:undefined,salary:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.salary:0,bonus:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.bonus:0}));
+ const employees=s.employees.filter(x=>staffIds.has(x.id)||canCreateRedemptionStaff(e)&&x.role==='redemption'||isLogistic(e.role)&&x.role==='courier'||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&managesWorkDepartment(e,x.department,s.employees)).map(x=>({...x,vacation:x.id===e.id?x.vacation:undefined,leaderPremium:x.id===e.id?x.leaderPremium:undefined,salary:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.salary:0,bonus:x.id===e.id||e.role==='chief_logistic'&&x.role==='logistic'||e.role==='department_head'&&x.role==='operator'&&x.department===e.department?x.bonus:0}));
+ // Only the name, department and relevant assignment are needed by the vacation picker.
+ if(e.role==='department_head')for(const head of s.employees.filter(x=>x.role==='department_head'&&x.department&&x.id!==e.id)){
+  const entry={id:head.id,name:head.name,role:head.role,department:head.department,version:head.version,login:'',alias:'',skLogin:'',salary:0,bonus:0,vacation:head.vacation?.substitute===e.id?head.vacation:undefined};
+  const i=employees.findIndex(x=>x.id===head.id);
+  if(i<0)employees.push({...entry,leaderPremium:undefined});else employees[i]={...entry,leaderPremium:undefined};
+ }
  const hidePhone=e.role==='operator'||e.role==='department_head';
  const reviewClients=new Set(canReviewOrders(e)?orders.filter(o=>o.status==='check').map(o=>o.clientId):[]);
  return {...s,clients:clients.map(c=>hidePhone?{...hideClientNumbers(c),phone:reviewClients.has(c.id)?c.phone:''}:c),orders:orders.map(o=>{if(isLogistic(e.role))return o;const {paymentReceipt,...rest}=o;return {...rest,paymentReceivedAmount:paymentReceipt?.amount};}),employees,events:s.events.filter(x=>ids.has(x.clientId)&&(!x.orderId||orderIds.has(x.orderId))).map(x=>({...x,text:visibleOrderHistoryText(x.text,e.role)})),incoming:(s.incoming||[]).filter(x=>ids.has(x.clientId||''))};
 }
 export function authorizeCrm(e:Employee,p:any,s:State){
  const allow=(ok:boolean)=>{if(!ok)throw Error('Недостаточно прав для этого действия');};
+ if(p.action==='headVacation')return allow(e.role==='admin'||e.role==='department_head');
  if(e.role==='admin')return;
  if(canReviewOrders(e)&&s.orders.some(o=>o.id===p.id&&o.status==='check')&&['transition','markZvd','markPV','markBlacklist','comment'].includes(p.action))return;
  if(['markZvd','markBlacklist'].includes(p.action))return allow(false);
