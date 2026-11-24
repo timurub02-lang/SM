@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-24T08:52:42.390252+00:00",
+  "title": "Design System: SM CRM — local Skorozvon prototype",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "displayName": "Accent",
+        "role": "primary",
+        "tonalRamp": [
+          "oklch(15% 0.08888 187.77)",
+          "oklch(26.43% 0.08888 187.77)",
+          "oklch(37.86% 0.08888 187.77)",
+          "oklch(49.29% 0.08888 187.77)",
+          "oklch(60.71% 0.08888 187.77)",
+          "oklch(72.14% 0.08888 187.77)",
+          "oklch(83.57% 0.08888 187.77)",
+          "oklch(95% 0.08888 187.77)"
+        ]
+      },
+      "muted": {
+        "displayName": "Muted",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.02804 226.99)",
+          "oklch(26.43% 0.02804 226.99)",
+          "oklch(37.86% 0.02804 226.99)",
+          "oklch(49.29% 0.02804 226.99)",
+          "oklch(60.71% 0.02804 226.99)",
+          "oklch(72.14% 0.02804 226.99)",
+          "oklch(83.57% 0.02804 226.99)",
+          "oklch(95% 0.02804 226.99)"
+        ]
+      },
+      "line": {
+        "displayName": "Line",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.01142 176.29)",
+          "oklch(26.43% 0.01142 176.29)",
+          "oklch(37.86% 0.01142 176.29)",
+          "oklch(49.29% 0.01142 176.29)",
+          "oklch(60.71% 0.01142 176.29)",
+          "oklch(72.14% 0.01142 176.29)",
+          "oklch(83.57% 0.01142 176.29)",
+          "oklch(95% 0.01142 176.29)"
+        ]
+      },
+      "ink": {
+        "displayName": "Ink",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.02844 230.46)",
+          "oklch(26.43% 0.02844 230.46)",
+          "oklch(37.86% 0.02844 230.46)",
+          "oklch(49.29% 0.02844 230.46)",
+          "oklch(60.71% 0.02844 230.46)",
+          "oklch(72.14% 0.02844 230.46)",
+          "oklch(83.57% 0.02844 230.46)",
+          "oklch(95% 0.02844 230.46)"
+        ]
+      },
+      "ground": {
+        "displayName": "Ground",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.00252 228.78)",
+          "oklch(26.43% 0.00252 228.78)",
+          "oklch(37.86% 0.00252 228.78)",
+          "oklch(49.29% 0.00252 228.78)",
+          "oklch(60.71% 0.00252 228.78)",
+          "oklch(72.14% 0.00252 228.78)",
+          "oklch(83.57% 0.00252 228.78)",
+          "oklch(95% 0.00252 228.78)"
+        ]
+      },
+      "surface": {
+        "displayName": "Surface",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.00000 89.88)",
+          "oklch(26.43% 0.00000 89.88)",
+          "oklch(37.86% 0.00000 89.88)",
+          "oklch(49.29% 0.00000 89.88)",
+          "oklch(60.71% 0.00000 89.88)",
+          "oklch(72.14% 0.00000 89.88)",
+          "oklch(83.57% 0.00000 89.88)",
+          "oklch(95% 0.00000 89.88)"
+        ]
+      },
+      "selected": {
+        "displayName": "Selected",
+        "role": "primary",
+        "tonalRamp": [
+          "oklch(15% 0.01375 174.16)",
+          "oklch(26.43% 0.01375 174.16)",
+          "oklch(37.86% 0.01375 174.16)",
+          "oklch(49.29% 0.01375 174.16)",
+          "oklch(60.71% 0.01375 174.16)",
+          "oklch(72.14% 0.01375 174.16)",
+          "oklch(83.57% 0.01375 174.16)",
+          "oklch(95% 0.01375 174.16)"
+        ]
+      },
+      "selected-ink": {
+        "displayName": "Selected Ink",
+        "role": "primary",
+        "tonalRamp": [
+          "oklch(15% 0.07416 178.46)",
+          "oklch(26.43% 0.07416 178.46)",
+          "oklch(37.86% 0.07416 178.46)",
+          "oklch(49.29% 0.07416 178.46)",
+          "oklch(60.71% 0.07416 178.46)",
+          "oklch(72.14% 0.07416 178.46)",
+          "oklch(83.57% 0.07416 178.46)",
+          "oklch(95% 0.07416 178.46)"
+        ]
+      },
+      "control-border": {
+        "displayName": "Control Border",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.01924 180.17)",
+          "oklch(26.43% 0.01924 180.17)",
+          "oklch(37.86% 0.01924 180.17)",
+          "oklch(49.29% 0.01924 180.17)",
+          "oklch(60.71% 0.01924 180.17)",
+          "oklch(72.14% 0.01924 180.17)",
+          "oklch(83.57% 0.01924 180.17)",
+          "oklch(95% 0.01924 180.17)"
+        ]
+      },
+      "secondary-ink": {
+        "displayName": "Secondary Ink",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.04360 184.44)",
+          "oklch(26.43% 0.04360 184.44)",
+          "oklch(37.86% 0.04360 184.44)",
+          "oklch(49.29% 0.04360 184.44)",
+          "oklch(60.71% 0.04360 184.44)",
+          "oklch(72.14% 0.04360 184.44)",
+          "oklch(83.57% 0.04360 184.44)",
+          "oklch(95% 0.04360 184.44)"
+        ]
+      },
+      "danger-ink": {
+        "displayName": "Danger Ink",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0.15592 26.55)",
+          "oklch(26.43% 0.15592 26.55)",
+          "oklch(37.86% 0.15592 26.55)",
+          "oklch(49.29% 0.15592 26.55)",
+          "oklch(60.71% 0.15592 26.55)",
+          "oklch(72.14% 0.15592 26.55)",
+          "oklch(83.57% 0.15592 26.55)",
+          "oklch(95% 0.15592 26.55)"
+        ]
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "button-background",
+        "value": "background .15s",
+        "purpose": "Button hover transition; disabled under reduced motion."
+      },
+      {
+        "name": "card-context",
+        "value": "card-focus .45s ease-out",
+        "purpose": "Selected wash to white when customer context changes; disabled under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-desktop",
+        "value": "1000px"
+      },
+      {
+        "name": "single-column",
+        "value": "740px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Shared operator action variant.",
+      "html": "<button class=\"ds-button-primary\">Сохранить результат</button>",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:8px;padding:11px 14px;font:600 14px Arial,Helvetica,sans-serif;cursor:pointer;transition:background .15s;background:var(--accent,#127d76);color:#fff;border:1px solid var(--accent,#127d76)}.ds-button-primary:hover:not(:disabled){background:#09665f}.ds-button-primary:focus-visible{outline:3px solid var(--accent,#127d76);outline-offset:3px}.ds-button-primary:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-button-primary{transition:none}}"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Shared operator action variant.",
+      "html": "<button class=\"ds-button-secondary\">Удержание</button>",
+      "css": ".ds-button-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:8px;padding:11px 14px;font:600 14px Arial,Helvetica,sans-serif;cursor:pointer;transition:background .15s;background:#fff;color:#284d48;border:1px solid #bdceca}.ds-button-secondary:hover:not(:disabled){background:#edf6f3}.ds-button-secondary:focus-visible{outline:3px solid var(--accent,#127d76);outline-offset:3px}.ds-button-secondary:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-button-secondary{transition:none}}"
+    },
+    {
+      "name": "Danger button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Shared operator action variant.",
+      "html": "<button class=\"ds-button-danger\">Завершить звонок</button>",
+      "css": ".ds-button-danger{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:8px;padding:11px 14px;font:600 14px Arial,Helvetica,sans-serif;cursor:pointer;transition:background .15s;background:#fff1f0;color:#a22b28;border:1px solid #e1b5b0}.ds-button-danger:hover:not(:disabled){background:#fce0dc}.ds-button-danger:focus-visible{outline:3px solid var(--accent,#127d76);outline-offset:3px}.ds-button-danger:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-button-danger{transition:none}}"
+    },
+    {
+      "name": "Labeled field",
+      "kind": "input",
+      "description": "Explicit label and bordered text entry.",
+      "html": "<label class=\"ds-field\">Комментарий<input placeholder=\"Что обсудили с клиентом\"></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:8px;font:600 13px Arial,Helvetica,sans-serif;color:#22343d}.ds-field input{min-height:44px;border:1px solid #bdceca;border-radius:7px;padding:11px;font:400 13px Arial,Helvetica,sans-serif;color:#22343d;background:white;caret-color:var(--accent,#127d76)}.ds-field input:focus-visible{outline:3px solid var(--accent,#127d76);outline-offset:3px}"
+    },
+    {
+      "name": "Phase label",
+      "kind": "chip",
+      "description": "Noninteractive, text-labelled current call phase.",
+      "html": "<span class=\"ds-phase\">Разговор</span>",
+      "css": ".ds-phase{display:inline-block;font:12px Arial,Helvetica,sans-serif;color:#186356;background:#e7f3ef;border-radius:5px;padding:6px 9px}"
+    },
+    {
+      "name": "Customer surface",
+      "kind": "card",
+      "description": "Flat bordered customer context.",
+      "html": "<section class=\"ds-card\"><h2>Тестовый клиент</h2><p>Тестовая карточка</p></section>",
+      "css": ".ds-card{background:white;color:#22343d;border:1px solid var(--line,#dce6e3);border-radius:var(--radius,12px);padding:26px;font-family:Arial,Helvetica,sans-serif}.ds-card h2{font-size:23px;margin:0}.ds-card p{font-size:13px;color:var(--muted,#52666f);margin:7px 0 0}"
+    },
+    {
+      "name": "Brand navigation",
+      "kind": "nav",
+      "description": "Inherited SM CRM brand links to the local start.",
+      "html": "<a class=\"ds-brand\" href=\"#\" aria-label=\"Начало прототипа\"><span>SM</span><strong>CRM</strong></a>",
+      "css": ".ds-brand{display:inline-flex;align-items:center;gap:12px;color:#22343d;text-decoration:none;font:24px Arial,Helvetica,sans-serif}.ds-brand span{width:42px;height:42px;display:grid;place-items:center;background:var(--accent,#127d76);color:white;border-radius:12px;font-size:17px;font-weight:700}.ds-brand:focus-visible{outline:3px solid var(--accent,#127d76);outline-offset:3px}"
+    },
+    {
+      "name": "Customer selector",
+      "kind": "custom",
+      "description": "Selected customer keeps its readable state when locked.",
+      "html": "<button class=\"ds-client\" aria-pressed=\"true\"><strong>Тестовый клиент</strong><span>Москва</span></button>",
+      "css": ".ds-client{min-height:44px;text-align:left;padding:17px 14px;background:white;border:1px solid var(--line,#dce6e3);color:#22343d;font-family:Arial,Helvetica,sans-serif;cursor:pointer}.ds-client strong{display:block;font-size:14px;line-height:1.4}.ds-client span{display:block;font-size:12px;margin-top:7px;color:var(--muted,#52666f)}.ds-client[aria-pressed=true]{background:#e7f3ef;color:#165c56}.ds-client:hover:not(:disabled){background:#f0f7f5}.ds-client:focus-visible{outline:3px solid var(--accent,#127d76);outline-offset:-4px}.ds-client:disabled{opacity:1;cursor:default}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Existing CRM operator workspace",
+    "overview": "An extension of the existing SM CRM operator workspace: teal actions, white bordered surfaces and a pale neutral ground. This scoped record describes the finished local simulation in index.html, style.css and app.mjs; it does not establish a new identity for the parent CRM or imply a live Skorozvon connection.",
+    "keyCharacteristics": [
+      "Restrained, flat surfaces with visible boundaries.",
+      "Compact readable controls and explicit call states.",
+      "Customer context beside the call on desktop, below it on narrow screens."
+    ],
+    "rules": [
+      {
+        "name": "Action and State",
+        "body": "Use teal for primary actions and pale teal for selected context and call status; reserve red for ending a call and errors.",
+        "section": "colors"
+      },
+      {
+        "name": "Flat Surfaces",
+        "body": "Separate panels with borders and background tones; the implemented surfaces have no shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do retain the inherited CRM palette and body typography.",
+      "Do pair state colors with text and preserve visible keyboard focus.",
+      "Do keep synthetic-mode and tab-memory limitations visible."
+    ],
+    "donts": [
+      "Don't describe simulated actions as successful provider operations.",
+      "Don't replace the selected customer while a call or its result is active."
+    ]
+  }
+}
