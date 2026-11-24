@@ -1,6 +1,6 @@
 import {canReviewCalls} from './call-review-access.ts';
 import {managesWorkDepartment} from './head-vacation.ts';
-import {canReviewOrders} from './order-review-access.ts';
+import {canReviewOrders,canDecideSkOrders} from './order-review-access.ts';
 import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canSelectOrderPickupPoint} from './order-pickup-point.ts';
@@ -132,7 +132,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/premium/statistics')return method==='GET'&&e.role==='department_head';
  if(path==='/api/premium/lifecycle')return method==='POST'&&e.role==='department_head';
  if(path==='/api/premium')return method==='GET'&&['operator','department_head'].includes(e.role)||method==='POST'&&e.role==='department_head';
- if(path==='/api/sk-orders')return method==='GET'&&['operator','department_head'].includes(e.role);
+ if(path==='/api/sk-orders')return canDecideSkOrders(e)&&['GET','POST'].includes(method)||method==='GET'&&['operator','department_head'].includes(e.role);
  if(path==='/api/incoming-order-client')return method==='GET'&&['operator','department_head'].includes(e.role);
  if(path==='/api/incoming-clients')return method==='GET'&&e.role==='department_head';
  if(path==='/api/operator-state')return ['GET','POST'].includes(method)&&e.role==='operator';
