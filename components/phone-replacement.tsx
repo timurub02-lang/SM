@@ -28,7 +28,7 @@ export function PhoneReplacementSettings(){
    setBusy(true);setError('');setImportNotice('');
    try {
      const r=await fetch('/api/phone-replacement',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);
-     const v=await r.json();
+     const v=await r.json() as {error?:string};
      if(!r.ok)throw Error(v.error);
      setData(v);
      if(body?.action==='import'){
