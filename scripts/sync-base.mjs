@@ -1,3 +1,4 @@
+import {runCRMCallsIncoming} from '../lib/crmcalls-incoming.ts';
 import {openDatabase} from '../server/sqlite.ts';
 import {reconcileOrderTimers,reconcileClients} from '../lib/base-retention-store.ts';
 import {runCRMCalls} from '../lib/crmcalls-store.ts';
@@ -22,4 +23,5 @@ try{
  await reconcileClients(db,clients,orders);
  const result=await runBaseDispatch(db);await db.prepare("INSERT INTO settings(id,data) VALUES('base-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({state:result.paused?'waiting':'ok',at:new Date().toISOString(),...(result.paused?{message:result.reason}:{})})).run();console.log(JSON.stringify(result));
 }catch(e){await db.prepare("INSERT INTO settings(id,data) VALUES('base-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({state:'error',at:new Date().toISOString(),error:e instanceof Error?e.message:'Ошибка проверки расписания'})).run();console.error('Base dispatch failed; see CRM base health');process.exitCode=1;}
+try{await runCRMCallsIncoming(db);}catch{console.error('CRMCalls incoming retry failed');process.exitCode=1;}
 try{await runCRMCalls(db);await db.prepare("INSERT INTO settings(id,data) VALUES('crmcalls-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({ok:true,at:new Date().toISOString()})).run();}catch(e){await db.prepare("INSERT INTO settings(id,data) VALUES('crmcalls-health',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify({ok:false,at:new Date().toISOString(),error:e instanceof Error?e.message:'Ошибка CRMCalls'})).run();console.error('CRMCalls dispatch failed; see crmcalls-health');process.exitCode=1;}finally{db.close();}

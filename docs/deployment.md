@@ -450,3 +450,7 @@ API, then remove only these named tables/triggers/index and settings keys. Never
 delete CRM clients/orders or remote CRMCalls contacts as part of that removal.
 Older application releases ignore the additive module tables; pause pilot schedules
 and reconcile in-flight batches before a manual rollback to a pre-module release.
+
+## CRMCalls incoming cards
+
+The separately enabled authenticated `/api/crmcalls-incoming` webhook creates empty draft cards from the configured result and exact operator mapping. See [configuration and delivery contract](crmcalls-incoming.md). The additive `crmcalls_incoming` ledger persists before HTTP200; the existing bundled `sync-base` retries pending receipts in its own error boundary. Deployment alone does not enable reception or configure provider actions. Keep the ledger and number allocations across rollback. No new service or environment secret is required; the receiver stores only a hash of its separately generated secret.
