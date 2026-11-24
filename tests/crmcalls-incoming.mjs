@@ -35,7 +35,16 @@ await d.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').bind(blocked
 await send(event({contact:{id:crypto.randomUUID(),phone:'79990000400'}}));assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,3);
 assert.match((await incomingDashboard(d)).transfers.find(t=>t.reason.includes('ЧС')).reason,/ЧС/);
 const dashboard=await incomingDashboard(d);assert.ok(!JSON.stringify(dashboard).includes(saved.secret));assert.ok(!('secretHash' in dashboard.config));
-await saveIncomingConfig(d,{...config,enabled:false},changed.revision);
+// Adding a second scenario preserves the first and accepts only exact scenario/result pairs.
+const secondScenario=crypto.randomUUID();
+const both=await saveIncomingConfig(d,{...config,additionalScenarios:[{scenarioId:secondScenario,resultId:'result-j'}]},changed.revision);
+await assert.rejects(()=>saveIncomingConfig(d,{...config,additionalScenarios:[{scenarioId,resultId:'result-j'}]},both.revision));
+const second=event({scenario:{id:secondScenario},result:{id:'result-j'},contact:{id:crypto.randomUUID(),phone:'79990000500'}});
+await send({...second,result:{id:'result-sm'}});assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,3);
+await send(second);await send(second);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,4);
+await send(event({contact:{id:crypto.randomUUID(),phone:'79990000600'}}));assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,5);
+assert.equal((await incomingDashboard(d)).config.additionalScenarios[0].scenarioId,secondScenario);
+await saveIncomingConfig(d,{...config,enabled:false},both.revision);
 assert.equal((await send(event())).status,503);
 assert.equal((await send(event(),saved.secret,{'content-type':'text/plain'})).status,415);
 d.close();console.log('CRMCalls incoming cards: passed');

@@ -11,10 +11,11 @@ import {reconcileIncomingOwners} from './incoming-owner-sync.ts';
 
 const id=z.string().trim().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/);
 const text=(max:number)=>z.string().max(max).nullish().transform(v=>v||'');
-export const incomingConfigSchema=z.object({enabled:z.boolean(),scenarioId:z.uuid(),resultId:id,operators:z.array(z.object({userId:id,employeeId:id})).max(500)}).refine(v=>new Set(v.operators.map(x=>x.userId)).size===v.operators.length,'Оператор CRMCalls указан дважды');
+export const incomingConfigSchema=z.object({enabled:z.boolean(),scenarioId:z.uuid(),resultId:id,additionalScenarios:z.array(z.object({scenarioId:z.uuid(),resultId:id})).max(20).default([]),operators:z.array(z.object({userId:id,employeeId:id})).max(500)}).refine(v=>new Set(v.operators.map(x=>x.userId)).size===v.operators.length,'Оператор CRMCalls указан дважды').refine(v=>new Set([v.scenarioId,...v.additionalScenarios.map(s=>s.scenarioId)]).size===1+v.additionalScenarios.length,'Сценарий указан дважды');
 export const incomingEventSchema=z.object({event:z.literal('call.result_saved'),event_id:z.uuid(),occurred_at:z.iso.datetime({offset:true}),
  call:z.object({id,status:text(50),comment:text(3000)}),scenario:z.object({id:z.uuid()}),result:z.object({id,name:text(100)}),
  user:z.object({id,name:text(200)}),contact:z.object({id:z.uuid(),full_name:text(150),phone:z.string().max(40),phones:z.array(z.string().max(40)).max(20).nullish(),city:text(250),address:text(500)})});
+export const incomingScenarios=(c:{scenarioId:string;resultId:string;additionalScenarios?:{scenarioId:string;resultId:string}[]})=>[{scenarioId:c.scenarioId,resultId:c.resultId},...(c.additionalScenarios||[])];
 type Config=z.infer<typeof incomingConfigSchema>&{revision:string;enabledAt:string;secretHash:string};
 type Payload=z.infer<typeof incomingEventSchema>;
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
@@ -38,7 +39,7 @@ export async function saveIncomingConfig(d:Db,input:unknown,revision:string){
 }
 export async function incomingDashboard(d:Db){
  await initCRMCallsIncoming(d);const config=await readIncomingConfig(d),staff=await skStaff(d);
- return {config:config?{enabled:config.enabled,scenarioId:config.scenarioId,resultId:config.resultId,operators:config.operators,revision:config.revision}:null,
+ return {config:config?{enabled:config.enabled,scenarioId:config.scenarioId,resultId:config.resultId,additionalScenarios:config.additionalScenarios||[],operators:config.operators,revision:config.revision}:null,
  staff:staff.filter(e=>e.role==='operator'&&e.accessEnabled!==false).map(e=>({id:e.id,name:e.name,login:e.login})),
  transfers:(await d.prepare("SELECT call_id,event_id,state,reason,received_at,order_id,json_extract(data,'$.user.id') user_id,json_extract(data,'$.user.name') user_name,json_extract(data,'$.contact.full_name') name FROM crmcalls_incoming ORDER BY received_at DESC LIMIT 100").all()).results};
 }
@@ -50,7 +51,7 @@ export async function receiveCRMCallsIncoming(d:Db,req:Request,now=new Date().to
  try{event=incomingEventSchema.parse(JSON.parse(await readLimitedText(req,65536)));}
  catch(e){return Response.json({error:'Invalid event'},{status:e instanceof BodyTooLarge?413:400});}
  if(req.headers.get('idempotency-key')!==event.event_id||!normalizePhone(event.contact.phone))return Response.json({error:'Invalid event identity or phone'},{status:400});
- if(event.scenario.id!==config.scenarioId||event.result.id!==config.resultId)return Response.json({ignored:true});
+ if(!incomingScenarios(config).some(s=>s.scenarioId===event.scenario.id&&s.resultId===event.result.id))return Response.json({ignored:true});
  if(!config.enabled)return Response.json({error:'Import disabled'},{status:503});
  if(Date.parse(event.occurred_at)<Date.parse(config.enabledAt))return Response.json({ignored:true});
  if(Date.parse(event.occurred_at)>Date.parse(now)+300000)return Response.json({error:'Invalid event time'},{status:400});
@@ -72,7 +73,7 @@ export async function processCRMCallsIncoming(d:Db,callId:string,now=new Date().
  const row=await d.prepare("SELECT * FROM crmcalls_incoming WHERE call_id=? AND state='pending'").bind(callId).first();if(!row)return;
  const p:Payload=JSON.parse(row.data);
  const hold=async(reason:string)=>{await d.prepare("UPDATE crmcalls_incoming SET state='review',reason=?,attempted_at=? WHERE call_id=? AND state='pending'").bind(reason,now,callId).run();return {state:'review',reason};};
- if(p.scenario.id!==config.scenarioId||p.result.id!==config.resultId)return hold('Сценарий или результат больше не включён в настройках');
+ if(!incomingScenarios(config).some(s=>s.scenarioId===p.scenario.id&&s.resultId===p.result.id))return hold('Сценарий или результат больше не включён в настройках');
  const mapped=config.operators.find(o=>o.userId===p.user.id),staff=await skStaff(d),sender=staff.find(e=>e.id===mapped?.employeeId&&e.role==='operator'&&e.accessEnabled!==false);
  if(!sender)return hold('Сопоставьте оператора CRMCalls с действующим оператором CRM');
  const phones=[...new Set([p.contact.phone,...(p.contact.phones||[])].map(normalizePhone).filter(Boolean))];
