@@ -1,5 +1,11 @@
-import {packingStage,type Order} from './crm.ts';
+import {deliveryQueue,packingStage,type Order} from './crm.ts';
 import {moscowDate} from './base-distribution.ts';
+export function inDeliveryWorkspace(order:Order,view:string){
+ if(!deliveryQueue(order,view))return false;
+ if(view==='moscow'&&(order.courier||order.status==='rework'))return true;
+ return ['packing','phone','shipping','pickup','redeemed','returned'].includes(order.status);
+}
+
 export function packingDisplayStage(order:Order,now=Date.now()){
  const stage=packingStage(order);
  if(stage!=='dispatched')return stage;
