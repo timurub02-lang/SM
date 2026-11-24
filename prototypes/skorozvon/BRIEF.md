@@ -1,6 +1,6 @@
 # Scope
 
-Operate mode. Local extension prototype of the existing CRM operator workspace. User asked for a prototype without production deployment. Inherit existing app/globals.css teal/white/Arial identity; no redesign or concept selection is needed. All people and calls are synthetic. Default scenario: automatic call and opening its card; optional preference question was unanswered, so the default was retained.
+Operate mode. Local extension prototype of the existing CRM operator workspace. User asked for a prototype without production deployment. Inherit existing app/globals.css teal/white/Arial identity; no redesign or concept selection is needed. All people and calls are synthetic. The user confirmed automatic calling and opening the customer card as the primary scenario.
 
 ## Direction contract
 
