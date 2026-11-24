@@ -53,6 +53,18 @@ try{
  const enabled=JSON.parse((await call('/api/crmcalls',cookies.admin)).text).schedules[0];
  assert.equal((await call('/api/crmcalls',cookies.admin,{action:'save',schedule,revision:enabled.revision})).status,200);
  assert.equal(d.prepare('SELECT COUNT(*) AS n FROM crmcalls_items').get().n,0,'Saving a schedule does not freeze or submit the whole base');
+ const directory=await call('/api/crmcalls?directory=1',cookies.admin);assert.equal(directory.status,200,directory.text);
+ const incomingConfig={enabled:true,scenarioId:'11111111-1111-4111-8111-111111111119',resultId:'sm-result',operators:[{userId:'11111111-1111-4111-8111-111111111110',employeeId:'operator'}]};
+ assert.equal((await call('/api/crmcalls',cookies.operator,{action:'saveIncoming',config:incomingConfig,revision:''})).status,403);
+ const saveIncoming=await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:incomingConfig,revision:''});assert.equal(saveIncoming.status,200,saveIncoming.text);
+ const incomingSecret=JSON.parse(saveIncoming.text).secret;assert.equal(incomingSecret.length,64);
+ const payload={event:'call.result_saved',event_id:crypto.randomUUID(),occurred_at:new Date().toISOString(),scenario:{id:incomingConfig.scenarioId},result:{id:'sm-result',name:'СМ СРМ'},user:{id:incomingConfig.operators[0].userId,name:'Тест CRMCalls оператор'},call:{id:crypto.randomUUID(),status:'completed',comment:'Тест передачи'},contact:{id:crypto.randomUUID(),phone:'79990000888',full_name:'Синтетический клиент'}};
+ assert.equal((await call('/api/crmcalls-incoming',null,payload)).status,403);
+ const eventHeaders={Authorization:'Bearer '+incomingSecret,'Idempotency-Key':payload.event_id};
+ assert.equal((await call('/api/crmcalls-incoming',null,payload,eventHeaders)).status,200);
+ assert.equal((await call('/api/crmcalls-incoming',null,payload,eventHeaders)).status,200);
+ const received=JSON.parse((await call('/api/crmcalls?incoming=1',cookies.admin)).text);assert.equal(received.transfers[0].state,'imported');assert.ok(!JSON.stringify(received).includes(incomingSecret));
+ const incomingOrders=d.prepare('SELECT data FROM orders').all().map(r=>JSON.parse(r.data));assert.equal(incomingOrders.length,1);assert.equal(incomingOrders[0].manager,'operator');assert.equal(incomingOrders[0].status,'draft');assert.deepEqual(incomingOrders[0].items,[]);
  console.log('CRMCalls HTTP: all non-admin roles denied, identity/CSRF, protected sheets, secret masking, preview, CAS and disabled scheduling passed');
  if(process.env.CRMCALLS_UI_TEST==='1'){
   console.log('Synthetic UI available on '+origin+'; admin / '+password);
