@@ -545,3 +545,20 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .vacation-fields header p { margin: 4px 0 0; font-size: 14px; color: var(--muted-foreground, #627184); }
 .vacation-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(175px, 100%), 1fr)); gap: 12px; }
 .vacation-fields .field :is(input, select) { min-width: 0; width: 100%; min-height: 42px; padding-inline: 10px; }
+.vacation-coverage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 580px);
+  padding: 14px 18px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card, var(--background));
+  cursor: pointer;
+}
+.vacation-coverage > svg { color: var(--mac-blue, #3681dd); }
+.vacation-coverage strong, .vacation-coverage small { display: block; overflow-wrap: anywhere; }
+.vacation-coverage small { margin-top: 3px; color: var(--muted-foreground, #627184); }
+.vacation-coverage:has([data-state=checked]) { border-color: var(--mac-blue, #3681dd); }

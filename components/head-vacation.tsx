@@ -1,4 +1,4 @@
-import {CalendarDays,ChevronDown} from 'lucide-react';
+import {CalendarDays,ChevronDown,Users} from 'lucide-react';
 import {useState} from 'react';
 import {departments,type Employee} from '@/lib/crm';
 import {coversHead,moscowWorkDay} from '@/lib/head-vacation';
@@ -28,5 +28,14 @@ export function VacationForm({head,staff,busy,save}:{head:Employee;staff:Employe
  </form>}</section>;
 }
 export function VacationSwitches({actor,staff,busy,save}:{actor:Employee;staff:Employee[];busy:boolean;save:Save}){
- return <>{staff.filter(head=>coversHead(actor,head)).map(head=><label key={head.id} className="sidebar-settings-toggle"><Switch checked={!!head.vacation?.enabled} disabled={busy} onCheckedChange={enabled=>void save({action:'headVacation',operation:'toggle',id:head.id,version:head.version,enabled})}/>Показывать также отдел {departments[head.department!]} · {head.name}</label>)}</>;
+ return <>{staff.filter(head=>coversHead(actor,head)).map(head=>(
+  <label key={head.id} className="vacation-coverage">
+   <Users size={20} aria-hidden="true"/>
+   <span><strong>Показывать отдел {departments[head.department!]}</strong>
+    <small>Вы замещаете: {head.name}</small>
+   </span>
+   <Switch checked={!!head.vacation?.enabled} disabled={busy}
+    onCheckedChange={enabled=>void save({action:'headVacation',operation:'toggle',id:head.id,version:head.version,enabled})}/>
+  </label>
+ ))}</>;
 }
