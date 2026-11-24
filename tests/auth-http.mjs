@@ -190,6 +190,25 @@ try{
   const e={...staff[1],id,login:id,department,role};db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(id,JSON.stringify(e));db.prepare('INSERT INTO auth_accounts VALUES(?,?,1)').run(id,hash);
   const loginResult=await login(id);assert.equal(loginResult.status,200);return {e,cookie:loginResult.headers.get('set-cookie').split(';')[0]};
  }
+ {
+  const replacement=await fixture('vacation-rk','2','department_head');
+  const owner=await fixture('vacation-owner','1','department_head');
+  const vacation=(cookie,operation,params={})=>call('/api/crm',{cookie,body:{action:'headVacation',operation,id:owner.e.id,version:db.prepare('SELECT version FROM employees WHERE id=?').get(owner.e.id).version,...params}});
+  const schedule={from:moscowDate(),until:moscowDate(),substitute:replacement.e.id};
+  assert.notEqual((await vacation(replacement.cookie,'schedule',schedule)).status,200);
+  assert.equal((await vacation(owner.cookie,'schedule',schedule)).status,200);
+  const check=async allowed=>{
+   const state=(await call('/api/crm',{cookie:replacement.cookie})).data;
+   assert.equal(state.clients.some(c=>c.id==='c-one'),allowed);
+   assert.equal(state.orders.some(o=>o.id==='o-one'),allowed);
+   assert(state.clients.some(c=>c.id==='c-two'));
+  };
+  await check(false);
+  assert.equal((await vacation(replacement.cookie,'toggle',{enabled:true})).status,200);
+  await check(true);
+  assert.equal((await vacation(cookies.admin,'end')).status,200);
+  await check(false);
+ }
  function records(id){
   for(const [i,status] of [...statuses,'none'].entries()){
    const c={id:id+'-c-'+status,name:'Client',phone:'+7'+String(8000000000+db.prepare('SELECT COUNT(*) AS n FROM clients').get().n),city:'',address:'',source:'test.xlsx · Т3',sheet:'К',returnSheet:'Т3',trialReturnSheet:'Т1',owner:id,createdAt:new Date().toISOString(),version:1};db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(c.id,c.phone,JSON.stringify(c));

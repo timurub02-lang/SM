@@ -1,3 +1,4 @@
+import {managesWorkDepartment,coversHead} from '@/lib/head-vacation';
 import {canReviewOrders,reviewRole} from '@/lib/order-review-access';
 import {needsHandoffReview,confirmByHead,canHeadRequestEdit} from '@/lib/head-confirmation';
 import {orderFormSchema,primaryOrderFormChange} from '@/lib/order-form-save';
@@ -407,7 +408,7 @@ async function handlePOST(request:Request){
  }else if(p.action==="createClient"){
   if(!employee||!["admin","department_head"].includes(employee.role))throw Error("Добавлять клиентов могут только администратор и руководитель отдела");
   const data=clientSchema.parse(p.client);ownerValid(data.owner);const baseType=z.enum(baseTypes).prefault("M").parse(p.baseType);
-  if(employee.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");
+  if(employee.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&managesWorkDepartment(employee,e.department,s.employees)))throw Error("Выберите оператора своего отдела");
   const duplicateRow=await d.prepare("SELECT c.data,c.version FROM clients c JOIN client_phone_index p ON p.client_id=c.id WHERE p.phone=?").bind(normalizedPhone(data.phone)).first<{data:string;version:number}>();const duplicate:Client|undefined=duplicateRow?{...JSON.parse(duplicateRow.data),version:duplicateRow.version}:undefined;
   if(duplicate?.owner)throw Error("Клиент уже существует и закреплён за "+(s.employees.find(e=>e.id===duplicate.owner)?.login||duplicate.owner));
   if(duplicate&&["ЧС","ПВ"].includes(clientSheet(duplicate)))throw Error("Клиент находится на листе "+clientSheet(duplicate)+" и не участвует в раздаче");
@@ -433,7 +434,7 @@ async function handlePOST(request:Request){
   const result=await d.batch([d.prepare("UPDATE clients SET phone=?,data=?,version=version+1 WHERE id=? AND version=?").bind(next.phone,json(next),c.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),c.id,mutation)]);
   if(!result[0].meta.changes)throw Error("Карточка уже изменена. Обновите страницу");
  }else if(p.action==="updateClient"){
-  const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(user.employee&&["operator","department_head"].includes(employee!.role)?{...p.client,phone:c.phone}:p.client);if(employee?.role==="operator")data.owner=c.owner;ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
+  const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(user.employee&&["operator","department_head"].includes(employee!.role)?{...p.client,phone:c.phone}:p.client);if(employee?.role==="operator")data.owner=c.owner;ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&managesWorkDepartment(employee,e.department,s.employees)))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
   const firstSheet=s.clients.map(c=>sourceSheet(c.source)).find(x=>x&&x!=="К")||"Т1";
   const next={...c,...data,...clientAssignment(c,data.owner,now,firstSheet),addressReview:data.address===c.address?c.addressReview:false,_mutation:mutation};
   if(p.client.sheet!==undefined){const saved=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());Object.assign(next,changeClientSheet(c,next,p.client.sheet,employee?.role||'',config[c.baseType||'M'].sheets.map(s=>s.name),now));}
@@ -447,7 +448,7 @@ async function handlePOST(request:Request){
   if(p.action==="requestOrder"){
    const manager=s.employees.find(e=>e.id===c.owner&&e.role==="operator");
    if(!manager?.department)throw Error("Назначьте клиенту оператора с указанным отделом");
-   if(employee.role==="operator"&&employee.id!==manager.id||employee.role==="department_head"&&employee.department!==manager.department)throw Error("Клиент другого оператора или отдела");
+   if(employee.role==="operator"&&employee.id!==manager.id||employee.role==="department_head"&&!managesWorkDepartment(employee,manager.department,s.employees))throw Error("Клиент другого оператора или отдела");
    if(!["operator","department_head","admin","logistic","chief_logistic","redemption"].includes(employee.role))throw Error("Нет доступа");
    if(!hasActiveOrder(s.orders,c.id))throw Error("Запрос не нужен — активных заказов нет");
    if(request&&["pending","approved"].includes(request.status))throw Error("Запрос уже отправлен или одобрен");
@@ -455,7 +456,7 @@ async function handlePOST(request:Request){
    message="Запрос отправлен руководителю отдела";
   }else{
    if(!request||request.status!=="pending"||request.id!==p.requestId)throw Error("Запрос уже обработан");
-   if(employee.role!=="admin"&&(employee.role!=="department_head"||!employee.department||employee.department!==request.department))throw Error("Запрос доступен руководителю этого отдела");
+   if(employee.role!=="admin"&&(employee.role!=="department_head"||!employee.department||!managesWorkDepartment(employee,request.department,s.employees)))throw Error("Запрос доступен руководителю этого отдела");
    request={...request,status:z.enum(["approved","rejected"]).parse(p.decision),decidedAt:now,decidedBy:employee.id};message=request.status==="approved"?"Повторный заказ разрешён":"Запрос отклонён";
   }
   const decision=orderDecisionReminder({...c,orderRequest:request},s.employees);
@@ -468,7 +469,7 @@ async function handlePOST(request:Request){
   const sourceIncoming=p.incomingId&&employee?await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees,c.id):undefined;
   if(sourceIncoming&&hasActiveOrder(s.orders,c.id))throw Error('У клиента уже есть действующий заказ');
   if(!sourceIncoming&&employee?.role==="operator"&&c.owner!==employee.id)throw Error("Можно оформить заказ только своему клиенту");
-  if(!sourceIncoming&&employee?.role==="department_head"&&!s.employees.some(e=>e.id===c.owner&&e.role==="operator"&&!!employee.department&&e.department===employee.department))throw Error("Клиент другого отдела");
+  if(!sourceIncoming&&employee?.role==="department_head"&&!s.employees.some(e=>e.id===c.owner&&e.role==="operator"&&managesWorkDepartment(employee,e.department,s.employees)))throw Error("Клиент другого отдела");
   const approved=c.orderRequest?.status==="approved"&&c.orderRequest.manager===c.owner&&(c.orderRequest.actorId===employee?.id||employee?.role==="admin");
   if(hasActiveOrder(s.orders,c.id)&&!approved)throw Error("У клиента уже есть активный заказ. Запросите разрешение руководителя отдела");
   const items=itemsSchemaFor(employee?.role==='admin').parse(p.items);validateManualOrderAmount(items);const comment=z.string().max(3000).parse(p.comment||"");
@@ -873,6 +874,26 @@ async function handlePOST(request:Request){
   const result=await d.batch(statements);
   if(!result[0].meta.changes)throw Error('Данные изменились. Обновите страницу и повторите удаление');
   message=summary;
+ }else if(p.action==="headVacation"){
+  const head=s.employees.find(x=>x.id===p.id);
+  if(!employee||!head?.department||head.role!=='department_head')throw Error('Выберите руководителя отдела');
+  let vacation=head.vacation;
+  if(p.operation==='toggle'){
+   if(!vacation||!coversHead(employee,head)||typeof p.enabled!=='boolean')throw Error('Замещение недоступно');
+   vacation={...vacation,enabled:p.enabled};
+  }else{
+   if(employee.role!=='admin'&&employee.id!==head.id)throw Error('Можно оформить только свой отпуск');
+   if(p.operation==='end')vacation=undefined;
+   else if(p.operation==='schedule'){
+    const substitute=s.employees.find(x=>x.id===p.substitute);
+    if(!substitute?.department||substitute.role!=='department_head'||substitute.department===head.department)throw Error('Выберите руководителя другого отдела');
+    const from=z.iso.date().parse(p.from),until=z.iso.date().parse(p.until);
+    if(from>until)throw Error('Окончание отпуска раньше начала');
+    vacation={substitute:substitute.id,department:head.department,substituteDepartment:substitute.department,from,until,enabled:false};
+   }else throw Error('Неизвестное действие');
+  }
+  const result=await d.prepare("UPDATE employees SET data=json_set(data,'$.vacation',json(?)),version=version+1 WHERE id=? AND version=?").bind(json(vacation??null),head.id,p.version).run();
+  if(!result.meta.changes)throw Error('Замещение уже изменилось. Обновите карточку');
  }else if(p.action==="saveEmployee"){
   const existing=s.employees.find(e=>e.id===p.id);
   const data=employeeForManager(employee,{...p.employee,sz:p.employee.sz??existing?.sz??false},existing);
@@ -894,7 +915,7 @@ async function handlePOST(request:Request){
   const rateLedger=p.employee.leaderRates!==undefined?await d.prepare("SELECT data FROM settings WHERE id='premium-ledger'").first<{data:string}>():null;
   const rateEdit=p.employee.leaderRates!==undefined?editLeaderRates(employee,existing,s.employees,p.employee.leaderRates,rateLedger?JSON.parse(rateLedger.data):null):null;
   if(rateEdit&&data.role!=='department_head')throw Error('Проценты доступны только руководителю');
-  const saved=json({...data,...(existing?.cashDisabled?{cashDisabled:true}:{}),...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:rateEdit?.terms??existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
+  const saved=json({...data,...(existing?.vacation&&data.role==="department_head"&&existing.department===data.department?{vacation:existing.vacation}:{}),...(existing?.cashDisabled?{cashDisabled:true}:{}),...(existing?.canCreateRedemptionStaff&&data.role==='redemption'?{canCreateRedemptionStaff:true}:{}),...(data.role==='department_head'&&existing?.leaderPremium?{leaderPremium:rateEdit?.terms??existing.leaderPremium}:{}),...(oktell?{oktell}:{}),id:eid,...(!p.id?{version:1}:{})});
   const rateGuard=rateEdit?.changed?(rateLedger?" AND EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger' AND data=?)":" AND NOT EXISTS(SELECT 1 FROM settings WHERE id='premium-ledger')"):'';
   const statements=[p.id?d.prepare("UPDATE employees SET data=?,version=version+1 WHERE id=? AND version=?"+rateGuard).bind(saved,eid,p.version,...(rateEdit?.changed&&rateLedger?[rateLedger.data]:[])):d.prepare("INSERT INTO employees(id,data) VALUES(?,?)").bind(eid,saved)];
   const guard="EXISTS(SELECT 1 FROM employees WHERE id=? AND data=? AND version=?)";
