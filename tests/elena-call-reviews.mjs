@@ -6,9 +6,10 @@ const db=openDatabase(':memory:');
 const elena={id:'E-45fa4ec3-eac',role:'purchasing',name:'Елена'};
 const url=path=>new URL(path,'https://crm.test');
 try{
- for(const actor of [elena,{...elena,impersonation:{adminId:'admin'}},{...elena,id:'other'},{...elena,role:'admin'},{...elena,role:'operator'}]){
+ const adminAsElena={...elena,impersonation:{adminId:'admin',ownerRole:'admin'}};
+ for(const actor of [elena,adminAsElena,{...elena,impersonation:{ownerRole:'department_head'}},{...adminAsElena,id:'other'},{...elena,id:'other'},{...elena,role:'admin'},{...elena,role:'operator'}]){
   for(const [path,method] of [['/api/call-reviews','GET'],['/api/call-reviews','POST'],['/api/call-history/recording?review=1','GET']]){
-   assert.equal(mayCallEndpoint(actor,url(path),method,{}),actor===elena);
+   assert.equal(mayCallEndpoint(actor,url(path),method,{}),actor===elena||actor===adminAsElena);
   }
  }
  assert.equal(mayCallEndpoint(elena,url('/api/call-history'),'GET',{}),false);
