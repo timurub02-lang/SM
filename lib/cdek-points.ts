@@ -1,4 +1,7 @@
 import type {AddressParts} from './address.ts';
+export function eligibleRecipientPoint(point:{status?:string;is_handout?:boolean;allowed_cod?:boolean}){
+ return point.status==='ACTIVE'&&point.is_handout===true&&point.allowed_cod===true;
+}
 type Point={code:string;address:string;postalCode?:string};
 const words=(value:string)=>value.toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/пр-кт|пр-т/g,'проспект').replace(/[^а-яa-z0-9]+/g,' ').split(' ').filter(w=>w&&!['ул','улица','им','имени','проспект','пер','переулок','б','р','бульвар','наб','набережная','ш','шоссе'].includes(w));
 export function rankRecipientPoints<T extends Point>(points:T[],address?:Partial<AddressParts>){

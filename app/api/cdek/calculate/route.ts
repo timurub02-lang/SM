@@ -1,4 +1,4 @@
-import {rankRecipientPoints} from '@/lib/cdek-points';
+import {eligibleRecipientPoint,rankRecipientPoints} from '@/lib/cdek-points';
 import {readLimitedText} from '@/lib/request-body';
 import {orderRouting} from '@/lib/cdek-routing-store';
 import {authenticated} from '@/lib/api-auth';
@@ -25,11 +25,11 @@ async function handlePOST(req:Request){
   const keys=JSON.parse(config.data);const token=await cdekToken(keys.clientId,keys.clientSecret);
   let deliveryPoint:{code:string;address:string;workTime:string}|undefined;
   if(p.delivery==='cdek_pickup'){
-   const query=new URLSearchParams({type:'PVZ',country_code:'RU',postal_code:order.addressParts?.postalCode||'',is_handout:'true',weight_max:String(Math.ceil(p.weight)),length:String(p.length),width:String(p.width),height:String(p.height)});
+   const query=new URLSearchParams({type:'PVZ',country_code:'RU',postal_code:order.addressParts?.postalCode||'',is_handout:'true',allowed_cod:'true',weight_max:String(Math.ceil(p.weight)),length:String(p.length),width:String(p.width),height:String(p.height)});
    const response=await fetch(`https://api.cdek.ru/v2/deliverypoints?${query}`,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)});
    const data=await response.json();
    if(!response.ok||!Array.isArray(data))throw Error('СДЭК: не удалось загрузить ПВЗ. Повторите попытку');
-   const points=rankRecipientPoints(data.filter(x=>x.status==='ACTIVE'&&x.is_handout).map(x=>({code:x.code,address:x.location?.address_full||x.location?.address||x.code,postalCode:x.location?.postal_code,workTime:x.work_time||''})),order.addressParts);
+   const points=rankRecipientPoints(data.filter(eligibleRecipientPoint).map(x=>({code:x.code,address:x.location?.address_full||x.location?.address||x.code,postalCode:x.location?.postal_code,workTime:x.work_time||''})),order.addressParts);
    if(p.action==='points')return Response.json({points},{headers:{'Cache-Control':'no-store'}});
    const point=points.find(x=>x.code===p.deliveryPoint);
    if(!point)throw Error('СДЭК: выберите доступный ПВЗ получателя перед расчётом');

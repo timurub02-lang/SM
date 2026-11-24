@@ -138,14 +138,15 @@ try{
  change(s=>{s.points=[
   {code:'PVZ-ONE',status:'ACTIVE',is_handout:true,is_reception:true,allowed_cod:true,work_time:'09:00–21:00',location:{address_full:'Москва, ул. Тестовая, д. 2',postal_code:'101000'}},
   {code:'CLOSED',status:'INACTIVE',is_handout:true},
-  {code:'SENDER',status:'ACTIVE',is_handout:false}
+  {code:'SENDER',status:'ACTIVE',is_handout:false},
+  {code:'NO-COD',status:'ACTIVE',is_handout:true,allowed_cod:false}
  ];});
  const quoteInput={orderId:pickupOrder.id,slot:1,delivery:'cdek_pickup',originPostalCode:'101000',originMode:'warehouse',weight:.875,length:10,width:10,height:10};
  const pointList=await call('/api/cdek/calculate','logistic',{...quoteInput,action:'points'});
  assert.equal(pointList.status,200,pointList.text);
  assert.deepEqual(pointList.data.points.map(p=>p.code),['PVZ-ONE']);
  assert.equal(db.prepare('SELECT data FROM settings WHERE id=?').get('cdek-quote-'+pickupOrder.id),undefined,'Listing points does not save a quote');
- for(const deliveryPoint of [undefined,'CLOSED','SENDER','UNKNOWN'])assert.equal((await call('/api/cdek/calculate','logistic',{...quoteInput,deliveryPoint})).status,400);
+ for(const deliveryPoint of [undefined,'CLOSED','SENDER','NO-COD','UNKNOWN'])assert.equal((await call('/api/cdek/calculate','logistic',{...quoteInput,deliveryPoint})).status,400);
  const quote=await call('/api/cdek/calculate','logistic',{...quoteInput,deliveryPoint:'PVZ-ONE'});
  assert.equal(quote.status,200,quote.text);
  await call('/api/crm','logistic');

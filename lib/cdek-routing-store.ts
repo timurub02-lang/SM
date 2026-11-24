@@ -9,7 +9,7 @@ export async function routingSettings(){
  const accounts:RoutingAccount[]=rows.results.map(r=>{const a=JSON.parse(r.data);return {slot:Number(r.id.slice(-1)),name:a.name,configured:!!(a.clientId&&a.clientSecret)};});
  return {config,accounts,raw:row?.data||''};
 }
-export async function orderRouting(order:Order){
+export async function orderRouting(order:Pick<Order,'id'|'manager'|'items'>){
  const settings=await routingSettings();const d=db();
  const manager=await d.prepare('SELECT data FROM employees WHERE id=?').bind(order.manager).first<{data:string}>();
  // ponytail: load shipment summaries for this small CRM; aggregate per window in SQL if volume grows.

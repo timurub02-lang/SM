@@ -511,3 +511,6 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .incoming-miss-history{list-style:none;padding:0;margin:0;display:grid;gap:12px}
 .incoming-miss-history li{display:grid;gap:6px;padding:12px;border:1px solid var(--border);border-radius:10px}
 .incoming-miss-history audio{width:100%;max-width:100%}
+
+.notice.operator-delivery-estimate{display:flex;flex-direction:row;align-items:flex-start;gap:10px;text-align:left;padding:12px 14px;background:color-mix(in srgb,var(--primary) 8%,var(--card));color:var(--foreground)}
+.operator-delivery-estimate>svg{flex:none;margin-top:2px}.operator-delivery-estimate strong,.operator-delivery-estimate span{display:block}

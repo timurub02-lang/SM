@@ -7,7 +7,7 @@ import {orderRouting,routingReservationGuard} from '@/lib/cdek-routing-store';
 import {authenticated} from '@/lib/api-auth';
 import {initInventory} from '@/lib/inventory';
 import {applyCdekShipment} from '@/lib/cdek-shipment-sync';
-import {rankRecipientPoints} from '@/lib/cdek-points';
+import {eligibleRecipientPoint,rankRecipientPoints} from '@/lib/cdek-points';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {cdekToken} from '@/lib/cdek';
@@ -54,9 +54,10 @@ async function handleGET(req:Request){
    const side=q.get('points');const postal=side==='sender'?t.params.originPostalCode:c.order.addressParts?.postalCode;
    if(!postal)throw Error('Нет индекса для поиска ПВЗ');
    const query=new URLSearchParams({type:'PVZ',country_code:'RU',postal_code:postal,[side==='sender'?'is_reception':'is_handout']:'true',weight_max:String(Math.ceil(t.params.weight)),length:String(t.params.length),width:String(t.params.width),height:String(t.params.height)});
+   if(side==='recipient')query.set('allowed_cod','true');
    const api=await apiFor(t.slot);const data=await json(await api(`/deliverypoints?${query}`));
    if(!Array.isArray(data))throw Error('СДЭК не вернул список ПВЗ');
-   const points=data.filter(x=>x.status==='ACTIVE').map(x=>({code:x.code,address:x.location?.address_full||x.location?.address||x.code,postalCode:x.location?.postal_code,workTime:x.work_time,allowedCod:x.allowed_cod!==false}));
+   const points=data.filter(x=>side==='recipient'?eligibleRecipientPoint(x):x.status==='ACTIVE'&&x.is_reception).map(x=>({code:x.code,address:x.location?.address_full||x.location?.address||x.code,postalCode:x.location?.postal_code,workTime:x.work_time,allowedCod:x.allowed_cod===true}));
    return reply({points:side==='recipient'?rankRecipientPoints(points,c.order.addressParts):points});
   }
   const products=await db().prepare('SELECT data FROM products').all<{data:string}>();
@@ -158,7 +159,7 @@ async function handlePOST(req:Request){
     const filters=new URLSearchParams({code,postal_code:side==='sender'?t.params.originPostalCode:c.order.addressParts?.postalCode||'',type:'PVZ',weight_max:String(Math.ceil(t.params.weight)),length:String(t.params.length),width:String(t.params.width),height:String(t.params.height)});
     const points=await json(await api(`/deliverypoints?${filters}`));const point=Array.isArray(points)?points.find(x=>x.code===code):null;
     if(!point||point.status!=='ACTIVE'||side==='sender'&&!point.is_reception||side==='recipient'&&!point.is_handout)throw Error('Выбранный ПВЗ недоступен. Выберите другой');
-    if(side==='recipient'&&(payload.packages[0].items.some(x=>x.payment.value>0)||form.deliveryCost>0)&&point.allowed_cod===false)throw Error('ПВЗ не принимает наложенный платёж');
+    if(side==='recipient'&&!eligibleRecipientPoint(point))throw Error('ПВЗ не принимает наложенный платёж');
    }
    const guard=routingReservationGuard(routing,c.order);
    const shipment:Shipment={recipientPhone:payload.recipient.phones[0].number,routingAmountCents:routing.amountCents,routingRuleId:routing.choice?.ruleId,routingReason:routing.choice?.reason,attempt:crypto.randomUUID(),slot,account,state:'sending',createdAt:new Date().toISOString(),form};let pending=JSON.stringify(shipment);
