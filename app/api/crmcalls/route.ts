@@ -51,7 +51,7 @@ async function post(req:Request){
    }
    return Response.json(await saveIncomingConfig(db(),config,p.revision));
   }
-  if(p.action==='retryIncoming'){await runCRMCallsIncoming(db());return Response.json(await incomingDashboard(db()));}
+  if(p.action==='retryIncoming'){await runCRMCallsIncoming(db(),true);return Response.json(await incomingDashboard(db()));}
   if(p.action==='connect'){await saveCRMCallsKey(db(),p.apiKey,p.revision);return Response.json({message:'Подключение проверено. Автоматическая выгрузка включается отдельно в проекте.'});}
   if(p.action==='reconcile'){
    const c=await readCRMCalls(db());if(!c?.apiKey)throw Error('Сначала подключите CRMCalls');

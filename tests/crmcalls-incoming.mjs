@@ -18,12 +18,13 @@ assert.equal(JSON.parse((await d.prepare('SELECT data FROM clients').first()).da
 await Promise.all([send(first),send({...first,event_id:crypto.randomUUID()})]);
 assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,1);
 assert.equal((await send({...event(),event_id:first.event_id})).status,409);
-await send(event());assert.match((await incomingDashboard(d)).transfers.find(t=>t.state==='pending').reason,/действующий заказ/);
+await send(event());assert.match((await incomingDashboard(d)).transfers.find(t=>t.state==='review').reason,/действующий заказ/);
 const unknown=event({user:{id:'unknown',name:'Same name'},contact:{...first.contact,id:crypto.randomUUID(),phone:'79990000200'}});
 await send(unknown);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,1);
 assert.match((await incomingDashboard(d)).transfers.find(t=>t.call_id===unknown.call.id).reason,/Сопоставьте/);
 const changed=await saveIncomingConfig(d,{...config,operators:[...config.operators,{userId:'unknown',employeeId:'op'}]},saved.revision);assert.equal(changed.secret,undefined);
-await runCRMCallsIncoming(d);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,2);
+await runCRMCallsIncoming(d);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,1,'Business review is never retried automatically');
+await runCRMCallsIncoming(d,true);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,2);
 await assert.rejects(()=>saveIncomingConfig(d,config,saved.revision),/изменились/);
 // Different events for the same new phone must never create two orders.
 const concurrent=Array.from({length:3},()=>event({contact:{id:crypto.randomUUID(),phone:'79990000300',full_name:'Concurrent'}}));

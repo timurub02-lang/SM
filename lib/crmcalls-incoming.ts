@@ -58,7 +58,7 @@ export async function receiveCRMCallsIncoming(d:Db,req:Request,now=new Date().to
  const existing=await d.prepare('SELECT call_id,event_id FROM crmcalls_incoming WHERE call_id=? OR event_id=?').bind(event.call.id,event.event_id).all();
  if(existing.results.some((r:any)=>r.call_id!==event.call.id))return Response.json({error:'Event conflict'},{status:409});
  if(existing.results.length)return Response.json({duplicate:true});
- const r=await d.prepare("INSERT OR IGNORE INTO crmcalls_incoming(call_id,event_id,data,received_at) SELECT ?,?,?,? WHERE (SELECT COUNT(*) FROM crmcalls_incoming WHERE state='pending')<10000").bind(event.call.id,event.event_id,JSON.stringify(event),now).run();
+ const r=await d.prepare("INSERT OR IGNORE INTO crmcalls_incoming(call_id,event_id,data,received_at) SELECT ?,?,?,? WHERE (SELECT COUNT(*) FROM crmcalls_incoming WHERE state IN ('pending','review'))<10000").bind(event.call.id,event.event_id,JSON.stringify(event),now).run();
  if(!r.meta.changes){
   const saved=await d.prepare('SELECT call_id FROM crmcalls_incoming WHERE call_id=?').bind(event.call.id).first();
   if(!saved)return Response.json({error:'Queue full'},{status:503});
@@ -71,7 +71,7 @@ export async function processCRMCallsIncoming(d:Db,callId:string,now=new Date().
  const config=await readIncomingConfig(d);if(!config?.enabled)return;
  const row=await d.prepare("SELECT * FROM crmcalls_incoming WHERE call_id=? AND state='pending'").bind(callId).first();if(!row)return;
  const p:Payload=JSON.parse(row.data);
- const hold=async(reason:string)=>{await d.prepare("UPDATE crmcalls_incoming SET reason=?,attempted_at=? WHERE call_id=? AND state='pending'").bind(reason,now,callId).run();return {state:'pending',reason};};
+ const hold=async(reason:string)=>{await d.prepare("UPDATE crmcalls_incoming SET state='review',reason=?,attempted_at=? WHERE call_id=? AND state='pending'").bind(reason,now,callId).run();return {state:'review',reason};};
  if(p.scenario.id!==config.scenarioId||p.result.id!==config.resultId)return hold('Сценарий или результат больше не включён в настройках');
  const mapped=config.operators.find(o=>o.userId===p.user.id),staff=await skStaff(d),sender=staff.find(e=>e.id===mapped?.employeeId&&e.role==='operator'&&e.accessEnabled!==false);
  if(!sender)return hold('Сопоставьте оператора CRMCalls с действующим оператором CRM');
@@ -104,9 +104,9 @@ export async function processCRMCallsIncoming(d:Db,callId:string,now=new Date().
  await reconcileIncomingOwners(d,clientId,now);
  return {state:'imported',orderId:number};
 }
-export async function runCRMCallsIncoming(d:Db){
+export async function runCRMCallsIncoming(d:Db,includeReview=false){
  if(!(await readIncomingConfig(d))?.enabled)return;
  await initCRMCallsIncoming(d);
- const rows=(await d.prepare("SELECT call_id FROM crmcalls_incoming WHERE state='pending' ORDER BY attempted_at,received_at LIMIT 50").all()).results;
- for(const row of rows)try{await processCRMCallsIncoming(d,row.call_id);}catch{await d.prepare("UPDATE crmcalls_incoming SET reason='Временная ошибка обработки. Повтор будет выполнен автоматически',attempted_at=? WHERE call_id=? AND state='pending'").bind(new Date().toISOString(),row.call_id).run();}
+ const rows=(await d.prepare("SELECT call_id FROM crmcalls_incoming WHERE state='pending' OR (?=1 AND state='review') ORDER BY attempted_at,received_at LIMIT 50").bind(includeReview?1:0).all()).results;
+ for(const row of rows)try{if(includeReview)await d.prepare("UPDATE crmcalls_incoming SET state='pending' WHERE call_id=? AND state='review'").bind(row.call_id).run();await processCRMCallsIncoming(d,row.call_id);}catch{await d.prepare("UPDATE crmcalls_incoming SET reason='Временная ошибка обработки. Повтор будет выполнен автоматически',attempted_at=? WHERE call_id=? AND state='pending'").bind(new Date().toISOString(),row.call_id).run();}
 }
