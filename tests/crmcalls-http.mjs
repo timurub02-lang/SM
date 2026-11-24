@@ -65,6 +65,13 @@ try{
  assert.equal((await call('/api/crmcalls-incoming',null,payload,eventHeaders)).status,200);
  const received=JSON.parse((await call('/api/crmcalls?incoming=1',cookies.admin)).text);assert.equal(received.transfers[0].state,'imported');assert.ok(!JSON.stringify(received).includes(incomingSecret));
  const incomingOrders=d.prepare('SELECT data FROM orders').all().map(r=>JSON.parse(r.data));assert.equal(incomingOrders.length,1);assert.equal(incomingOrders[0].manager,'operator');assert.equal(incomingOrders[0].status,'draft');assert.deepEqual(incomingOrders[0].items,[]);
+ const bothConfig={...received.config,additionalScenarios:[{scenarioId:'22222222-2222-4222-8222-222222222222',resultId:'sm-j'}]};
+ assert.equal((await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:{...bothConfig,additionalScenarios:[{...bothConfig.additionalScenarios[0],resultId:'sm-result'}]},revision:received.config.revision})).status,400);
+ const saveBoth=await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:bothConfig,revision:received.config.revision});assert.equal(saveBoth.status,200,saveBoth.text);
+ const second={...payload,event_id:crypto.randomUUID(),scenario:{id:bothConfig.additionalScenarios[0].scenarioId},result:{id:'sm-j'},call:{id:crypto.randomUUID()},contact:{id:crypto.randomUUID(),phone:'79990000777'}};
+ assert.equal((await call('/api/crmcalls-incoming',null,second,{...eventHeaders,'Idempotency-Key':second.event_id})).status,200);
+ assert.equal(d.prepare('SELECT COUNT(*) n FROM orders').get().n,2);
+ const bothDashboard=JSON.parse((await call('/api/crmcalls?incoming=1',cookies.admin)).text);assert.deepEqual(bothDashboard.config.operators,incomingConfig.operators);assert.deepEqual(bothDashboard.config.additionalScenarios,bothConfig.additionalScenarios);
  console.log('CRMCalls HTTP: all non-admin roles denied, identity/CSRF, protected sheets, secret masking, preview, CAS and disabled scheduling passed');
  if(process.env.CRMCALLS_UI_TEST==='1'){
   console.log('Synthetic UI available on '+origin+'; admin / '+password);
