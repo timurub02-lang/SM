@@ -1,6 +1,6 @@
 import type {Order,Employee} from './crm.ts';
 import {isDepartmentOrder} from './department-orders.ts';
-export type PickupPoint={code:string;address:string;workTime:string;postalCode?:string;sameStreet?:boolean;samePostalCode?:boolean;allowedCod?:boolean};
+export type PickupPoint={code:string;address:string;workTime:string;city?:string;sameLocality?:boolean;postalCode?:string;sameStreet?:boolean;samePostalCode?:boolean;allowedCod?:boolean};
 export const pickupPointContext=(o:Pick<Order,'delivery'|'address'|'addressParts'|'items'>)=>JSON.stringify([o.delivery,o.address,o.addressParts,o.items.map(i=>[i.name,i.quantity])]);
 export function orderPickupPoint(o:Pick<Order,'delivery'|'address'|'addressParts'|'items'|'cdekTariff'|'cdekPickupPoint'>){
  if(o.delivery!=='cdek_pickup')return undefined;

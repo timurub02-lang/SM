@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {recipientPoints} from '../lib/cdek-recipient-points.ts';
+const point=(code,city,city_code,street='Ленина')=>({code,status:'ACTIVE',allowed_cod:true,is_handout:true,location:{city,city_code,address_full:city+', ул. '+street}});
+const remote=point('remote','Другой',2),local=point('local','Новошахово',1,'Мира');
+const query=new URLSearchParams({postal_code:'452186',allowed_cod:'true'});
+let paths=[];
+const load=async path=>{paths.push(path);return path.startsWith('location/')?[{code:1,city:'Новошахово',region_code:27}]:path.includes('region_code')?[remote,local,{...remote,code:'no-cod',allowed_cod:false}]:[];};
+const result=await recipientPoints(query,{postalCode:'452186',city:'село Новошахово',street:'Ленина'},load);
+assert.deepEqual(result.points.map(p=>p.code),['local','remote']);
+assert.equal(result.points[1].sameLocality,false);assert.equal(result.points[1].sameStreet,false);
+assert.equal(result.warning,'');assert(paths[2].includes('allowed_cod=true'));assert(!paths[2].includes('postal_code'));
+const failed=await recipientPoints(query,{postalCode:'452186'},async path=>{if(path.startsWith('location'))throw Error();return [local];});
+assert.equal(failed.points.length,1);assert(failed.warning);assert.equal(failed.points[0].sameLocality,undefined);
+console.log('Regional pickup search, locality priority, COD and partial failure passed');
