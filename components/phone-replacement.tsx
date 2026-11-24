@@ -1,11 +1,12 @@
 'use client';
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {statuses} from '@/lib/crm';
 import {Tabs,TabsList,TabsTrigger,TabsContent} from './ui/tabs';
 import {AlertDialog,AlertDialogContent,AlertDialogHeader,AlertDialogTitle,AlertDialogDescription,AlertDialogFooter,AlertDialogCancel,AlertDialogAction} from './ui/alert-dialog';
 import {cdekStatuses} from '@/lib/cdek-statuses';
 import {readReplacementCsv} from '@/lib/replacement-csv';
 export function PhoneReplacementSettings(){
+ const csvInput=useRef<HTMLInputElement>(null);
  const [warnRemoved,setWarnRemoved]=useState(false);
  const [data,setData]=useState<any>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[numbers,setNumbers]=useState('');
  const [csv,setCsv]=useState<{name:string;numbers:string[]}|null>(null);
@@ -54,13 +55,13 @@ export function PhoneReplacementSettings(){
  <AlertDialog open={warnRemoved} onOpenChange={setWarnRemoved}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Освобождать номер при удалении из СДЭК?</AlertDialogTitle><AlertDialogDescription>Обычно при возврате заказа из СДЭК на сборку подменный номер сохраняется для повторной выгрузки. Если включить «Удалён», после подтверждения удаления накладной номер освободится и сможет перейти другому заказу. При повторной выгрузке может назначиться другой номер. Чтобы сохранить прежнюю логику, оставьте галочку снятой. Изменение вступит в силу только после сохранения настроек.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Оставить номер за заказом</AlertDialogCancel><AlertDialogAction onClick={()=>change('release',{...data.config.release,cdek:[...data.config.release.cdek,'REMOVED']})}>Всё равно включить</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
  <button className="primary" disabled={busy} onClick={()=>request({action:'save',config:data.config})}>Сохранить настройки</button>
  <h3>Добавить подменные номера</h3>
- <label>Выбрать CSV со столбцом «Номер телефона»
-   <input type="file" accept=".csv,text/csv" disabled={busy} onChange={e=>{
+ <button type="button" className="primary" disabled={busy} aria-describedby="replacement-csv-format" onClick={()=>csvInput.current?.click()}>Выбрать CSV-файл</button>
+ <p id="replacement-csv-format" className="muted">В файле нужен столбец «Номер телефона».</p>
+ <input ref={csvInput} type="file" hidden accept=".csv,text/csv" disabled={busy} onChange={e=>{
      const file=e.currentTarget.files?.[0];
      e.currentTarget.value='';
      if(file)void chooseCsv(file);
    }}/>
- </label>
  {csv && newNumbers ? <>
    <p role="status">{csv.name} · Уникальных номеров: {csv.numbers.length} · Уже в списке: {csv.numbers.length-newNumbers.length} · К добавлению: {newNumbers.length}</p>
    <button className="secondary" disabled={busy} onClick={()=>setCsv(null)}>Убрать файл</button>
