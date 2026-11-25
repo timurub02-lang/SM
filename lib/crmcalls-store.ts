@@ -47,10 +47,18 @@ export async function previewCRMCalls(d:Db,s:CRMCallsSchedule,now=new Date()){
  const available=await availableInProject(d,s.projectId,rows);
  return {rows:available,total:rows.length,dailyCount:dailyDistributionCount(rows.length,s.cycleDays),plan:crmcallsPlan(rows.length,s.cycleDays,start)};
 }
-export async function saveCRMCallsSchedule(d:Db,s:CRMCallsSchedule,revision:string,now=new Date()){
+export async function saveCRMCallsSchedule(d:Db,s:CRMCallsSchedule,revision:string,now=new Date(),request:typeof fetch=fetch){
  const id='crmcalls-project-'+s.projectId,old=await setting<Schedule>(d,id);if((old?.revision||'')!==revision)throw Error('Настройки проекта изменились. Обновите раздел.');
  if(await d.prepare("SELECT id FROM crmcalls_batches WHERE project=? AND state IN ('sending','submitted','unknown')").bind(s.projectId).first())throw Error('Дождитесь проверки текущей отправки проекта');
- if(s.enabled&&(await crmcallsSchedules(d)).some(other=>other.projectId!==s.projectId&&other.enabled&&other.base===s.base&&other.sheet===s.sheet))throw Error('Этот лист уже включён в другом проекте CRMCalls. Сначала выключите его расписание.');
+ const conflicts=s.enabled?(await crmcallsSchedules(d)).filter(other=>other.projectId!==s.projectId&&other.enabled&&other.base===s.base&&other.sheet===s.sheet):[];
+ if(conflicts.length){
+  const connection=await readCRMCalls(d);if(!connection?.apiKey)throw Error('Сначала подключите CRMCalls');
+  const projects=await crmcallsProjects(crmcallsApi(connection.apiKey,request));
+  if(!projects.some(p=>p.id===s.projectId&&p.status!=='finished'))throw Error('Проект недоступен для загрузки');
+  if(conflicts.some(other=>projects.some(p=>p.id===other.projectId)))throw Error('Этот лист уже включён в другом проекте CRMCalls. Сначала выключите его расписание.');
+  // Only a complete provider response proves absence; keep uncertain imports reserved.
+  for(const other of conflicts)await saveCRMCallsSchedule(d,{...other,enabled:false},other.revision,now,request);
+ }
  if(s.enabled){
   const {config}=await readBaseDestination(d),sheet=config[s.base].sheets.find(v=>v.name===s.sheet);
   if(config.dispatchTarget==='skorozvon'&&sheet?.automatic&&sheet.projectId)throw Error('Для этого листа включена выгрузка в СК. Сначала выключите её.');

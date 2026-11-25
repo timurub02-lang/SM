@@ -464,3 +464,9 @@ Artem (employee E-74ee9a8f-99d while department_head) can review all pending SK 
 The administrator can open «Найти дубль» from global/base search, select 2–10 cards, compare them, explicitly select the retained owner's card and main phone, and confirm. Search and preview never merge automatically. The chosen card keeps its original ownership dates; other phones become linked numbers. Order managers and financial records are unchanged. Existing call restrictions and paid-order archive rules continue to apply.
 
 `client_merge_audit` stores the original clients, orders and affected relational rows atomically before merging. Import snapshots remain immutable. The merge is version-bound and rolls back on concurrent changes, active calls, unfinished external uploads or conflicting relational keys. Unknown client-reference tables fail closed. The feature neither calls customers nor removes contacts from external dialler projects.
+
+When enabling a CRMCalls schedule, a conflicting schedule for a project absent from
+a complete provider project listing is disabled through the normal revision-guarded
+save path. Pending items are skipped; history and shared distribution dates remain.
+Provider errors, existing (including paused/finished) projects and unresolved imports
+do not release the sheet. No remote contacts are deleted or automatically submitted.
