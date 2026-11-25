@@ -943,7 +943,9 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .routing-summary td[aria-current=date] { box-shadow:inset 0 -3px var(--primary,#4386e7); }
 .routing-mode { display:inline-flex; flex-wrap:wrap; gap:4px; margin-top:12px; padding:4px; border-radius:12px; background:var(--dark-raised,#e9edf4); }
 .routing-mode button,.routing-days button { color:var(--foreground); border-radius:8px; padding:7px 12px; font:inherit; cursor:pointer; }
-.routing-mode button[aria-pressed=true] { background:var(--dark-panel,#fff); box-shadow:0 1px 4px #18223828; font-weight:650; }
+.routing-mode button { display:inline-flex; align-items:center; gap:6px; }
+.routing-selected-mode { margin-top:8px; font-size:.88rem; }
+.routing-mode button[aria-pressed=true] { background:#245da2; color:white; box-shadow:0 1px 4px #18223828; font-weight:650; }
 .routing-anchor { display:flex; align-items:end; flex-wrap:wrap; gap:12px 22px; margin-top:16px; }
 .routing-anchor p { flex:1 1 200px; color:var(--dark-muted,#5d6c81); font-size:.88rem; }
 .routing-card-head,.routing-footer { justify-content:space-between; flex-wrap:wrap; }

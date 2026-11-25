@@ -4,7 +4,7 @@ const day=z.string().refine(v=>!v||/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinit
 const weekdays=z.array(z.number().int().min(1).max(7)).max(7);
 const monday=day.refine(value=>new Date(value+'T00:00:00Z').getUTCDay()===1,'Выберите понедельник начала цикла');
 export const routingRuleSchema=z.object({id:z.string().min(1).max(80),name:z.string().trim().min(1).max(120),enabled:z.boolean(),slot:z.number().int().min(1).max(4),from:day,to:day,departments:z.array(z.enum(['1','2','3','4','5'])).max(5),products:z.array(z.string().trim().min(1).max(255)).max(200),weekdays,cycleDays:z.tuple([weekdays,weekdays]).optional(),period:z.enum(['day','week','month','rule']),maxCount:z.number().int().min(1).max(1000000).nullable(),maxAmount:z.number().positive().max(1000000000).nullable()}).refine(r=>!r.from||!r.to||r.from<=r.to,'Окончание раньше начала');
-export const routingSchema=z.object({cycleStart:monday.optional(),enabled:z.boolean(),revision:z.string().max(80),rules:z.array(routingRuleSchema).max(100)}).refine(c=>new Set(c.rules.map(r=>r.id)).size===c.rules.length,'Повторяются правила');
+export const routingSchema=z.object({cycleStart:monday.optional(),savedCycleStart:monday.optional(),cycleEnabled:z.boolean().optional(),cycleSlots:z.array(z.number().int().min(1).max(4).nullable()).length(14).optional(),enabled:z.boolean(),revision:z.string().max(80),rules:z.array(routingRuleSchema).max(100)}).refine(c=>new Set(c.rules.map(r=>r.id)).size===c.rules.length,'Повторяются правила');
 export type RoutingConfig=z.infer<typeof routingSchema>;
 export type RoutingRule=z.infer<typeof routingRuleSchema>;
 export type RoutingAccount={slot:number;name:string;configured:boolean};
@@ -20,19 +20,37 @@ export function routingCycleIndex(start:string|undefined,today:string):0|1|null{
  return Math.floor(elapsed/(7*86400000))%2===0?0:1;
 }
 
+export function cycleSettingsForEdit(config:RoutingConfig){
+ return {...config,cycleSlots:editableCycleSlots(config),cycleEnabled:config.cycleEnabled??config.enabled};
+}
+
 function matchesRoutingDay(rule:RoutingRule,week:0|1|null,weekday:number,date:string){
  if(!rule.enabled||rule.from&&date<rule.from||rule.to&&date>rule.to)return false;
  if(week!==null&&rule.cycleDays)return rule.cycleDays[week].includes(weekday);
  return !rule.weekdays.length||rule.weekdays.includes(weekday);
 }
 
+// Seed the simple editor from previously saved rule-based schedules.
+export function editableCycleSlots(config:RoutingConfig){
+ return config.cycleSlots??Array.from({length:14},(_,index)=>{
+  const weekday=index%7+1,week=index<7?0:1;
+  const rule=config.rules.find(r=>r.enabled&&(r.cycleDays?r.cycleDays[week].includes(weekday):!r.weekdays.length||r.weekdays.includes(weekday)));
+  return rule?.slot??null;
+ });
+}
+
 // Without a particular order or quota usage, conditional rules are possible routes in priority order.
 export function previewRoutingDay(config:RoutingConfig,date:string){
  const week=routingCycleIndex(config.cycleStart,date);
  const weekday=(new Date(date+'T00:00:00Z').getUTCDay()+6)%7+1;
+ const enabled=week===null?config.enabled:(config.cycleEnabled??config.enabled);
+ if(enabled&&week!==null&&config.cycleSlots){
+  const slot=config.cycleSlots[week*7+weekday-1];
+  return {slots:slot?[slot]:[],conditional:false};
+ }
  const slots=new Set<number>();
  let conditional=false;
- if(config.enabled)for(const rule of config.rules){
+ if(enabled)for(const rule of config.rules){
   if(!matchesRoutingDay(rule,week,weekday,date))continue;
   slots.add(rule.slot);
   if(!rule.departments.length&&!rule.products.length&&rule.maxCount===null&&rule.maxAmount===null)break;
@@ -61,9 +79,15 @@ export function chooseRouting(config:RoutingConfig,accounts:RoutingAccount[],ord
   if(candidates.length!==1)throw Error('СДЭК: для A_ должен быть подключён один аккаунт ИП Аскеров');
   return {slot:candidates[0].slot,reason:'Обязательное правило: A_ → ИП Аскеров'};
  }
- if(!config.enabled)return null;
  const today=dateString(new Date(now.getTime()+3*3600000)),weekday=(new Date(today+'T00:00:00Z').getUTCDay()+6)%7+1;
  const week=routingCycleIndex(config.cycleStart,today);
+ if(!(week===null?config.enabled:(config.cycleEnabled??config.enabled)))return null;
+ if(week!==null&&config.cycleSlots){
+  const slot=config.cycleSlots[week*7+weekday-1];
+  if(!slot)throw Error('СДЭК: на этот день цикла выгрузка не назначена');
+  if(!accounts.some(a=>a.configured&&a.slot===slot))throw Error('СДЭК: аккаунт этого дня цикла не подключён');
+  return {slot,reason:`График выгрузки · ${week+1}-я неделя`,scheduleDate:today};
+ }
  const main=mainRoutingProduct(order.items),amount=routingAmount(order);
  for(const r of config.rules){
   if(!matchesRoutingDay(r,week,weekday,today)||r.departments.length&&!r.departments.includes(department as '1')||r.products.length&&!r.products.some(p=>p.toLocaleLowerCase('ru')===main?.name.trim().toLocaleLowerCase('ru')))continue;
