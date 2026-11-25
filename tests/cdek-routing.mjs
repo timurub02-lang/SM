@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {editableCycleSlots,previewRoutingDay,chooseRouting,mainRoutingProduct,routingWindow,routingSchema,routingReservationGuard} from '../lib/cdek-routing.ts';
+import {cycleSettingsForEdit,editableCycleSlots,previewRoutingDay,chooseRouting,mainRoutingProduct,routingWindow,routingSchema,routingReservationGuard} from '../lib/cdek-routing.ts';
 const now=new Date('2026-10-05T08:00:00Z');
 const accounts=[{slot:1,name:'СМ',configured:true},{slot:2,name:'ИП Киселева',configured:true},{slot:4,name:'ИП Аскеров',configured:true}];
 const base={id:'r1',name:'Товар X',enabled:true,slot:1,from:'',to:'',departments:[],products:['X'],weekdays:[],period:'week',maxCount:null,maxAmount:null};
@@ -79,3 +79,11 @@ assert.throws(()=>chooseRouting(simple,cycleAccounts,order,'1',[],new Date('2026
 assert.equal(chooseRouting(simple,cycleAccounts,order,'5',[],new Date('2026-12-26')).slot,4);
 assert.equal(routingSchema.safeParse({...simple,cycleSlots:[2,3]}).success,false);
 assert.equal(routingSchema.safeParse({...simple,cycleSlots:schedule.map(()=>[1,2])}).success,false);
+
+// Switching off a weekly rule, or all weekly routing, preserves the independent cycle.
+const opened=cycleSettingsForEdit(cycle);
+const weeklyOff={...opened,enabled:false,rules:opened.rules.map(r=>({...r,enabled:false}))};
+assert.equal(chooseRouting(weeklyOff,cycleAccounts,order,'1',[],new Date('2026-12-24')).slot,3);
+assert.deepEqual(previewRoutingDay(weeklyOff,'2026-12-24').slots,[3]);
+assert.equal(chooseRouting({...weeklyOff,cycleStart:undefined},cycleAccounts,order,'1',[],now),null);
+assert.equal(chooseRouting({...opened,cycleEnabled:false},cycleAccounts,order,'1',[],new Date('2026-12-24')),null);

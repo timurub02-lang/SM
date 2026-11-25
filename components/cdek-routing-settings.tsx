@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@
 import {departments} from '@/lib/crm';
 import type {RoutingAccount,RoutingConfig,RoutingRule} from '@/lib/cdek-routing';
 import {moscowDate} from '@/lib/base-distribution';
-import {editableCycleSlots,previewRoutingDay,routingCycleIndex} from '@/lib/cdek-routing';
+import {cycleSettingsForEdit,previewRoutingDay,routingCycleIndex} from '@/lib/cdek-routing';
 
 const days=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 const everyDay=days.map((_,i)=>i+1);
@@ -53,11 +53,12 @@ function DayRow({label,selected,change,weekly=false}:{label:string;selected:numb
 }
 export function CdekRoutingSettings({actorId}:{actorId:string}){
  const [open,setOpen]=useState(false),[config,setConfig]=useState<RoutingConfig|null>(null),[accounts,setAccounts]=useState<RoutingAccount[]>([]),[products,setProducts]=useState<string[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
- useEffect(()=>{if(!open)return;let active=true;setConfig(null);setError('');fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`).then(async r=>{const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);if(active){setConfig(d.config.cycleStart?{...d.config,cycleSlots:editableCycleSlots(d.config)}:d.config);setAccounts(d.accounts.filter((a:RoutingAccount)=>a.configured));setProducts(d.products);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,actorId]);
+ useEffect(()=>{if(!open)return;let active=true;setConfig(null);setError('');fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`).then(async r=>{const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);if(active){setConfig(cycleSettingsForEdit(d.config));setAccounts(d.accounts.filter((a:RoutingAccount)=>a.configured));setProducts(d.products);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,actorId]);
  function patch(id:string,p:Partial<RoutingRule>){setConfig(c=>c?{...c,rules:c.rules.map(r=>r.id===id?{...r,...p}:r)}:c);}
  function move(index:number,delta:number){if(!config)return;const rules=[...config.rules];[rules[index],rules[index+delta]]=[rules[index+delta],rules[index]];setConfig({...config,rules});}
  async function save(){setBusy(true);setError('');try{const r=await fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...config,actorId})});const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);setOpen(false);}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}}
  const today=moscowDate(),twoWeeks=config?.cycleStart!==undefined;
+ const autoEnabled=twoWeeks?config?.cycleEnabled:config?.enabled;
  const start=config?.cycleStart||'',validMonday=start!==''&&new Date(start+'T00:00:00Z').getUTCDay()===1;
  const week=validMonday?routingCycleIndex(start,today):null;
  return <>
@@ -69,13 +70,13 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
      <div className="notice">Заказы отдела A_ всегда уходят на ИП Аскерова.</div>
      {config?<form className="stack" onSubmit={e=>{e.preventDefault();if(!twoWeeks||validMonday)void save();}}>
       <fieldset disabled={busy} className="stack order-fields">
-       <label className="routing-check routing-auto"><input type="checkbox" checked={config.enabled} onChange={e=>setConfig({...config,enabled:e.target.checked})}/>Автоматически распределять заказы остальных отделов</label>
-       {!config.enabled&&<p className="muted">Сейчас аккаунт для этих отделов выбирает логист.</p>}
+       <label className="routing-check routing-auto"><input type="checkbox" checked={!!autoEnabled} onChange={e=>setConfig({...config,[twoWeeks?'cycleEnabled':'enabled']:e.target.checked})}/>Автоматически распределять заказы остальных отделов</label>
+       {!autoEnabled&&<p className="muted">Сейчас аккаунт для этих отделов выбирает логист.</p>}
        <section className="routing-schedule">
         <h3><CalendarDays size={18} aria-hidden="true"/>График выгрузки</h3>
         <div className="routing-mode" role="group" aria-label="Повтор графика">
-         <button type="button" aria-pressed={!twoWeeks} onClick={()=>setConfig({...config,cycleStart:undefined})}>{!twoWeeks&&<Check size={16} aria-hidden="true"/>}Каждую неделю</button>
-         <button type="button" aria-pressed={twoWeeks} onClick={()=>{if(!twoWeeks)setConfig({...config,cycleStart:thisMonday(today),cycleSlots:editableCycleSlots(config)});}}>{twoWeeks&&<Check size={16} aria-hidden="true"/>}Цикл из двух недель</button>
+         <button type="button" aria-pressed={!twoWeeks} onClick={()=>{if(twoWeeks)setConfig({...config,savedCycleStart:validMonday?start:config.savedCycleStart,cycleStart:undefined});}}>{!twoWeeks&&<Check size={16} aria-hidden="true"/>}Каждую неделю</button>
+         <button type="button" aria-pressed={twoWeeks} onClick={()=>{if(!twoWeeks)setConfig({...config,cycleStart:config.savedCycleStart||thisMonday(today)});}}>{twoWeeks&&<Check size={16} aria-hidden="true"/>}Цикл из двух недель</button>
         </div>
         <p className="routing-selected-mode">Выбран режим «{twoWeeks?'Цикл из двух недель':'Каждую неделю'}»</p>
         {twoWeeks&&<div className="routing-anchor">
@@ -84,7 +85,7 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
          </label>
          <p aria-live="polite">{!validMonday?'Выберите понедельник.':week===null?'До начала цикла действует еженедельный график.':`Сейчас идёт ${week===0?'первая':'вторая'} неделя цикла.`} После второй недели повторяется первая.</p>
         </div>}
-        {config.enabled&&(!twoWeeks||validMonday)&&<RoutingSummary config={config} accounts={accounts} today={today}/>}
+        {autoEnabled&&(!twoWeeks||validMonday)&&<RoutingSummary config={config} accounts={accounts} today={today}/>}
        </section>
        {twoWeeks?<><p className="muted">Один аккаунт на день. Выбор другого аккаунта переносит выгрузку к нему.</p>
         {accounts.map(account=><section className="routing-card" aria-label={account.name} key={account.slot}>
