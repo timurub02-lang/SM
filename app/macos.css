@@ -932,6 +932,15 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .routing-schedule h3,.routing-footer,.routing-card-head,.routing-tools button {
   display:flex; align-items:center; gap:8px;
 }
+.routing-summary { min-width:0; margin-top:16px; }
+.routing-summary-scroll { max-width:100%; overflow-x:auto; border:1px solid var(--border); border-radius:12px; }
+.routing-summary table { width:100%; min-width:630px; border-collapse:collapse; table-layout:fixed; font-size:.85rem; text-align:left; }
+.routing-summary th,.routing-summary td { padding:8px; vertical-align:top; overflow-wrap:anywhere; }
+.routing-summary thead { background:var(--dark-raised,#edf1f7); }
+.routing-summary tbody tr { border-top:1px solid var(--border); }
+.routing-summary td span,.routing-summary small { display:block; }
+.routing-summary small { color:var(--muted-foreground); font-weight:400; }
+.routing-summary td[aria-current=date] { box-shadow:inset 0 -3px var(--primary,#4386e7); }
 .routing-mode { display:inline-flex; flex-wrap:wrap; gap:4px; margin-top:12px; padding:4px; border-radius:12px; background:var(--dark-raised,#e9edf4); }
 .routing-mode button,.routing-days button { color:var(--foreground); border-radius:8px; padding:7px 12px; font:inherit; cursor:pointer; }
 .routing-mode button[aria-pressed=true] { background:var(--dark-panel,#fff); box-shadow:0 1px 4px #18223828; font-weight:650; }

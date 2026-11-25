@@ -6,7 +6,7 @@ import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@
 import {departments} from '@/lib/crm';
 import type {RoutingAccount,RoutingConfig,RoutingRule} from '@/lib/cdek-routing';
 import {moscowDate} from '@/lib/base-distribution';
-import {routingCycleIndex} from '@/lib/cdek-routing';
+import {previewRoutingDay,routingCycleIndex} from '@/lib/cdek-routing';
 
 const days=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 const everyDay=days.map((_,i)=>i+1);
@@ -14,6 +14,30 @@ function thisMonday(today:string){
  const date=new Date(today+'T00:00:00Z');
  date.setUTCDate(date.getUTCDate()-(date.getUTCDay()+6)%7);
  return date.toISOString().slice(0,10);
+}
+function RoutingSummary({config,accounts,today}:{config:RoutingConfig;accounts:RoutingAccount[];today:string}){
+ const monday=thisMonday(today);
+ const week=routingCycleIndex(config.cycleStart,today);
+ const firstMonday=config.cycleStart&&monday<config.cycleStart?config.cycleStart:monday;
+ const firstDate=Date.parse(firstMonday+'T00:00:00Z')-(week===1?7*86400000:0);
+ const rows=Array.from({length:config.cycleStart?2:1},(_,row)=>days.map((_,day)=>{
+  const date=new Date(firstDate+(row*7+day)*86400000).toISOString().slice(0,10);
+  return {date,...previewRoutingDay(config,date)};
+ }));
+ return <div className="routing-summary">
+  <div className="routing-summary-scroll" tabIndex={0} role="region" aria-label="Расписание по дням">
+   <table><thead><tr><th scope="col">Неделя</th>{days.map(day=><th key={day} scope="col">{day}</th>)}</tr></thead>
+    <tbody>{rows.map((cells,row)=><tr key={row}>
+     <th scope="row">{config.cycleStart?(row+1)+'-я':'Каждая'}<small>с {cells[0].date.slice(8)}.{cells[0].date.slice(5,7)}</small></th>
+     {cells.map(cell=><td key={cell.date} aria-current={cell.date===today?'date':undefined}>
+      {cell.slots.length?cell.slots.map(slot=><span key={slot}>{accounts.find(a=>a.slot===slot)?.name||'Не подключён'}</span>):<span aria-label="Нет выгрузки">—</span>}
+      {cell.conditional&&<small>По условиям</small>}
+     </td>)}
+    </tr>)}</tbody>
+   </table>
+  </div>
+  {rows.some(cells=>cells.some(cell=>cell.conditional))&&<p className="muted">В ячейках «По условиям» аккаунты указаны по приоритету. Выбор зависит от заказа и доступных лимитов.</p>}
+ </div>;
 }
 function DayRow({label,selected,change,weekly=false}:{label:string;selected:number[];change:(days:number[])=>void;weekly?:boolean}){
  return <div className="routing-week" role="group" aria-label={label}>
@@ -59,6 +83,7 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
          </label>
          <p aria-live="polite">{!validMonday?'Выберите понедельник.':week===null?'До начала цикла действует еженедельный график.':`Сейчас идёт ${week===0?'первая':'вторая'} неделя цикла.`} После второй недели повторяется первая.</p>
         </div>}
+        {config.enabled&&(!twoWeeks||validMonday)&&<RoutingSummary config={config} accounts={accounts} today={today}/>}
        </section>
        <div><h3>Правила по приоритету</h3><p className="muted">CRM выбирает первое подходящее правило с доступным лимитом. Если такого правила нет, выгрузка блокируется.</p>
         {twoWeeks&&<p className="muted">Отметьте дни выгрузки. Пустая неделя пропускается.</p>}

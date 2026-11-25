@@ -20,6 +20,27 @@ export function routingCycleIndex(start:string|undefined,today:string):0|1|null{
  return Math.floor(elapsed/(7*86400000))%2===0?0:1;
 }
 
+function matchesRoutingDay(rule:RoutingRule,week:0|1|null,weekday:number,date:string){
+ if(!rule.enabled||rule.from&&date<rule.from||rule.to&&date>rule.to)return false;
+ if(week!==null&&rule.cycleDays)return rule.cycleDays[week].includes(weekday);
+ return !rule.weekdays.length||rule.weekdays.includes(weekday);
+}
+
+// Without a particular order or quota usage, conditional rules are possible routes in priority order.
+export function previewRoutingDay(config:RoutingConfig,date:string){
+ const week=routingCycleIndex(config.cycleStart,date);
+ const weekday=(new Date(date+'T00:00:00Z').getUTCDay()+6)%7+1;
+ const slots=new Set<number>();
+ let conditional=false;
+ if(config.enabled)for(const rule of config.rules){
+  if(!matchesRoutingDay(rule,week,weekday,date))continue;
+  slots.add(rule.slot);
+  if(!rule.departments.length&&!rule.products.length&&rule.maxCount===null&&rule.maxAmount===null)break;
+  conditional=true;
+ }
+ return {slots:[...slots],conditional};
+}
+
 export function routingWindow(rule:RoutingRule,now:Date){
  const date=new Date(now.getTime()+3*3600000);date.setUTCHours(0,0,0,0);
  let start='0001-01-01',end='9999-12-31';
@@ -45,8 +66,7 @@ export function chooseRouting(config:RoutingConfig,accounts:RoutingAccount[],ord
  const week=routingCycleIndex(config.cycleStart,today);
  const main=mainRoutingProduct(order.items),amount=routingAmount(order);
  for(const r of config.rules){
-  const scheduled=week!==null&&r.cycleDays?r.cycleDays[week].includes(weekday):!r.weekdays.length||r.weekdays.includes(weekday);
-  if(!r.enabled||!scheduled||r.from&&today<r.from||r.to&&today>r.to||r.departments.length&&!r.departments.includes(department as '1')||r.products.length&&!r.products.some(p=>p.toLocaleLowerCase('ru')===main?.name.trim().toLocaleLowerCase('ru')))continue;
+  if(!matchesRoutingDay(r,week,weekday,today)||r.departments.length&&!r.departments.includes(department as '1')||r.products.length&&!r.products.some(p=>p.toLocaleLowerCase('ru')===main?.name.trim().toLocaleLowerCase('ru')))continue;
   if(!accounts.some(a=>a.slot===r.slot&&a.configured))throw Error(`СДЭК: аккаунт правила «${r.name}» не подключён`);
   const window=routingWindow(r,now),used=usage.filter(u=>u.slot===r.slot&&u.state!=='invalid'&&u.createdAt>=window.start&&u.createdAt<window.end);
   const maxCents=r.maxAmount===null?null:Math.round(r.maxAmount*100);
