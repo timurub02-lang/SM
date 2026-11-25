@@ -5,7 +5,6 @@ import {toast} from 'sonner';
 import {Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle} from '@/components/ui/dialog';
 import type {CRMCallsProject,CRMCallsSchedule} from '@/lib/crmcalls';
 import './crmcalls.css';
-import {CRMCallsIncomingSettings} from './crmcalls-incoming-settings';
 
 type Saved=CRMCallsSchedule&{revision:string};
 type Dashboard={connection:{configured:boolean;revision:string;checkedAt:string};schedules:Saved[];sheets:{M:string[];J:string[]};counts:{project:string;state:string;count:number}[];plan:{project:string;day:string;count:number}[];batches:{id:string;project:string;state:string;created_at:string;import_id:string;error:string}[];health?:{ok:boolean;at:string;error?:string}};
@@ -28,7 +27,6 @@ export function CRMCallsSection({actorId}:{actorId:string}){
  return <div className="crmcalls-section">
   <section className="cc-hero"><div className="cc-hero-icon"><Headphones size={30}/></div><div><span className="cc-kicker">ВЫГРУЗКА КЛИЕНТОВ</span><h2>От базы — к разговору</h2><p>Проекты, подключение и расписание CRMCalls в одном месте.</p></div><button className="secondary" onClick={()=>setConnectionOpen(true)}><Link2 size={16}/>{data?.connection.configured?'Подключение':'Подключить CRMCalls'}</button></section>
   {error&&<div role="alert" className="cc-alert">{error} <button className="secondary" onClick={()=>void load(true)}>Повторить</button></div>}
-  <CRMCallsIncomingSettings actorId={actorId}/>
   <div className="cc-summary"><span><b>{projects.length}</b> проектов</span><span><b>{total('pending').toLocaleString('ru-RU')}</b> в расписании</span><span><b>{total('sent').toLocaleString('ru-RU')}</b> проверено и передано</span><span><CalendarDays size={17}/><b>5/2</b> · Пн–Пт · МСК</span></div>
   <div className="cc-toolbar"><h2>Проекты CRMCalls</h2><button className="secondary" disabled={busy||!data?.connection.configured} onClick={async()=>{setBusy(true);await load(true);setBusy(false);}}><RefreshCw size={16}/>Обновить проекты</button></div>
   {!data?<p role="status">Загрузка…</p>:!data.connection.configured?<section className="cc-empty"><Link2 size={30}/><h3>Подключите личный кабинет</h3><p>Введите API-ключ из CRMCalls → Интеграции → API. Пароль от кабинета здесь не используется.</p><button className="primary" onClick={()=>setConnectionOpen(true)}>Настроить подключение</button></section>:!projects.length&&!error?<p className="muted">Проекты не найдены. Создайте проект в CRMCalls и обновите список.</p>:null}
