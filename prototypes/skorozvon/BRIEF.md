@@ -1,5 +1,7 @@
 # Scope
 
+Update25.11.2026: user confirmed a real vendor widget locally. The separate4179surface inherits this composition, replaces the imitation phone with the official SDK, and uses a single explicitly configured local test card. Production remains excluded. Original demo scope below remains applicable to4178. Finish for this stage means actualSDK loading/loginUI plus synthetic adapter/server checks; authentication and real calls require the test account and a separately chosen permitted call.
+
 Operate mode. Local extension prototype of the existing CRM operator workspace. User asked for a prototype without production deployment. Inherit existing app/globals.css teal/white/Arial identity; no redesign or concept selection is needed. All people and calls are synthetic. The user confirmed automatic calling and opening the customer card as the primary scenario.
 
 ## Direction contract

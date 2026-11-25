@@ -56,6 +56,10 @@ components:
 
 ## Overview
 
+### Local SDK extension, 2026-11-25
+
+`live.html` inherits the same CRM palette, Arial typography, bordered surfaces and responsive composition. It adds a380px vendor panel (350px below1000px) alongside a test-card mapping form and event list. At740px it stacks with the phone first. The official vendor login/control surface keeps its own styling; local CSS does not reskin it. The inherited6px badges and7px fields remain intentional. An explicit load action separates arrival from loading the third-party SDK; loading, failed loading, signed-out, authorized and ready states have text. This shipped view has been verified up to the vendor login screen only; authenticated calling states are not visually certified.
+
 **Creative North Star: "Existing CRM operator workspace"**
 
 An extension of the existing SM CRM operator workspace: teal actions, white bordered surfaces and a pale neutral ground. This scoped record describes the finished local simulation in index.html, style.css and app.mjs; it does not establish a new identity for the parent CRM or imply a live Skorozvon connection.
