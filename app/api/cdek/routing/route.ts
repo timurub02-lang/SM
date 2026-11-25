@@ -19,8 +19,13 @@ async function handlePOST(req:Request){try{
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  const raw=await readLimitedText(req,400000);if(raw.length>100000)throw Error('Слишком много правил');const p=routingSchema.parse(JSON.parse(raw));
  const current=await routingSettings();if(p.revision!==current.config.revision)throw Error('Настройки изменены. Откройте их заново');
+ if(current.config.cycleSlots&&!p.cycleSlots)throw Error('Обновите страницу, чтобы сохранить актуальный график');
+ if(p.cycleStart&&p.cycleSlots){
+  if(p.cycleSlots.some(slot=>slot!==null&&!current.accounts.some(a=>a.slot===slot&&a.configured)))throw Error('В графике выбран неподключённый аккаунт');
+ }else{
  if(p.rules.some(r=>r.enabled&&!current.accounts.some(a=>a.slot===r.slot&&a.configured)))throw Error('В правиле выбран неподключённый аккаунт');
  if(p.enabled&&!p.rules.some(r=>r.enabled))throw Error('Добавьте хотя бы одно включённое правило');
+ }
  const config={...p,revision:crypto.randomUUID()};const data=JSON.stringify(config);
  const result=current.raw?await db().prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(data,routingKey,current.raw).run():await db().prepare('INSERT OR IGNORE INTO settings(id,data) VALUES(?,?)').bind(routingKey,data).run();
  if(!result.meta.changes)throw Error('Настройки изменены. Откройте их заново');

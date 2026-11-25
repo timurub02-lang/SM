@@ -1,12 +1,12 @@
 'use client';
 import {SettingsRulesTabs} from './settings-rules-tabs';
 import {useEffect,useState} from 'react';
-import {Pencil,ArrowUp,ArrowDown,Trash2,CalendarDays,Plus} from 'lucide-react';
+import {Pencil,ArrowUp,ArrowDown,Trash2,CalendarDays,Check,Plus} from 'lucide-react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {departments} from '@/lib/crm';
 import type {RoutingAccount,RoutingConfig,RoutingRule} from '@/lib/cdek-routing';
 import {moscowDate} from '@/lib/base-distribution';
-import {previewRoutingDay,routingCycleIndex} from '@/lib/cdek-routing';
+import {editableCycleSlots,previewRoutingDay,routingCycleIndex} from '@/lib/cdek-routing';
 
 const days=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 const everyDay=days.map((_,i)=>i+1);
@@ -53,7 +53,7 @@ function DayRow({label,selected,change,weekly=false}:{label:string;selected:numb
 }
 export function CdekRoutingSettings({actorId}:{actorId:string}){
  const [open,setOpen]=useState(false),[config,setConfig]=useState<RoutingConfig|null>(null),[accounts,setAccounts]=useState<RoutingAccount[]>([]),[products,setProducts]=useState<string[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
- useEffect(()=>{if(!open)return;let active=true;setConfig(null);setError('');fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`).then(async r=>{const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);if(active){setConfig(d.config);setAccounts(d.accounts.filter((a:RoutingAccount)=>a.configured));setProducts(d.products);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,actorId]);
+ useEffect(()=>{if(!open)return;let active=true;setConfig(null);setError('');fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`).then(async r=>{const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);if(active){setConfig(d.config.cycleStart?{...d.config,cycleSlots:editableCycleSlots(d.config)}:d.config);setAccounts(d.accounts.filter((a:RoutingAccount)=>a.configured));setProducts(d.products);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,actorId]);
  function patch(id:string,p:Partial<RoutingRule>){setConfig(c=>c?{...c,rules:c.rules.map(r=>r.id===id?{...r,...p}:r)}:c);}
  function move(index:number,delta:number){if(!config)return;const rules=[...config.rules];[rules[index],rules[index+delta]]=[rules[index+delta],rules[index]];setConfig({...config,rules});}
  async function save(){setBusy(true);setError('');try{const r=await fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...config,actorId})});const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);setOpen(false);}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}}
@@ -74,9 +74,10 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
        <section className="routing-schedule">
         <h3><CalendarDays size={18} aria-hidden="true"/>График выгрузки</h3>
         <div className="routing-mode" role="group" aria-label="Повтор графика">
-         <button type="button" aria-pressed={!twoWeeks} onClick={()=>setConfig({...config,cycleStart:undefined})}>Каждую неделю</button>
-         <button type="button" aria-pressed={twoWeeks} onClick={()=>{if(!twoWeeks)setConfig({...config,cycleStart:thisMonday(today)});}}>Цикл из двух недель</button>
+         <button type="button" aria-pressed={!twoWeeks} onClick={()=>setConfig({...config,cycleStart:undefined})}>{!twoWeeks&&<Check size={16} aria-hidden="true"/>}Каждую неделю</button>
+         <button type="button" aria-pressed={twoWeeks} onClick={()=>{if(!twoWeeks)setConfig({...config,cycleStart:thisMonday(today),cycleSlots:editableCycleSlots(config)});}}>{twoWeeks&&<Check size={16} aria-hidden="true"/>}Цикл из двух недель</button>
         </div>
+        <p className="routing-selected-mode">Выбран режим «{twoWeeks?'Цикл из двух недель':'Каждую неделю'}»</p>
         {twoWeeks&&<div className="routing-anchor">
          <label className="field"><span>Понедельник первой недели</span>
           <input type="date" required step={7} min="1970-01-05" value={start} aria-invalid={!validMonday} onChange={e=>setConfig({...config,cycleStart:e.target.value})}/>
@@ -85,21 +86,33 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
         </div>}
         {config.enabled&&(!twoWeeks||validMonday)&&<RoutingSummary config={config} accounts={accounts} today={today}/>}
        </section>
-       <div><h3>Правила по приоритету</h3><p className="muted">CRM выбирает первое подходящее правило с доступным лимитом. Если такого правила нет, выгрузка блокируется.</p>
-        {twoWeeks&&<p className="muted">Отметьте дни выгрузки. Пустая неделя пропускается.</p>}
-       </div>
+       {twoWeeks?<><p className="muted">Один аккаунт на день. Выбор другого аккаунта переносит выгрузку к нему.</p>
+        {accounts.map(account=><section className="routing-card" aria-label={account.name} key={account.slot}>
+         <h4>{account.name}</h4>
+         {[0,1].map(weekIndex=>{
+          const slots=config.cycleSlots!;
+          const offset=weekIndex*7;
+          const selected=everyDay.filter(day=>slots[offset+day-1]===account.slot);
+          return <DayRow key={weekIndex} label={weekIndex+1+'-я неделя'} selected={selected} change={next=>{
+           const updated=slots.slice();
+           for(const day of everyDay){
+            const cell=offset+day-1;
+            if(next.includes(day))updated[cell]=account.slot;
+            else if(updated[cell]===account.slot)updated[cell]=null;
+           }
+           setConfig({...config,cycleSlots:updated});
+          }}/>;
+         })}
+        </section>)}</>:<>
+       <div><h3>Правила по приоритету</h3><p className="muted">CRM выбирает первое подходящее правило с доступным лимитом. Если такого правила нет, выгрузка блокируется.</p></div>
        {config.rules.map((r,index)=>{
         const weekly=r.weekdays.length?r.weekdays:everyDay;
-        const cycle=r.cycleDays??[weekly,weekly];
         const account=accounts.find(a=>a.slot===r.slot)?.name||'Аккаунт не подключён';
         return <section className="routing-rule routing-card" key={r.id} aria-label={r.name+' · '+account}>
          <header className="routing-card-head"><div><h4>{account}</h4><small>{index+1}. {r.name}</small></div>
           <label className="routing-check"><input type="checkbox" checked={r.enabled} onChange={e=>patch(r.id,{enabled:e.target.checked})}/>{r.enabled?'Включено':'Выключено'}</label>
          </header>
-         {twoWeeks?<div className="routing-week-pair">
-          <DayRow label="1-я неделя" selected={cycle[0]} change={next=>patch(r.id,{cycleDays:[next,cycle[1]]})}/>
-          <DayRow label="2-я неделя" selected={cycle[1]} change={next=>patch(r.id,{cycleDays:[cycle[0],next]})}/>
-         </div>:<DayRow label="Дни выгрузки" selected={weekly} weekly change={next=>patch(r.id,{weekdays:next})}/>}
+         <DayRow label="Дни выгрузки" selected={weekly} weekly change={next=>patch(r.id,{weekdays:next})}/>
          <details className="routing-advanced"><summary>Аккаунт, условия и приоритет</summary><div className="stack">
           <div className="routing-tools">
            <button type="button" className="secondary" disabled={index===0} onClick={()=>move(index,-1)}><ArrowUp size={16}/>Выше</button>
@@ -111,9 +124,9 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
           <p className="muted">Лимиты относятся ко всем выгрузкам аккаунта за выбранный период. Сумма считается по корзине без доставки.</p>
          </div></details>
         </section>;
-       })}
+       })}</>}
        <div className="routing-footer">
-        <button type="button" className="secondary" disabled={!accounts.length||config.rules.length>=100||twoWeeks&&!validMonday} onClick={()=>setConfig({...config,rules:[...config.rules,{id:crypto.randomUUID(),name:`Правило ${config.rules.length+1}`,enabled:true,slot:accounts[0].slot,from:twoWeeks?start:'',to:'',departments:[],products:[],weekdays:[],...(twoWeeks?{cycleDays:[[],[]] as [number[],number[]]}:{}),period:'week',maxCount:null,maxAmount:null}]})}><Plus size={16}/>Добавить правило</button>
+        {!twoWeeks&&<button type="button" className="secondary" disabled={!accounts.length||config.rules.length>=100} onClick={()=>setConfig({...config,rules:[...config.rules,{id:crypto.randomUUID(),name:`Правило ${config.rules.length+1}`,enabled:true,slot:accounts[0].slot,from:'',to:'',departments:[],products:[],weekdays:[],period:'week',maxCount:null,maxAmount:null}]})}><Plus size={16}/>Добавить правило</button>}
         <button type="submit" disabled={twoWeeks&&!validMonday} className="primary">{busy?'Сохранение…':'Сохранить настройки'}</button>
        </div>
       </fieldset>
