@@ -17,7 +17,7 @@ export function EmployeeCash({employees,payroll,premiumContext}:{employees:Emplo
  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow'}).format(new Date());
  const [accounts,setAccounts]=useState<Account[]>([]);const [selected,setSelected]=useState<Account|null>(null);const [operations,setOperations]=useState<Operation[]>([]);
  const [page,setPage]=useState(0);
- const pageSize=6;const pageCount=Math.max(1,Math.ceil(operations.length/pageSize));
+ const pageSize=20;const pageCount=Math.max(1,Math.ceil(operations.length/pageSize));
  const [courierOrders,setCourierOrders]=useState<Order[]>([]);
  const [error,setError]=useState('');const [historyError,setHistoryError]=useState('');const [loading,setLoading]=useState(true);const [historyLoading,setHistoryLoading]=useState(false);
  async function load(){setError('');setLoading(true);try{const r=await fetch('/api/cash?scope=all',{cache:'no-store'});const data=await r.json() as {accounts:Account[];error?:string};if(!r.ok)throw Error(data.error||'Не удалось загрузить кассы');setAccounts(data.accounts);}catch(e){setError(e instanceof Error?e.message:'Ошибка загрузки');}finally{setLoading(false);}}
