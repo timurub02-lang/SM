@@ -46,8 +46,11 @@ try{
  const projects=await call('/api/crmcalls?projects=1',cookies.admin);assert.equal(projects.status,200,projects.text);assert.equal(JSON.parse(projects.text).projects.length,5);
  assert.equal((await call('/api/crmcalls',cookies.admin,{action:'connect',apiKey:key,revision:'v1'})).status,200);
  assert.ok(!(await call('/api/crmcalls',cookies.admin)).text.includes(key));
+ const missingProject='99999999-9999-4999-8999-999999999999';
+ d.prepare('INSERT INTO settings VALUES(?,?)').run('crmcalls-project-'+missingProject,JSON.stringify({...schedule,projectId:missingProject,enabled:true,revision:'missing-v1',planning:'daily'}));
  const current=JSON.parse((await call('/api/crmcalls',cookies.admin)).text).schedules[0];
  assert.equal((await call('/api/crmcalls',cookies.admin,{action:'save',schedule:{...schedule,enabled:true},revision:current.revision})).status,200);
+ assert.equal(JSON.parse(d.prepare('SELECT data FROM settings WHERE id=?').get('crmcalls-project-'+missingProject).data).enabled,false,'Missing project no longer blocks the live project');
  const conflicting=initialBaseSettings();Object.assign(conflicting.M.sheets.find(s=>s.name==='П'),{automatic:true,projectId:'123'});
  const conflict=await call('/api/base',cookies.admin,{config:conflicting,revision:''});assert.equal(conflict.status,400,conflict.text);assert.match(conflict.text,/CRMCalls/);
  const enabled=JSON.parse((await call('/api/crmcalls',cookies.admin)).text).schedules[0];
