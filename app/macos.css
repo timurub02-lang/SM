@@ -743,7 +743,7 @@ body:has(.courier-design-aurora){background:#191a1e}
 .premium-search input::placeholder{color:#8391a5}
 
 /* Employee cash history fits the viewport; long history is paginated. */
-.client-detail-dialog.employee-cash-dialog{width:calc(100vw - 32px);max-width:1440px!important;max-height:calc(100dvh - 24px)}
+.client-detail-dialog.employee-cash-dialog{top:12px;translate:-50% 0;width:calc(100vw - 32px);max-width:1440px!important;max-height:calc(100dvh - 24px)}
 .employee-cash-dialog [data-slot=dialog-header]{padding:16px 48px 12px 20px}
 .employee-cash-dialog [data-slot=dialog-title]{font-size:20px}
 .employee-cash-dialog [data-slot=dialog-description]{font-size:12px;line-height:1.4}
