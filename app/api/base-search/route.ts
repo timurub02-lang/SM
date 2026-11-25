@@ -9,6 +9,6 @@ export const GET=authenticated(async req=>{
  if(!employee||!['admin','department_head','logistic','chief_logistic'].includes(employee.role))return Response.json({error:'Поиск доступен администратору, руководителю и логистам'},{status:403});
  try{
   await initBaseStorage(db());
-  return Response.json(await searchBaseClients(db(),new URL(req.url).searchParams.get('q')||'',employee),{headers:{'Cache-Control':'no-store'}});
+  return Response.json(await searchBaseClients(db(),new URL(req.url).searchParams.get('q')||'',employee,new URL(req.url).searchParams.getAll('exclude')),{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось найти клиента'},{status:400});}
 });

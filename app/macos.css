@@ -967,3 +967,31 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
   .routing-days { margin-top:5px; gap:3px; }
   .routing-days button { flex:1; min-width:28px; padding:5px 2px; }
 }
+
+/* Keep the original card and candidate addresses visible together while comparing. */
+.client-merge{display:grid;gap:14px;align-content:start;font-size:14px;line-height:1.45}
+.client-merge p,.client-merge h3,.client-merge h4{margin:0}
+.client-merge .toolbar{margin:0;gap:8px;flex-wrap:wrap}
+.client-merge-header{justify-content:space-between}
+.client-merge h4{font-size:13px;font-weight:600;color:var(--muted-foreground,#7e8da2)}
+.client-merge-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.client-merge-selected,.client-merge-find,.client-merge-cards{display:grid;gap:10px;min-width:0}
+.client-merge-card{display:grid;gap:9px;min-width:0;padding:14px;border:1px solid #738bab30;border-radius:14px;background:var(--card,#fff);overflow-wrap:anywhere}
+.client-merge-card-heading{display:flex;gap:8px;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
+.client-merge-card-heading>b{font-size:15px}.client-merge-card-heading>small{color:#7e8da2;font-size:12px}
+.client-merge-phones{font-size:14px;font-variant-numeric:tabular-nums}
+.client-merge-address{font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.client-merge-owner{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px}
+.client-merge-owner>b{font-weight:500}.client-merge .muted{font-size:12px;line-height:1.45}
+.client-merge .stack{gap:10px}.client-merge .order-mini{margin:0;padding:12px 14px;display:block}
+.client-merge .order-mini small{margin-top:5px}.client-merge .order-mini .client-merge-address{font-size:14px;color:inherit}
+.client-merge .order-mini>span{display:block;text-align:right;font-size:12px;color:#247bdb;margin-top:9px}
+.client-merge .search{min-width:0;flex:1;width:auto}.client-merge .search input{min-width:0;width:100%}
+.client-merge .secondary,.client-merge .primary{font-size:13px;padding:9px 12px;min-height:36px}
+.client-merge .is-preview{grid-template-columns:1fr}.client-merge .is-preview .client-merge-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+.client-merge-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.client-merge-fields label{display:grid;gap:6px;font-size:13px;min-width:0}.client-merge-fields select{width:100%;min-width:0;padding:9px;border:1px solid #738bab40;border-radius:9px;background:var(--card,#fff);color:inherit}
+.client-merge-confirm{display:flex;align-items:flex-start;gap:9px;font-size:13px}.client-merge-confirm input{margin-top:3px;flex-shrink:0}
+.client-merge-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-top:12px;border-top:1px solid #738bab25}
+.client-merge-orders{display:grid;gap:5px;margin-top:8px;max-height:180px;overflow:auto}.client-merge summary{font-size:12px;cursor:pointer}
+@media(max-width:760px){.client-merge-workspace,.client-merge-fields,.client-merge .is-preview .client-merge-cards{grid-template-columns:1fr}}
