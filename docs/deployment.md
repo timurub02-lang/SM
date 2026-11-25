@@ -458,3 +458,9 @@ The separately enabled authenticated `/api/crmcalls-incoming` webhook creates em
 
 ## Delegated SK transfer approval
 Artem (employee E-74ee9a8f-99d while department_head) can review all pending SK transfers, including phone, ownership and active-order reasons, and approve or reject them. Decisions use the same guarded import and audit path as the administrator. Other heads and operators remain scoped and read-only with reasons and phones withheld. No general admin, finance or telephony permissions are added. No database migration or separate worker installation is required.
+
+### Administrator client merge
+
+The administrator can open «Найти дубль» from global/base search, select 2–10 cards, compare them, explicitly select the retained owner's card and main phone, and confirm. Search and preview never merge automatically. The chosen card keeps its original ownership dates; other phones become linked numbers. Order managers and financial records are unchanged. Existing call restrictions and paid-order archive rules continue to apply.
+
+`client_merge_audit` stores the original clients, orders and affected relational rows atomically before merging. Import snapshots remain immutable. The merge is version-bound and rolls back on concurrent changes, active calls, unfinished external uploads or conflicting relational keys. Unknown client-reference tables fail closed. The feature neither calls customers nor removes contacts from external dialler projects.
