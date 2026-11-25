@@ -35,4 +35,27 @@ assert.equal(reserve('three',{...route,raw:'stale'}),0);
 db.exec('DELETE FROM settings');db.prepare('INSERT INTO settings VALUES(?,?)').run('cdek-shipment-old',JSON.stringify({slot:1,state:'ready',createdAt:new Date().toISOString()}));
 assert.equal(reserve('four',{...route,choice:{...route.choice,maxCount:null,maxCents:639999}}),0);
 assert.equal(reserve('five',{...route,choice:{...route.choice,maxCount:null,maxCents:640000}}),1);
+assert.equal(reserve('stale-date',{...route,choice:{...route.choice,scheduleDate:'2001-01-01'}}),0);
 db.close();console.log('CDEK routing: main product, equal prices, mandatory A_, dates, priority, quota fallback, invalid retries, legacy amounts and atomic reservation passed.');
+
+// The selected Monday anchors the cycle even across New Year and Moscow midnight.
+const cycleAccounts=[...accounts,{slot:3,name:'ИП Стручев',configured:true}];
+const cycle=routingSchema.parse({...config,cycleStart:'2026-12-21',rules:[
+ {...base,products:[],id:'kis',slot:2,weekdays:[1,3,5],cycleDays:[[1,3,5],[1,3,5]]},
+ {...base,products:[],id:'str',slot:3,weekdays:[4],cycleDays:[[4],[]]},
+ {...base,products:[],id:'sm',slot:1,weekdays:[2],cycleDays:[[2],[2,4]]}
+]});
+const select=(at,dept='1')=>chooseRouting(cycle,cycleAccounts,order,dept,[],new Date(at));
+for(let offset=0;offset<28;offset++){
+ const at=new Date(Date.parse('2026-12-20T21:00:00Z')+offset*86400000);
+ const expected=[2,1,2,Math.floor(offset/7)%2===0?3:1,2,null,null][offset%7];
+ if(expected===null)assert.throws(()=>select(at),/нет подходящего правила/);
+ else assert.equal(select(at).slot,expected);
+ assert.equal(select(at,'5').slot,4);
+}
+assert.equal(select('2026-12-17T09:00:00Z').slot,3);
+assert.equal(select('2026-12-30T20:59:59Z').slot,2);
+assert.equal(select('2026-12-30T21:00:00Z').slot,1);
+for(const start of ['2026-12-22','2026-11-31',''])assert.equal(routingSchema.safeParse({...cycle,cycleStart:start}).success,false);
+assert.equal(routingSchema.safeParse({...cycle,rules:[{...base,cycleDays:[[8],[]]}]}).success,false);
+assert.equal(chooseRouting({...cycle,rules:[{...base,products:[]}]},accounts,order,'1',[],now).slot,1);
