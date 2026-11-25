@@ -926,20 +926,20 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
   padding: clamp(14px,2.5vw,22px);
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: var(--card);
+  background: var(--dark-panel,#fff);
 }
 .cdek-routing-dialog .routing-auto { margin: 10px 0 2px; font-weight: 600; }
 .routing-schedule h3,.routing-footer,.routing-card-head,.routing-tools button {
   display:flex; align-items:center; gap:8px;
 }
-.routing-mode { display:inline-flex; flex-wrap:wrap; gap:4px; margin-top:12px; padding:4px; border-radius:12px; background:var(--muted); }
+.routing-mode { display:inline-flex; flex-wrap:wrap; gap:4px; margin-top:12px; padding:4px; border-radius:12px; background:var(--dark-raised,#e9edf4); }
 .routing-mode button,.routing-days button { color:var(--foreground); border-radius:8px; padding:7px 12px; font:inherit; cursor:pointer; }
-.routing-mode button[aria-pressed=true] { background:var(--card); box-shadow:0 1px 4px #18223828; font-weight:650; }
+.routing-mode button[aria-pressed=true] { background:var(--dark-panel,#fff); box-shadow:0 1px 4px #18223828; font-weight:650; }
 .routing-anchor { display:flex; align-items:end; flex-wrap:wrap; gap:12px 22px; margin-top:16px; }
-.routing-anchor p { flex:1 1 200px; color:var(--muted-foreground); font-size:.88rem; }
+.routing-anchor p { flex:1 1 200px; color:var(--dark-muted,#5d6c81); font-size:.88rem; }
 .routing-card-head,.routing-footer { justify-content:space-between; flex-wrap:wrap; }
 .routing-card-head h4 { font-size:1.05rem; font-weight:650; }
-.routing-card-head small,.routing-week>span { color:var(--muted-foreground); }
+.routing-card-head small,.routing-week>span { color:var(--dark-muted,#5d6c81); }
 .routing-week { display:flex; gap:8px 16px; align-items:center; flex-wrap:wrap; margin:10px 0; }
 .routing-week>span { min-width:82px; font-size:.9rem; }
 .routing-days { display:flex; flex-wrap:wrap; gap:5px; }
