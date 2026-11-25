@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {chooseRouting,mainRoutingProduct,routingWindow,routingSchema,routingReservationGuard} from '../lib/cdek-routing.ts';
+import {previewRoutingDay,chooseRouting,mainRoutingProduct,routingWindow,routingSchema,routingReservationGuard} from '../lib/cdek-routing.ts';
 const now=new Date('2026-10-05T08:00:00Z');
 const accounts=[{slot:1,name:'СМ',configured:true},{slot:2,name:'ИП Киселева',configured:true},{slot:4,name:'ИП Аскеров',configured:true}];
 const base={id:'r1',name:'Товар X',enabled:true,slot:1,from:'',to:'',departments:[],products:['X'],weekdays:[],period:'week',maxCount:null,maxAmount:null};
@@ -59,3 +59,10 @@ assert.equal(select('2026-12-30T21:00:00Z').slot,1);
 for(const start of ['2026-12-22','2026-11-31',''])assert.equal(routingSchema.safeParse({...cycle,cycleStart:start}).success,false);
 assert.equal(routingSchema.safeParse({...cycle,rules:[{...base,cycleDays:[[8],[]]}]}).success,false);
 assert.equal(chooseRouting({...cycle,rules:[{...base,products:[]}]},accounts,order,'1',[],now).slot,1);
+
+for(const [date,slots] of [['2026-12-24',[3]],['2026-12-31',[1]],['2027-01-07',[3]],['2026-12-26',[]]]){
+ assert.deepEqual(previewRoutingDay(cycle,date),{slots,conditional:false});
+}
+const rules=[{...general,slot:3},{...base,slot:2,products:[]},{...base,slot:1,products:[]}];
+assert.deepEqual(previewRoutingDay({...config,rules},'2026-10-05'),{slots:[3,2],conditional:true});
+assert.deepEqual(previewRoutingDay({...config,rules},'2026-10-12'),{slots:[2],conditional:false});
