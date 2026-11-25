@@ -8,6 +8,7 @@ export const routingSchema=z.object({cycleStart:monday.optional(),savedCycleStar
 export type RoutingConfig=z.infer<typeof routingSchema>;
 export type RoutingRule=z.infer<typeof routingRuleSchema>;
 export type RoutingAccount={slot:number;name:string;configured:boolean};
+export const isAskerovAccount=(account:RoutingAccount)=>/аскеров/i.test(account.name);
 export type RoutingUsage={slot:number;createdAt:string;state:string;amountCents:number};
 export type RoutingChoice={slot:number;reason:string;ruleId?:string;scheduleDate?:string;start?:string;end?:string;maxCount?:number|null;maxCents?:number|null};
 export const mainRoutingProduct=(items:Order['items'])=>items.reduce<(typeof items)[number]|undefined>((best,item)=>!best||item.price>best.price?item:best,undefined);
@@ -75,7 +76,7 @@ export function routingWindow(rule:RoutingRule,now:Date){
 }
 export function chooseRouting(config:RoutingConfig,accounts:RoutingAccount[],order:Pick<Order,'items'>,department:string,usage:RoutingUsage[],now=new Date()):RoutingChoice|null{
  if(department==='5'){
-  const candidates=accounts.filter(a=>a.configured&&/аскеров/i.test(a.name));
+  const candidates=accounts.filter(a=>a.configured&&isAskerovAccount(a));
   if(candidates.length!==1)throw Error('СДЭК: для A_ должен быть подключён один аккаунт ИП Аскеров');
   return {slot:candidates[0].slot,reason:'Обязательное правило: A_ → ИП Аскеров'};
  }
