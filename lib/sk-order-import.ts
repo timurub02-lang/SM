@@ -1,3 +1,5 @@
+import {canDecideSkOrders} from './order-review-access.ts';
+import {managesWorkDepartment} from './head-vacation.ts';
 import {reconcileIncomingOwners} from './incoming-owner-sync.ts';
 import type {SkProjectMembership} from './sk-project-membership.ts';
 import {skOrderReview} from './sk-order-review.ts';
@@ -6,7 +8,7 @@ import {normalizePhone,clientSheet,hasActiveOrder,type Client,type Order,type Em
 import type {ActivityDb as Db} from './activity-store.ts';
 import {initBaseStorage} from './base-storage.ts';
 import {defaultOrderPolicy,orderPolicySchema} from './order-policy.ts';
-export type SkOrderInput={callId:string;leadId:string;projectId?:string|null;projectMembership?:SkProjectMembership;projectCheckedAt?:string;dispatchVerified?:boolean;email:string;userName?:string;userNameUnique?:boolean;name:string;phone:string;address:string;city:string;comment:string};
+export type SkOrderInput={source?:'CRMCalls';employeeId?:string;callId:string;leadId:string;projectId?:string|null;projectMembership?:SkProjectMembership;projectCheckedAt?:string;dispatchVerified?:boolean;email:string;userName?:string;userNameUnique?:boolean;name:string;phone:string;address:string;city:string;comment:string};
 export async function initSkOrders(d:Db){
  await initBaseStorage(d);
  await d.prepare("CREATE TABLE IF NOT EXISTS sk_order_cooldowns(phone TEXT NOT NULL,operator_id TEXT NOT NULL,call_id TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(phone,operator_id))").run();
@@ -26,7 +28,8 @@ export function skSender(staff:Employee[],email:string,userName='',userNameUniqu
  const found=staff.filter(e=>{const key=clean(e.skLogin||'');return key&&userNameUnique&&!!userName&&key===clean(userName);});
  return found.length===1&&found[0].role==='operator'&&found[0].accessEnabled!==false?found[0]:undefined;
 }
-export function skMayDecide(actor:Employee,_sender?:Employee,_owner?:Employee){return actor.role==='admin';}
+export function transferSender(staff:Employee[],input:SkOrderInput){return input.source==='CRMCalls'?staff.find(e=>e.id===input.employeeId&&e.role==='operator'&&e.accessEnabled!==false):skSender(staff,input.email,input.userName,input.userNameUnique);}
+export function skMayDecide(actor:Employee,_sender?:Employee,_owner?:Employee){return canDecideSkOrders(actor);}
 export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,now=new Date().toISOString()){
  if(!/^\d+$/.test(input.callId)||!normalizePhone(input.phone))throw Error('Некорректный звонок или телефон СК');
  now=new Date(now).toISOString();
@@ -50,7 +53,7 @@ export async function acceptSkOrder(d:Db,input:SkOrderInput,decision?:Employee,n
  }
  const orders:Order[]=existing?(await d.prepare('SELECT data FROM orders WHERE client_id=?').bind(existing.id).all()).results.map((r:any)=>JSON.parse(r.data)):[];
  const reason=skOrderReview(input.projectId,sender,existing,owner,orders,!!input.projectMembership,input.dispatchVerified).reasons.join('; ');
- if(reason&&(!decision||!sender||existing&&['ЧС','ПВ'].includes(clientSheet(existing))&&decision.role!=='admin')){
+ if(reason&&(!decision||!sender||existing&&['ЧС','ПВ'].includes(clientSheet(existing))&&!canDecideSkOrders(decision))){
   await d.prepare("UPDATE sk_order_transfers SET reason=? WHERE id=? AND state='pending'").bind(reason,input.callId).run();return {state:'pending',reason};
  }
  if(!sender)throw Error('Укажите ФИО Скорозвона в карточке оператора');
@@ -77,7 +80,8 @@ export async function operatorPendingSkOrders(d:Db,staff:Employee[],actorId:stri
  const rows=await d.prepare("SELECT id,data,created_at FROM sk_order_transfers WHERE state='pending' ORDER BY created_at DESC").all();
  return rows.results.flatMap((row:{id:string;data:string;created_at:string})=>{
   const input:SkOrderInput=JSON.parse(String(row.data));
-  if(skSender(staff,input.email,input.userName,input.userNameUnique)?.id!==actorId)return [];
+  const actor=staff.find(e=>e.id===actorId),sender=transferSender(staff,input);
+  if(!actor||!sender||(actor.role==='department_head'?sender.role!=='operator'||!managesWorkDepartment(actor,sender.department,staff):sender.id!==actorId))return [];
   return [{id:String(row.id),name:input.name||'Клиент из Скорозвона',at:String(row.created_at),reason:'Ожидает разрешения администратора',canDecide:false,sender:''}];
  });
 }

@@ -52,7 +52,7 @@ export async function orderSkClientLink(d:Db,order:Order,request:typeof fetch=fe
  if(order.skLeadId&&!unavailable.has(String(order.skLeadId)))return skLeadUrl(order.skLeadId);
  const hasTransfers=!!await d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sk_order_transfers'").first();
  if(hasTransfers){
-  const rows=(await d.prepare("SELECT data FROM sk_order_transfers WHERE order_id=? AND state='imported' LIMIT 2").bind(order.id).all()).results;
+  const rows=(await d.prepare("SELECT data FROM sk_order_transfers WHERE order_id=? AND state='imported' AND COALESCE(json_extract(data,'$.source'),'')<>'CRMCalls' LIMIT 2").bind(order.id).all()).results;
   if(rows.length>1)return null;
   if(rows.length){const id=JSON.parse(rows[0].data).leadId;if(!unavailable.has(String(id)))return skLeadUrl(id);}
  }
@@ -62,7 +62,7 @@ export async function orderSkClientLink(d:Db,order:Order,request:typeof fetch=fe
  const history:Order[]=(await d.prepare('SELECT data FROM orders WHERE client_id=? AND id<>?').bind(order.clientId,order.id).all()).results.map((r:{data:string})=>JSON.parse(r.data) as Order);
  const links=history.map(o=>available(o.skLeadId)).filter((link):link is string=>link!==null);
  if(hasTransfers){
-  const rows=(await d.prepare("SELECT t.data FROM sk_order_transfers t JOIN orders o ON o.id=t.order_id WHERE o.client_id=? AND t.state='imported'").bind(order.clientId).all()).results;
+  const rows=(await d.prepare("SELECT t.data FROM sk_order_transfers t JOIN orders o ON o.id=t.order_id WHERE o.client_id=? AND t.state='imported' AND COALESCE(json_extract(t.data,'$.source'),'')<>'CRMCalls'").bind(order.clientId).all()).results;
   for(const row of rows){const link=available(JSON.parse(row.data).leadId);if(link)links.push(link);}
  }
  const unique=[...new Set(links)];if(unique.length)return unique.length===1?unique[0]:null;

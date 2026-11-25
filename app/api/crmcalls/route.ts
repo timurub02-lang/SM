@@ -1,3 +1,4 @@
+import {incomingScenarios,incomingConfigSchema,incomingDashboard,saveIncomingConfig,runCRMCallsIncoming} from '@/lib/crmcalls-incoming';
 import {z} from 'zod';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -13,6 +14,13 @@ async function admin(req:Request){
 async function get(req:Request){
  if(!await admin(req))return Response.json({error:'CRMCalls доступен только администратору'},{status:403});
  try{
+  if(new URL(req.url).searchParams.get('directory')==='1'){
+   const c=await readCRMCalls(db());if(!c?.apiKey)throw Error('Сначала подключите API CRMCalls');
+   const api=crmcallsApi(c.apiKey),scenario=new URL(req.url).searchParams.get('scenarioId');
+   if(scenario){z.uuid().parse(scenario);return Response.json({results:(await api('/scenarios/'+scenario+'/results')).data});}
+   const [users,scenarios]=await Promise.all([api('/users'),api('/scenarios')]);return Response.json({users:users.data,scenarios:scenarios.data});
+  }
+  if(new URL(req.url).searchParams.get('incoming')==='1')return Response.json(await incomingDashboard(db()));
   if(new URL(req.url).searchParams.get('projects')==='1'){
    const c=await readCRMCalls(db());if(!c?.apiKey)throw Error('Подключите CRMCalls с помощью API-ключа');
    return Response.json({projects:await crmcallsProjects(crmcallsApi(c.apiKey))});
@@ -21,6 +29,8 @@ async function get(req:Request){
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось загрузить CRMCalls'},{status:400});}
 }
 const input=z.discriminatedUnion('action',[
+ z.object({action:z.literal('saveIncoming'),config:z.unknown(),revision:z.string().max(100)}),
+ z.object({action:z.literal('retryIncoming')}),
  z.object({action:z.literal('connect'),apiKey:z.string().trim().max(500).regex(/^(crmc_live_[A-Za-z0-9_-]+)?$/),revision:z.string().max(100)}),
  z.object({action:z.literal('preview'),schedule:crmcallsScheduleSchema}),
  z.object({action:z.literal('save'),schedule:crmcallsScheduleSchema,revision:z.string().max(100)}),
@@ -31,6 +41,20 @@ async function post(req:Request){
  if(req.headers.get('sec-fetch-site')==='cross-site')return Response.json({error:'Запрос отклонён'},{status:403});
  try{
   const p=input.parse(await req.json());await initCRMCalls(db());
+  if(p.action==='saveIncoming'){
+   const config=incomingConfigSchema.parse(p.config);
+   if(config.enabled){
+    const c=await readCRMCalls(db());if(!c?.apiKey)throw Error('Сначала подключите API CRMCalls');
+    const api=crmcallsApi(c.apiKey),users=await api('/users');
+    for(const scenario of incomingScenarios(config)){
+     const results=await api('/scenarios/'+scenario.scenarioId+'/results');
+     if(!Array.isArray(results.data)||!results.data.some((v:any)=>v.id===scenario.resultId))throw Error('Результат не найден в выбранном сценарии');
+    }
+    if(!Array.isArray(users.data)||config.operators.some(link=>!users.data.some((v:any)=>v.id===link.userId&&v.status==='active')))throw Error('Выберите действующих операторов CRMCalls');
+   }
+   return Response.json(await saveIncomingConfig(db(),config,p.revision));
+  }
+  if(p.action==='retryIncoming'){await runCRMCallsIncoming(db(),true);return Response.json(await incomingDashboard(db()));}
   if(p.action==='connect'){await saveCRMCallsKey(db(),p.apiKey,p.revision);return Response.json({message:'Подключение проверено. Автоматическая выгрузка включается отдельно в проекте.'});}
   if(p.action==='reconcile'){
    const c=await readCRMCalls(db());if(!c?.apiKey)throw Error('Сначала подключите CRMCalls');

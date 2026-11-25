@@ -16,7 +16,7 @@ let server,logs='';
 try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of [...authSchema,...inventorySQL])db.exec(sql);
  db.prepare('INSERT INTO products(id,name_key,data) VALUES(?,?,?)').run('p','product',JSON.stringify({id:'p',name:'Product'}));db.prepare("INSERT INTO stock_movements VALUES('initial','p',100,'test','admin',?)").run(new Date().toISOString());
- const upstreamFile=join(dir,'upstream.json');writeFileSync(upstreamFile,JSON.stringify({calls:[],orders:{},points:[{code:'MSK1',status:'ACTIVE',is_handout:true,location:{address_full:'Москва, Тестовая, 1',postal_code:'101000'},work_time:'09–20'},{code:'CLOSED',status:'CLOSED',is_handout:true,location:{address_full:'Закрытый'}}]}));
+ const upstreamFile=join(dir,'upstream.json');writeFileSync(upstreamFile,JSON.stringify({calls:[],orders:{},points:[{code:'MSK1',status:'ACTIVE',is_handout:true,allowed_cod:true,location:{address_full:'Москва, Тестовая, 1',postal_code:'101000'},work_time:'09–20'},{code:'CLOSED',status:'CLOSED',is_handout:true,location:{address_full:'Закрытый'}}]}));
  db.prepare('INSERT INTO settings(id,data) VALUES(?,?)').run('cdek-1',JSON.stringify({name:'Test account',clientId:'synthetic',clientSecret:'synthetic'}));
  const hash=await hashPassword(password),cookies={};
  for(const [id,role,department] of [['admin','admin',''],['op','operator','1'],['foreign','operator','2'],['head','department_head','1'],['other-head','department_head','2'],['log','logistic',''],['second','chief_logistic','']]){

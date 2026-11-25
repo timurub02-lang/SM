@@ -1,3 +1,4 @@
+import {moscowWorkDay} from './head-vacation.ts';
 import type {ActivityDb} from './activity-store.ts';
 import {initWorkspaceClock} from './crm-workspace-clock.ts';
 
@@ -74,7 +75,8 @@ export async function readPreparedModel<T>(d:ActivityDb,kind:string,scope:string
  const healthy=row?.worker_ok===1&&now-row.worker_heartbeat>=0&&now-row.worker_heartbeat<10000;
  // Only an unchanged scope observed in this same SQL snapshot can survive a foreign access change.
  const unchangedScope=(kind==='context'||kind==='summary')&&row?.scope_revision&&row.scope_revision===row.current_scope_revision;
- if(!row||row.schema_version!==1||(row.access_revision!==row.current_access_revision&&!unchangedScope))return {status:healthy?'pending':'error',schemaVersion:1,message:healthy?'Сводка готовится':'Обработчик сводок недоступен. Ожидаем готовые данные.'};
+ const oldHeadDay=/^\d{4}-\d{2}-\d{2}\//.test(row?.source_revision||'')&&!row.source_revision.startsWith(moscowWorkDay(now)+'/');
+ if(oldHeadDay||!row||row.schema_version!==1||(row.access_revision!==row.current_access_revision&&!unchangedScope))return {status:healthy?'pending':'error',schemaVersion:1,message:healthy?'Сводка готовится':'Обработчик сводок недоступен. Ожидаем готовые данные.'};
  try{
   if(row.data===null)throw Error('Missing or damaged prepared value');
   const data=JSON.parse(row.data) as T;

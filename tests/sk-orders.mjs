@@ -58,7 +58,7 @@ await assert.rejects(acceptSkOrder(d,conflict,head),/Решение/);assert.equ
 const unknown={...input,callId:'3',phone:'79990000003',email:'missing@test.invalid',userName:'Missing'};assert.equal((await acceptSkOrder(d,unknown)).state,'pending');assert.equal((await acceptSkOrder(d,unknown,admin)).state,'pending');
 await d.prepare("UPDATE sk_order_transfers SET state='rejected' WHERE id='3'").run();assert.equal((await acceptSkOrder(d,unknown)).state,'rejected');
 await assert.rejects(acceptSkOrder(d,{...input,callId:'4',phone:'123'}),/Некорректный/);
-for(const role of ['courier','purchasing','logistic','chief_logistic','redemption','department_head'])for(const method of ['GET','POST']){assert.equal(mayCallEndpoint({...sender,role},new URL('https://crm/api/sk-orders'),method,{}),false);assert.equal(skMayDecide({...sender,role},sender,other),false);}
+for(const role of ['courier','purchasing','logistic','chief_logistic','redemption','department_head'])for(const method of ['GET','POST']){assert.equal(mayCallEndpoint({...sender,role},new URL('https://crm/api/sk-orders'),method,{}),role==='department_head'&&method==='GET');assert.equal(skMayDecide({...sender,role},sender,other),false);}
 for(const method of ['GET','POST'])assert.equal(mayCallEndpoint(admin,new URL('https://crm/api/sk-orders'),method,{}),true);
 assert.equal(mayCallEndpoint(sender,new URL('https://crm/api/sk-orders'),'GET',{}),true);
 assert.equal(mayCallEndpoint(sender,new URL('https://crm/api/sk-orders'),'POST',{}),false);
@@ -150,3 +150,9 @@ assert.equal(ownReview.ownerIsSender,true);
 assert.deepEqual(ownReview.reasons,['Есть действующие заказы: SK-124 — Отправлен']);
 assert.equal(skOrderReview('project',undefined,reviewClient,reviewOwner,[]).ownerIsSender,false);
 
+
+const artem={...head,id:'E-74ee9a8f-99d'};
+assert.equal(skMayDecide(artem,sender,other),true);
+for(const method of ['GET','POST'])assert.equal(mayCallEndpoint(artem,new URL('https://crm/api/sk-orders'),method,{}),true);
+assert.equal(skMayDecide({...artem,role:'operator'},sender,other),false);
+assert.equal(skMayDecide({...head,login:'SKP_Artem'},sender,other),false);

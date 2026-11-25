@@ -511,3 +511,67 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .incoming-miss-history{list-style:none;padding:0;margin:0;display:grid;gap:12px}
 .incoming-miss-history li{display:grid;gap:6px;padding:12px;border:1px solid var(--border);border-radius:10px}
 .incoming-miss-history audio{width:100%;max-width:100%}
+
+.notice.operator-delivery-estimate{display:flex;flex-direction:row;align-items:flex-start;gap:10px;text-align:left;padding:12px 14px;background:color-mix(in srgb,var(--primary) 8%,var(--card));color:var(--foreground)}
+.operator-delivery-estimate>svg{flex:none;margin-top:2px}.operator-delivery-estimate strong,.operator-delivery-estimate span{display:block}
+
+.vacation-panel {
+  width: min(100%, 580px);
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card, var(--background));
+}
+.vacation-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 15px 20px;
+  border-radius: inherit;
+  color: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+.vacation-heading > svg:first-child { color: var(--mac-blue, #3681dd); }
+.vacation-chevron { margin-left: auto; }
+.vacation-heading[aria-expanded=true] .vacation-chevron { transform: rotate(180deg); }
+.vacation-fields {
+  display: grid;
+  gap: 16px;
+  padding: 18px 20px 20px;
+  border-top: 1px solid var(--border);
+}
+.vacation-fields header p { margin: 4px 0 0; font-size: 14px; color: var(--muted-foreground, #627184); }
+.vacation-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(175px, 100%), 1fr)); gap: 12px; }
+.vacation-fields .field :is(input, select) { min-width: 0; width: 100%; min-height: 42px; padding-inline: 10px; }
+.vacation-coverage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 580px);
+  padding: 14px 18px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card, var(--background));
+  cursor: pointer;
+}
+.vacation-coverage > svg { color: var(--mac-blue, #3681dd); }
+.vacation-coverage strong, .vacation-coverage small { display: block; overflow-wrap: anywhere; }
+.vacation-coverage small { margin-top: 3px; color: var(--muted-foreground, #627184); }
+.vacation-coverage:has([data-state=checked]) { border-color: var(--mac-blue, #3681dd); }
+
+.review-filters { display:flex; flex-wrap:wrap; align-items:end; gap:12px }
+.review-filters .field:first-child { flex:1 1 220px }
+.review-columns { display:grid; grid-template-columns:minmax(230px, .85fr) minmax(320px, 1.15fr); gap:16px; align-items:start }
+.review-list,.review-detail { background:var(--card,var(--background)); border:1px solid var(--border); border-radius:14px; overflow:hidden }
+.review-list button { display:grid; gap:5px; width:100%; padding:13px 16px; text-align:left; color:inherit; border-bottom:1px solid var(--border) }
+.review-list button:last-child { border-bottom:0 }
+.review-list button[aria-current=true] { background:var(--accent); box-shadow:inset 3px 0 #397cdc }
+.review-list small,.review-detail small { color:var(--muted-foreground) }
+.review-detail { display:grid; gap:15px; padding:20px; position:sticky; top:10px }
+.review-detail audio { width:100%; min-width:0 }
+.review-detail button.primary { justify-self:start }
+@media(max-width:750px){.review-columns{grid-template-columns:1fr}.review-list{max-height:300px;overflow:auto}.review-detail{position:static}}

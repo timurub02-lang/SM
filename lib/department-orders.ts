@@ -1,7 +1,8 @@
+import {managesWorkDepartment} from './head-vacation.ts';
 import {canOperatorAmendMissed,type Employee,type Order} from './crm.ts';
 
-export const isDepartmentOrder=(e:Pick<Employee,'role'|'department'>,o:Pick<Order,'manager'>,staff:Employee[])=>
- e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&x.department===e.department);
+export const isDepartmentOrder=(e:Pick<Employee,'role'|'department'>&Partial<Pick<Employee,'id'>>,o:Pick<Order,'manager'>,staff:Employee[])=>
+ e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&managesWorkDepartment(e,x.department,staff));
 export const isOrderOperator=(e:Pick<Employee,'id'|'role'|'department'>,o:Pick<Order,'manager'>,staff:Employee[]=[])=>e.role==='operator'&&e.id===o.manager||isDepartmentOrder(e,o,staff);
 export const headDraftStage=(o:Pick<Order,'status'|'courier'|'cdekExported'|'cdekDeleting'>)=>o.status==='draft'&&!o.courier&&!o.cdekExported&&!o.cdekDeleting;
 export const departmentWorkStage=(o:Pick<Order,'status'|'courier'|'cdekExported'|'cdekDeleting'>)=>

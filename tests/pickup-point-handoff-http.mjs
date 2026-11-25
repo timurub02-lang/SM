@@ -13,7 +13,7 @@ const dir=mkdtempSync(join(tmpdir(),'crm-pickup-point-')),db=new DatabaseSync(jo
 let server,logs='';
 try{
  db.exec(readFileSync(new URL('../drizzle/0000_cynical_monster_badoon.sql',import.meta.url),'utf8'));for(const sql of authSchema)db.exec(sql);
- const upstreamFile=join(dir,'upstream.json');writeFileSync(upstreamFile,JSON.stringify({calls:[],orders:{},points:[{code:'MSK1',status:'ACTIVE',is_handout:true,location:{address_full:'Москва, Тестовая, 1',postal_code:'101000'},work_time:'09–20'},{code:'CLOSED',status:'CLOSED',is_handout:true,location:{address_full:'Закрытый'}}]}));
+ const upstreamFile=join(dir,'upstream.json');writeFileSync(upstreamFile,JSON.stringify({calls:[],orders:{},cities:[{code:44,city:'Москва',region_code:1}],tariffs:[{delivery_mode:3,delivery_sum:550,period_min:3,period_max:5},{delivery_mode:4,delivery_sum:290,period_min:2,period_max:4}],points:[{code:'NO-COD',status:'ACTIVE',is_handout:true,allowed_cod:false},{code:'UNKNOWN-COD',status:'ACTIVE',is_handout:true},{code:'MSK1',status:'ACTIVE',is_handout:true,allowed_cod:true,location:{city:'Балашиха',city_code:45,address_full:'Балашиха, Тестовая, 1',postal_code:'101000'},work_time:'09–20'},{code:'CLOSED',status:'CLOSED',is_handout:true,location:{address_full:'Закрытый'}}]}));
  db.prepare('INSERT INTO settings(id,data) VALUES(?,?)').run('cdek-1',JSON.stringify({name:'Test account',clientId:'synthetic',clientSecret:'synthetic'}));
  const hash=await hashPassword(password),cookies={};
  for(const [id,role,department] of [['op','operator','1'],['foreign','operator','2'],['head','department_head','1'],['other-head','department_head','2'],['log','logistic',''],['second','chief_logistic','']]){
@@ -31,7 +31,22 @@ try{
  const act=(actor,action,extra={},expected=200)=>call(actor,'/api/crm',{action,id:'post',version:order().version,responseMode:'entity-patch',...extra},expected);
  await act('op','transition',{to:'confirm'},400);assert.equal(order().status,'draft');
  await call('foreign','/api/cdek/pickup-points?orderId=post',undefined,403);await call('other-head','/api/cdek/pickup-points?orderId=post',undefined,403);
- const loaded=(await call('op','/api/cdek/pickup-points?orderId=post')).data;assert.deepEqual(loaded.points.map(p=>p.code),['MSK1']);assert.ok(loaded.selectionId);assert.equal(JSON.stringify(loaded).includes('clientSecret'),false);
+ const loaded=(await call('op','/api/cdek/pickup-points?orderId=post')).data;assert.deepEqual(loaded.points.map(p=>p.code),['MSK1']);assert.ok(loaded.selectionId);assert.equal(loaded.points[0].sameLocality,false);assert.equal(loaded.points[0].city,'Балашиха');assert.equal(loaded.warning,'');assert.equal(JSON.stringify(loaded).includes('clientSecret'),false);
+ db.prepare("INSERT OR REPLACE INTO settings VALUES('warehouse-address',?)").run(JSON.stringify({postalCode:'109388'}));
+ const estimate='/api/cdek/operator-estimate',beforeEstimate=order();
+ const pickupQuery=estimate+'?orderId=post&delivery=cdek_pickup&point=MSK1&selection='+loaded.selectionId;
+ assert.deepEqual((await call('op',pickupQuery)).data,{min:2,max:4});
+ assert.deepEqual((await call('op',estimate+'?orderId=post&delivery=cdek_courier')).data,{min:3,max:5});
+ await call('foreign',pickupQuery,undefined,403);
+ const newDraft={clientId:'c',items:initial.items};
+ assert.deepEqual((await call('op',estimate,newDraft)).data,{min:3,max:5});
+ await call('other-head',estimate,newDraft,403);
+ assert.deepEqual((await call('op',pickupQuery.replace('point=MSK1','point=NO-COD'))).data,{min:null,max:null});
+ const upstream=JSON.parse(readFileSync(upstreamFile,'utf8'));
+ writeFileSync(upstreamFile,JSON.stringify({...upstream,tariffs:[]}));
+ assert.deepEqual((await call('op',pickupQuery)).data,{min:null,max:null});
+ assert.equal(db.prepare("SELECT id FROM settings WHERE id='cdek-quote-post'").get(),undefined);
+ assert.deepEqual(order(),beforeEstimate);
  await act('op','selectOrderPickupPoint',{code:'FORGED',selectionId:loaded.selectionId},400);
  const saveData={delivery:initial.delivery,address:initial.address,addressParts:initial.addressParts,items:initial.items};
  const unsaved=order();assert.equal(unsaved.cdekPickupPoint,undefined);
@@ -48,7 +63,7 @@ try{
  await act('op','transition',{to:'confirm'},400);await act('op','selectOrderPickupPoint',{code:'MSK1',selectionId:loaded.selectionId},400);
  db.prepare("UPDATE orders SET data=? WHERE id='post'").run(JSON.stringify(before));
  await act('op','transition',{to:'confirm'});assert.equal(order().status,'confirm');assert.equal(order().cdekPickupPoint.code,'MSK1');
- const logistic=(await call('log','/api/crm')).data.orders.find(o=>o.id==='post');assert.equal(logistic.cdekPickupPoint.address,'Москва, Тестовая, 1');
+ const logistic=(await call('log','/api/crm')).data.orders.find(o=>o.id==='post');assert.equal(logistic.cdekPickupPoint.address,'Балашиха, Тестовая, 1');
  await call('op','/api/cdek/pickup-points?orderId=post',undefined,403);
  const requests=JSON.parse(readFileSync(upstreamFile,'utf8')).calls;assert.equal(requests.some(c=>c.path==='/v2/orders'),false);
  console.log('Pickup handoff HTTP: missing/forged/stale denied, own operator/head lookup and save, foreign denied, closed PVZ excluded, retained at logistics, no shipment created');

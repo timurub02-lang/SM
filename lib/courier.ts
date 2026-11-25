@@ -20,7 +20,7 @@ export type CourierAssignment={
 };
 export const courierDoorRefusal=(o:Order|undefined)=>o?.delivery==='moscow_courier'&&o.status==='rework'&&o.courier?.phase==='operator'&&o.courier.doorRefusal&&!o.courier.doorRefusal.resolvedAt?o.courier.doorRefusal:undefined;
 export function canHandleCourierDoor(o:Order,e:Pick<Employee,'id'|'role'|'department'>,staff:Employee[]=[]){
- return !!courierDoorRefusal(o)&&(e.role==='admin'||e.role==='operator'&&o.manager===e.id||e.role==='department_head'&&!!e.department&&staff.some(x=>x.id===o.manager&&x.role==='operator'&&x.department===e.department));
+ return !!courierDoorRefusal(o)&&(e.role==='admin'||e.role==='operator'&&o.manager===e.id||isDepartmentOrder(e,o,staff));
 }
 export function courierDoorPhase(o:Order,now=Date.now()){
  const d=courierDoorRefusal(o);if(!d)return '';

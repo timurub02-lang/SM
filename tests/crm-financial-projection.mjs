@@ -14,6 +14,9 @@ const staff=[
  {id:'h1',role:'department_head',department:'1',bonus:0,leaderPremium:{model:'salary_bonus',fixedPerPeriod:1500,links:[{operatorId:'a',rate:2.25},{operatorId:'b:operator',rate:1.7}]}},
  {id:'h2',role:'department_head',department:'2',bonus:0,leaderPremium:{model:'udl_guarantee',monthlyGuarantee:10000,firstPeriod:4000,links:[{operatorId:'b:operator',rate:3}]}},
 ].map(e=>({...e,name:e.id,login:e.id,salary:0,version:1}));
+// A working delegation grants access to orders, but payroll remains department-scoped.
+const today=new Date(Date.now()+3*3600000).toISOString().slice(0,10);
+staff[3].vacation={substitute:'h2',department:'1',substituteDepartment:'2',from:today,until:today,enabled:true};
 const receipt=(id,manager,date,amount=1234.56)=>({id,clientId:'c',manager,status:'redeemed',delivery:'russian_post',paymentReceivedAt:date+'T12:00:00Z',paymentReceipt:{amount},items:[],createdAt:date+'T12:00:00Z',updatedAt:date+'T12:00:00Z',version:1});
 const cdek={...receipt('cdek','a','2026-10-25'),delivery:'cdek_pickup',paymentReceivedAt:undefined,paymentReceipt:undefined,cdekRemittances:[{slot:1,registry:'r',tracking:'x',paymentDate:'2026-10-25',amountCents:100000,collectedCents:134599}]};
 const orders=[receipt('post','a','2026-10-25'),{...receipt('courier','b:operator','2026-10-25',729.99),delivery:'moscow_courier'},cdek,{...cdek,id:'equal-duplicate',cdekRemittances:[...cdek.cdekRemittances,{...cdek.cdekRemittances[0],registry:'second',paymentDate:'2026-11-10'}]},{...cdek,id:'conflict',cdekRemittances:[...cdek.cdekRemittances,{...cdek.cdekRemittances[0],collectedCents:300000}]},receipt('next','a','2026-10-28'),{...receipt('stored-stage','a','2026-10-25'),premiumStage:{status:'accrued',periodId:'2026-11-1'}},receipt('later','b:operator','2026-11-12'),{...receipt('legacy','a','2026-10-25'),priorPremiumPaid:{period:'old'}},{...receipt('test','a','2026-10-25'),testOnly:true},{...receipt('not-received','a','2026-10-25'),paymentReceivedAt:undefined},{...receipt('imported','a','2026-10-25'),legacyLv:{orderId:'external-1'},importedPayment:{periodId:'2026-10-2',amount:333.33,source:'Synthetic',recordedAt:'now'}},{...receipt('cross-duplicate','b:operator','2026-10-25'),status:'draft',legacyLv:{orderId:'external-1'}},{...receipt('timezone','a','2026-10-25'),paymentReceivedAt:'2026-10-25T22:30:00Z'}];
@@ -33,6 +36,9 @@ try{
  for(const ledger of [null,initial,frozen,signed,paid,reopened,imported]){
   if(ledger)await d.prepare("INSERT INTO settings VALUES('premium-ledger',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").bind(JSON.stringify(ledger)).run();else await d.prepare("DELETE FROM settings WHERE id='premium-ledger'").run();
   const original=JSON.stringify(ledger),projection=await buildFinancialProjection(d,Date.parse('2026-11-12T10:00:00Z'));
+  const substitutePeriod=financialPeriodResponse(projection,staff[4],period);
+  assert.deepEqual(Object.keys(substitutePeriod.adjustments).sort(),['b:operator','h2']);
+  assert.ok((substitutePeriod.payroll??substitutePeriod.calculatedPayroll).every(row=>row.department==='2'));
   assert.equal(JSON.stringify(ledger),original,'worker calculation cannot mutate the source ledger');
   for(const actor of staff)for(const selected of premiumPeriods.map(p=>p.id)){
    const result=financialPeriodResponse(projection,actor,selected),input=selected===period?adjustments:{},entry=ledger?.periods[selected];

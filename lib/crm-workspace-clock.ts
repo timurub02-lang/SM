@@ -1,3 +1,4 @@
+import {moscowWorkDay} from './head-vacation.ts';
 import {createHash} from 'node:crypto';
 import type {ActivityDb} from './activity-store.ts';
 import type {Employee} from './crm.ts';
@@ -56,7 +57,8 @@ async function install(d:ActivityDb){
     const ids=people.join(' UNION '),dept=departments.length?` OR ${json('e','department')} IN (${departments.join(' UNION ')})`:'';
     // Heads inherit their operators' changes; shared incoming is visible to every head.
     const recipients=`SELECT e.id AS recipient FROM employees e WHERE e.id IN (${ids}) OR (${json('e','role')}='department_head' AND ((${json('e','department')}<>'' AND (${json('e','department')} IN (SELECT ${json('p','department')} FROM employees p WHERE p.id IN (${ids}) AND ${json('p','role')}='operator')${dept}))${shared.length?' OR ('+shared.join(' OR ')+')':''}))`;
-    body=bump(recipients,table==='reminders'?['tasks']:table==='events'?['cards']:areas);
+    const observers="WITH direct AS MATERIALIZED ("+recipients+") SELECT recipient FROM direct UNION SELECT json_extract(h.data,'$.vacation.substitute') AS recipient FROM employees h WHERE json_extract(h.data,'$.vacation.enabled')=1 AND h.id IN (SELECT recipient FROM direct)";
+    body=bump(observers,table==='reminders'?['tasks']:table==='events'?['cards']:areas);
    }
    // Premium membership can cross departments through duplicated external order IDs.
    if(table==='orders'){
@@ -87,5 +89,5 @@ export async function workspaceVersions(d:ActivityDb,e:Employee):Promise<Workspa
  // Session decoding adds defaults (for example testOnly:false); workers use stored employees.
  // Hash only canonical permission fields. Employee edits already advance the durable clock.
  const access=JSON.stringify([e.id,e.role,e.department||'',e.baseAccess||'']);
- return Object.fromEntries(areas.map(area=>[area,hash(JSON.stringify([epoch,access,area,rows.filter((r:{area:string})=>r.area===area)]))])) as WorkspaceVersions;
+ return Object.fromEntries(areas.map(area=>[area,(e.role==='department_head'?moscowWorkDay()+'/':'')+hash(JSON.stringify([epoch,access,area,rows.filter((r:{area:string})=>r.area===area)]))])) as WorkspaceVersions;
 }

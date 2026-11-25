@@ -11,8 +11,8 @@ const item={id:'incoming-test',clientId:'client-test',clientName:'Synthetic clie
 function render(role,itemPatch={},clients=[],tab='free'){
  globalThis.__incomingTab=tab;const opened=[];
  const tree=IncomingInbox({items:[{...item,...itemPatch}],clients,employees:[],employee:{id:'actor',role},busy:false,onOpenClient:(...args)=>opened.push(args)});
- const cards=[],buttons=[],ndTabs=[],ndActions=[];function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;if(node.type==='details'&&node.props.className?.includes('incoming-card'))cards.push(node);if(node.type==='button'&&node.props.children==='Карточка клиента')buttons.push(node);if(node.type==='button'&&node.props['aria-label']?.startsWith('НД:'))ndTabs.push(node);if(node.type==='button'&&node.props.children==='Недозвон')ndActions.push(node);walk(node.props?.children);}
- walk(tree);return {buttons,opened,cards,ndTabs,ndActions};
+ const cards=[],buttons=[],ndTabs=[],ndActions=[],callTargets=[];function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;if(node.props?.target?.mode)callTargets.push(node.props.target);if(node.type==='details'&&node.props.className?.includes('incoming-card'))cards.push(node);if(node.type==='button'&&node.props.children==='Карточка клиента')buttons.push(node);if(node.type==='button'&&node.props['aria-label']?.startsWith('НД:'))ndTabs.push(node);if(node.type==='button'&&node.props.children==='Недозвон')ndActions.push(node);walk(node.props?.children);}
+ walk(tree);return {buttons,opened,cards,ndTabs,ndActions,callTargets};
 }
 for(const [patch,tab] of [[{},'free'],[{clientOwnerId:'other'},'known'],[{closedAt:'2026-11-14T13:00:00Z'},'closed']]){
  const view=render('admin',patch,[],tab);assert.equal(view.buttons.length,1,'Admin card navigation must not depend on the client cache');
@@ -24,6 +24,11 @@ assert.equal(render('operator',{clientOwnerId:'other'},[],'known').buttons.lengt
 assert.equal(render('department_head',{},[],'free').buttons.length,1,'Head can inspect an available free client through incoming');
 assert.equal(render('operator',{assigneeId:'actor'},[],'known').buttons.length,1,'Assigned free-client history remains available');
 assert.equal(render('operator',{clientOwnerId:'actor'},[{id:item.clientId,owner:'actor'}],'known').buttons.length,1);
+const assignedFree={assigneeId:'team-operator',sharedQueue:false};
+for(const clients of [[],[{id:item.clientId,owner:''}]]) {
+ const view=render('department_head',assignedFree,clients);
+ assert.deepEqual(view.callTargets,[{mode:'incoming',incomingId:item.id}],'Head calls back on the assigned free-client inquiry');
+}
 console.log('Inbox navigation: admin missing-cache/free/owned/closed, callback IDs and unchanged operator/head guards passed');
 
 for(const patch of [{clientOwnerId:'owner'},{clientOwnerId:'owner',assigneeId:'actor'}])assert.ok(render('admin',patch,[],'known').cards[0].props.className.includes('incoming-card-owned-no-order'),'Owned clients without active orders are blue regardless of the assigned handler');
