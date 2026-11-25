@@ -24,7 +24,7 @@ export function CRMCallsIncomingSettings({actorId}:{actorId:string}){
   <p>Результат «СМ СРМ» создаёт карточку с пустой корзиной у оператора, который сохранил результат.</p>
   {error&&<p className="cc-alert" role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
   {!data?<button className="secondary" onClick={()=>void load()}>Загрузить настройки</button>:<>
-   <details><summary>Настроить приём и соответствия операторов</summary>
+   <details><summary>Настроить приём заказов</summary>
     <div className="cc-incoming-form">
      <p className="muted">В CRMCalls откройте сценарий и добавьте действие Webhook для результата «СМ СРМ». Выберите поля по инструкции интеграции. CRMCalls отправляет событие только при первом сохранении результата звонка.</p>
      <label className="cc-field">Адрес приёма<input readOnly value={typeof window==='undefined'?'':window.location.origin+'/api/crmcalls-incoming'}/></label>
@@ -35,13 +35,7 @@ export function CRMCallsIncomingSettings({actorId}:{actorId:string}){
       <button className="secondary" onClick={()=>setForm({...form,additionalScenarios:form.additionalScenarios!.filter((_,n)=>n!==i)})}>Убрать сценарий {i+1}</button>
      </div>)}
      <button className="secondary" onClick={()=>setForm({...form,additionalScenarios:[...(form.additionalScenarios||[]),{scenarioId:'',resultId:''}]})}>Добавить сценарий</button>
-     <p>Сопоставьте оператора CRMCalls с сотрудником CRM. Неизвестный оператор остаётся в журнале до сопоставления.</p>
-     {form.operators.map((link,i)=><div className="cc-incoming-operator" key={i}>
-      <label className="cc-field">Оператор CRMCalls<select value={link.userId} onChange={e=>setForm({...form,operators:form.operators.map((v,n)=>n===i?{...v,userId:e.target.value}:v)})}><option value="">Выберите оператора</option>{directory.users.map(v=><option key={v.id} value={v.id}>{v.name}{v.status==='active'?'':' · неактивен'}</option>)}</select></label>
-      <label className="cc-field">Оператор CRM<select value={link.employeeId} onChange={e=>setForm({...form,operators:form.operators.map((v,n)=>n===i?{...v,employeeId:e.target.value}:v)})}><option value="">Выберите сотрудника</option>{data.staff.map(e=><option key={e.id} value={e.id}>{e.name} · {e.login}</option>)}</select></label>
-      <button className="secondary" aria-label={'Убрать соответствие '+(i+1)} onClick={()=>setForm({...form,operators:form.operators.filter((_,n)=>n!==i)})}>Убрать</button>
-     </div>)}
-     <button className="secondary" onClick={()=>setForm({...form,operators:[...form.operators,{userId:'',employeeId:''}]})}>Добавить соответствие</button>
+     <p className="muted">Связь с CRMCalls настраивается в карточке сотрудника, в поле «ФИО в CRMCalls».</p>
      <label className="cc-check"><input type="checkbox" checked={form.enabled} onChange={e=>setForm({...form,enabled:e.target.checked})}/>Принимать карточки из CRMCalls</label>
      <button className="primary" disabled={busy} onClick={()=>void save()}>{busy?'Сохранение…':'Сохранить приём карточек'}</button>
     </div>
