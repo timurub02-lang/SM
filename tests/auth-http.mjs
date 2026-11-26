@@ -131,6 +131,23 @@ try{
  db.prepare("DELETE FROM orders WHERE id IN ('sk-link-history','sk-link-foreign')").run();
 
 
+ // Department rounding settings: admin-only writes, strict values and revision protection.
+ const roundingBackup=db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get();
+ const roundingLedger={revision:'rounding-test',activePeriod:'2026-11-1',initialPeriod:'2026-11-1',periods:{'2026-11-1':{status:'open',signatures:{}}}};
+ db.prepare("INSERT INTO settings(id,data) VALUES('premium-ledger',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify(roundingLedger));
+ const roundingPath='/api/premium/rounding';
+ const roundingRead=await call(roundingPath,{cookie:cookies.admin});assert.equal(roundingRead.status,200,roundingRead.text);assert.equal(roundingRead.data.rounding['4'],false);
+ assert.equal((await call(roundingPath,{cookie:cookies.one})).status,200);
+ const roundingBody={revision:'rounding-test',rounding:{'1':false,'2':true,'3':true,'4':false,'5':true}};
+ assert.equal((await call(roundingPath,{cookie:cookies.one,body:roundingBody})).status,403);
+ assert.equal((await call(roundingPath,{cookie:cookies.head,body:roundingBody})).status,403);
+ assert.equal((await call(roundingPath,{cookie:cookies.admin,body:{...roundingBody,rounding:{...roundingBody.rounding,'4':'false'}}})).status,400);
+ const roundingSaved=await call(roundingPath,{cookie:cookies.admin,body:roundingBody});assert.equal(roundingSaved.status,200,roundingSaved.text);
+ assert.equal((await call(roundingPath,{cookie:cookies.one})).data.roundTo50,false);
+ assert.deepEqual(JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get().data).periods,roundingLedger.periods,'settings do not rewrite existing payroll');
+ assert.equal((await call(roundingPath,{cookie:cookies.admin,body:roundingBody})).status,409);
+ if(roundingBackup)db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(roundingBackup.data);else db.prepare("DELETE FROM settings WHERE id='premium-ledger'").run();
+
  // Period adjustments and the shared operator rate are atomic and scoped.
  const premiumEmployee={...staff[1],id:'premium-op',login:'premium-op',sentinel:'preserve'};
  db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(premiumEmployee.id,JSON.stringify(premiumEmployee));

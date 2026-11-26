@@ -470,3 +470,16 @@ a complete provider project listing is disabled through the normal revision-guar
 save path. Pending items are skipped; history and shared distribution dates remain.
 Provider errors, existing (including paused/finished) projects and unresolved imports
 do not release the sheet. No remote contacts are deleted or automatically submitted.
+
+## Department payroll rounding
+
+Finance settings expose an admin-only per-department switch for rounding positive
+payouts to the nearest 50 RUB. UDL (department 4) defaults to exact cents; other
+departments retain rounding. The additive `premium-ledger.rounding` policy and
+row `roundTo50` marker require no schema migration or new service. Policy saves
+use the ledger revision/CAS and invalidate the existing financial read model.
+Unsigned rows are recalculated when their rounding policy changes. Signed rows
+remain fixed until reopened, and paid snapshots are never recalculated. Operator
+next-period previews read the same department policy. Existing debt/negative
+results keep exact cents. Verify admin save, operator/head write rejection,
+stale revision, and signed/paid preservation before release.
