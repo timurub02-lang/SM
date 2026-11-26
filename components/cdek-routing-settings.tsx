@@ -70,10 +70,22 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
          <button type="button" aria-pressed={showDepartmentA} onClick={()=>setShowDepartmentA(true)}>Отдел А_ · неделя</button>
         </div>
         {showDepartmentA?<>
-        {aAccounts.length?<div className="form-grid">{days.map((day,i)=><label className="field" key={day}><span>{day}</span>
-         <select aria-label={'Отдел А_ · '+day} value={config.departmentAWeek?.[i]||''} onChange={e=>{
-          const week=[...(config.departmentAWeek??defaultDepartmentAWeek(aAccounts))];week[i]=Number(e.target.value);setConfig({...config,departmentAWeek:week});
-         }}>{aAccounts.map(a=><option key={a.slot} value={a.slot}>{a.name}</option>)}</select></label>)}</div>:<p>Подключите аккаунт «Только отдел А_» в настройках интеграции СДЭК.</p>}
+        {aAccounts.length?<div className="routing-summary">
+         <div className="routing-summary-scroll" tabIndex={0} role="region" aria-label="График отдела А_">
+          <table className="routing-a-week">
+           <thead><tr><th scope="col">Неделя</th>{days.map(day=><th key={day} scope="col">{day}</th>)}</tr></thead>
+           <tbody><tr><th scope="row">Каждая неделя</th>
+            {days.map((day,i)=><td key={day}>
+             <select aria-label={'Аккаунт СДЭК · отдел А_ · '+day} value={config.departmentAWeek?.[i]||''} onChange={e=>{
+              const week=[...(config.departmentAWeek??defaultDepartmentAWeek(aAccounts))];
+              week[i]=Number(e.target.value);
+              setConfig({...config,departmentAWeek:week});
+             }}>{aAccounts.map(a=><option key={a.slot} value={a.slot}>{a.name}</option>)}</select>
+            </td>)}
+           </tr></tbody>
+          </table>
+         </div>
+        </div>:<p>Подключите аккаунт «Только отдел А_» в настройках интеграции СДЭК.</p>}
        </>:<>
        <label className="routing-check routing-auto"><input type="checkbox" checked={!!autoEnabled} onChange={e=>setConfig({...config,[twoWeeks?'cycleEnabled':'enabled']:e.target.checked})}/>Автоматически распределять заказы остальных отделов</label>
        {!autoEnabled&&<p className="muted">Сейчас аккаунт для этих отделов выбирает логист.</p>}

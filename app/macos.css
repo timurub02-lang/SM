@@ -1003,3 +1003,5 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .cdek-accounts-table tbody tr { border-top:1px solid var(--border); }
 .cdek-accounts-table td:nth-child(3), .cdek-accounts-table button { white-space:nowrap; }
 .routing-schedule > .routing-mode { margin-bottom:12px; }
+.routing-summary table.routing-a-week { min-width:62rem; }
+.routing-a-week select { width:100%; min-width:0; font:inherit; color:inherit; }
