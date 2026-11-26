@@ -7,7 +7,7 @@ import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {db} from '@/lib/db';
 import {type Employee} from '@/lib/crm';
 import {premiumPeriods} from '@/lib/premium-periods';
-import {premiumStaff,premiumAdjustmentSchema} from '@/lib/premium-calculation';
+import {premiumStaff,premiumAdjustmentSchema,defaultPremiumRounding} from '@/lib/premium-calculation';
 import {z} from 'zod';
 export const dynamic='force-dynamic';
 async function handle(req:Request){
@@ -60,7 +60,7 @@ async function handle(req:Request){
   const lifecycle=p?{status:p.status,revision:fresh.ledger!.revision,activePeriod:fresh.ledger!.activePeriod,source:p.source,signers:requiredSigners.filter(e=>actor.role==='admin'||e.department===actor.department),signedIds:Object.keys(p.signatures),administrativeIds:Object.entries(p.signatures).filter(([id,signature])=>signature.by!==id).map(([id])=>id),allSigned:!!p.signers?.length&&p.signers.every(e=>!!p.signatures[e.id]),frozenAt:p.frozenAt,paidAt:p.paidAt}:null;
   const periodCounts=Object.fromEntries(Object.keys(fresh.ledger?.periods||{}).map(id=>[id,periodOrders(fresh.ledger!,id,fresh.orders,fresh.employees).filter(r=>!r.historyOnly&&payrollVisible(actor,r)).length]));
   const departmentCounts:Record<string,number>={};for(const r of fresh.ledger?periodOrders(fresh.ledger,period,fresh.orders,fresh.employees):[]){if(!r.historyOnly&&payrollVisible(actor,r))departmentCounts[r.department]=(departmentCounts[r.department]||0)+1;}
-  return Response.json({adjustments,payroll,lifecycle,periodCounts,departmentCounts,activePeriod:fresh.ledger?.activePeriod,periods:Object.keys(fresh.ledger?.periods||{}),missingOrders:(p?.orders||[]).filter(r=>!r.id&&payrollVisible(actor,r))},{headers:{'Cache-Control':'no-store'}});
+  return Response.json({rounding:fresh.ledger?.rounding??defaultPremiumRounding,adjustments,payroll,lifecycle,periodCounts,departmentCounts,activePeriod:fresh.ledger?.activePeriod,periods:Object.keys(fresh.ledger?.periods||{}),missingOrders:(p?.orders||[]).filter(r=>!r.id&&payrollVisible(actor,r))},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return Response.json({error:e instanceof z.ZodError?'Проверьте суммы расчёта':e instanceof Error?e.message:'Ошибка расчёта'},{status:400});}
 }
 export const GET=authenticated(handle);
