@@ -995,3 +995,13 @@ body.large-order-text [data-slot=dialog-close]{width:44px;height:44px;min-width:
 .client-merge-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-top:12px;border-top:1px solid #738bab25}
 .client-merge-orders{display:grid;gap:5px;margin-top:8px;max-height:180px;overflow:auto}.client-merge summary{font-size:12px;cursor:pointer}
 @media(max-width:760px){.client-merge-workspace,.client-merge-fields,.client-merge .is-preview .client-merge-cards{grid-template-columns:1fr}}
+
+.cdek-accounts-scroll { min-width:0; }
+.cdek-accounts-table { width:100%; min-width:32rem; border-collapse:collapse; }
+.cdek-accounts-table th, .cdek-accounts-table td { padding:10px 12px; text-align:left; vertical-align:middle; overflow-wrap:anywhere; }
+.cdek-accounts-table thead { background:var(--muted); }
+.cdek-accounts-table tbody tr { border-top:1px solid var(--border); }
+.cdek-accounts-table td:nth-child(3), .cdek-accounts-table button { white-space:nowrap; }
+.routing-schedule > .routing-mode { margin-bottom:12px; }
+.routing-summary table.routing-a-week { min-width:62rem; }
+.routing-a-week select { width:100%; min-width:0; font:inherit; color:inherit; }
