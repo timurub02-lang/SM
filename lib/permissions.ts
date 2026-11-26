@@ -113,6 +113,7 @@ export function warehouseReadOnly(role:Employee['role']){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;
+ if(path==='/api/crmcalls-employee')return ['GET','POST'].includes(method)&&['admin','department_head'].includes(e.role);
  if(path==='/api/call-reviews')return canReviewCalls(e)&&['GET','POST'].includes(method);
  if(path==='/api/call-history/recording'&&url.searchParams.get('review')==='1')return canReviewCalls(e)&&method==='GET';
  if(path==='/api/incoming-work-gate')return method==='GET'&&!['courier','purchasing'].includes(e.role);

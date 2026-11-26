@@ -46,3 +46,9 @@ only added or reassigned links must refer to active CRM and CRMCalls operators.
 Incoming processing still rejects inactive or missing operators. Saving a changed
 link requeues only that provider user’s receipts held for missing operator mapping;
 other review and permission decisions remain untouched.
+
+Department heads can read/save a single operator link through crmcalls-employee
+for departments covered by managesWorkDepartment. Responses expose only available
+provider names and the selected name, not global configuration or other mappings.
+The server resolves names, rejects occupied/ambiguous identities, preserves config
+revision checks and all other links. Administrators use the same employee form.
