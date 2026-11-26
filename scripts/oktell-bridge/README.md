@@ -48,3 +48,10 @@ restart, then verify the control connection and both operator identities read-on
 Never edit `/srv/crm/current` or build CRM on the server. Rollback of the adapter
 uses its previous service working directory; CRM rollback uses its documented
 release installer. Do not install this adapter automatically as part of CRM packaging.
+
+For a separate lab VM behind the existing TLS proxy, `BRIDGE_HOST` and
+`BROWSER_SIP_HOST` select the private listening addresses. Both default to loopback.
+Firewall these listeners to the proxy IP; never expose them directly to the Internet.
+REGISTER Contact normalization matches the SIP connection's actual local address,
+as well as the original request branch, CSeq and account, before restoring Contact.
+Lab deployment uses a successful PR build and does not require merging into main.

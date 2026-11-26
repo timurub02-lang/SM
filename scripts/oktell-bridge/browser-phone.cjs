@@ -32,14 +32,14 @@ function normalizeResponseVia(message,vias){
  });
 }
 // Native WebSocket registrations return the account at the proxy address, rather than echoing Contact.
-function normalizeRegisterContact(message,registrations,username){
+function normalizeRegisterContact(message,registrations,username,proxyAddress='10.20.0.10'){
  if(!/^SIP\/2\.0 200 /.test(message))return message;
  const cseq=/^CSeq:\s*(\d+) REGISTER\s*$/im.exec(message)?.[1];
  const branch=/^Via:[^\r\n]*;branch=([^;\s]+)/im.exec(message)?.[1],request=branch&&registrations.get(branch);
  if(!request||request.cseq!==cseq)return message;
- return message.replace(/^Contact:\s*<sip:([^@>]+)@10\.20\.0\.10:\d+;transport=WS>([^\r\n]*)/im,(all,user,params)=>{
+ return message.replace(/^Contact:\s*<sip:([^@>]+)@([^:>]+):\d+;transport=WS>([^\r\n]*)/im,(all,user,address,params)=>{
   const expires=/;expires=(\d+)/i.exec(params)?.[1]||/^Expires:\s*(\d+)\s*$/im.exec(message)?.[1];
-  if(user!==username||expires===undefined||Number(expires)>86400)return all;
+  if(address!==proxyAddress||user!==username||expires===undefined||Number(expires)>86400)return all;
   return 'Contact: <'+request.uri+'>;expires='+expires;
  });
 }
@@ -90,7 +90,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
     if(upstream.readyState===1)upstream.send(text);else if(queue.length<4)queue.push(text);else client.close(1008);
    });
    upstream.on('open',()=>{for(const text of queue)upstream.send(text);queue.length=0;});
-   upstream.on('message',raw=>{const text=publishBrowserMedia(normalizeRegisterContact(normalizeResponseVia(raw.toString(),vias),registrations,current.credentials.username));
+   upstream.on('message',raw=>{const text=publishBrowserMedia(normalizeRegisterContact(normalizeResponseVia(raw.toString(),vias),registrations,current.credentials.username,upstream._socket?.localAddress));
     if(text.startsWith('INVITE ')){
      const sipId=/^Call-ID:\s*(\S+)/im.exec(text)?.[1],number=/^From:\s*.*<sip:([^@>]+)@/im.exec(text)?.[1];
      if(current.incomingId===sipId&&current.calling){if(client.readyState===1)client.send(text);return;}
@@ -126,7 +126,7 @@ module.exports=function({operators,connected,listen=true,upstreamUrl='ws://10.21
    client.on('error',ended);upstream.on('error',ended);client.on('close',ended);upstream.on('close',ended);
   });
  });
- if(listen)server.listen(Number(process.env.BROWSER_SIP_PORT??3315),'127.0.0.1');
+ if(listen)server.listen(Number(process.env.BROWSER_SIP_PORT??3315),process.env.BROWSER_SIP_HOST||'127.0.0.1');
  const timer=setInterval(()=>{for(const [actor,lease] of leases){if(lease.client?.readyState===1)lease.client.ping();if(lease.upstream?.readyState===1)lease.upstream.ping();if(Date.now()>lease.expires||!lease.client&&Date.now()>lease.tokenExpires)void close(actor,lease).catch(()=>{});}},10000);timer.unref();
  async function handle(req,res){
   try{
