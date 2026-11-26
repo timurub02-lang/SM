@@ -8,6 +8,7 @@ import {PremiumPayroll} from '@/components/premium-payroll';
 import {useEffect,useState,type ReactNode} from 'react';
 import {isCdekOrder} from '@/lib/cdek-remittance';
 import {premiumOrders} from '@/lib/premium-orders';
+import {isEmil} from '@/lib/partner-cash';
 import {premiumPeriods,periodForReceipt,currentPremiumPeriod} from '@/lib/premium-periods';
 import {money,departments,deliveryLabels,type Order,type Employee,type Client} from '@/lib/crm';
 import {Table,TableHeader,TableBody,TableRow,TableHead,TableCell} from '@/components/ui/table';
@@ -43,7 +44,7 @@ export function PremiumOrders({orders,employee,employees,clients,onOpen,onReload
  },[employee.id,current?.id,periodRetry,onCashPayroll,fixedDepartment]);
 
  const all=premiumOrders(orders,employee,employees).filter(r=>!fixedDepartment||employees.some(e=>e.id===r.order.manager&&e.department===fixedDepartment)).map(r=>({...r,periodId:r.order.premiumStage?.periodId||r.periodId||periodForReceipt(r.date)?.id||'unassigned'})).filter(r=>!ledgerPeriods.includes(r.periodId)||r.order.premiumStage?.periodId===r.periodId);
- const showReceivedMoney=employee.role!=='operator'&&employee.role!=='department_head';
+ const showReceivedMoney=isEmil(employee)||(employee.role!=='operator'&&employee.role!=='department_head');
  const visiblePeriod=activePeriod;
  const period=premiumPeriods.find(p=>p.id===visiblePeriod);
  const next=current?premiumPeriods[premiumPeriods.findIndex(p=>p.id===current.id)+1]:undefined;
