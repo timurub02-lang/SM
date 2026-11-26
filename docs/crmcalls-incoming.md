@@ -40,3 +40,9 @@
 Передачи с чужим владельцем, действующим заказом или листом ЧС/ПВ попадают в общую очередь «Требует разрешения» с источником CRMCalls. Используются общие правила проверки и полномочия СК, включая делегированное право Артёма. До разрешения заказ и закрепление не меняются; отказ завершает передачу без изменений клиента. Повтор webhook не создаёт повторную заявку. Архив и неоднозначные телефоны по-прежнему требуют сверки. CRMCalls-заявки используют префикс cc: в существующем журнале sk_order_transfers; их нужно сохранять при откате.
 
 Блок настройки приёма и последних поступлений скрыт из раздела CRMCalls по запросу пользователя. Это только изменение интерфейса: действующие настройки, webhook, обработчик и журнал сохраняются; связь сотрудников редактируется в их карточках.
+
+Unchanged operator links may be retained after an employee is disabled or removed;
+only added or reassigned links must refer to active CRM and CRMCalls operators.
+Incoming processing still rejects inactive or missing operators. Saving a changed
+link requeues only that provider user’s receipts held for missing operator mapping;
+other review and permission decisions remain untouched.
