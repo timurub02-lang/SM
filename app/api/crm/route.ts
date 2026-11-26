@@ -468,6 +468,7 @@ async function handlePOST(request:Request){
   const c=s.clients.find(c=>c.id===p.clientId);if(!c)throw new Error("Выберите клиента");
   const sourceIncoming=p.incomingId&&employee?await incomingForAction(d,z.string().min(1).max(100).parse(p.incomingId),employee,s.employees,c.id):undefined;
   if(sourceIncoming&&hasActiveOrder(s.orders,c.id))throw Error('У клиента уже есть действующий заказ');
+  if(!sourceIncoming&&employee&&['operator','department_head'].includes(employee.role)&&Date.parse(c.assignedUntil||'')<=Date.parse(now)&&c.permanentOwner!==c.owner&&!hasActiveOrder(s.orders,c.id)&&!s.orders.some(o=>o.clientId===c.id&&o.zvd))throw Error('Срок закрепления клиента истёк');
   if(!sourceIncoming&&employee?.role==="operator"&&c.owner!==employee.id)throw Error("Можно оформить заказ только своему клиенту");
   if(!sourceIncoming&&employee?.role==="department_head"&&!s.employees.some(e=>e.id===c.owner&&e.role==="operator"&&managesWorkDepartment(employee,e.department,s.employees)))throw Error("Клиент другого отдела");
   const approved=c.orderRequest?.status==="approved"&&c.orderRequest.manager===c.owner&&(c.orderRequest.actorId===employee?.id||employee?.role==="admin");

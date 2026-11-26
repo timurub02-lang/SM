@@ -24,14 +24,14 @@ try{
  const before=(await d.prepare('SELECT data FROM orders ORDER BY id').all()).results;
  await reconcileClients(d,clients,orders);
  const result=(await d.prepare('SELECT data FROM clients').all()).results.map(r=>JSON.parse(r.data));
- const released=['expired','legacy-paid','prior-paid','legacy-reassigned'];for(const id of released)assert.equal(result.find(c=>c.id===id).owner,'',id);
+ const released=['expired','legacy-paid','prior-paid','legacy-reassigned','unpaid','legacy-unpaid','explicit-current','legacy-current','review-only'];for(const id of released)assert.equal(result.find(c=>c.id===id).owner,'',id);
  for(const c of result.filter(c=>!released.includes(c.id)))assert.equal(c.owner,'op',c.id+' remains protected');
  assert.deepEqual((await d.prepare('SELECT data FROM orders ORDER BY id').all()).results,before,'Orders and payout history remain unchanged');
  const staged=applyPremiumStages(null,orders,[],history),recent=result.find(c=>c.id==='recent');
  assert.equal(staged[0].premiumStage.status,'paid');
  assert.equal(staged.find(o=>o.clientId==='explicit-current').premiumStage,undefined);
  assert.match(clientRetentionLabel(recent,staged,now),/^До открепления:/);
- const preview=clientRetentionPreview(result,staged,config,now);assert.equal(preview.recent,undefined);assert.equal(preview['legacy-recent'],undefined);assert.match(clientRetentionLabel(result.find(c=>c.id==='legacy-recent'),staged,now),/^До открепления:/);assert.equal(preview['legacy-current'].expiresAfterPremium,true);assert.equal(preview['review-only'].expiresAfterPremium,true);
+ const preview=clientRetentionPreview(result,staged,config,now);assert.equal(preview.recent,undefined);assert.equal(preview['legacy-recent'],undefined);assert.match(clientRetentionLabel(result.find(c=>c.id==='legacy-recent'),staged,now),/^До открепления:/);assert.equal(preview['legacy-current'],undefined);assert.equal(preview['review-only'],undefined);
  assert.equal(JSON.parse((await d.prepare("SELECT data FROM settings WHERE id='premium-paid-history'").first()).data).orders.length,6);
- console.log('Historical paid orders release expired clients; active, unpaid, current import, missing date and live retention stay protected; UI agrees; source orders unchanged');
+ console.log('Historical paid orders release expired clients; unpaid commission does not retain clients; active orders, missing dates and live retention stay protected; UI agrees; source orders unchanged');
 }finally{d.close();}

@@ -21,7 +21,7 @@ export function filteredClientList(state:State,employee:Employee,{filter,query,c
   const byName=(a:Client,b:Client)=>a.name.localeCompare(b.name,'ru',{sensitivity:'base',numeric:true});
   const releaseDates=new Map(clients.map(c=>{
    const preview=state.retentionPreview?.[c.id],until=Date.parse(preview?.until||c.assignedUntil||'');
-   const date=c.permanentOwner===c.owner||clientsWithActiveOrders.has(c.id)?null:preview?.expiresAfterPremium?0:Number.isFinite(until)?until:null;
+   const date=c.permanentOwner===c.owner||clientsWithActiveOrders.has(c.id)?null:preview?.expired?0:Number.isFinite(until)?until:null;
    return [c.id,date];
   }));
   clients.sort((a,b)=>{

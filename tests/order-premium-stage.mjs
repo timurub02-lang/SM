@@ -24,6 +24,19 @@ for(const role of ['operator','department_head']){
 assert.equal(showOrderInList(paidOrder,{owner:''},'admin'),false);
 assert.equal(paidOrder.premiumStage.status,'paid');
 
+for(const role of ['operator','department_head']){
+ const actor={id:role==='operator'?'original':'head',role,department:'sales'};
+ const staff=[{id:'original',role:'operator',department:'sales'},actor];
+ const c={id:'client',owner:''},o={...paidOrder,id:'order',clientId:c.id,premiumStage:{status:'accrued',periodId:'current'}};
+ const {authorizeCrm}=await import('../lib/permissions.ts');
+ const {assignedClients}=await import('../lib/crm.ts');
+ assert.deepEqual(assignedClients([c],staff,actor),[]);
+ assert.equal(showOrderInList(o,c,role),true);
+ assert.equal(closedOrderCallBlocked(actor,o,c),true);
+ assert.throws(()=>authorizeCrm(actor,{action:'comment',id:o.id},{orders:[o],clients:[c],employees:staff}));
+ assert.equal(showOrderInList({...o,premiumStage:{status:'paid',periodId:'current',paidAt:new Date().toISOString()}},c,role),false);
+}
+
 const cancelled={status:'refused',manager:'original',cancelledAt:'2026-10-28T10:00:00Z',cancellationAuthor:{id:'original',name:'Operator'}};
 const saved=JSON.stringify(cancelled);
 for(const role of ['admin','operator','department_head']){
@@ -60,7 +73,7 @@ const paidAt='2026-11-20T12:00:00Z',deadline=Date.parse(paidAt)+48*3600000;
 const fresh={...paidOrder,id:'paid-delay',clientId:'client',createdAt:paidAt,items:[],delivery:'moscow_courier',priorPremiumPaid:{at:'2026-11-01T00:00:00Z'},premiumStage:{status:'paid',periodId:'2026-11-2',paidAt}};
 const savedPaid=JSON.stringify(fresh);
 for(const role of ['admin','operator','department_head','logistic','chief_logistic']){
- assert.equal(showOrderInList(fresh,{owner:''},role,deadline-1),true);
+ assert.equal(showOrderInList(fresh,{owner:''},role,deadline-1),!['operator','department_head'].includes(role));
  assert.equal(showOrderInList(fresh,{owner:'original'},role,deadline),false);
 }
 assert.equal(paidOrderArchived({...fresh,premiumStage:{status:'accrued',periodId:'2026-11-2'}},deadline),false);

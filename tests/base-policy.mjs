@@ -58,7 +58,7 @@ assert.equal(applyRetention(cross,[settled],releaseNow,14,true).sheet,'П');
 const woman={...cross,name:'Иванова Анна Ивановна',baseType:'M'};
 assert.equal(applyRetention(woman,[settled],releaseNow,14,true).baseType,'J');
 assert.equal(applyRetention(woman,[settled],releaseNow,14,true).sheet,'П');
-for(const held of [applyRetention(cross,[settled],releaseNow,14,true,true),applyRetention(cross,[{...settled,status:'shipping'}],releaseNow,14,true),applyRetention(cross,[{...settled,redeemedAt:'2026-11-09T00:00:00Z'}],releaseNow,14,true)]){
+for(const held of [applyRetention(cross,[{...settled,status:'shipping'}],releaseNow,14,true),applyRetention(cross,[{...settled,redeemedAt:'2026-11-09T00:00:00Z'}],releaseNow,14,true)]){
  assert.equal(held.owner,'op');assert.equal(held.baseType,'J');
 }
 const ambiguous=applyRetention({...cross,name:'Иванов И. И.'},[settled],releaseNow,14,true);
@@ -91,7 +91,7 @@ for(const [baseType,sheet] of [['J','ж1'],['M','Т1']]){
  assert.equal(applyRetention(cancelled,[{...settled,status:'refused'}],releaseNow,14,true).sheet,sheet);
  assert.equal(applyRetention(cancelled,[settled],releaseNow,14,true).sheet,'П');
  assert.equal(applyRetention(cancelled,[{...settled,status:'shipping'}],releaseNow,14,true).owner,'op');
- assert.equal(applyRetention(cancelled,[settled],releaseNow,14,true,true).owner,'op');
+ assert.equal(applyRetention(cancelled,[settled],releaseNow,14,true).owner,'');
  const black=applyRetention(cancelled,[{...settled,status:'refused',blacklistedAt:'2026-11-01T00:00:00Z'}],releaseNow,14,true);
  assert.equal(black.sheet,'ЧС');
  assert.deepEqual(applyRetention(released,[],releaseNow),released);
