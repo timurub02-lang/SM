@@ -12,7 +12,7 @@ assert.equal(chooseRouting(config,accounts,{items:[{name:'X',price:1000,quantity
 assert.equal(chooseRouting(config,accounts,order,'5',[],now).slot,4);
 assert.equal(chooseRouting({...config,enabled:false},accounts,order,'5',[],now).slot,4);
 assert.equal(chooseRouting({...config,enabled:false},accounts,order,'1',[],now),null);
-assert.throws(()=>chooseRouting(config,accounts.filter(a=>a.slot!==4),order,'5',[],now),/Аскеров/);
+assert.throws(()=>chooseRouting(config,accounts.filter(a=>a.slot!==4),order,'5',[],now),/отдела А_/);
 assert.deepEqual(routingWindow(base,now),{start:'2026-10-04T21:00:00.000Z',end:'2026-10-11T21:00:00.000Z'});
 assert.deepEqual(routingWindow({...base,period:'month',from:'2026-10-05',to:'2026-10-10'},now),{start:'2026-10-04T21:00:00.000Z',end:'2026-10-10T21:00:00.000Z'});
 const general={...base,products:[],maxCount:1,maxAmount:6000,from:'2026-10-05',to:'2026-10-05',weekdays:[1],departments:['1']};
@@ -87,3 +87,14 @@ assert.equal(chooseRouting(weeklyOff,cycleAccounts,order,'1',[],new Date('2026-1
 assert.deepEqual(previewRoutingDay(weeklyOff,'2026-12-24').slots,[3]);
 assert.equal(chooseRouting({...weeklyOff,cycleStart:undefined},cycleAccounts,order,'1',[],now),null);
 assert.equal(chooseRouting({...opened,cycleEnabled:false},cycleAccounts,order,'1',[],new Date('2026-12-24')),null);
+
+const added={slot:12,name:'Второй аккаунт',type:'departmentA',configured:true};
+const more=[...accounts,added];
+const weekly={...cycle,departmentAWeek:[4,12,4,12,4,4,12]};
+for(const [day,slot] of [['2026-11-23',4],['2026-11-24',12],['2026-11-29',12],['2026-12-01',12]]){
+ assert.equal(chooseRouting(weekly,more,order,'5',[],new Date(day+'T12:00:00Z')).slot,slot);
+}
+assert.equal(chooseRouting(weekly,more,order,'5',[],new Date('2026-11-23T21:01:00Z')).slot,12);
+assert.equal(chooseRouting(config,more,order,'5',[],now).slot,4);
+assert.throws(()=>chooseRouting({...config,rules:[{...general,slot:12}]},more,order,'1',[],now));
+assert.throws(()=>chooseRouting({...weekly,departmentAWeek:Array(7).fill(2)},more,order,'5',[],now));

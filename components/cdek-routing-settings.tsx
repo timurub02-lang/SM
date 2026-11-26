@@ -1,12 +1,12 @@
 'use client';
 import {SettingsRulesTabs} from './settings-rules-tabs';
 import {useEffect,useState} from 'react';
-import {Pencil,ArrowUp,ArrowDown,Trash2,CalendarDays,Check,Plus} from 'lucide-react';
+import {Pencil,CalendarDays} from 'lucide-react';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
-import {departments} from '@/lib/crm';
-import type {RoutingAccount,RoutingConfig,RoutingRule} from '@/lib/cdek-routing';
+import {defaultDepartmentAWeek,departmentAAccount} from '@/lib/cdek-accounts';
+import type {RoutingAccount,RoutingConfig} from '@/lib/cdek-routing';
 import {moscowDate} from '@/lib/base-distribution';
-import {cycleSettingsForEdit,isAskerovAccount,previewRoutingDay,routingCycleIndex} from '@/lib/cdek-routing';
+import {cycleSettingsForEdit,previewRoutingDay,routingCycleIndex} from '@/lib/cdek-routing';
 
 const days=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 const everyDay=days.map((_,i)=>i+1);
@@ -39,25 +39,16 @@ function RoutingSummary({config,accounts,today}:{config:RoutingConfig;accounts:R
   {rows.some(cells=>cells.some(cell=>cell.conditional))&&<p className="muted">В ячейках «По условиям» аккаунты указаны по приоритету. Выбор зависит от заказа и доступных лимитов.</p>}
  </div>;
 }
-function DayRow({label,selected,change,weekly=false}:{label:string;selected:number[];change:(days:number[])=>void;weekly?:boolean}){
- return <div className="routing-week" role="group" aria-label={label}>
-  <span>{label}</span>
-  <div className="routing-days">{days.map((name,i)=>{
-   const number=i+1,active=selected.includes(number);
-   const last=weekly&&active&&selected.length===1;
-   return <button type="button" key={name} aria-label={name} aria-pressed={active} disabled={last}
-    title={last?'Чтобы пропустить все дни, выключите правило':undefined}
-    onClick={()=>change(active?selected.filter(d=>d!==number):[...selected,number])}>{name}</button>;
-  })}</div>
- </div>;
+function DayRow({label,selected,change}:{label:string;selected:number[];change:(days:number[])=>void}){
+ return <div className="routing-week" role="group" aria-label={label}><span>{label}</span>
+  <div className="routing-days">{days.map((name,i)=><button key={name} type="button" aria-pressed={selected.includes(i+1)} onClick={()=>change(selected.includes(i+1)?selected.filter(n=>n!==i+1):[...selected,i+1])}>{name}</button>)}</div></div>;
 }
 export function CdekRoutingSettings({actorId}:{actorId:string}){
- const [open,setOpen]=useState(false),[config,setConfig]=useState<RoutingConfig|null>(null),[accounts,setAccounts]=useState<RoutingAccount[]>([]),[products,setProducts]=useState<string[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
- useEffect(()=>{if(!open)return;let active=true;setConfig(null);setError('');fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`).then(async r=>{const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);if(active){setConfig(cycleSettingsForEdit(d.config));setAccounts(d.accounts.filter((a:RoutingAccount)=>a.configured));setProducts(d.products);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,actorId]);
- function patch(id:string,p:Partial<RoutingRule>){setConfig(c=>c?{...c,rules:c.rules.map(r=>r.id===id?{...r,...p}:r)}:c);}
- function move(index:number,delta:number){if(!config)return;const rules=[...config.rules];[rules[index],rules[index+delta]]=[rules[index+delta],rules[index]];setConfig({...config,rules});}
+ const [open,setOpen]=useState(false),[config,setConfig]=useState<RoutingConfig|null>(null),[accounts,setAccounts]=useState<RoutingAccount[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ useEffect(()=>{if(!open)return;let active=true;setConfig(null);setError('');fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`).then(async r=>{const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);if(active){setConfig({...cycleSettingsForEdit(d.config),cycleStart:d.config.cycleStart||d.config.savedCycleStart||thisMonday(moscowDate()),departmentAWeek:d.config.departmentAWeek??(d.accounts.some(a=>a.configured&&departmentAAccount(a))?defaultDepartmentAWeek(d.accounts):undefined)});setAccounts(d.accounts.filter((a:RoutingAccount)=>a.configured));}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,actorId]);
  async function save(){setBusy(true);setError('');try{const r=await fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...config,actorId})});const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);setOpen(false);}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}}
- const scheduleAccounts=accounts.filter(account=>!isAskerovAccount(account));
+ const scheduleAccounts=accounts.filter(account=>!departmentAAccount(account));
+ const aAccounts=accounts.filter(departmentAAccount);
  const today=moscowDate(),twoWeeks=config?.cycleStart!==undefined;
  const autoEnabled=twoWeeks?config?.cycleEnabled:config?.enabled;
  const start=config?.cycleStart||'',validMonday=start!==''&&new Date(start+'T00:00:00Z').getUTCDay()===1;
@@ -68,18 +59,19 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
    <DialogContent className="form-dialog cdek-routing-dialog">
     <DialogHeader><DialogTitle>Куда выгружать заказы СДЭК</DialogTitle><DialogDescription>График выгрузки по аккаунтам · московское время</DialogDescription></DialogHeader>
     <SettingsRulesTabs section="cdek">
-     <div className="notice">Заказы отдела A_ всегда уходят на ИП Аскерова.</div>
+
      {config?<form className="stack" onSubmit={e=>{e.preventDefault();if(!twoWeeks||validMonday)void save();}}>
       <fieldset disabled={busy} className="stack order-fields">
+       <section className="routing-schedule"><h3>Отдел А_ · недельный график</h3>
+        {aAccounts.length?<div className="form-grid">{days.map((day,i)=><label className="field" key={day}><span>{day}</span>
+         <select aria-label={'Отдел А_ · '+day} value={config.departmentAWeek?.[i]||''} onChange={e=>{
+          const week=[...(config.departmentAWeek??defaultDepartmentAWeek(aAccounts))];week[i]=Number(e.target.value);setConfig({...config,departmentAWeek:week});
+         }}>{aAccounts.map(a=><option key={a.slot} value={a.slot}>{a.name}</option>)}</select></label>)}</div>:<p>Подключите аккаунт «Только отдел А_» в настройках интеграции СДЭК.</p>}
+       </section>
        <label className="routing-check routing-auto"><input type="checkbox" checked={!!autoEnabled} onChange={e=>setConfig({...config,[twoWeeks?'cycleEnabled':'enabled']:e.target.checked})}/>Автоматически распределять заказы остальных отделов</label>
        {!autoEnabled&&<p className="muted">Сейчас аккаунт для этих отделов выбирает логист.</p>}
        <section className="routing-schedule">
-        <h3><CalendarDays size={18} aria-hidden="true"/>График выгрузки</h3>
-        <div className="routing-mode" role="group" aria-label="Повтор графика">
-         <button type="button" aria-pressed={twoWeeks} onClick={()=>{if(!twoWeeks)setConfig({...config,cycleStart:config.savedCycleStart||thisMonday(today)});}}>{twoWeeks&&<Check size={16} aria-hidden="true"/>}Цикл из двух недель</button>
-         <button type="button" aria-pressed={!twoWeeks} onClick={()=>{if(twoWeeks)setConfig({...config,savedCycleStart:validMonday?start:config.savedCycleStart,cycleStart:undefined});}}>{!twoWeeks&&<Check size={16} aria-hidden="true"/>}Каждую неделю</button>
-        </div>
-        <p className="routing-selected-mode">Выбран режим «{twoWeeks?'Цикл из двух недель':'Каждую неделю'}»</p>
+        <h3><CalendarDays size={18} aria-hidden="true"/>Все отделы, кроме А_ · цикл из двух недель</h3>
         {twoWeeks&&<div className="routing-anchor">
          <label className="field"><span>Понедельник первой недели</span>
           <input type="date" required step={7} min="1970-01-05" value={start} aria-invalid={!validMonday} onChange={e=>setConfig({...config,cycleStart:e.target.value})}/>
@@ -88,7 +80,7 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
         </div>}
         {autoEnabled&&(!twoWeeks||validMonday)&&<RoutingSummary config={config} accounts={accounts} today={today}/>}
        </section>
-       {twoWeeks?<><p className="muted">Один аккаунт на день. Выбор другого аккаунта переносит выгрузку к нему.</p>
+       <p className="muted">Один аккаунт на день. Выбор другого аккаунта переносит выгрузку к нему.</p>
         {scheduleAccounts.map(account=><section className="routing-card" aria-label={account.name} key={account.slot}>
          <h4>{account.name}</h4>
          {[0,1].map(weekIndex=>{
@@ -105,30 +97,9 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
            setConfig({...config,cycleSlots:updated});
           }}/>;
          })}
-        </section>)}</>:<>
-       <div><h3>Правила по приоритету</h3><p className="muted">CRM выбирает первое подходящее правило с доступным лимитом. Если такого правила нет, выгрузка блокируется.</p></div>
-       {config.rules.map((r,index)=>{
-        const weekly=r.weekdays.length?r.weekdays:everyDay;
-        const account=accounts.find(a=>a.slot===r.slot)?.name||'Аккаунт не подключён';
-        return <section className="routing-rule routing-card" key={r.id} aria-label={r.name+' · '+account}>
-         <header className="routing-card-head"><div><h4>{account}</h4><small>{index+1}. {r.name}</small></div>
-          <label className="routing-check"><input type="checkbox" checked={r.enabled} onChange={e=>patch(r.id,{enabled:e.target.checked})}/>{r.enabled?'Включено':'Выключено'}</label>
-         </header>
-         <DayRow label="Дни выгрузки" selected={weekly} weekly change={next=>patch(r.id,{weekdays:next})}/>
-         <details className="routing-advanced"><summary>Аккаунт, условия и приоритет</summary><div className="stack">
-          <div className="routing-tools">
-           <button type="button" className="secondary" disabled={index===0} onClick={()=>move(index,-1)}><ArrowUp size={16}/>Выше</button>
-           <button type="button" className="secondary" disabled={index===config.rules.length-1} onClick={()=>move(index,1)}><ArrowDown size={16}/>Ниже</button>
-           <button type="button" className="secondary" aria-label={'Удалить '+r.name} onClick={()=>setConfig({...config,rules:config.rules.filter(x=>x.id!==r.id)})}><Trash2 size={16}/>Удалить</button>
-          </div>
-<div className="form-grid"><label className="field"><span>Название правила</span><input required maxLength={120} value={r.name} onChange={e=>patch(r.id,{name:e.target.value})}/></label><label className="field"><span>Аккаунт СДЭК</span><select value={r.slot} onChange={e=>patch(r.id,{slot:Number(e.target.value)})}>{!accounts.some(a=>a.slot===r.slot)&&<option value={r.slot}>Не подключён</option>}{accounts.filter(a=>a.slot===r.slot||!isAskerovAccount(a)).map(a=><option key={a.slot} value={a.slot}>{a.name}</option>)}</select></label><label className="field"><span>Действует с (пусто — без ограничения)</span><input type="date" value={r.from} onChange={e=>patch(r.id,{from:e.target.value})}/></label><label className="field"><span>По дату включительно</span><input type="date" min={r.from||undefined} value={r.to} onChange={e=>patch(r.id,{to:e.target.value})}/></label></div><fieldset className="routing-options"><legend>Отделы — не отмечено значит все, кроме A_</legend>{Object.entries(departments).filter(([id])=>id!=='5').map(([id,label])=><label className="routing-check" key={id}><input type="checkbox" checked={r.departments.includes(id as '1')} onChange={e=>patch(r.id,{departments:e.target.checked?[...r.departments,id as '1']:r.departments.filter(d=>d!==id)})}/>{label}</label>)}</fieldset>
-<details><summary>Главный товар: {r.products.length?r.products.join(', '):'любой'}</summary><div className="routing-products">{[...new Set([...products,...r.products])].map(name=><label className="routing-check" key={name}><input type="checkbox" checked={r.products.includes(name)} onChange={e=>patch(r.id,{products:e.target.checked?[...r.products,name]:r.products.filter(p=>p!==name)})}/>{name}</label>)}{!products.length&&<p>Товары появятся после добавления на склад.</p>}</div></details><div className="form-grid"><label className="field"><span>Считать лимиты за</span><select value={r.period} onChange={e=>patch(r.id,{period:e.target.value as RoutingRule['period']})}><option value="day">День</option><option value="week">Неделю (Пн–Вс)</option><option value="month">Месяц</option><option value="rule">Весь срок правила</option></select></label><label className="field"><span>Не больше заказов (пусто — без лимита)</span><input type="number" min="1" max="1000000" step="1" value={r.maxCount??''} onChange={e=>patch(r.id,{maxCount:e.target.value===''?null:Number(e.target.value)})}/></label><label className="field"><span>Не больше суммы товаров, ₽</span><input type="number" min="0.01" max="1000000000" step="0.01" value={r.maxAmount??''} placeholder="Без лимита" onChange={e=>patch(r.id,{maxAmount:e.target.value===''?null:Number(e.target.value)})}/></label></div>
-          <p className="muted">Лимиты относятся ко всем выгрузкам аккаунта за выбранный период. Сумма считается по корзине без доставки.</p>
-         </div></details>
-        </section>;
-       })}</>}
+        </section>)}
        <div className="routing-footer">
-        {!twoWeeks&&<button type="button" className="secondary" disabled={!scheduleAccounts.length||config.rules.length>=100} onClick={()=>setConfig({...config,rules:[...config.rules,{id:crypto.randomUUID(),name:`Правило ${config.rules.length+1}`,enabled:true,slot:scheduleAccounts[0].slot,from:'',to:'',departments:[],products:[],weekdays:[],period:'week',maxCount:null,maxAmount:null}]})}><Plus size={16}/>Добавить правило</button>}
+
         <button type="submit" disabled={twoWeeks&&!validMonday} className="primary">{busy?'Сохранение…':'Сохранить настройки'}</button>
        </div>
       </fieldset>

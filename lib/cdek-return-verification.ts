@@ -22,7 +22,7 @@ export async function syncCdekReturns(d:Db,request:typeof fetch=fetch){
   const row=rows[cursor++];
   const entry=JSON.parse(row.data),order=JSON.parse(row.order_data) as Order,shipment=JSON.parse(row.shipment||'{}'),at=new Date().toISOString();
   try{
-   if(!shipment.uuid||!shipment.number||![1,2,3,4].includes(shipment.slot))throw Error('Нет данных исходной накладной СДЭК');
+   if(!shipment.uuid||!shipment.number||!(Number.isSafeInteger(shipment.slot)&&shipment.slot>0))throw Error('Нет данных исходной накладной СДЭК');
    let token=tokens.get(shipment.slot);
    if(!token){token=(async()=>{const account=await d.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-'+shipment.slot).first();if(!account)throw Error('Аккаунт СДЭК не подключён');const keys=JSON.parse(account.data);return cdekToken(keys.clientId,keys.clientSecret,request);})();tokens.set(shipment.slot,token);}
    const accessToken=await token;

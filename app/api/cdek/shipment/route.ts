@@ -1,3 +1,4 @@
+import {accountRowsWhere} from '@/lib/cdek-accounts';
 import {journalAuthor} from '@/lib/journal-author';
 import {readLimitedText} from '@/lib/request-body';
 import {cdekPrintStatus} from "@/lib/cdek-print-status";
@@ -87,9 +88,9 @@ async function handlePOST(req:Request){
     entity=(await json(await api('/orders/'+uuidSchema.parse(shipment.uuid)))).entity;
     if(entity?.uuid!==shipment.uuid||shipment.number&&String(entity.cdek_number)!==shipment.number)throw Error('СДЭК не подтвердил исходную накладную');
    }else if(track&&order.legacyLv){
-    const accounts=await d.prepare("SELECT id FROM settings WHERE id GLOB 'cdek-[1-4]' ORDER BY id").all<{id:string}>();
+    const accounts=await d.prepare(`SELECT id FROM settings WHERE ${accountRowsWhere} ORDER BY id`).all<{id:string}>();
     for(const account of accounts.results){
-     const api=await apiFor(Number(account.id.slice(-1))),response=await api('/orders?cdek_number='+encodeURIComponent(track));
+     const api=await apiFor(Number(account.id.slice(5))),response=await api('/orders?cdek_number='+encodeURIComponent(track));
      if(response.status===404||response.status===403)continue;
      const data=await response.json() as {entity?:any;requests?:{errors?:{code:string}[]}[]};
      if(response.status===400&&data.requests?.some(r=>r.errors?.some(e=>e.code==='v2_entity_not_found')))continue;
@@ -153,6 +154,7 @@ async function handlePOST(req:Request){
    const payload=shipmentPayload(c.order,JSON.parse(clientRow.data) as Client,products.results.map(x=>JSON.parse(x.data)),form,senderAlias);
    const t=c.order.cdekTariff!,routing=await orderRouting(c.order);
    const slot=routing.choice?.slot??t.slot,account=routing.accounts.find(a=>a.slot===slot)?.name||t.account;
+   if(!routing.accounts.some(a=>a.configured&&a.slot===slot))throw Error('СДЭК: пересчитайте доставку с аккаунтом этого отдела');
    const api=await apiFor(slot);
    for(const [code,side] of [[form.shipmentPoint,'sender'],[form.deliveryPoint,'recipient']]){
     if(side==='sender'&&t.params.originMode!=='warehouse'||side==='recipient'&&c.order.delivery!=='cdek_pickup')continue;

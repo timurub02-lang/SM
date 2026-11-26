@@ -33,7 +33,7 @@ export const GET=authenticated(async req=>{try{
   const savedShipment=await d.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-shipment-'+q.get('id')).first<{data:string}>();
   let shipment=JSON.parse(savedShipment?.data||'{}');
   let deliveryAddress=o.delivery==='cdek_pickup'?(shipment.deliveryAddress||o.cdekTariff?.deliveryPoint?.address||''):(shipment.deliveryAddress||o.address||'');
-  if(!deliveryAddress&&shipment.uuid&&[1,2,3,4].includes(shipment.slot))try{
+  if(!deliveryAddress&&shipment.uuid&&(Number.isSafeInteger(shipment.slot)&&shipment.slot>0))try{
    const account=await d.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-'+shipment.slot).first<{data:string}>();
    if(account){const keys=JSON.parse(account.data),token=await cdekToken(keys.clientId,keys.clientSecret);
     const response=await fetch('https://api.cdek.ru/v2/orders/'+encodeURIComponent(shipment.uuid),{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});

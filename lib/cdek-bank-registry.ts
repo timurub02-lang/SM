@@ -11,7 +11,7 @@ export const bankRegistryPrefix='cdek-bank-registry:';
 
 export function bankRegistries(data:unknown,slot:number,at:string):BankRegistry[]{
  const parsed=registryResponse.parse(data);if(parsed.errors?.length)throw Error('СДЭК не подтвердил получение реестров');
- if(!Number.isInteger(slot)||slot<1||slot>4||!Number.isFinite(Date.parse(at)))throw Error('Некорректный аккаунт или время получения реестра');
+ if(!Number.isInteger(slot)||slot<1||!Number.isFinite(Date.parse(at)))throw Error('Некорректный аккаунт или время получения реестра');
  const result=new Map<string,BankRegistry>();
  for(const r of parsed.registries||[]){
   if(!r.payment_date){if(r.orders.some(o=>o.transfer_sum||o.payment_sum))throw Error('В реестре отсутствует дата перечисления');continue;}
