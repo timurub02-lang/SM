@@ -735,7 +735,7 @@ async function handlePOST(request:Request){
     next.confirmationRequest={at,by:employee.id};
    }
    if(isLogistic(employee?.role))next.logistic=employee.id;
-   const labels=await import("@/lib/crm");text=`${o.zvd?"ЗВД снят · ":""}${labels.statuses[o.status]} → ${labels.statuses[to]}${returnKind?" · "+(returnKind==="refusal"?"Отработать отказ клиента":"Уточнить данные / связаться с клиентом"):""}${reason?" · "+reason:""}`;
+   const labels=await import("@/lib/crm");text=`${o.zvd?"ЗВД снят · ":""}${labels.statuses[o.status]} → ${labels.statuses[to]}${returnKind?" · "+(returnKind==="refusal"?"Отработать отказ клиента":returnKind==="delivery"?"Согласовать смену доставки с клиентом":"Уточнить данные / связаться с клиентом"):""}${reason?" · "+reason:""}`;
    if(courierRecalledAtWarehouse(o)&&['rework','packing'].includes(to))text+=' · После пересборки · посылка на складе';
    if(to==='shipping'&&o.delivery==='moscow_courier')text="Передан курьеру · ожидает приёма посылки · заказ остаётся Принят";
    if(next.incompleteNameExplanation?.at===now)text+=' · ФИО неполное («'+c.name+'»): '+next.incompleteNameExplanation.text;

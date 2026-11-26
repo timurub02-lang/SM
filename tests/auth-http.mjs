@@ -927,7 +927,7 @@ try{
  console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
 
  // Packing return: reason and uncertain-result guards, operator agreement, one logistic confirmation.
- for(const [kind,source,target] of [['delivery','cdek_courier','russian_post'],['refusal','cdek_courier','cdek_courier'],['refusal','russian_post','russian_post'],['refusal','moscow_courier','moscow_courier']]){
+ for(const [kind,source,target] of [['clarification','cdek_courier','cdek_courier'],['clarification','russian_post','russian_post'],['clarification','moscow_courier','moscow_courier'],['delivery','cdek_courier','russian_post'],['refusal','cdek_courier','cdek_courier'],['refusal','russian_post','russian_post'],['refusal','moscow_courier','moscow_courier']]){
   const pid='packing-return-'+target+kind;
   const packingBase={...policyOrder,id:pid,status:'packing',delivery:source,extra:true,refusalHandoffAt:undefined,finalHandoffAt:undefined,packingWaybillAt:new Date().toISOString(),reworkDeadline:undefined,shippedAt:undefined,courier:undefined,packingReworkDelivery:undefined};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(pid,packingBase.clientId,JSON.stringify(packingBase));
@@ -939,6 +939,7 @@ try{
   }
   db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+pid,JSON.stringify({state:'invalid',error:'Rejected'}));
   let returned=await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:'Согласовать доставку или отработать отказ'});
+  const event=JSON.parse(db.prepare('SELECT data FROM events WHERE order_id=? ORDER BY at DESC LIMIT 1').get(pid).data);assert.ok(event.text.includes(kind==='delivery'?'Согласовать смену доставки с клиентом':kind==='clarification'?'Уточнить данные / связаться с клиентом':'Отработать отказ клиента'));
   assert.equal(returned.status,'rework');assert.equal(returned.returnKind,kind);assert.equal(returned.packingReworkDelivery,source);assert.equal(returned.extra,false);assert.equal(returned.finalHandoffAt,undefined);assert.equal(returned.packingWaybillAt,undefined);
   if(kind==='delivery')await step(policyOperator.cookie,{action:'transition',to:'confirm'},400);
   returned=await step(policyOperator.cookie,{action:'updateOrder',delivery:target,address:packingBase.address,items:packingBase.items,addressConfirmed:true});
