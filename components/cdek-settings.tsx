@@ -27,7 +27,7 @@ export function CdekSettings({actorId,isAdmin}:{actorId:string;isAdmin:boolean})
  }
  return <section className="integration stack" style={{display:'grid'}}>
   <div className="heading-actions"><h3>Аккаунты СДЭК</h3>{isAdmin&&<button type="button" className="secondary" disabled={busy} onClick={()=>edit()}>Добавить аккаунт</button>}</div>
-  {accounts.length>0&&<div className="routing-summary-scroll"><table><thead><tr><th>Аккаунт</th><th>Тип выгрузки</th><th>Подключение</th>{isAdmin&&<th/>}</tr></thead>
+  {accounts.length>0&&<div className="routing-summary-scroll cdek-accounts-scroll" tabIndex={0} role="region" aria-label="Аккаунты СДЭК"><table className="cdek-accounts-table"><thead><tr><th>Аккаунт</th><th>Тип выгрузки</th><th>Подключение</th>{isAdmin&&<th scope="col">Действие</th>}</tr></thead>
    <tbody>{accounts.map(a=><tr key={a.slot}><td>{a.name}</td><td>{labels[a.type||'schedule']}</td><td>{a.configured?'Подключён':'Нет ключей'}</td>
     {isAdmin&&<td><button className="text-button" type="button" disabled={busy} onClick={()=>edit(a)}>Изменить</button></td>}</tr>)}</tbody></table></div>}
   {isAdmin&&draft&&<fieldset disabled={busy} className="form-grid">

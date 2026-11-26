@@ -47,6 +47,7 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
  const [open,setOpen]=useState(false),[config,setConfig]=useState<RoutingConfig|null>(null),[accounts,setAccounts]=useState<RoutingAccount[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
  useEffect(()=>{if(!open)return;let active=true;setConfig(null);setError('');fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`).then(async r=>{const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);if(active){setConfig({...cycleSettingsForEdit(d.config),cycleStart:d.config.cycleStart||d.config.savedCycleStart||thisMonday(moscowDate()),departmentAWeek:d.config.departmentAWeek??(d.accounts.some(a=>a.configured&&departmentAAccount(a))?defaultDepartmentAWeek(d.accounts):undefined)});setAccounts(d.accounts.filter((a:RoutingAccount)=>a.configured));}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[open,actorId]);
  async function save(){setBusy(true);setError('');try{const r=await fetch(`/api/cdek/routing?actorId=${encodeURIComponent(actorId)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...config,actorId})});const d=await r.json() as {config:RoutingConfig;accounts:RoutingAccount[];products:string[];error?:string};if(!r.ok)throw Error(d.error);setOpen(false);}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить');}finally{setBusy(false);}}
+ const [showDepartmentA,setShowDepartmentA]=useState(false);
  const scheduleAccounts=accounts.filter(account=>!departmentAAccount(account));
  const aAccounts=accounts.filter(departmentAAccount);
  const today=moscowDate(),twoWeeks=config?.cycleStart!==undefined;
@@ -54,7 +55,7 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
  const start=config?.cycleStart||'',validMonday=start!==''&&new Date(start+'T00:00:00Z').getUTCDay()===1;
  const week=validMonday?routingCycleIndex(start,today):null;
  return <>
-  <button className="sidebar-settings-pencil" type="button" title="Правила распределения СДЭК" aria-label="Настроить распределение СДЭК" onClick={()=>setOpen(true)}><Pencil size={16}/></button>
+  <button className="sidebar-settings-pencil" type="button" title="Правила распределения СДЭК" aria-label="Настроить распределение СДЭК" onClick={()=>{setShowDepartmentA(false);setOpen(true);}}><Pencil size={16}/></button>
   <Dialog open={open} onOpenChange={v=>{if(!busy)setOpen(v);}}>
    <DialogContent className="form-dialog cdek-routing-dialog">
     <DialogHeader><DialogTitle>Куда выгружать заказы СДЭК</DialogTitle><DialogDescription>График выгрузки по аккаунтам · московское время</DialogDescription></DialogHeader>
@@ -62,16 +63,21 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
 
      {config?<form className="stack" onSubmit={e=>{e.preventDefault();if(!twoWeeks||validMonday)void save();}}>
       <fieldset disabled={busy} className="stack order-fields">
-       <section className="routing-schedule"><h3>Отдел А_ · недельный график</h3>
+       <section className="routing-schedule">
+        <h3><CalendarDays size={18} aria-hidden="true"/>График выгрузки</h3>
+        <div className="routing-mode" role="group" aria-label="График по отделам">
+         <button type="button" aria-pressed={!showDepartmentA} onClick={()=>setShowDepartmentA(false)}>Все отделы, кроме А_ · две недели</button>
+         <button type="button" aria-pressed={showDepartmentA} onClick={()=>setShowDepartmentA(true)}>Отдел А_ · неделя</button>
+        </div>
+        {showDepartmentA?<>
         {aAccounts.length?<div className="form-grid">{days.map((day,i)=><label className="field" key={day}><span>{day}</span>
          <select aria-label={'Отдел А_ · '+day} value={config.departmentAWeek?.[i]||''} onChange={e=>{
           const week=[...(config.departmentAWeek??defaultDepartmentAWeek(aAccounts))];week[i]=Number(e.target.value);setConfig({...config,departmentAWeek:week});
          }}>{aAccounts.map(a=><option key={a.slot} value={a.slot}>{a.name}</option>)}</select></label>)}</div>:<p>Подключите аккаунт «Только отдел А_» в настройках интеграции СДЭК.</p>}
-       </section>
+       </>:<>
        <label className="routing-check routing-auto"><input type="checkbox" checked={!!autoEnabled} onChange={e=>setConfig({...config,[twoWeeks?'cycleEnabled':'enabled']:e.target.checked})}/>Автоматически распределять заказы остальных отделов</label>
        {!autoEnabled&&<p className="muted">Сейчас аккаунт для этих отделов выбирает логист.</p>}
-       <section className="routing-schedule">
-        <h3><CalendarDays size={18} aria-hidden="true"/>Все отделы, кроме А_ · цикл из двух недель</h3>
+
         {twoWeeks&&<div className="routing-anchor">
          <label className="field"><span>Понедельник первой недели</span>
           <input type="date" required step={7} min="1970-01-05" value={start} aria-invalid={!validMonday} onChange={e=>setConfig({...config,cycleStart:e.target.value})}/>
@@ -79,7 +85,6 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
          <p aria-live="polite">{!validMonday?'Выберите понедельник.':week===null?'До начала цикла действует еженедельный график.':`Сейчас идёт ${week===0?'первая':'вторая'} неделя цикла.`} После второй недели повторяется первая.</p>
         </div>}
         {autoEnabled&&(!twoWeeks||validMonday)&&<RoutingSummary config={config} accounts={accounts} today={today}/>}
-       </section>
        <p className="muted">Один аккаунт на день. Выбор другого аккаунта переносит выгрузку к нему.</p>
         {scheduleAccounts.map(account=><section className="routing-card" aria-label={account.name} key={account.slot}>
          <h4>{account.name}</h4>
@@ -98,6 +103,8 @@ export function CdekRoutingSettings({actorId}:{actorId:string}){
           }}/>;
          })}
         </section>)}
+       </>}
+       </section>
        <div className="routing-footer">
 
         <button type="submit" disabled={twoWeeks&&!validMonday} className="primary">{busy?'Сохранение…':'Сохранить настройки'}</button>
