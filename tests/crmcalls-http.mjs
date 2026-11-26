@@ -96,6 +96,14 @@ try{
  assert.equal(JSON.parse(d.prepare('SELECT data FROM clients WHERE id=?').get(owned.id).data).owner,'operator');
  assert.equal((await call('/api/sk-orders',cookies.admin,{id:'cc:'+approveEvent.call.id,action:'approve'})).status,400);
  await submitConflict(approveEvent);assert.equal(d.prepare('SELECT COUNT(*) n FROM orders').get().n,3);
+ // A stale local AND provider mapping must not prevent saving another valid mapping.
+ const stored=JSON.parse(d.prepare("SELECT data FROM settings WHERE id='crmcalls-incoming-config'").get().data);
+ stored.operators.push({userId:'removed-provider',employeeId:'removed-employee'});
+ d.prepare("UPDATE settings SET data=? WHERE id='crmcalls-incoming-config'").run(JSON.stringify(stored));
+ const preserve=await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:stored,revision:stored.revision});
+ assert.equal(preserve.status,200,preserve.text);
+ const badLink=await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:{...stored,operators:[...stored.operators,{userId:'new-invalid',employeeId:'operator'}]},revision:JSON.parse(preserve.text).revision});
+ assert.equal(badLink.status,400);
  console.log('CRMCalls HTTP: all non-admin roles denied, identity/CSRF, protected sheets, secret masking, preview, CAS and disabled scheduling passed');
  if(process.env.CRMCALLS_UI_TEST==='1'){
   console.log('Synthetic UI available on '+origin+'; admin / '+password);

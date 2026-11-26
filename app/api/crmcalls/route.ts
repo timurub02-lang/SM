@@ -1,4 +1,4 @@
-import {incomingScenarios,incomingConfigSchema,incomingDashboard,saveIncomingConfig,runCRMCallsIncoming} from '@/lib/crmcalls-incoming';
+import {readIncomingConfig,incomingScenarios,incomingConfigSchema,incomingDashboard,saveIncomingConfig,runCRMCallsIncoming} from '@/lib/crmcalls-incoming';
 import {z} from 'zod';
 import {authenticated} from '@/lib/api-auth';
 import {getChatGPTUser} from '@/app/chatgpt-auth';
@@ -42,7 +42,7 @@ async function post(req:Request){
  try{
   const p=input.parse(await req.json());await initCRMCalls(db());
   if(p.action==='saveIncoming'){
-   const config=incomingConfigSchema.parse(p.config);
+   const config=incomingConfigSchema.parse(p.config),old=await readIncomingConfig(db());
    if(config.enabled){
     const c=await readCRMCalls(db());if(!c?.apiKey)throw Error('Сначала подключите API CRMCalls');
     const api=crmcallsApi(c.apiKey),users=await api('/users');
@@ -50,7 +50,7 @@ async function post(req:Request){
      const results=await api('/scenarios/'+scenario.scenarioId+'/results');
      if(!Array.isArray(results.data)||!results.data.some((v:any)=>v.id===scenario.resultId))throw Error('Результат не найден в выбранном сценарии');
     }
-    if(!Array.isArray(users.data)||config.operators.some(link=>!users.data.some((v:any)=>v.id===link.userId&&v.status==='active')))throw Error('Выберите действующих операторов CRMCalls');
+    if(!Array.isArray(users.data)||config.operators.some(link=>!old?.operators.some(previous=>previous.userId===link.userId&&previous.employeeId===link.employeeId)&&!users.data.some((v:any)=>v.id===link.userId&&v.status==='active')))throw Error('Выберите действующих операторов CRMCalls');
    }
    return Response.json(await saveIncomingConfig(db(),config,p.revision));
   }
