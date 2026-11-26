@@ -178,7 +178,7 @@ export function clientAssignment(c:Client,owner:string,now:string,firstSheet="Т
  const until=new Date(Date.parse(now)+86400000).toISOString();
  return {permanentOwner:undefined,retentionExtensionUntil:undefined,importRetentionUntil:undefined,owner,sheet:"К",trialUntil:until,assignedUntil:until,assignmentStartedAt:now,trialReturnSheet:clientSheet(c)||firstSheet,returnSheet:c.returnSheet||((clientSheet(c)!=="К"&&clientSheet(c))||firstSheet)};
 }
-function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35,explicitPolicy=false,unpaidPremium=false):Client{
+function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35,explicitPolicy=false):Client{
  if(!c.owner)return c;
  if(c.permanentOwner===c.owner)return {...c,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined};
  if(orders.some(o=>o.clientId===c.id&&o.zvd))return {...c,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined};
@@ -187,9 +187,9 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
  const active=orders.some(o=>o.clientId===c.id&&["new","accepted","sent"].includes(orderGroup(o.status).id));
  // Recover the original one-day assignment deadline; reconciliation must not restart it.
  const trialUntil=c.trialUntil||(!own.length&&!c.importRetentionUntil&&Number.isFinite(Date.parse(c.assignmentStartedAt||""))?new Date(Math.max(Date.parse(c.assignmentStartedAt!)+86400000,Date.parse(c.retentionExtensionUntil||"")||0)).toISOString():undefined);
- if(trialUntil&&!own.length&&!active&&!unpaidPremium){return Date.parse(trialUntil)>now?{...c,trialUntil,assignedUntil:trialUntil}:{...c,owner:"",distributedAt:new Date(now).toISOString(),releasedAt:new Date(now).toISOString(),sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
+ if(trialUntil&&!own.length&&!active){return Date.parse(trialUntil)>now?{...c,trialUntil,assignedUntil:trialUntil}:{...c,owner:"",distributedAt:new Date(now).toISOString(),releasedAt:new Date(now).toISOString(),sheet:c.trialReturnSheet||"Т1",assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,returnSheet:undefined};}
  const base={...c,trialUntil:undefined,trialReturnSheet:undefined,sheet:"К",returnSheet:original,assignedUntil:"",assignmentStartedAt:c.assignmentStartedAt||own.map(o=>o.createdAt).filter(Boolean).sort()[0]};
- if(active||unpaidPremium||(!own.length&&!c.importRetentionUntil))return base;
+ if(active||(!own.length&&!c.importRetentionUntil))return base;
  const paid=own.filter(o=>o.status==="redeemed");
  // Missing historical redemption dates must not silently release a client.
  if(paid.some(o=>!o.redeemedAt||!Number.isFinite(Date.parse(o.redeemedAt))))return base;
@@ -199,8 +199,8 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
  return {...base,retentionExtensionUntil:undefined,owner:"",releasedAt:new Date(now).toISOString(),sheet:paid.length?"П":original,returnSheet:undefined,assignmentStartedAt:undefined};
 }
 
-function retentionWithPV(c:Client,orders:Order[],now:number,days:number,explicitPolicy:boolean,unpaidPremium:boolean):Client{
- const next=retentionResult(c,orders,now,days,explicitPolicy,unpaidPremium),related=orders.filter(o=>o.clientId===c.id);
+function retentionWithPV(c:Client,orders:Order[],now:number,days:number,explicitPolicy:boolean):Client{
+ const next=retentionResult(c,orders,now,days,explicitPolicy),related=orders.filter(o=>o.clientId===c.id);
  if(!c.manualSheet&&!related.some(o=>o.pv||o.blacklistedAt))return next;
  const events=related.flatMap(o=>o.blacklistedAt?[{at:o.blacklistedAt,sheet:'ЧС',startedAt:''}]:o.status==='redeemed'&&o.redeemedAt?[{at:o.redeemedAt,sheet:next.owner?'К':'П',startedAt:''}]:o.pv?[{at:o.status==='returned'?o.returnedAt||o.updatedAt:o.status==='refused'?o.cancelledAt||o.updatedAt:o.pvMarkedAt||o.createdAt,sheet:['returned','refused'].includes(o.status)?'ЧС':'ПВ',startedAt:o.createdAt}]:[]).filter(e=>!c.manualSheet||Date.parse(e.at)>Date.parse(c.manualSheet.at)).sort((a,b)=>b.at.localeCompare(a.at));
  const latest=events[0];if(!latest)return c.manualSheet?.sheet==='ПВ'&&next.owner?{...next,sheet:'ПВ'}:next;
@@ -210,8 +210,8 @@ function retentionWithPV(c:Client,orders:Order[],now:number,days:number,explicit
  return {...next,sheet:paidDuringPV?(next.owner?'К':'П'):latest.sheet};
 }
 
-export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,explicitPolicy=false,unpaidPremium=false):Client{
- const next=retentionWithPV(c,orders,now,days,explicitPolicy,unpaidPremium);
+export function applyRetention(c:Client,orders:Order[],now=Date.now(),days=35,explicitPolicy=false):Client{
+ const next=retentionWithPV(c,orders,now,days,explicitPolicy);
  if(c.owner&&!next.owner)next.releasedFromOwner=c.owner;
  // Route only a new release; never redistribute already free clients or lift blacklist/PV restrictions.
  if(!c.owner||next.owner||['ЧС','ПВ'].includes(clientSheet(next)))return next;
@@ -336,4 +336,5 @@ export const teamEmployees=(staff:Employee[],viewer:Employee)=>staff.filter(e=>v
 
 export const canReceivePayment=(order:Order,role:string)=>["admin","logistic","chief_logistic"].includes(role)&&["moscow_courier","russian_post"].includes(order.delivery||"")&&order.status==="redeemed"&&!order.paymentReceivedAt&&!order.importedPayment&&!order.priorPremiumPaid?.paymentAccepted;
 
-export const closedOrderCallBlocked=(e:Pick<Employee,"id"|"role">,o:Pick<Order,"status">,c:Pick<Client,"owner">)=>e.role==="operator"&&["refused","redeemed"].includes(o.status)&&c.owner!==e.id;
+export const releasedOrderReadOnly=(role:Employee['role'],o:Pick<Order,'status'|'manager'>,c:Pick<Client,'owner'>|undefined)=>['operator','department_head'].includes(role)&&o.status==='redeemed'&&(!c?.owner||c.owner!==o.manager);
+export const closedOrderCallBlocked=(e:Pick<Employee,"id"|"role">,o:Pick<Order,"status"|"manager">,c:Pick<Client,"owner">)=>releasedOrderReadOnly(e.role,o,c)||e.role==="operator"&&["refused","redeemed"].includes(o.status)&&c.owner!==e.id;

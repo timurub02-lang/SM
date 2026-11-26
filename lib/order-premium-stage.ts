@@ -1,6 +1,6 @@
 import {courierWarehouseReturn} from './courier.ts';
 import {legacyPremiumPaid} from './legacy-premium-paid.ts';
-import {statuses,orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
+import {releasedOrderReadOnly,statuses,orderGroup,orderGroups,type Order,type Client,type Employee} from './crm.ts';
 
 export type OrderPremiumStage={status:'accrued'|'paid';periodId:string;paidAt?:string};
 const transferred={id:'transferred',label:'Передан'};
@@ -55,6 +55,7 @@ export function showOrderInList(order:Order,client:Client|undefined,role:Employe
  if(operationalOrderHidden(order,role,now))return false;
  if(order.status==='rework'&&['operator','department_head'].includes(role))return false;
  const group=orderDisplayGroup(order).id;
+ if(releasedOrderReadOnly(role,order,client))return !(order.premiumStage?.status==='paid'||legacyPremiumPaid(order));
  const hideUnassigned=(group==="premium_paid"&&!!order.legacyLv?.paymentPendingReview&&order.premiumStage?.status!=="paid")&&["admin","operator","department_head"].includes(role);
  return !hideUnassigned||!!client?.owner&&client.owner===order.manager;
 }

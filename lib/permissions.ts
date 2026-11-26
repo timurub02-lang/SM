@@ -4,7 +4,7 @@ import {canReviewOrders,canDecideSkOrders} from './order-review-access.ts';
 import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canSelectOrderPickupPoint} from './order-pickup-point.ts';
-import {canEditOrderRecipientName} from './crm.ts';
+import {releasedOrderReadOnly,canEditOrderRecipientName} from './crm.ts';
 import {impersonationBlocksPhone} from './impersonation.ts';
 import {canEditMoscowOrderDetails,canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
@@ -59,6 +59,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(['missIncoming','readReminder','closeIncoming','transferIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
+ if(order&&releasedOrderReadOnly(e.role,order,s.clients.find(c=>c.id===order.clientId)))return allow(false);
  if(['settings','import','normalizeImportedAddresses','releaseExpired'].includes(p.action))return allow(false);
  if(p.action==='deleteEmployee')return allow(e.role==='department_head'&&!!e.department);
  if(p.action==='saveEmployee')return allow(canCreateRedemptionStaff(e)&&!p.id||e.role==='chief_logistic'||e.role==='department_head'&&!!e.department);
