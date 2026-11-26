@@ -1,4 +1,5 @@
 import {readLimitedText} from '@/lib/request-body';
+import {accountVersionSql,departmentAAccount} from '@/lib/cdek-accounts';
 import {initInventory} from '@/lib/inventory';
 import {authenticated} from '@/lib/api-auth';
 import {db} from '@/lib/db';
@@ -20,14 +21,16 @@ async function handlePOST(req:Request){try{
  const raw=await readLimitedText(req,400000);if(raw.length>100000)throw Error('Слишком много правил');const p=routingSchema.parse(JSON.parse(raw));
  const current=await routingSettings();if(p.revision!==current.config.revision)throw Error('Настройки изменены. Откройте их заново');
  if(!p.cycleSlots||p.cycleEnabled===undefined)throw Error('Обновите страницу, чтобы сохранить актуальный график');
+ if(current.config.departmentAWeek&&!p.departmentAWeek)throw Error('Обновите страницу для сохранения графика отдела А_');
+ if(p.departmentAWeek?.some(slot=>!current.accounts.some(a=>a.slot===slot&&a.configured&&departmentAAccount(a))))throw Error('Для отдела А_ выберите аккаунт его типа на каждый день');
  if(p.cycleStart&&p.cycleSlots){
-  if(p.cycleSlots.some(slot=>slot!==null&&!current.accounts.some(a=>a.slot===slot&&a.configured)))throw Error('В графике выбран неподключённый аккаунт');
+  if(p.cycleSlots.some(slot=>slot!==null&&!current.accounts.some(a=>a.slot===slot&&a.configured&&!departmentAAccount(a))))throw Error('В графике выбран неподключённый аккаунт');
  }else{
-  if(p.rules.some(r=>r.enabled&&!current.accounts.some(a=>a.slot===r.slot&&a.configured)))throw Error('В правиле выбран неподключённый аккаунт');
+  if(p.rules.some(r=>r.enabled&&!current.accounts.some(a=>a.slot===r.slot&&a.configured&&!departmentAAccount(a))))throw Error('В правиле выбран неподключённый аккаунт');
   if(p.enabled&&!p.rules.some(r=>r.enabled))throw Error('Добавьте хотя бы одно включённое правило');
  }
  const config={...p,revision:crypto.randomUUID()};const data=JSON.stringify(config);
- const result=current.raw?await db().prepare('UPDATE settings SET data=? WHERE id=? AND data=?').bind(data,routingKey,current.raw).run():await db().prepare('INSERT OR IGNORE INTO settings(id,data) VALUES(?,?)').bind(routingKey,data).run();
+ const result=current.raw?await db().prepare('UPDATE settings SET data=? WHERE id=? AND data=? AND '+accountVersionSql+'=?').bind(data,routingKey,current.raw,current.accountVersion).run():await db().prepare('INSERT OR IGNORE INTO settings(id,data) SELECT ?,? WHERE '+accountVersionSql+'=?').bind(routingKey,data,current.accountVersion).run();
  if(!result.meta.changes)throw Error('Настройки изменены. Откройте их заново');
  return Response.json({config});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось сохранить правила'},{status:400});}}

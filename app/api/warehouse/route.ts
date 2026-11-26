@@ -1,3 +1,4 @@
+import {accountRowsWhere} from '@/lib/cdek-accounts';
 import {returnReconciliationView,reconcileReturnBatch} from '@/lib/return-reconciliation-batch';
 import {canEditProductCost,productCostSchema,productCostKey,readProductCosts} from '@/lib/warehouse-cost';
 import {warehouseReadOnly} from '@/lib/permissions';
@@ -10,7 +11,7 @@ import {warehouseAddressSchema,productSchema} from '@/lib/warehouse';
 import {z} from 'zod';
 import {cdekToken} from '@/lib/cdek';
 async function offices(query:URLSearchParams){
- const row=await db().prepare("SELECT data FROM settings WHERE id IN ('cdek-1','cdek-2','cdek-3','cdek-4') ORDER BY id LIMIT 1").first<{data:string}>();
+ const row=await db().prepare(`SELECT data FROM settings WHERE ${accountRowsWhere} ORDER BY id LIMIT 1`).first<{data:string}>();
  if(!row)throw Error('Подключите аккаунт СДЭК в настройках');const keys=JSON.parse(row.data);const token=await cdekToken(keys.clientId,keys.clientSecret);
  const r=await fetch('https://api.cdek.ru/v2/deliverypoints?'+query,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(15000)});
  if(!r.ok)throw Error('Не удалось загрузить ПВЗ СДЭК');const list=await r.json() as any[];if(!Array.isArray(list))throw Error('СДЭК не вернул список ПВЗ');

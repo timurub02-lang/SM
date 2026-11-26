@@ -14,7 +14,7 @@ export async function syncCdekReturnReceipts(d:Db,request:typeof fetch=fetch){
  const tokens=new Map<number,Promise<string>>();const counts={checked:0,received:0,failed:0};
  let cursor=0;
  async function worker(){while(cursor<rows.length){const row=rows[cursor++];const at=new Date().toISOString();let error='';try{
-  const o=JSON.parse(row.data) as Order,s=JSON.parse(row.shipment);if(!s.uuid||!s.number||![1,2,3,4].includes(s.slot))throw Error('Нет исходной накладной СДЭК');
+  const o=JSON.parse(row.data) as Order,s=JSON.parse(row.shipment);if(!s.uuid||!s.number||!(Number.isSafeInteger(s.slot)&&s.slot>0))throw Error('Нет исходной накладной СДЭК');
   if(!tokens.has(s.slot))tokens.set(s.slot,(async()=>{const a=await d.prepare('SELECT data FROM settings WHERE id=?').bind('cdek-'+s.slot).first();if(!a)throw Error('Аккаунт СДЭК не подключён');const k=JSON.parse(a.data);return cdekToken(k.clientId,k.clientSecret,request);})());
   const token=await tokens.get(s.slot);
   const get=async(path:string)=>{const r=await request('https://api.cdek.ru/v2'+path,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Ошибка проверки СДЭК HTTP '+r.status);return r.json();};
