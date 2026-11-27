@@ -7,7 +7,7 @@ import type {SimpleUser} from 'sip.js/lib/platform/web';
 import {OktellPilotCall} from './oktell-pilot-call';
 import {setCallMicrophoneMuted} from '@/lib/call-microphone';
 type Config={username:string;authorizationUsername:string;password:string;domain:string;token:string;registered:boolean;error?:string};
-type Route='mts'|'beeline';
+type Route='mts'|'beeline'|'sk';
 type CallTarget={mode:'client';clientId:string;phoneKey?:string}|{mode:'order';orderId:string;phoneKey?:string}|{mode:'incoming';incomingId:string};
 type PhoneState={routeBusy:boolean;acquire:(route:Route)=>boolean;release:(route:Route)=>void;ready:boolean;busy:boolean;working:boolean;message:string;connect:()=>Promise<void>;disconnect:()=>Promise<void>;call:(target:CallTarget,onCompleted?:()=>void)=>Promise<void>;tone:()=>void};
 async function bounded<T>(work:Promise<T>,message:string,ms=15000):Promise<T>{

@@ -6,6 +6,7 @@ import {z} from 'zod';
 import {createPhoneCall,initPhone,normalizeOutgoingNumber} from '@/lib/phone-store';
 
 import {phoneAccount,phoneRoles} from '@/lib/phone-accounts';
+import {reserveSkCall,skWidgetConfig,updateSkCall} from '@/lib/sk-widget-calls';
 export const dynamic='force-dynamic';
 const input=z.discriminatedUnion('mode',[
  z.object({mode:z.literal('test')}),z.object({mode:z.literal('echo')}),
@@ -19,13 +20,28 @@ export const GET=authenticated(async(req:Request)=>{
  if(!await allowed())return Response.json({error:'Телефония недоступна для этой роли'},{status:403});
  const url=new URL(req.url);
  if(url.searchParams.has('mode')){try{const p=input.parse(Object.fromEntries(url.searchParams)),result=await clientPhones((await getChatGPTUser())!.employee!,p);return Response.json({phones:result.phones.map(({key,label})=>({key,label}))},{headers:{'Cache-Control':'no-store'}});}catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось получить номера'},{status:400});}}
- const c=config();return Response.json({configured:!!process.env.CRM_PHONE_RESULT_KEY,phone:c.phone,callerId:c.callerId,testMode:false,lines:25,cps:5},{headers:{'Cache-Control':'no-store'}});
+ const c=config(),actor=(await getChatGPTUser())!.employee!;
+ const skWidget=skWidgetConfig(actor,process.env.CRM_ORIGIN||url.origin);
+ return Response.json({configured:!!process.env.CRM_PHONE_RESULT_KEY,phone:c.phone,callerId:c.callerId,testMode:false,lines:25,cps:5,...(skWidget?{skWidget}:{})},{headers:{'Cache-Control':'no-store'}});
 });
 export const POST=authenticated(async(req:Request)=>{
  if(!await allowed())return Response.json({error:'Телефония недоступна для этой роли'},{status:403});
  try{
-  const p=input.parse(await req.json()),c=config();
+  const body=z.record(z.string(),z.unknown()).parse(await req.json()),p=input.parse(body),c=config();
   const actor=(await getChatGPTUser())!.employee!;
+  if(body.action==='skWidgetDial'){
+   const pilot=skWidgetConfig(actor,process.env.CRM_ORIGIN||new URL(req.url).origin);
+   if(!pilot||!process.env.CRM_PHONE_RESULT_KEY||body.skUserId!==pilot.skUserId)return Response.json({error:'Скорозвон недоступен для этой учётной записи'},{status:403});
+   const attempt=z.string().uuid().safeParse(body.attemptId);
+   if((p.mode!=='client'&&p.mode!=='order'&&p.mode!=='incoming')||!p.phoneKey||!attempt.success)return Response.json({error:'Проверьте карточку и выбранный телефон'},{status:400});
+   const {phones,clientId}=await clientPhones(actor,p),selected=phones.find(n=>n.key===p.phoneKey);
+   if(!selected) return Response.json({error:'Выбранный телефон больше недоступен'},{status:409});
+   const id=attempt.data.replaceAll('-','');
+   await initPhone(db());
+   try{await reserveSkCall(db(),id,actor,p,clientId);}catch{return Response.json({error:'Не удалось начать новую попытку. Проверьте историю и активные звонки.'},{status:409});}
+   return Response.json({id,number:'+'+selected.number},{headers:{'Cache-Control':'no-store'}});
+  }
+  if(body.action)return Response.json({error:'Неизвестный способ звонка'},{status:400});
   const account=phoneAccount(actor.id);
   if(['test','echo'].includes(p.mode)&&actor.role!=='admin')throw Error('Тестовые звонки доступны администратору');
   let destination=p.mode==='echo'?'echo':normalizeOutgoingNumber(c.phone),clientId='';
@@ -45,9 +61,15 @@ export const POST=authenticated(async(req:Request)=>{
 export const PATCH=authenticated(async req=>{
  if(!await allowed())return Response.json({error:'Недостаточно прав'},{status:403});
  try{
-  const p=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),status:z.enum(['dialing','connected','cancelled','failed','unknown','busy','no_answer']),detail:z.string().max(500).prefault('')}).parse(await req.json());
+  const body=z.record(z.string(),z.unknown()).parse(await req.json());
+  if(body.action==='skWidgetStatus'){
+   const p=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),event:z.enum(['connected','ended','answered-end','failed','unknown'])}).parse(body);
+   await updateSkCall(db(),p.id,(await getChatGPTUser())!.employee!.id,p.event);
+   return Response.json({ok:true});
+  }
+  const p=z.object({id:z.string().regex(/^[a-f0-9]{32}$/),status:z.enum(['dialing','connected','cancelled','failed','unknown','busy','no_answer']),detail:z.string().max(500).prefault('')}).parse(body);
   await initPhone(db());const e=(await getChatGPTUser())!.employee!,final=['cancelled','failed','unknown','busy','no_answer'].includes(p.status);
-  await db().prepare("UPDATE phone_calls SET status=?,detail=?,ended_at=? WHERE id=? AND actor_id=? AND detail NOT LIKE 'Oktell / МТС%' AND provider_at IS NULL AND (ended_at IS NULL OR (?=1 AND status='unknown')) AND (status<>'connected' OR ?=1)").bind(p.status,p.detail,final?new Date().toISOString():null,p.id,e.id,final?1:0,final?1:0).run();
+  await db().prepare("UPDATE phone_calls SET status=?,detail=?,ended_at=? WHERE id=? AND actor_id=? AND detail NOT LIKE 'Oktell / МТС%' AND detail NOT LIKE 'Скорозвон · %' AND provider_at IS NULL AND (ended_at IS NULL OR (?=1 AND status='unknown')) AND (status<>'connected' OR ?=1)").bind(p.status,p.detail,final?new Date().toISOString():null,p.id,e.id,final?1:0,final?1:0).run();
   return Response.json({ok:true});
  }catch{return Response.json({error:'Неверный результат звонка'},{status:400});}
 });

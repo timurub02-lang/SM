@@ -27,7 +27,7 @@ try{
   const o={id:'o-'+id,clientId:c.id,manager:id,logistic:'',status:'draft',items:[],comment:'',reason:'',contact:'none',due:'',round:0,extra:false,createdAt:c.createdAt,updatedAt:c.createdAt,version:1};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(o.id,c.id,JSON.stringify(o));
  }
- server=spawn(process.execPath,['--import',resolve('tests/fixtures/redemption-clock.mjs'),resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_STAFF_ENABLED:'1',CRM_PHONE_RESULT_KEY:pbxKey,CRM_PHONE_RECORDINGS_DIR:join(dir,'recordings'),CRM_PHONE_USER:'pilot-test',CRM_PHONE_PASSWORD:'fixture-secret',CRM_PHONE_TEST_NUMBER:'79990000001',CRM_PHONE_CALLER_ID:'79000000000',CRM_PHONE_EMPLOYEE:'admin',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe','ipc']});
+ server=spawn(process.execPath,['--import',resolve('tests/fixtures/redemption-clock.mjs'),resolve('.next/standalone/server.js')],{env:{...process.env,CRM_PHONE_STAFF_ENABLED:'1',CRM_SK_WIDGET_ORIGIN:'https://phone.crm.test',CRM_SK_WIDGET_PILOTS:JSON.stringify({one:'101'}),CRM_PHONE_RESULT_KEY:pbxKey,CRM_PHONE_RECORDINGS_DIR:join(dir,'recordings'),CRM_PHONE_USER:'pilot-test',CRM_PHONE_PASSWORD:'fixture-secret',CRM_PHONE_TEST_NUMBER:'79990000001',CRM_PHONE_CALLER_ID:'79000000000',CRM_PHONE_EMPLOYEE:'admin',CRM_RUNTIME:'miran',CRM_ORIGIN:origin,CRM_DATABASE_PATH:join(dir,'test.sqlite'),HOSTNAME:'127.0.0.1',PORT:port},stdio:['ignore','pipe','pipe','ipc']});
  server.stdout.on('data',x=>logs+=x);server.stderr.on('data',x=>logs+=x);
  let ready=false;for(let i=0;i<100;i++){try{await fetch(base+'/login');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
  assert.ok(ready,'Server failed to start');
@@ -35,6 +35,33 @@ try{
  async function login(name,pw=password){return call('/api/auth/login',{body:{login:name,password:pw}});}
  const cookies={};for(const {id} of staff){const r=await login(id);assert.equal(r.status,200,r.text);cookies[id]=r.headers.get('set-cookie').split(';')[0];}
 
+ // Widget calls use the server-selected card number and never create a PBX destination.
+ {
+  const pilot=await call('/api/telephony',{cookie:cookies.one});
+  assert.deepEqual(pilot.data.skWidget,{origin:'https://phone.crm.test',skUserId:'101'});
+  assert.equal((await call('/api/telephony',{cookie:cookies.two})).data.skWidget,undefined);
+  const options=await call('/api/telephony?mode=order&orderId=o-one',{cookie:cookies.one});
+  assert.equal(options.status,200,options.text);assert.ok(!options.text.includes('79990000001'));
+  const body={mode:'order',orderId:'o-one',phoneKey:options.data.phones[0].key,action:'skWidgetDial',skUserId:'101',attemptId:crypto.randomUUID()};
+  const dial=(payload,cookie=cookies.one)=>call('/api/telephony',{cookie,body:payload});
+  assert.equal((await dial({...body,mode:'client',clientId:'c-two',orderId:undefined},cookies.two)).status,403);
+  assert.equal((await dial({...body,skUserId:'102'})).status,403);
+  assert.equal((await dial({...body,phoneKey:'stale'})).status,409);
+  const attempts=await Promise.all([dial(body),dial(body)]);
+  assert.deepEqual(attempts.map(x=>x.status).sort(),[200,409],JSON.stringify(attempts.map(x=>x.data)));
+  const {id,number}=attempts.find(x=>x.status===200).data;
+  assert.equal(number,'+79990000001');
+  assert.equal(db.prepare('SELECT order_id FROM phone_calls WHERE id=?').get(id).order_id,'o-one');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM phone_call_targets WHERE call_id=?').get(id).n,0);
+  assert.equal((await dial({...body,attemptId:crypto.randomUUID()})).status,409);
+  const event=(event,cookie=cookies.one)=>call('/api/telephony',{cookie,method:'PATCH',body:{action:'skWidgetStatus',id,event}});
+  await event('ended',cookies.two);assert.equal(db.prepare('SELECT ended_at FROM phone_calls WHERE id=?').get(id).ended_at,null);
+  await event('connected');await event('answered-end');await event('connected');
+  const done=db.prepare('SELECT status,ended_at,provider_at FROM phone_calls WHERE id=?').get(id);
+  assert.equal(done.status,'completed');assert.ok(done.ended_at);assert.equal(done.provider_at,null);
+  assert.equal((await dial(body)).status,409);
+  db.prepare('DELETE FROM phone_calls WHERE id=?').run(id);
+ }
  assert.equal((await call('/api/phone-replacement')).status,401);
  assert.equal((await call('/api/phone-replacement',{cookie:cookies.one})).status,403);
  const maskingPool=await call('/api/phone-replacement',{cookie:cookies.admin});assert.equal(maskingPool.status,200,maskingPool.text);
