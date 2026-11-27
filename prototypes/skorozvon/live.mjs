@@ -3,6 +3,42 @@ const $=id=>document.getElementById(id);
 const phases={'call:started':'Звонок начат','call:ringing':'Идёт дозвон','call:connected':'Разговор','call:ended':'Разговор завершён. Сохраните результат в панели Скорозвона.'};
 const track=createCallTracker();
 let card=null,lastEvent=null,active=false,loaded=false,session=false,loadingTimer;
+let widget,ready=false,sessionVersion=0,configured=false,used=false,dialMessage='';
+function canDial(){
+  return ready&&!active&&widget?.phoneModel.get('hide_phone_numbers')===true;
+}
+function renderDial(){
+  $('dial-test').disabled=!configured||used||!canDial();
+  $('dial-status').textContent=dialMessage||(!configured?'Согласованный номер не настроен.':
+    used?'Тестовая попытка уже использована.':!ready?'Для звонка войдите под тестовым оператором.':
+    active?'Дождитесь завершения текущего звонка.':!canDial()?'Включите скрытие номеров у тестового оператора в Скорозвоне.':
+    'Панель готова к тестовому звонку.');
+}
+async function setupDial(){
+  try{
+    const response=await fetch('/test-call',{cache:'no-store'});
+    if(!response.ok)throw Error();
+    const state=await response.json();configured=state.configured;used=state.claimed;
+  }catch{dialMessage='Не удалось проверить настройку тестового номера.';}
+  renderDial();
+}
+$('dial-test').addEventListener('click',async()=>{
+  if(used||!configured||!canDial())return;
+  const version=sessionVersion;
+  used=true;dialMessage='Готовим вызов…';renderDial();
+  try{
+    const response=await fetch('/test-call',{method:'POST',headers:{'X-Test-Call':'1'}});
+    if(!response.ok)throw Error();
+    const {number}=await response.json();
+    if(version!==sessionVersion||!canDial()){
+      dialMessage='Состояние оператора изменилось. Набор отменён.';return;
+    }
+    dialMessage='Команда передана в Скорозвон. Следите за состоянием вызова.';renderDial();
+    await widget.makeCall(number);
+  }catch{dialMessage='Не удалось подтвердить запуск звонка. Проверьте панель Скорозвона. Повторный набор отключён.';}
+  finally{renderDial();}
+});
+void setupDial();
 function showCard(){
   const match=card&&lastEvent?.externalId===card.externalId;
   $('live-card').hidden=!match;
@@ -19,13 +55,16 @@ function receiveCall(name,call){
   const event=track(name,call);if(!event)return;
   if(event.overlap){$('live-error').hidden=false;$('live-error').textContent='Получено событие другого звонка. Карточка закреплена за текущим разговором; проверьте панель Скорозвона.';return;}
   lastEvent=event;active=event.active;$('mapping-fields').disabled=active;
+  renderDial();
   $('call-phase').textContent=phases[name];showCard();
   const list=$('live-events');if(!list.dataset.started){list.replaceChildren();list.dataset.started='true';}
   const item=document.createElement('li');item.textContent=`${new Date().toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow'})} · ${phases[name]}`;list.prepend(item);
   while(list.children.length>30)list.lastElementChild.remove();
 }
 function status(value){
+  sessionVersion++;
   session=value!=='unauthorized';
+  ready=value==='ready';renderDial();
   $('connection-status').textContent=({authorized:'Вход выполнен. Скорозвон подключает телефонию…',ready:'Панель подключена. Проверьте статус и проект оператора.',unauthorized:'Вход не выполнен. Используйте форму Скорозвона.'})[value];
   if(value==='unauthorized'&&!active){lastEvent=null;showCard();}
 }
@@ -38,7 +77,12 @@ $('load-widget').addEventListener('click',()=>{
   window.Tube=window.Tube||{};
   window.Tube.ready=()=>{
     clearTimeout(loadingTimer);
-    try{mountPhone(window.Tube,receiveCall,status);$('load-area').hidden=true;$('session-help').hidden=false;$('connection-status').textContent='Виджет загружен. Войдите через форму Скорозвона.';}
+    try{
+      $('connection-status').textContent='Виджет загружен. Войдите через форму Скорозвона.';
+      widget=mountPhone(window.Tube,receiveCall,status);
+      widget.phoneModel.on('change:hide_phone_numbers',renderDial);
+      renderDial();$('load-area').hidden=true;$('session-help').hidden=false;
+    }
     catch{fail('Не удалось открыть панель. Обновите страницу и попробуйте ещё раз.');}
   };
   const script=document.createElement('script');script.src=sdkUrl;script.async=true;

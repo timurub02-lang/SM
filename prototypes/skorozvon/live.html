@@ -9,6 +9,11 @@
   <div class="workspace live-workspace">
     <section class="client-area" aria-label="Карточка и сопоставление">
       <section class="client-detail" aria-labelledby="card-heading"><h2 id="card-heading">Ожидаем звонок</h2><p id="card-state" role="status">Карточка откроется, когда Скорозвон передаст внешний ID контакта.</p><dl id="live-card" class="client-meta" hidden><div><dt>Клиент</dt><dd id="card-name"></dd></div><div><dt>Город</dt><dd id="card-city"></dd></div><div><dt>Внешний ID</dt><dd id="card-id"></dd></div></dl><p id="call-phase" class="notice" role="status">Событий звонка ещё нет.</p></section>
+      <section class="history" aria-labelledby="test-call-heading"><h2 id="test-call-heading">Ручной звонок</h2>
+        <p>Один звонок на согласованный тестовый телефон. Номер скрыт.</p>
+        <button id="dial-test" type="button" class="primary" aria-describedby="dial-status" disabled>Позвонить через СК</button>
+        <p id="dial-status" class="hint" role="status">Проверяем настройку тестового номера…</p>
+      </section>
       <section class="history" aria-labelledby="mapping-heading"><h2 id="mapping-heading">Тестовая карточка</h2><p class="hint">Укажите external_id тестового контакта из Скорозвона. Совпадение должно быть точным. Карточка хранится только в этой вкладке и не отправляется в CRM.</p>
         <form id="mapping-form"><fieldset id="mapping-fields"><label class="field">Внешний ID контакта<input id="external-id" name="externalId" maxlength="200" required autocomplete="off" placeholder="Например, sk-test-001"></label><label class="field">Имя тестового клиента<input id="test-name" name="name" maxlength="200" required autocomplete="off" placeholder="Тестовый клиент"></label><label class="field">Город<input id="test-city" name="city" maxlength="200" autocomplete="off"></label><button class="secondary" type="submit">Сохранить тестовую карточку</button></fieldset></form><p id="mapping-status" class="hint" role="status">Карточка ещё не настроена.</p>
       </section>
@@ -16,7 +21,7 @@
     </section>
     <aside class="phone-panel live-panel" aria-label="Настоящий виджет Скорозвона">
       <h2>Панель Скорозвона</h2><p id="connection-status" class="notice" role="status">Виджет ещё не загружен.</p>
-      <div id="load-area"><p>Откройте панель и войдите в тестовую учётную запись через форму Скорозвона.</p><button id="load-widget" class="primary full">Открыть панель Скорозвона</button><p class="hint">Закройте другие телефонные вкладки этого оператора. Для разговора браузер запросит доступ к микрофону.</p></div>
+      <div id="load-area"><p>Откройте панель и войдите в тестовую учётную запись через форму Скорозвона.</p><button id="load-widget" class="primary full">Открыть панель Скорозвона</button><p class="hint">Для проверки двух вкладок используйте отдельную тестовую смену. Для разговора браузер запросит доступ к микрофону.</p></div>
       <div id="widget"></div><p id="live-error" class="error" role="alert" hidden></p>
       <p id="session-help" class="hint" hidden>Статус оператора, проект, звонок и выход из аккаунта доступны в самой панели. Перед закрытием страницы завершите разговор и сохраните результат.</p>
     </aside>
