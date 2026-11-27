@@ -17,6 +17,6 @@ export function OperatorPremiumPayout({actor,period,preview,orders,rate,readMode
  },[actor,period,preview]);
  if(readModel&&['pending','error'].includes(readModel.status))return <strong>Расчёт выплаты ожидает готовую сводку…</strong>;
  if(preview&&roundTo50===null)return <strong>{error?'Не удалось загрузить правило округления':'Расчёт выплаты загружается…'}</strong>;
- if(preview)return <span><strong>Предполагаемая выплата: {money(nextOperatorPayout(orders,rate,roundTo50!))}{readModel?.status==='stale'?' · обновляется':''}</strong><small className="block">Только {rate}% от заказов, без оклада и корректировок</small></span>;
+ if(preview)return <span><strong>Предполагаемая выплата: {money(nextOperatorPayout(orders.filter(o=>(o.premiumManager||o.manager)===actor),rate,roundTo50!))}{readModel?.status==='stale'?' · обновляется':''}</strong><small className="block">Только {rate}% от заказов, без оклада и корректировок</small></span>;
  return <strong>{!period?'Период выплаты ещё не открыт':error?'Не удалось загрузить премию':amount===null?'Расчёт выплаты загружается…':'К выплате за период: '+money(amount)+(stale?' · сводка обновляется':'')}</strong>;
 }

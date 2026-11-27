@@ -1,7 +1,7 @@
 import {statuses,type Order,type Employee} from './crm.ts';
 
 const labels:Record<string,string>={
- address:'Адрес',addressParts:'Поля адреса',items:'Корзина',delivery:'Способ доставки',status:'Статус',manager:'Оператор',logistic:'Логист',clientId:'Клиент',
+ address:'Адрес',addressParts:'Поля адреса',items:'Корзина',delivery:'Способ доставки',status:'Статус',manager:'Оператор',premiumManager:'Получатель премии',logistic:'Логист',clientId:'Клиент',
  comment:'Комментарий оператора',operatorComments:'Комментарии оператора',logisticComment:'Комментарий логиста',waybillComment:'Комментарий для бланка',reason:'Причина',returnReason:'Причина возврата',returnKind:'Тип возврата',contact:'Результат связи',due:'Время перезвона',round:'Круг обработки',extra:'Дополнительное подтверждение',zvd:'ЗВД',pv:'ПВ',pvMarkedAt:'Дата ПВ',blacklistedAt:'Внесение в ЧС',
  createdAt:'Дата создания',confirmedAt:'Дата подтверждения',courierHandedAt:'Фактическая передача курьеру',shippedAt:'Дата отправки',redeemedAt:'Дата оплаты',returnedAt:'Дата возврата',cancelledAt:'Дата отмены',adminReviewedAt:'Проверка администратором',
  draftHours:'Срок оформления, ч',confirmationStartedAt:'Начало подтверждения',confirmationHours:'Срок подтверждения, ч',extraCallbackAt:'Отложенное подтверждение',noAnswerDeadline:'Срок подтверждения до',reworkHours:'Срок доработки, ч',reworkDeadline:'Срок доработки до',finalConfirmHours:'Срок финального подтверждения, ч',finalHandoffAt:'Передача на финальное подтверждение',refusalHandoffAt:'Передача отказа',
@@ -25,7 +25,7 @@ export function orderChangeHistory(before:Order,after:Order,staff:Employee[]=[])
   if(v===undefined||v===null||v==='')return 'не указано';
   if(typeof v==='boolean')return v?'да':'нет';
   if(typeof v==='string'){
-   if(['manager','logistic','paymentReceivedBy','by'].includes(key))return staff.find(e=>e.id===v)?.name||v;
+   if(['manager','premiumManager','logistic','paymentReceivedBy','by'].includes(key))return staff.find(e=>e.id===v)?.name||v;
    if(key==='status')return statuses[v as keyof typeof statuses]||v;
    if(key==='delivery')return delivery[v]||v;
    if(key==='contact')return ({none:'Нет результата',missed:'Недозвон',callback:'Перезвон'} as Record<string,string>)[v]||v;

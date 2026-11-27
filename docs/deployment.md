@@ -487,3 +487,20 @@ stale revision, and signed/paid preservation before release.
 ## Official payroll amounts from PDF
 
 Admins can upload salary-list PDFs from the payment calculation toolbar. Text-based salary lists are parsed locally in the CRM runtime using pinned PDF.js; no external document service is used. The parser requires a document date, consecutive numbered rows and a matching total. Scans/unsupported layouts are rejected. Uploads are limited to 10 files, 900 KB combined in the UI, and 500 rows. Preview is read-only. Exact unique name/alias matches are suggested; every unmatched row requires manual selection or explicit exclusion. Confirmation replaces only `official` in the selected current-period drafts, preserving other adjustments. Signed departments and paid/non-current periods are blocked. A single guarded transaction checks staff, drafts and ledger, records before/after import audit and prevents repeated document hashes in the same period. Source PDFs are not stored. Excluded rows remain in the audit. The explicit “outside CRM” choice is remembered by normalized full name in premium-official-outside-crm; future previews place those rows at the bottom in grey with a restore-matching action. Confirmation saves both exclusions and restored names under the same race guard. A one-time skip does not persist an exclusion. Synthetic tests cover extraction through the standalone runtime, role checks, totals, concurrent changes and protected periods; customer documents never belong in Git.
+
+## Operator dismissal with deferred client release
+
+Deleting an operator now archives the employee (`dismissedAt`, `dismissedBy`), disables
+the account and revokes sessions atomically. Cash balances and payroll records stay
+available for settlement. Heads can only release clients; same-department transfer
+is administrator-only. Clients with unfinished orders carry `dismissedOwner` and
+are released by normal retention reconciliation once all orders are paid, refused
+or returned. Existing PV/blacklist routing remains in force. No production employee
+is dismissed by deployment itself.
+
+Orders retain `premiumManager` on administrative transfer, so commission and the
+existing head/operator rate links continue using the original financial recipient.
+Paid/signed snapshots are not rewritten. Archived employees remain available to
+payroll and are shown in gray. The fields are additive; there is no schema migration.
+Older releases do not enforce this workflow: after the first dismissal, avoid rolling
+back to an older release without reviewing deferred releases and financial attribution.

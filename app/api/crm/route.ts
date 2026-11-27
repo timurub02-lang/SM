@@ -266,7 +266,7 @@ async function handlePOST(request:Request){
  const applyFormCost=(next:Order)=>{const cost=form?.find(c=>c.action==='saveManualDeliveryCost');if(cost?.action==='saveManualDeliveryCost'){if(!canManageDelivery(employee!.role,next.status)||!['moscow_courier','russian_post'].includes(next.delivery||'')||next.courier)throw Error('Стоимость доставки недоступна для выбранного способа или этапа');next.manualDeliveryCost=cost.amount;if(next.deliveryReset){next.deliveryReset.calculation=false;if(!next.deliveryReset.waybill)delete next.deliveryReset;}return p.action==='saveManualDeliveryCost'?'':' · Стоимость доставки: '+cost.amount+' ₽';}return '';};
  const ev=(clientId:string,orderId:string,text:string):Event=>({id:id("EV-"),clientId,orderId,at:now,...journalAuthor(actor,employee?.id),text});
  const eventSQL=(e:Event)=>d.prepare("INSERT INTO events(id,client_id,order_id,at,data) VALUES(?,?,?,?,?)").bind(e.id,e.clientId,e.orderId,e.at,json(e));
- const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"))throw new Error("Выберите оператора");};
+ const ownerValid=(owner:string)=>{if(owner&&!s.employees.some(e=>e.id===owner&&e.role==="operator"&&!e.dismissedAt))throw new Error("Выберите оператора");};
  const assignedUntil=()=>"";
  await saveReminders(s,undefined,scopedMutation?s.clients[0]?.id:undefined);
  if(p.action==="saveClientWork"){
@@ -434,7 +434,7 @@ async function handlePOST(request:Request){
   const result=await d.batch([d.prepare("UPDATE clients SET phone=?,data=?,version=version+1 WHERE id=? AND version=?").bind(next.phone,json(next),c.id,p.version),d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND json_extract(data,'$._mutation')=?)").bind(e.id,e.clientId,e.orderId,e.at,json(e),c.id,mutation)]);
   if(!result[0].meta.changes)throw Error("Карточка уже изменена. Обновите страницу");
  }else if(p.action==="updateClient"){
-  const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(user.employee&&["operator","department_head"].includes(employee!.role)?{...p.client,phone:c.phone}:p.client);if(employee?.role==="operator")data.owner=c.owner;ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&managesWorkDepartment(employee,e.department,s.employees)))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
+  const c=s.clients.find(c=>c.id===p.id);if(!c)throw new Error("Клиент не найден");const data=clientSchema.parse(user.employee&&["operator","department_head"].includes(employee!.role)?{...p.client,phone:c.phone}:p.client);if(employee?.role==="operator")data.owner=c.owner;if(data.owner!==c.owner)ownerValid(data.owner);if(employee?.role==="department_head"&&data.owner&&!s.employees.some(e=>e.id===data.owner&&e.role==="operator"&&managesWorkDepartment(employee,e.department,s.employees)))throw Error("Выберите оператора своего отдела");const mutation=id("M-");
   const firstSheet=s.clients.map(c=>sourceSheet(c.source)).find(x=>x&&x!=="К")||"Т1";
   const next={...c,...data,...clientAssignment(c,data.owner,now,firstSheet),addressReview:data.address===c.address?c.addressReview:false,_mutation:mutation};
   if(p.client.sheet!==undefined){const saved=await d.prepare("SELECT data FROM settings WHERE id='base-settings'").first<{data:string}>();const config=baseSettingsSchema.parse(saved?JSON.parse(saved.data).config:initialBaseSettings());Object.assign(next,changeClientSheet(c,next,p.client.sheet,employee?.role||'',config[c.baseType||'M'].sheets.map(s=>s.name),now));}
@@ -850,10 +850,11 @@ async function handlePOST(request:Request){
  }else if(p.action==="deleteEmployee"){
   if(s.orders.some(o=>o.courier?.id===p.id&&courierOutstanding(o)))throw Error('Сначала примите у курьера все деньги и возвраты');
   const plan=removalPlan(s,employee,p.id,p.version,p.mode,p.targetId);
+  const archive=plan.employee.role==='operator';
   await initCash();
   const cash=await d.prepare("SELECT COALESCE((SELECT balance FROM cash_balances WHERE employee=?),0) AS balance,EXISTS(SELECT 1 FROM cash_operations WHERE (sender=? OR recipient=?) AND kind='transfer' AND accepted_at IS NULL) AS pending").bind(p.id,p.id,p.id).first<{balance:number;pending:number}>();
-  if(cash&&(cash.balance!==0||cash.pending))throw Error('Перед удалением сотрудника обнулите кассу и завершите ожидающие переводы');
-  if(!(await d.prepare('SELECT '+settledPayrollGuard+' AS settled').bind(p.id,p.id).first<{settled:number}>())?.settled)throw Error('Сотрудник участвует в невыплаченной ведомости. Сначала завершите расчёт; доступ к CRM можно отключить без удаления');
+  if(!archive&&cash&&(cash.balance!==0||cash.pending))throw Error('Перед удалением сотрудника обнулите кассу и завершите ожидающие переводы');
+  if(!archive&&!(await d.prepare('SELECT '+settledPayrollGuard+' AS settled').bind(p.id,p.id).first<{settled:number}>())?.settled)throw Error('Сотрудник участвует в невыплаченной ведомости. Сначала завершите расчёт; доступ к CRM можно отключить без удаления');
 
   if(personalAuth())await ensureAuth();
   const key="deleted-employee-"+plan.employee.id,mutation=crypto.randomUUID();
@@ -861,17 +862,17 @@ async function handlePOST(request:Request){
   const snapshot=(rows:{id:string;version:number}[])=>json([...rows].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0).map(x=>[x.id,x.version]));
   const guard="EXISTS(SELECT 1 FROM settings WHERE id=? AND json_extract(data,'$.mutation')=?)";
   const args=[key,mutation];
-  const summary=`Удалён сотрудник ${plan.employee.name} (${plan.employee.login}). `+(plan.target?`Клиенты и заказы переданы ${plan.target.name} (${plan.target.login})`:'Клиенты освобождены, заказы сохранены без оператора');
-  const statements=[d.prepare("INSERT INTO settings(id,data) SELECT ?,? WHERE (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM clients ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=? AND "+clearCashGuard+" AND "+settledPayrollGuard).bind(key,json({employee:plan.employee,at:now,actorId:employee!.id,mode:p.mode,targetId:plan.target?.id,mutation}),snapshot(s.employees),snapshot(s.clients),snapshot(s.orders),p.id,p.id,p.id,p.id,p.id)];
+  const summary=`${archive?'Уволен':'Удалён'} сотрудник ${plan.employee.name} (${plan.employee.login}). `+(plan.target?`Клиенты и заказы в работе переданы ${plan.target.name} (${plan.target.login})`:archive?'Клиенты без действующих заказов освобождены; остальные будут освобождены после оплаты, отмены или возврата':'Клиенты освобождены, заказы сохранены без оператора')+(archive?'. Заказы для премии оператора и руководителя сохранены':'');
+  const statements=[d.prepare("INSERT INTO settings(id,data) SELECT ?,? WHERE (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM employees ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM clients ORDER BY id))=? AND (SELECT json_group_array(json_array(id,version)) FROM (SELECT id,version FROM orders ORDER BY id))=? AND "+(archive?"1=1":clearCashGuard+" AND "+settledPayrollGuard)).bind(key,json({employee:plan.employee,at:now,actorId:employee!.id,mode:p.mode,targetId:plan.target?.id,mutation}),snapshot(s.employees),snapshot(s.clients),snapshot(s.orders),...(archive?[]:[p.id,p.id,p.id,p.id,p.id]))];
   for(const c of plan.clients)statements.push(d.prepare(`UPDATE clients SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(c),c.id,...args));
   for(const o of plan.orders)statements.push(d.prepare(`UPDATE orders SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json(o),o.id,...args));
   const history=[ev('','',summary),...plan.clients.map(c=>ev(c.id,'',summary)),...plan.orders.map(o=>ev(o.clientId,o.id,withOrderChanges(summary,s.orders.find(previous=>previous.id===o.id)!,o,s.employees)))];
   for(const e of history)statements.push(d.prepare(`INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE ${guard}`).bind(e.id,e.clientId,e.orderId,e.at,json(e),...args));
   if(personalAuth()){
    statements.push(d.prepare(`DELETE FROM auth_sessions WHERE employee_id=? AND ${guard}`).bind(p.id,...args));
-   statements.push(d.prepare(`DELETE FROM auth_accounts WHERE employee_id=? AND ${guard}`).bind(p.id,...args));
+   statements.push(d.prepare(`${archive?"UPDATE auth_accounts SET enabled=0":"DELETE FROM auth_accounts"} WHERE employee_id=? AND ${guard}`).bind(p.id,...args));
   }
-  statements.push(d.prepare(`DELETE FROM employees WHERE id=? AND ${guard}`).bind(p.id,...args));
+  statements.push(archive?d.prepare(`UPDATE employees SET data=?,version=version+1 WHERE id=? AND ${guard}`).bind(json({...plan.employee,dismissedAt:now,dismissedBy:employee!.id,accessEnabled:false}),p.id,...args):d.prepare(`DELETE FROM employees WHERE id=? AND ${guard}`).bind(p.id,...args));
   const result=await d.batch(statements);
   if(!result[0].meta.changes)throw Error('Данные изменились. Обновите страницу и повторите удаление');
   message=summary;
@@ -897,6 +898,7 @@ async function handlePOST(request:Request){
   if(!result.meta.changes)throw Error('Замещение уже изменилось. Обновите карточку');
  }else if(p.action==="saveEmployee"){
   const existing=s.employees.find(e=>e.id===p.id);
+  if(existing?.dismissedAt)throw Error("Оператор уволен. Финансовые условия изменяются в расчёте премии");
   const data=employeeForManager(employee,{...p.employee,sz:p.employee.sz??existing?.sz??false},existing);
   if(existing?.role==='courier'&&data.role!=='courier'&&s.orders.some(o=>o.courier?.id===existing.id&&courierOutstanding(o)))throw Error('Сначала примите у курьера все деньги и возвраты');
   data.login=data.login.trim();
