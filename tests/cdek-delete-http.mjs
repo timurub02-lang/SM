@@ -51,12 +51,16 @@ try{
  }
  const f=fixture('SM-DELETE');
  const remove=(id,role='admin',extra={})=>call(path,role,{action:'delete',orderId:id,version:readOrder(id).version,confirmed:true,reason:'Correct address',...extra});
- for(const role of ['operator','department_head','logistic'])assert.equal((await remove(f.order.id,role)).status,403,role);
+ for(const role of ['admin','chief_logistic','logistic']){
+  const info=await call(path+'?orderId='+f.order.id,role);
+  assert.equal(info.status,200,info.text);assert.equal(info.data.canDelete,true,role);
+ }
+ for(const role of ['operator','department_head'])assert.equal((await remove(f.order.id,role)).status,403,role);
  assert.equal((await remove(f.order.id,'admin',{confirmed:false})).status,400);
  assert.equal((await remove(f.order.id,'admin',{reason:''})).status,400);
  assert.equal((await remove(f.order.id,'admin',{version:99})).status,400);
  assert.equal(upstream().calls.length,0,'Rejected actions never contact CDEK');
- let r=await remove(f.order.id,'chief_logistic');assert.equal(r.status,200,r.text);assert.equal(r.data.shipment.state,'deleting');assert.equal(readOrder(f.order.id).status,'shipping');
+ let r=await remove(f.order.id,'logistic');assert.equal(r.status,200,r.text);assert.equal(r.data.shipment.state,'deleting');assert.equal(readOrder(f.order.id).status,'shipping');
  r=await call('/api/crm');const o=r.data.orders.find(o=>o.id===f.order.id);assert.equal(o.cdekExported,true);assert.equal(o.cdekDeleting,true);
  const held=db.prepare('SELECT * FROM order_stock WHERE order_id=?').all(f.order.id);
  assert.equal((await call(path,'admin',{action:'print',orderId:f.order.id})).status,400);
@@ -101,7 +105,7 @@ try{
  db.prepare("UPDATE settings SET data=json_set(data,'$.enabled',json('false')) WHERE id='phone-replacement'").run();
  // CDEK refusal leaves the order, invoice and stock unchanged.
  const reject=fixture('SM-REJECT');change(s=>s.mode='reject');r=await remove(reject.order.id);assert.equal(r.data.shipment.state,'ready');assert.match(r.data.shipment.error,/Warehouse/);assert.equal(readOrder(reject.order.id).status,'shipping');assert.equal(readOrder(reject.order.id).cdekReturnedAt,undefined);assert.equal(notices(reject.order.id).length,2);assert.match(JSON.parse(notices(reject.order.id)[0].data).text,/Warehouse/);
- const moved=fixture('SM-MOVED');change(s=>s.orders[moved.uuid].status='RECEIVED_AT_SHIPMENT_WAREHOUSE');const callsBefore=upstream().calls.filter(x=>x.method==='DELETE').length;r=await remove(moved.order.id);assert.equal(r.status,400);assert.equal(upstream().calls.filter(x=>x.method==='DELETE').length,callsBefore);
+ const moved=fixture('SM-MOVED');change(s=>s.orders[moved.uuid].status='RECEIVED_AT_SHIPMENT_WAREHOUSE');const callsBefore=upstream().calls.filter(x=>x.method==='DELETE').length;r=await remove(moved.order.id,'logistic');assert.equal(r.status,400);assert.equal(upstream().calls.filter(x=>x.method==='DELETE').length,callsBefore);
  // Unknown response remains blocked until GET explicitly confirms the deletion.
  const timeout=fixture('SM-TIMEOUT');change(s=>s.mode='timeout');r=await remove(timeout.order.id);assert.equal(r.data.shipment.state,'deleting');change(s=>s.orders[timeout.uuid].deletion='SUCCESSFUL');r=await call(path,'admin',{action:'refresh',orderId:timeout.order.id});assert.equal(r.data.changed,true);
  const immediate=fixture('SM-IMMEDIATE');change(s=>s.mode='immediate');r=await remove(immediate.order.id);assert.equal(r.data.changed,true);assert.equal(readOrder(immediate.order.id).status,'packing');assert.equal(notices(immediate.order.id).length,2,'Immediate DELETE responses also notify');

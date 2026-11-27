@@ -20,6 +20,7 @@ import {orderTracking} from '@/lib/order-tracking';
 import {canSyncCdekAmount,cdekPayableAmount,reconciledBasket} from '@/lib/cdek-order-amount';
 import type {Product} from '@/lib/warehouse';
 import {z} from 'zod';
+const canDeleteShipment=(role:Employee['role'])=>role==='admin'||isLogistic(role);
 const uuidSchema=z.string().uuid();
 async function context(actorId:string,orderId:string,syncAmount=false){
  await initInventory();
@@ -63,7 +64,7 @@ async function handleGET(req:Request){
   }
   const products=await db().prepare('SELECT data FROM products').all<{data:string}>();
   const warehouse=await db().prepare("SELECT data FROM settings WHERE id='warehouse-address'").first<{data:string}>();
-  return reply({shipment:c.shipment,canDelete:!c.order.legacyLv&&['admin','chief_logistic'].includes(c.actor.role),warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:i.price};})});
+  return reply({shipment:c.shipment,canDelete:!c.order.legacyLv&&canDeleteShipment(c.actor.role),warehouseAddress:warehouse?JSON.parse(warehouse.data).address:'',warehouseShipmentPoint:warehouse?JSON.parse(warehouse.data).shipmentPoint:null,items:c.order.items.map(i=>{const p=products.results.map(x=>JSON.parse(x.data) as Product).find(x=>x.name.trim().toLowerCase()===i.name.trim().toLowerCase());return {...i,sku:p?.sku,weight:p?.weight,cost:p?.cost,payment:i.price};})});
  }catch(e){return Response.json({error:e instanceof Error?e.message:'Ошибка СДЭК'},{status:400});}
 }
 async function handlePOST(req:Request){
@@ -116,7 +117,7 @@ async function handlePOST(req:Request){
   if(p.action==='create'&&importedCdekShipment(c.order))throw Error('Заказ уже отправлялся через ЛВ: повторная выгрузка недоступна');
   if(p.action==='delete'&&c.order.legacyLv)throw Error('Заказ перенесён из ЛВ: удаление отправления недоступно');
   if(p.action==='delete'){
-   if(!['admin','chief_logistic'].includes(c.actor.role))return Response.json({error:'Удалить отправление может только администратор или главный логист'},{status:403});
+   if(!canDeleteShipment(c.actor.role))return Response.json({error:'Удалить отправление может только администратор или логист'},{status:403});
    if(p.confirmed!==true||!p.reason)throw Error('Укажите причину и подтвердите удаление отправления из СДЭК');
    if(c.order.version!==p.version)throw Error('Заказ изменён. Обновите карточку');
    if(!c.shipment?.uuid||c.shipment.state!=='ready')throw Error('Удаление доступно после подтверждения выгрузки. Сначала обновите статус отправления');
