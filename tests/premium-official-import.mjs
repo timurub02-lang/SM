@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {openDatabase} from '../server/sqlite.ts';
+import {parseOfficialText} from '../lib/premium-pdf.ts';
+import {officialPreview,applyOfficialImport} from '../lib/premium-official-import.ts';
+import {mayCallEndpoint} from '../lib/permissions.ts';
+const text=['Список перечисляемой в банк зарплаты','№ 1 от 20.11.2026 г.','1 Иванова Анна Петровна 11 484,00','2 Петрова Елена Ивановна 7 830,00','НДФЛ 3600','Итого по листу: 19 314,00','Итого 19 314,00'];
+const doc=parseOfficialText(text,'test.pdf','a'.repeat(64));assert.equal(doc.total,1931400);assert.equal(doc.rows.length,2);
+assert.throws(()=>parseOfficialText(text.map(s=>s==='Итого 19 314,00'?'Итого 19 315,00':s),'bad.pdf','b'),/сходятся/);
+assert.throws(()=>parseOfficialText(text.filter(s=>!s.startsWith('1 Иванова')),'bad.pdf','b'),/порядок/);
+const dir=mkdtempSync(join(tmpdir(),'official-pdf-'));const d=openDatabase(join(dir,'test.sqlite')),period='2026-11-2';
+try{
+ await d.prepare('CREATE TABLE settings(id TEXT PRIMARY KEY,data TEXT NOT NULL)').run();await d.prepare('CREATE TABLE employees(id TEXT PRIMARY KEY,data TEXT NOT NULL,version INTEGER NOT NULL)').run();
+ const staff=[{id:'op1',role:'operator',name:'Иванова Анна Петровна',department:'1'},{id:'op2',role:'operator',name:'Другое имя',alias:'Петрова Елена Ивановна',department:'2'}];
+ for(const e of staff)await d.prepare('INSERT INTO employees VALUES(?,?,1)').bind(e.id,JSON.stringify(e)).run();
+ const ledger={activePeriod:period,revision:'a',periods:{[period]:{status:'open',signatures:{},rows:[]}}};
+ await d.prepare('INSERT INTO settings VALUES(?,?)').bind('premium-ledger',JSON.stringify(ledger)).run();
+ await d.prepare('INSERT INTO settings VALUES(?,?)').bind('premium-draft:'+period+':op1',JSON.stringify({salary:123,vacation:50,official:42,debt:9,penalty:3,extra:7,sz:false,firstHalfBonus:null,revision:'old'})).run();
+ const preview=await officialPreview(d,period,[doc]);assert.deepEqual(preview.rows.map(r=>r.employeeId),['op1','op2']);
+ assert.equal((await d.prepare("SELECT COUNT(*) n FROM settings").first()).n,2,'Preview never writes');
+ const choices=preview.rows.map(r=>({key:r.key,employeeId:r.employeeId}));
+ await assert.rejects(applyOfficialImport(d,'admin',period,[doc],'stale',choices),/изменились/);
+ await assert.rejects(applyOfficialImport(d,'admin',period,[doc],preview.revision,choices.map(c=>({...c,employeeId:'op1'}))),/нескольких/);
+ const racing={prepare:sql=>d.prepare(sql),batch:async statements=>{await d.prepare("UPDATE employees SET version=2 WHERE id='op2'").run();return d.batch(statements);}};
+ await assert.rejects(applyOfficialImport(racing,'admin',period,[doc],preview.revision,choices),/изменились/);
+ assert.equal(JSON.parse((await d.prepare('SELECT data FROM settings WHERE id=?').bind('premium-draft:'+period+':op1').first()).data).official,42,'No partial writes on race');
+ const fresh=await officialPreview(d,period,[doc]);const result=await applyOfficialImport(d,'admin',period,[doc],fresh.revision,choices);assert.deepEqual(result,{updated:2,total:19314});
+ const saved=JSON.parse((await d.prepare('SELECT data FROM settings WHERE id=?').bind('premium-draft:'+period+':op1').first()).data);assert.equal(saved.official,11484);assert.equal(saved.salary,123);assert.equal(saved.debt,9);assert.equal(saved.vacation,50);
+ assert.equal((await d.prepare("SELECT data FROM settings WHERE id='premium-ledger'").first()).data,JSON.stringify(ledger),'Ledger and historical snapshots unchanged');
+ await assert.rejects(officialPreview(d,period,[doc]),/уже внесён/);
+ const other={...doc,hash:'c'.repeat(64),rows:doc.rows.map((r,i)=>({...r,key:'c:'+i}))};
+
+ const exclusionsDoc={...other,hash:'d'.repeat(64),rows:other.rows.map((r,i)=>({...r,key:'d:'+i}))};
+ let exclusionsPreview=await officialPreview(d,period,[exclusionsDoc]);
+ await applyOfficialImport(d,'admin',period,[exclusionsDoc],exclusionsPreview.revision,exclusionsDoc.rows.map(r=>({key:r.key,employeeId:null,outsideCRM:true})));
+ const returningDoc={...other,hash:'e'.repeat(64),rows:other.rows.map((r,i)=>({...r,key:'e:'+i}))};
+ exclusionsPreview=await officialPreview(d,period,[returningDoc]);assert(exclusionsPreview.rows.every(r=>r.outsideCRM),'Outside CRM names are remembered across new files');
+ await applyOfficialImport(d,'admin',period,[returningDoc],exclusionsPreview.revision,returningDoc.rows.map((r,i)=>({key:r.key,employeeId:'op'+(i+1),outsideCRM:false})));
+ assert((await officialPreview(d,period,[other])).rows.every(r=>!r.outsideCRM),'Restoring matching clears the remembered exclusion');
+ ledger.periods[period].signers=[{id:'head',department:'1'}];ledger.periods[period].signatures={head:{at:'now'}};
+ await d.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").bind(JSON.stringify(ledger)).run();
+ const signed=await officialPreview(d,period,[other]);assert.equal(signed.rows[0].employeeId,null);await assert.rejects(applyOfficialImport(d,'admin',period,[other],signed.revision,other.rows.map((r,i)=>({key:r.key,employeeId:'op'+(i+1)}))),/подписан/);
+ ledger.periods[period].status='paid';await d.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").bind(JSON.stringify(ledger)).run();await assert.rejects(officialPreview(d,period,[other]),/невыплаченный/);
+ for(const role of ['operator','department_head','chief_logistic'])assert.equal(mayCallEndpoint({role,id:'test'},new URL('https://crm.test/api/premium/official-pdf'),'POST',{}),false);
+ console.log('PASS PDF totals, exact name/alias matching, preview read-only, atomic race guard, signed/paid protection, repeated upload, preserved adjustments and role restrictions');
+}finally{rmSync(dir,{recursive:true,force:true});}

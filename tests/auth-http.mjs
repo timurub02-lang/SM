@@ -1,3 +1,4 @@
+import {officialPdfFixture} from './fixtures/official-pdf.mjs';
 import {checkedHandoff} from './confirmation-review-fixture.mjs';
 import {setRedemptionClock} from './fixtures/redemption-clock.mjs';
 import {internalDeadline,internalElapsed,addWeekdayMilliseconds} from '../lib/internal-timers.ts';
@@ -146,6 +147,19 @@ try{
  assert.equal((await call(roundingPath,{cookie:cookies.one})).data.roundTo50,false);
  assert.deepEqual(JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get().data).periods,roundingLedger.periods,'settings do not rewrite existing payroll');
  assert.equal((await call(roundingPath,{cookie:cookies.admin,body:roundingBody})).status,409);
+
+ // PDF preview and confirmed import through the packaged runtime.
+ const pdfBody={action:'preview',period:'2026-11-1',files:[{name:'synthetic.pdf',data:await officialPdfFixture()}]};
+ const pdfPath='/api/premium/official-pdf';
+ assert.equal((await call(pdfPath,{cookie:cookies.one,body:pdfBody})).status,403);
+ assert.equal((await call(pdfPath,{cookie:cookies.head,body:pdfBody})).status,403);
+ const pdfPreview=await call(pdfPath,{cookie:cookies.admin,body:pdfBody});assert.equal(pdfPreview.status,200,pdfPreview.text);assert.equal(pdfPreview.data.rows.length,2);assert.equal(pdfPreview.data.documents[0].total,1931400);
+ assert.equal(db.prepare("SELECT id FROM settings WHERE id='premium-draft:2026-11-1:one'").get(),undefined);
+ const pdfApply={...pdfBody,action:'apply',revision:pdfPreview.data.revision,choices:pdfPreview.data.rows.map((r,i)=>({key:r.key,employeeId:i===0?'one':null}))};
+ const pdfSaved=await call(pdfPath,{cookie:cookies.admin,body:pdfApply});assert.equal(pdfSaved.status,200,pdfSaved.text);assert.equal(pdfSaved.data.updated,1);
+ assert.equal(JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-draft:2026-11-1:one'").get().data).official,11484);
+ assert.equal((await call(pdfPath,{cookie:cookies.admin,body:pdfApply})).status,400);
+ db.prepare("DELETE FROM settings WHERE id='premium-draft:2026-11-1:one' OR id LIKE 'premium-official-%'").run();
  if(roundingBackup)db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(roundingBackup.data);else db.prepare("DELETE FROM settings WHERE id='premium-ledger'").run();
 
  // Period adjustments and the shared operator rate are atomic and scoped.
