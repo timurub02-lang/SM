@@ -90,6 +90,7 @@ jobs:
           CRM_TEST_ENTITY_PATCH=1 node --experimental-strip-types tests/auth-http.mjs
           node --experimental-strip-types tests/operator-statistics-http.mjs
           node --experimental-strip-types tests/telephony-http.mjs
+          node --experimental-strip-types tests/incoming-800-http.mjs
           node --experimental-strip-types tests/oktell-browser-http.mjs
           node --experimental-strip-types tests/operator-state-http.mjs
           node scripts/oktell-bridge/browser-phone.test.cjs
@@ -116,8 +117,21 @@ jobs:
           python3 tests/blue-green-http.py --router
           python3 tests/inventory.py
           python3 tests/pbx-call-queue.py
+          python3 tests/incoming-800-queue.py
           python3 tests/phone-analysis.py
           python3 tests/phone-replacement-pbx.py
+      - name: Upload isolated 8-800 prerelease tooling (never installed automatically)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: incoming-800-prerelease-${{ github.sha }}
+          path: |
+            scripts/pbx/crm-incoming-800.py
+            scripts/pbx/crm-incoming-800.extensions.conf
+            scripts/pbx/crm-incoming-800.example.json
+            scripts/pbx/sm-crm-incoming-800.service
+            docs/incoming-800-prerelease.md
+          retention-days: 7
+          if-no-files-found: error
       - name: Package standalone runtime
         run: python3 scripts/package-crm.py "$GITHUB_SHA"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

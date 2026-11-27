@@ -1,0 +1,6 @@
+{
+  "node": "pbx-lab-800",
+  "routes": {"megafon": "+78000000001", "mtt": "+78000000002"},
+  "url": "https://crm-lab.example.invalid/api/telephony/incoming-800",
+  "key": "REPLACE_WITH_A_NEW_RANDOM_SECRET_BEFORE_USE"
+}
