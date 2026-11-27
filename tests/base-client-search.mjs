@@ -49,4 +49,8 @@ assert.equal((await searchBaseClients(d,'Худяков',undefined,['one'])).mat
 assert.equal((await searchBaseClients(d,'79140622131',undefined,['one'])).matches.length,0);
 assert.equal((await searchBaseClients(d,'66560',undefined,['one'])).matches.length,0);
 const excluded=await searchBaseClients(d,'Тестовый',undefined,['extra0','extra1']);assert.equal(excluded.matches.length,29);assert.equal(excluded.more,false);
+for(const [alias,expected] of [['Татьяна Л.','Татьяна Л.'],['  Татьяна Л.  ','Татьяна Л.'],['','Оператор'],['   ','Оператор']]){
+ await d.prepare("UPDATE employees SET data=json_set(data,'$.alias',?) WHERE id='op'").bind(alias).run();
+ assert.equal((await searchBaseClients(d,'Худяков')).matches[0].ownerName,expected);
+}
 d.close();
