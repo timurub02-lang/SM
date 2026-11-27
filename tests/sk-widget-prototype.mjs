@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import {readFile} from 'node:fs/promises';
+import http from 'node:http';
+import {initialState,transition,bindDocumentedEvents} from '../prototypes/skorozvon/model.mjs';
+import {createPrototypeServer} from '../prototypes/skorozvon/serve.mjs';
+const now=Date.parse('2026-11-24T12:00:00+03:00');
+let s=initialState();const apply=a=>s=transition(s,a,now);
+assert.throws(()=>apply({type:'start',kind:'auto'}));
+apply({type:'status',value:'available'});apply({type:'start',kind:'auto'});
+const first=s.call.id;
+assert.equal(s.clientId,'demo-101');assert.equal(s.phase,'ringing');
+assert.throws(()=>apply({type:'select',id:'demo-102'}));assert.throws(()=>apply({type:'start',kind:'incoming'}));
+apply({type:'connect',id:first});assert.equal(s.phase,'connected');
+apply({type:'hold'});assert.equal(s.call.held,true);apply({type:'hold'});assert.equal(s.call.held,false);
+assert.throws(()=>apply({type:'status',value:'available'}));
+assert.throws(()=>apply({type:'transfer',target:'Untrusted'}));
+apply({type:'transfer',target:'Тестовая группа'});apply({type:'end'});
+assert.equal(s.phase,'wrapup');assert.throws(()=>apply({type:'start',kind:'auto'}));
+assert.throws(()=>apply({type:'save',outcome:'Нет ответа',comment:''}));
+assert.throws(()=>apply({type:'save',outcome:'Перезвонить',comment:'',due:'2026-11-24T11:00'}));
+apply({type:'save',outcome:'Перезвонить',comment:'Уточнить доставку',due:'2026-11-24T13:00'});
+assert.equal(s.history[0].due,now+3600000);assert.equal(s.history.length,1);
+assert.throws(()=>apply({type:'save',outcome:'Интерес есть',comment:''}));
+apply({type:'start',kind:'auto'});assert.equal(s.clientId,'demo-102');
+const before=s;apply({type:'connect',id:first});assert.equal(s,before,'stale connect must not connect a newer call');
+apply({type:'end'});apply({type:'save',outcome:'Нет ответа',comment:''});
+apply({type:'start',kind:'unknown'});assert.equal(s.clientId,null);apply({type:'end'});
+apply({type:'save',outcome:'Нет ответа',comment:'Без связи с карточкой'});assert.equal(s.history[0].clientId,null);
+assert.throws(()=>apply({type:'start',kind:'manual'}));
+apply({type:'select',id:'demo-103'});apply({type:'start',kind:'manual'});assert.equal(s.call.clientId,'demo-103');
+const emitter=new EventEmitter(),received=[];
+const unbind=bindDocumentedEvents(emitter,e=>received.push(e));
+emitter.emit('call:connected',{get:key=>key==='lead_external_id'?'demo-103':null});
+assert.deepEqual(received,[{name:'call:connected',externalId:'demo-103'}]);
+unbind();assert.equal(emitter.listenerCount('call:connected'),0);
+const server=createPrototypeServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));
+try{
+  const base=`http://127.0.0.1:${server.address().port}`;
+  for(const path of ['/','/app.mjs','/model.mjs','/style.css']){const r=await fetch(base+path);assert.equal(r.status,200);assert.match(r.headers.get('content-security-policy'),/connect-src 'none'/);assert.match(r.headers.get('permissions-policy'),/microphone=\(\)/);await r.arrayBuffer();}
+  assert.equal((await fetch(base+'/api/telephony',{method:'POST'})).status,405);
+  assert.equal((await fetch(base+'/../../package.json')).status,404);
+  const forbidden=await new Promise((resolve,reject)=>{http.get(base+'/',{headers:{Host:'untrusted.example'}},r=>{r.resume();resolve(r.statusCode);}).on('error',reject);});
+  assert.equal(forbidden,403);
+  const app=await readFile(new URL('../prototypes/skorozvon/app.mjs',import.meta.url),'utf8');
+  assert.doesNotMatch(app,/\b(fetch|WebSocket|XMLHttpRequest|getUserMedia)\s*\(/);
+}finally{await new Promise(r=>server.close(r));}
+console.log('SK widget prototype: state transitions, late events, callback MSK, duplicate save, unknown contact, event cleanup and loopback/CSP guards PASS');

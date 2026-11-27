@@ -1,0 +1,15 @@
+.live-warning{margin:0 0 24px;max-width:90ch;line-height:1.6;color:#52666f}
+.live-workspace{grid-template-columns:minmax(0,1fr) 380px}
+.live-panel{position:static;min-width:0;align-self:start}
+.live-panel>h2{margin:0 0 16px;font-size:17px}
+.live-panel p{line-height:1.6}
+.live-panel #widget{min-width:0;max-width:100%}
+.live-panel .skorozvon-widget{max-width:100%;box-sizing:border-box}
+#mapping-form fieldset{border:0;padding:0;margin:16px 0 0;min-width:0}
+#mapping-form .field{max-width:440px}
+#mapping-form input{width:100%;box-sizing:border-box}
+#live-card dd,#card-state{overflow-wrap:anywhere}
+.live-events{padding-left:20px;line-height:1.8;max-height:240px;overflow:auto;color:#52666f}
+.live-events li{padding-left:4px}
+@media(max-width:1000px){.live-workspace{grid-template-columns:minmax(0,1fr) 350px}}
+@media(max-width:740px){.live-workspace{grid-template-columns:minmax(0,1fr)}.live-panel{padding:16px}.operator{display:none}}

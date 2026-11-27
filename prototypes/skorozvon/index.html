@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>Скорозвон — прототип рабочего места</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header class="topbar"><a href="/" class="brand" aria-label="Начало прототипа"><span class="brand-mark">SM</span><strong>CRM</strong></a><span class="prototype-label">Локальный прототип · вымышленные данные</span><span class="operator">Тестовый оператор</span></header>
+<main>
+  <div class="heading"><div><h1>Звонки в CRM</h1><p>Карточка клиента и разговор — в одном рабочем месте.</p></div><span class="mode-label">Демо без реальных звонков</span></div>
+  <div class="workspace">
+    <section class="client-area" aria-label="Рабочее место оператора">
+      <div class="section-heading"><h2>Клиенты</h2><span>3 тестовые карточки</span></div>
+      <div id="clients" class="client-list" aria-label="Выбор клиента"></div>
+      <section id="card" class="client-detail" aria-label="Карточка клиента"></section>
+      <section class="history"><div class="section-heading"><h2>История этой сессии</h2><span id="history-count">0 результатов</span></div><div id="history"></div><p class="hint">Результаты существуют только в этой вкладке. После обновления страницы демо начнётся заново.</p></section>
+    </section>
+    <aside class="phone-panel" aria-label="Панель звонка">
+      <div class="panel-heading"><span class="phone-icon" id="phone-icon"></span><div><h2>Скорозвон</h2><span>Модель поведения панели</span></div><span class="demo-tag">ДЕМО</span></div>
+      <label class="field">Статус оператора<select id="status"><option value="break">Перерыв</option><option value="available">Доступен</option><option value="dnd">Не беспокоить</option></select></label>
+      <div class="call-stage"><span id="phase" class="phase">Смена не начата</span><h3 id="call-name">Готовы попробовать?</h3><p id="call-number">Ни один номер не будет набран</p><time id="duration" aria-label="Длительность разговора">00:00</time></div>
+      <div id="call-controls" class="call-controls"></div>
+      <div id="transfer-controls" hidden><label class="field">Кому перевести<select id="transfer-target"><option>Тестовый сотрудник</option><option>Тестовая группа</option></select></label><button id="transfer" class="secondary full">Имитировать перевод</button></div>
+      <form id="result-form" hidden><h3>Результат разговора</h3><label class="field">Результат<select id="outcome" required><option value="">Выберите результат</option></select></label><label id="due-field" class="field" hidden>Когда перезвонить · МСК<input id="due" type="datetime-local"></label><label class="field">Комментарий<textarea id="comment" rows="3" maxlength="1000" placeholder="Что обсудили с клиентом"></textarea></label><button class="primary full" type="submit">Сохранить результат</button><p class="hint">Демо-сохранение. В Скорозвон и рабочую CRM ничего не отправляется.</p></form>
+      <p id="notice" class="notice" role="status" aria-live="polite"></p><p id="error" class="error" role="alert" hidden></p>
+      <details class="scenarios"><summary>Другие тестовые сценарии</summary><div class="scenario-buttons"><button class="secondary" data-start="incoming">Входящий звонок</button><button class="secondary" data-start="unknown">Неизвестный контакт</button></div><p class="hint">Сначала установите статус «Доступен». Новый звонок возможен после сохранения предыдущего результата.</p></details>
+    </aside>
+  </div>
+  <details class="technical"><summary>Как это будет подключаться</summary><p>Прототип не загружает SDK Скорозвона. События звонков имитируются; переходы, перевод и сохранение результата служат проверкой сценария.</p><p>При интеграции события call:started / ringing / connected / ended свяжем с карточкой по lead_external_id. Итоговые результаты и записи будут поступать через webhook call_result. API сохранения нашей формы и перезвона требует уточнения у поставщика.</p><h3>Тестовые события</h3><ol id="events"></ol></details>
+</main>
+<script type="module" src="/app.mjs"></script>
+</body></html>
