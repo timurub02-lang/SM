@@ -18,6 +18,7 @@ export async function initPhone(d:ActivityDb,caller=''){
   d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_client ON phone_calls(client_id,seq)'),d.prepare('CREATE INDEX IF NOT EXISTS phone_calls_order ON phone_calls(order_id,seq)'),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_targets(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,destination TEXT NOT NULL,sip_user TEXT NOT NULL)`),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_incoming(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,incoming_id TEXT NOT NULL)`),
+  d.prepare('CREATE TABLE IF NOT EXISTS sk_widget_calls(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE)'),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_comments(id TEXT PRIMARY KEY,call_id TEXT NOT NULL REFERENCES phone_calls(id) ON DELETE CASCADE,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,text TEXT NOT NULL,at TEXT NOT NULL)`),
   d.prepare('CREATE INDEX IF NOT EXISTS phone_call_comments_call ON phone_call_comments(call_id,at)'),
   d.prepare(`CREATE TABLE IF NOT EXISTS phone_call_analysis(call_id TEXT PRIMARY KEY REFERENCES phone_calls(id) ON DELETE CASCADE,auto_kind TEXT,auto_reason TEXT,analyzed_at TEXT,manual_kind TEXT,manual_actor TEXT,manual_name TEXT,manual_at TEXT)`),

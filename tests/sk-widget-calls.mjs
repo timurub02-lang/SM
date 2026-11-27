@@ -5,11 +5,11 @@ import {skWidgetConfig} from '../lib/sk-widget-calls.ts';
 
 const crm='https://crm.smanalytics.ru',origin='https://phone.smcrm.ru';
 const operator={id:'operator-10',role:'operator'};
-const env={CRM_SK_WIDGET_ORIGIN:origin,CRM_SK_WIDGET_PILOTS:'{"operator-10":"21"}'};
+const env={origin,pilots:{'operator-10':'21'}};
 assert.deepEqual(skWidgetConfig(operator,crm,env),{origin,skUserId:'21'});
 for(const role of ['courier','purchasing','logistic'])assert.equal(skWidgetConfig({...operator,role},crm,env),null);
 assert.equal(skWidgetConfig({...operator,impersonation:{}},crm,env),null);
-for(const config of [{}, {...env,CRM_SK_WIDGET_PILOTS:'{}'}, {...env,CRM_SK_WIDGET_PILOTS:'invalid'}, {...env,CRM_SK_WIDGET_ORIGIN:crm},{...env,CRM_SK_WIDGET_ORIGIN:'https://smcrm.ru'},{...env,CRM_SK_WIDGET_ORIGIN:'https://phone.smcrm.ru/path'}])assert.equal(skWidgetConfig(operator,crm,config),null);
+for(const config of [{}, {...env,pilots:{}}, {...env,pilots:'invalid'}, {...env,origin:crm},{...env,origin:'https://smcrm.ru'},{...env,origin:'https://phone.smcrm.ru/path'}])assert.equal(skWidgetConfig(operator,crm,config),null);
 
 const source=readFileSync(new URL('../public/sk-phone/phone.mjs',import.meta.url),'utf8');
 function fixture(href=origin+'/sk-phone/index.html'){
