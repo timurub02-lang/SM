@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  serverExternalPackages: ["pdfjs-dist"],
+  outputFileTracingIncludes: {"/api/premium/official-pdf": ["./node_modules/pdfjs-dist/legacy/build/*.mjs"]},
   poweredByHeader: false,
   // Preserve PBX recording bodies up to the existing nginx/handler limit.
   experimental: {proxyClientMaxBodySize: 45*1024*1024},
