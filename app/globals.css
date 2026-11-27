@@ -577,6 +577,36 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 @media(max-width:750px){.review-columns{grid-template-columns:1fr}.review-list{max-height:300px;overflow:auto}.review-detail{position:static}}
 
 .premium-dismissed-row { color: var(--muted-foreground, #64748b); background: rgba(128,128,128,.09); }
-.sk-call-panel iframe{display:block;width:100%;height:clamp(200px,46vh,460px);border:1px solid #d8e0e7;border-radius:8px}
-.sk-call-panel{max-height:94dvh;overflow-y:auto}
+.sk-call-panel,.sk-phone-tab {
+  position: fixed;
+  inset: auto max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) auto;
+  margin: 0;
+  color: var(--foreground);
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #d8e0e7);
+  border-radius: 14px;
+  box-shadow: 0 5px 24px #132c4126;
+  pointer-events: auto;
+}
+.sk-call-panel { width: min(370px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 0; overflow: auto; }
+.sk-call-panel:not([open]) { display: none; }
+.sk-call-panel::backdrop { background: rgb(15 23 42 / .08); }
+.sk-phone-heading,.sk-phone-tab { display: flex; align-items: center; gap: 10px; }
+.sk-phone-heading { position: sticky; top: 0; z-index: 1; padding: 7px 10px 7px 16px; border-bottom: 1px solid var(--border); background: var(--card, #fff); }
+.sk-phone-heading h2 { margin: 0; flex: 1; font-size: 16px; font-weight: 650; }
+.sk-phone-heading > svg,.sk-phone-tab > svg:first-child { color: #28704f; flex-shrink: 0; }
+.sk-phone-heading button { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 8px; cursor: pointer; }
+.sk-phone-heading button:hover,.sk-phone-tab:hover { background: var(--accent, #eff4f2); }
+.sk-phone-heading button:focus-visible,.sk-phone-tab:focus-visible { outline: 2px solid #28704f; outline-offset: -3px; }
+.sk-phone-body { display: grid; gap: 10px; padding: 14px; }
+.sk-phone-body p { margin: 0; font-size: 13px; line-height: 1.4; }
+.sk-phone-body [role=alert] { color: var(--destructive, #ad2935); }
+.sk-call-panel iframe { display: block; width: 100%; height: clamp(200px, 42dvh, 360px); border: 1px solid var(--border); border-radius: 8px; }
+.sk-phone-body .action-buttons { margin: 0; }
+.sk-phone-tab { z-index: 100; max-width: min(235px, calc(100vw - 32px)); padding: 9px 13px; text-align: left; cursor: pointer; }
+.sk-phone-tab span { min-width: 0; }
+.sk-phone-tab strong,.sk-phone-tab small { display: block; }
+.sk-phone-tab strong { font-size: 14px; }
+.sk-phone-tab small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 12px; }
+.sk-phone-tab > svg:last-child { flex-shrink: 0; }
 .call-route-buttons:has(.sk-call-trigger){flex-wrap:wrap}
