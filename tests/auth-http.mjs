@@ -1,3 +1,4 @@
+import {officialPdfFixture} from './fixtures/official-pdf.mjs';
 import {checkedHandoff} from './confirmation-review-fixture.mjs';
 import {setRedemptionClock} from './fixtures/redemption-clock.mjs';
 import {internalDeadline,internalElapsed,addWeekdayMilliseconds} from '../lib/internal-timers.ts';
@@ -131,6 +132,36 @@ try{
  db.prepare("DELETE FROM orders WHERE id IN ('sk-link-history','sk-link-foreign')").run();
 
 
+ // Department rounding settings: admin-only writes, strict values and revision protection.
+ const roundingBackup=db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get();
+ const roundingLedger={revision:'rounding-test',activePeriod:'2026-11-1',initialPeriod:'2026-11-1',periods:{'2026-11-1':{status:'open',signatures:{}}}};
+ db.prepare("INSERT INTO settings(id,data) VALUES('premium-ledger',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify(roundingLedger));
+ const roundingPath='/api/premium/rounding';
+ const roundingRead=await call(roundingPath,{cookie:cookies.admin});assert.equal(roundingRead.status,200,roundingRead.text);assert.equal(roundingRead.data.rounding['4'],false);
+ assert.equal((await call(roundingPath,{cookie:cookies.one})).status,200);
+ const roundingBody={revision:'rounding-test',rounding:{'1':false,'2':true,'3':true,'4':false,'5':true}};
+ assert.equal((await call(roundingPath,{cookie:cookies.one,body:roundingBody})).status,403);
+ assert.equal((await call(roundingPath,{cookie:cookies.head,body:roundingBody})).status,403);
+ assert.equal((await call(roundingPath,{cookie:cookies.admin,body:{...roundingBody,rounding:{...roundingBody.rounding,'4':'false'}}})).status,400);
+ const roundingSaved=await call(roundingPath,{cookie:cookies.admin,body:roundingBody});assert.equal(roundingSaved.status,200,roundingSaved.text);
+ assert.equal((await call(roundingPath,{cookie:cookies.one})).data.roundTo50,false);
+ assert.deepEqual(JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get().data).periods,roundingLedger.periods,'settings do not rewrite existing payroll');
+ assert.equal((await call(roundingPath,{cookie:cookies.admin,body:roundingBody})).status,409);
+
+ // PDF preview and confirmed import through the packaged runtime.
+ const pdfBody={action:'preview',period:'2026-11-1',files:[{name:'synthetic.pdf',data:await officialPdfFixture()}]};
+ const pdfPath='/api/premium/official-pdf';
+ assert.equal((await call(pdfPath,{cookie:cookies.one,body:pdfBody})).status,403);
+ assert.equal((await call(pdfPath,{cookie:cookies.head,body:pdfBody})).status,403);
+ const pdfPreview=await call(pdfPath,{cookie:cookies.admin,body:pdfBody});assert.equal(pdfPreview.status,200,pdfPreview.text);assert.equal(pdfPreview.data.rows.length,2);assert.equal(pdfPreview.data.documents[0].total,1931400);
+ assert.equal(db.prepare("SELECT id FROM settings WHERE id='premium-draft:2026-11-1:one'").get(),undefined);
+ const pdfApply={...pdfBody,action:'apply',revision:pdfPreview.data.revision,choices:pdfPreview.data.rows.map((r,i)=>({key:r.key,employeeId:i===0?'one':null}))};
+ const pdfSaved=await call(pdfPath,{cookie:cookies.admin,body:pdfApply});assert.equal(pdfSaved.status,200,pdfSaved.text);assert.equal(pdfSaved.data.updated,1);
+ assert.equal(JSON.parse(db.prepare("SELECT data FROM settings WHERE id='premium-draft:2026-11-1:one'").get().data).official,11484);
+ assert.equal((await call(pdfPath,{cookie:cookies.admin,body:pdfApply})).status,400);
+ db.prepare("DELETE FROM settings WHERE id='premium-draft:2026-11-1:one' OR id LIKE 'premium-official-%'").run();
+ if(roundingBackup)db.prepare("UPDATE settings SET data=? WHERE id='premium-ledger'").run(roundingBackup.data);else db.prepare("DELETE FROM settings WHERE id='premium-ledger'").run();
+
  // Period adjustments and the shared operator rate are atomic and scoped.
  const premiumEmployee={...staff[1],id:'premium-op',login:'premium-op',sentinel:'preserve'};
  db.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(premiumEmployee.id,JSON.stringify(premiumEmployee));
@@ -224,23 +255,29 @@ try{
  assert.equal((await remove('head',transfer.e,'transfer','two')).status,400);
  assert.equal((await remove('head',transfer.e,'transfer','one',99)).status,400);
  assert.ok(db.prepare('SELECT id FROM employees WHERE id=?').get('transfer'));
- let deleted=await remove('head',transfer.e,'transfer','one');assert.equal(deleted.status,200,deleted.text);
+ assert.equal((await remove('head',transfer.e,'transfer','one')).status,400);
+ let deleted=await remove('admin',transfer.e,'transfer','one');assert.equal(deleted.status,200,deleted.text);
  assert.equal((await call('/api/auth/me',{cookie:transfer.cookie})).status,401);
  assert.equal((await login('transfer')).status,401);
- for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'transfer-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'one');assert.equal(o.status,o.id.replace('transfer-o-',''));assert.equal(o.comment,'Original comment');}
+ for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'transfer-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'one');assert.equal(o.premiumManager,'transfer');assert.equal(o.status,o.id.replace('transfer-o-',''));assert.equal(o.comment,'Original comment');}
  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM clients WHERE id LIKE 'transfer-c-%' AND json_extract(data,'$.owner')='one'").get().n,11); // Refused/returned-only clients were already freed by normal retention before deletion.
  assert.equal((await remove('head',transfer.e,'transfer','one')).status,400);
  const release=await fixture('release');records('release');
- deleted=await remove('admin',release.e,'release');assert.equal(deleted.status,200,deleted.text);
+ deleted=await remove('head',release.e,'release');assert.equal(deleted.status,200,deleted.text);
  const live=['draft','confirm','rework','check','extra','packing','phone','shipping','pickup'];
- for(const row of db.prepare("SELECT data FROM clients WHERE id LIKE 'release-c-%'").all()){const c=JSON.parse(row.data),status=c.id.replace('release-c-','');assert.equal(c.owner,'');assert.equal(c.sheet,live.includes(status)?'К':status==='redeemed'?'П':'Т3');}
- for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'release-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'');assert.equal(o.status,o.id.replace('release-o-',''));}
+ for(const row of db.prepare("SELECT data FROM clients WHERE id LIKE 'release-c-%'").all()){const c=JSON.parse(row.data),status=c.id.replace('release-c-','');assert.equal(c.owner,live.includes(status)?'release':'');if(live.includes(status))assert.equal(c.dismissedOwner,'release');}
+ for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'release-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'release');assert.equal(o.premiumManager,'release');assert.equal(o.status,o.id.replace('release-o-',''));}
  assert.equal((await call('/api/auth/me',{cookie:release.cookie})).status,401);
+ const archivedEmployee=JSON.parse(db.prepare("SELECT data FROM employees WHERE id='release'").get().data);
+ assert.ok(archivedEmployee.dismissedAt);assert.equal(archivedEmployee.dismissedBy,'head');
+ assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'saveEmployee',id:'release',version:2,employee:{...archivedEmployee,accessEnabled:true}}})).status,400);
+ assert.equal((await call('/api/crm',{cookie:cookies.head,body:{action:'updateOrder',id:'release-o-draft',version:2,addressConfirmed:true,address:'Test address',items:[],comment:'Head continues the dismissed operator order'}})).status,200);
+ assert.ok(JSON.parse(db.prepare("SELECT data FROM employees WHERE id='release'").get().data).dismissedAt);
  assert.ok(db.prepare("SELECT data FROM settings WHERE id='deleted-employee-release'").get());
  assert.ok(db.prepare("SELECT data FROM events WHERE client_id='release-c-shipping'").get());
  // The guard must roll back all writes if any statement fails, including access revocation.
  const rollback=await fixture('rollback');records('rollback');
- db.exec("CREATE TRIGGER fail_delete BEFORE DELETE ON employees WHEN OLD.id='rollback' BEGIN SELECT RAISE(ABORT,'test rollback'); END");
+ db.exec("CREATE TRIGGER fail_delete BEFORE UPDATE ON employees WHEN OLD.id='rollback' BEGIN SELECT RAISE(ABORT,'test rollback'); END");
  assert.equal((await remove('admin',rollback.e,'release')).status,400);
  assert.ok(db.prepare("SELECT id FROM employees WHERE id='rollback'").get());
  assert.equal(db.prepare("SELECT json_extract(data,'$.owner') AS owner FROM clients WHERE id='rollback-c-shipping'").get().owner,'rollback');
@@ -927,7 +964,7 @@ try{
  console.log('Order settings HTTP: admin access, stale writes, edit restrictions, custom and disabled timers, frozen deadlines and automatic cancellation passed.');
 
  // Packing return: reason and uncertain-result guards, operator agreement, one logistic confirmation.
- for(const [kind,source,target] of [['delivery','cdek_courier','russian_post'],['refusal','cdek_courier','cdek_courier'],['refusal','russian_post','russian_post'],['refusal','moscow_courier','moscow_courier']]){
+ for(const [kind,source,target] of [['clarification','cdek_courier','cdek_courier'],['clarification','russian_post','russian_post'],['clarification','moscow_courier','moscow_courier'],['delivery','cdek_courier','russian_post'],['refusal','cdek_courier','cdek_courier'],['refusal','russian_post','russian_post'],['refusal','moscow_courier','moscow_courier']]){
   const pid='packing-return-'+target+kind;
   const packingBase={...policyOrder,id:pid,status:'packing',delivery:source,extra:true,refusalHandoffAt:undefined,finalHandoffAt:undefined,packingWaybillAt:new Date().toISOString(),reworkDeadline:undefined,shippedAt:undefined,courier:undefined,packingReworkDelivery:undefined};
   db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(pid,packingBase.clientId,JSON.stringify(packingBase));
@@ -939,6 +976,7 @@ try{
   }
   db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run('cdek-shipment-'+pid,JSON.stringify({state:'invalid',error:'Rejected'}));
   let returned=await step(editor.cookie,{action:'transition',to:'rework',returnKind:kind,reason:'Согласовать доставку или отработать отказ'});
+  const event=JSON.parse(db.prepare('SELECT data FROM events WHERE order_id=? ORDER BY at DESC LIMIT 1').get(pid).data);assert.ok(event.text.includes(kind==='delivery'?'Согласовать смену доставки с клиентом':kind==='clarification'?'Уточнить данные / связаться с клиентом':'Отработать отказ клиента'));
   assert.equal(returned.status,'rework');assert.equal(returned.returnKind,kind);assert.equal(returned.packingReworkDelivery,source);assert.equal(returned.extra,false);assert.equal(returned.finalHandoffAt,undefined);assert.equal(returned.packingWaybillAt,undefined);
   if(kind==='delivery')await step(policyOperator.cookie,{action:'transition',to:'confirm'},400);
   returned=await step(policyOperator.cookie,{action:'updateOrder',delivery:target,address:packingBase.address,items:packingBase.items,addressConfirmed:true});
@@ -1047,15 +1085,16 @@ try{
  db.prepare('INSERT INTO clients(id,phone,data) VALUES(?,?,?)').run(retentionClient.id,retentionClient.phone,JSON.stringify(retentionClient));
  db.prepare('INSERT INTO orders(id,client_id,data) VALUES(?,?,?)').run(retentionOrder.id,retentionClient.id,JSON.stringify(retentionOrder));
  await call('/api/crm',{cookie:cookies.admin});
- const heldRetention=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(retentionClient.id).data);
- assert.equal(heldRetention.owner,'one','Unpaid redeemed order must retain its owner');
+ const beforePayout=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(retentionClient.id).data);
+ assert.equal(beforePayout.owner,'','Expired assignment releases before commission payout');
+ assert.equal(beforePayout.sheet,'П');assert.ok(beforePayout.releasedAt);
  const savedLedger=db.prepare("SELECT data FROM settings WHERE id='premium-ledger'").get();
  const retentionLedger=savedLedger?JSON.parse(savedLedger.data):{periods:{}};
  retentionLedger.periods['2026-01-1']={status:'paid',signatures:{},orders:[{externalId:retentionOrder.id,employeeId:'one',login:'one',department:'1',amount:0}]};
  db.prepare("INSERT INTO settings(id,data) VALUES('premium-ledger',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data").run(JSON.stringify(retentionLedger));
  await call('/api/crm',{cookie:cookies.admin});
  const releasedRetention=JSON.parse(db.prepare('SELECT data FROM clients WHERE id=?').get(retentionClient.id).data);
- assert.equal(releasedRetention.owner,'');assert.equal(releasedRetention.sheet,'П');
+ assert.equal(releasedRetention.owner,'');assert.equal(releasedRetention.releasedAt,beforePayout.releasedAt,'Payout must not restart the export pause');assert.equal(releasedRetention.sheet,'П');
  console.log('Operator retention: departments, persisted weeks, admin guard, conflict, validation and actual release overriding imported deadline passed.');
  // Manual creation uses the selected base and its configured entry sheet.
  const manualBase=await call('/api/base',{cookie:cookies.admin});

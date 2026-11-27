@@ -4,7 +4,7 @@ import {canReviewOrders,canDecideSkOrders} from './order-review-access.ts';
 import {headConfirmationTarget,canHeadRequestEdit} from './head-confirmation.ts';
 import {visibleOrderHistoryText} from './order-change-history.ts';
 import {canSelectOrderPickupPoint} from './order-pickup-point.ts';
-import {canEditOrderRecipientName} from './crm.ts';
+import {releasedOrderReadOnly,canEditOrderRecipientName} from './crm.ts';
 import {impersonationBlocksPhone} from './impersonation.ts';
 import {canEditMoscowOrderDetails,canHandleCourierDoor,canEditRecalledCourierOrder,courierRecalledAtWarehouse} from './courier.ts';
 import {isLogistic,canCreateRedemptionStaff} from './crm.ts';
@@ -59,6 +59,7 @@ export function authorizeCrm(e:Employee,p:any,s:State){
  if(['missIncoming','readReminder','closeIncoming','transferIncoming','assignIncoming','linkIncomingClient','createIncomingClient'].includes(p.action))return;
  const client=s.clients.find(c=>c.id===(p.clientId||p.id));
  const order=s.orders.find(o=>o.id===p.id);
+ if(order&&releasedOrderReadOnly(e.role,order,s.clients.find(c=>c.id===order.clientId)))return allow(false);
  if(['settings','import','normalizeImportedAddresses','releaseExpired'].includes(p.action))return allow(false);
  if(p.action==='deleteEmployee')return allow(e.role==='department_head'&&!!e.department);
  if(p.action==='saveEmployee')return allow(canCreateRedemptionStaff(e)&&!p.id||e.role==='chief_logistic'||e.role==='department_head'&&!!e.department);
@@ -113,6 +114,7 @@ export function warehouseReadOnly(role:Employee['role']){
 }
 export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  const path=url.pathname;
+ if(path==='/api/crmcalls-employee')return ['GET','POST'].includes(method)&&['admin','department_head'].includes(e.role);
  if(path==='/api/call-reviews')return canReviewCalls(e)&&['GET','POST'].includes(method);
  if(path==='/api/call-history/recording'&&url.searchParams.get('review')==='1')return canReviewCalls(e)&&method==='GET';
  if(path==='/api/incoming-work-gate')return method==='GET'&&!['courier','purchasing'].includes(e.role);
@@ -126,6 +128,7 @@ export function mayCallEndpoint(e:Employee,url:URL,method:string,p:any){
  if(path==='/api/partner-cash')return ['GET','POST'].includes(method)&&e.login==='A_Emil';
  if(path==='/api/operator-statistics')return method==='GET'&&(e.role==='department_head'||e.role==='redemption'&&url.searchParams.get('section')==='shipped');
  if(path==='/api/timesheet')return ['GET','POST'].includes(method)&&e.role==='department_head';
+ if(path==='/api/premium/rounding')return method==='GET'&&['department_head','operator'].includes(e.role);
  if(path==='/api/premium/archive')return method==='GET'&&['department_head','operator'].includes(e.role);
  if(path==='/api/exports')return ['GET','POST'].includes(method)&&e.role==='department_head';
  if(path==='/api/premium/export')return method==='GET'&&e.role==='department_head';

@@ -30,12 +30,17 @@ export async function saveIncomingConfig(d:Db,input:unknown,revision:string){
  const parsed=incomingConfigSchema.parse(input),old=await readIncomingConfig(d);
  if((old?.revision||'')!==revision)throw Error('Настройки изменились. Обновите раздел.');
  const staff=await skStaff(d);
- for(const link of parsed.operators)if(!staff.some(e=>e.id===link.employeeId&&e.role==='operator'&&e.accessEnabled!==false))throw Error('Выберите действующего оператора CRM для каждого соответствия');
+ const changed=parsed.operators.filter(link=>!old?.operators.some(previous=>previous.userId===link.userId&&previous.employeeId===link.employeeId));
+ for(const link of changed)if(!staff.some(e=>e.id===link.employeeId&&e.role==='operator'&&e.accessEnabled!==false))throw Error('Выберите действующего оператора CRM для каждого соответствия');
  if(parsed.enabled&&!parsed.operators.length)throw Error('Сначала сопоставьте операторов');
  const secret=old?.secretHash?undefined:randomBytes(32).toString('hex');
  const next:Config={...parsed,revision:crypto.randomUUID(),enabledAt:old?.enabledAt||new Date().toISOString(),secretHash:old?.secretHash||digest(secret!)};
- const r=await d.prepare("INSERT INTO settings(id,data) VALUES('crmcalls-incoming-config',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE json_extract(settings.data,'$.revision')=?").bind(JSON.stringify(next),revision).run();
- if(!r.meta.changes)throw Error('Настройки изменились. Обновите раздел.');
+ await initCRMCallsIncoming(d);
+ const results=await d.batch([
+  d.prepare("INSERT INTO settings(id,data) VALUES('crmcalls-incoming-config',?) ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE json_extract(settings.data,'$.revision')=?").bind(JSON.stringify(next),revision),
+  d.prepare("UPDATE crmcalls_incoming SET state='pending',reason='' WHERE state='review' AND reason='Сопоставьте оператора CRMCalls с действующим оператором CRM' AND json_extract(data,'$.user.id') IN (SELECT value FROM json_each(?)) AND (SELECT json_extract(data,'$.revision') FROM settings WHERE id='crmcalls-incoming-config')=?").bind(JSON.stringify(changed.map(link=>link.userId)),next.revision)
+ ]);
+ if(!results[0].meta.changes)throw Error('Настройки изменились. Обновите раздел.');
  return {secret,revision:next.revision};
 }
 export async function incomingDashboard(d:Db){

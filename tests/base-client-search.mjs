@@ -43,4 +43,14 @@ for(const match of [own,foreign,free])for(const number of ['79991234567','788888
 const staff=[{id:'op',role:'operator',department:'SKP_'}];
 for(const client of [{id:'foreign',owner:'other'},{id:'free',owner:''}])for(const action of ['updateClient','createOrder','requestOrder'])assert.throws(()=>authorizeCrm(head,{action,id:client.id,clientId:client.id},{clients:[client],employees:staff,orders:[]}));
 assert.doesNotThrow(()=>authorizeCrm(head,{action:'updateClient',id:own.client.id},{clients:[own.client],employees:staff,orders:[]}));
-d.close();console.log('Base search: names, Cyrillic/ё, phones, order IDs, both bases, limits, injection and role access passed');
+console.log('Base search: names, Cyrillic/ё, phones, order IDs, both bases, limits, injection and role access passed');
+
+assert.equal((await searchBaseClients(d,'Худяков',undefined,['one'])).matches.length,0);
+assert.equal((await searchBaseClients(d,'79140622131',undefined,['one'])).matches.length,0);
+assert.equal((await searchBaseClients(d,'66560',undefined,['one'])).matches.length,0);
+const excluded=await searchBaseClients(d,'Тестовый',undefined,['extra0','extra1']);assert.equal(excluded.matches.length,29);assert.equal(excluded.more,false);
+for(const [alias,expected] of [['Татьяна Л.','Татьяна Л.'],['  Татьяна Л.  ','Татьяна Л.'],['','Оператор'],['   ','Оператор']]){
+ await d.prepare("UPDATE employees SET data=json_set(data,'$.alias',?) WHERE id='op'").bind(alias).run();
+ assert.equal((await searchBaseClients(d,'Худяков')).matches[0].ownerName,expected);
+}
+d.close();

@@ -19,6 +19,7 @@ async function handlePOST(req:Request){
   const order=JSON.parse(row.data) as Order;
   if(!employee||!canManageDelivery(JSON.parse(employee.data).role,order.status))return Response.json({error:'Расчёт доступен логисту до отправки заказа'},{status:403});
   const routing=await orderRouting(order);if(routing.choice)p.slot=routing.choice.slot;
+  if(!routing.accounts.some(a=>a.configured&&a.slot===p.slot))throw Error('СДЭК: аккаунт недоступен для отдела заказа');
   const payload=calculationPayload(p,order.addressParts?.postalCode||'');
   const config=await db().prepare('SELECT data FROM settings WHERE id=?').bind(`cdek-${p.slot}`).first<{data:string}>();
   if(!config)return Response.json({error:'Выбранный аккаунт СДЭК не подключён'},{status:409});

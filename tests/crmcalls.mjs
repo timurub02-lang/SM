@@ -77,7 +77,7 @@ const late=await fixture(),lateMock=mock();await saveCRMCallsSchedule(late,s,'',
 await runCRMCalls(late,lateMock.request,monday);await runCRMCalls(late,lateMock.request,monday);await runCRMCalls(late,lateMock.request,monday);
 assert.equal(lateMock.posts,1,'Downtime must not exceed the daily cap');
 assert.equal((await late.prepare("SELECT COUNT(*) AS n FROM crmcalls_items WHERE state='sent'").first()).n,2);
-await assert.rejects(()=>saveCRMCallsSchedule(late,{...s,projectId:importId},'',before),/другом проекте/);
+await assert.rejects(()=>saveCRMCallsSchedule(late,{...s,projectId:importId},'',before,async()=>Response.json({data:[{id:project,name:'Existing',status:'paused'},{id:importId,name:'New',status:'draft'}],pagination:{total_pages:1}})),/другом проекте/);
 late.close();
 const crash=await fixture();await saveCRMCallsSchedule(crash,s,'',before);
 await crash.prepare("INSERT INTO crmcalls_batches(id,project,state,created_at) VALUES('crash',?,'sending',?)").bind(project,friday.toISOString()).run();
@@ -122,3 +122,27 @@ await saveCRMCallsSchedule(resaved,s,revision,friday);await runCRMCalls(resaved,
 
 // Saving after today's send time must honor the next-workday preview.
 const future=await fixture(),fMock=mock();await saveCRMCallsSchedule(future,s,'',friday);await runCRMCalls(future,fMock.request,friday);assert.equal(fMock.posts,0);await runCRMCalls(future,fMock.request,monday);assert.equal(fMock.posts,1);future.close();
+
+
+// A removed project releases its sheet only after a complete, successful directory read.
+const orphan=await fixture();
+await saveCRMCallsSchedule(orphan,{...s,projectId:importId},'',before);
+await orphan.prepare("INSERT INTO crmcalls_items(project,client_id,cycle,day,state,data) VALUES(?,?,'old','2026-11-20','pending','{}')").bind(importId,'c0').run();
+const saved=()=>orphan.prepare("SELECT data FROM settings WHERE id=?").bind('crmcalls-project-'+importId).first();
+const unchanged=(await saved()).data;
+for(const request of [async()=>{throw Error('offline');},async()=>Response.json({data:[]})]){
+ await assert.rejects(()=>saveCRMCallsSchedule(orphan,s,'',before,request));
+ assert.equal((await saved()).data,unchanged);
+}
+for(const state of ['sending','submitted','unknown']){
+ await orphan.prepare("INSERT OR REPLACE INTO crmcalls_batches(id,project,state,created_at) VALUES('busy',?,?,?)").bind(importId,state,before.toISOString()).run();
+ await assert.rejects(()=>saveCRMCallsSchedule(orphan,s,'',before,mock().request),/проверки текущей отправки/);
+ assert.equal((await saved()).data,unchanged);
+}
+await orphan.prepare("UPDATE crmcalls_batches SET state='completed' WHERE id='busy'").run();
+await saveCRMCallsSchedule(orphan,s,'',before,mock().request);
+assert.equal(JSON.parse((await saved()).data).enabled,false);
+assert.equal((await orphan.prepare("SELECT state FROM crmcalls_items WHERE project=?").bind(importId).first()).state,'skipped');
+assert.equal((await orphan.prepare("SELECT COUNT(*) n FROM settings WHERE id LIKE 'crmcalls-project-%' AND json_extract(data,'$.enabled')=1").first()).n,1);
+assert.equal((await orphan.prepare("SELECT COUNT(*) n FROM clients").first()).n,8);
+orphan.close();

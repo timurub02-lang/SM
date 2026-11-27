@@ -40,3 +40,23 @@ const {nextOperatorPayout}=await import('../lib/premium-calculation.ts');
 assert.equal(nextOperatorPayout([{delivery:'cdek_pickup',cdekRemittances:[{collectedCents:200000,amountCents:170000}]}],5),100);
 assert.equal(nextOperatorPayout([{delivery:'russian_post',paymentReceivedAmount:2000}],5),100);
 assert.equal(nextOperatorPayout([],5),0);
+
+// Department policy applies to fresh calculations, recalculation and previews.
+const {ledgerRows,rowFromCalculation}=await import('../lib/premium-ledger.ts');
+const udlOperator={...op,department:'4'};
+const preciseInput={...adjustment,extra:24.99};
+const precise=premiumCalculation(orders,admin,[udlOperator],'2026-11-1',{op:preciseInput}).rows[0];
+assert.equal(precise.payout,1024.99);
+assert.equal(premiumCalculation(orders,admin,[udlOperator],'2026-11-1',{op:preciseInput},{'4':true}).rows[0].payout,1000);
+assert.equal(premiumCalculation(orders,admin,[op],'2026-11-1',{op:preciseInput},{'1':false}).rows[0].payout,1024.99);
+assert.equal(nextOperatorPayout([{delivery:'russian_post',paymentReceivedAmount:10249.9}],10,false),1024.99);
+const oldRow={...rowFromCalculation(precise),roundTo50:undefined,result:1000,payout:1000};
+const periodEntry={status:'frozen',rows:[oldRow],signers:[{id:'head',department:'4',name:'Head'}],signatures:{}};
+const policyLedger={revision:'test',initialPeriod:'2026-11-1',activePeriod:'2026-11-1',periods:{'2026-11-1':periodEntry}};
+assert.equal(ledgerRows(policyLedger,'2026-11-1',orders,[udlOperator],{})[0].payout,1024.99,'unsigned rows recalculate when the rounding rule changes');
+assert.equal(ledgerRows({...policyLedger,rounding:{'4':true}},'2026-11-1',orders,[udlOperator],{})[0].payout,1000);
+periodEntry.signatures.head={at:'test',by:'head'};
+assert.deepEqual(ledgerRows(policyLedger,'2026-11-1',orders,[udlOperator],{}),[oldRow],'signed sums stay fixed');
+periodEntry.status='paid';periodEntry.signatures={};
+assert.deepEqual(ledgerRows(policyLedger,'2026-11-1',orders,[udlOperator],{}),[oldRow],'paid sums stay fixed');
+console.log('Department rounding: defaults, override, fresh/unsigned/signed/paid and preview passed');

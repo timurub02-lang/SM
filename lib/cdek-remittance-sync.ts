@@ -1,3 +1,4 @@
+import {accountRowsWhere} from './cdek-accounts.ts';
 import {withOrderChanges} from './order-change-history.ts';
 import {initCdekUnmatched,saveCdekUnmatched,resolveCdekUnmatched} from './cdek-unmatched.ts';
 import {initCdekHistoryRecovery,recoverCdekHistory} from './cdek-history-recovery.ts';
@@ -82,12 +83,12 @@ const datePlus=(s:string,n:number)=>new Date(Date.parse(s)+n*86400000).toISOStri
 export async function syncCdekRemittances(d:Db,request:typeof fetch=fetch,now=Date.now()){
  const started=performance.now();
  const today=new Date(now+3*3600000).toISOString().slice(0,10),at=new Date(now).toISOString();
- const accounts=(await d.prepare("SELECT id,data FROM settings WHERE id GLOB 'cdek-[1-4]'").all()).results;
+ const accounts=(await d.prepare(`SELECT id,data FROM settings WHERE ${accountRowsWhere}`).all()).results;
  const totals={checked:0,added:0,conflicts:0,failed:0};
  // Existing shipment worker runs once a minute. Each account reads today once an hour,
  // plus one rotating historical day so late documents and newly imported orders are picked up.
  await Promise.all(accounts.map(async(a:{id:string;data:string})=>{
-  const slot=Number(a.id.slice(-1)),key='cdek-registry-sync-'+slot;
+  const slot=Number(a.id.slice(5)),key='cdek-registry-sync-'+slot;
   const previous=await d.prepare('SELECT data FROM settings WHERE id=?').bind(key).first();
   const state=previous?JSON.parse(previous.data):{};
   if(Date.parse(state.retryAt||'')>now)return;

@@ -1,13 +1,14 @@
+import {defaultDepartmentAWeek,departmentAAccount,accountVersionSql,type RoutingAccount} from './cdek-accounts.ts';
+export type {RoutingAccount} from './cdek-accounts.ts';
 import {z} from 'zod';
 import type {Order} from './crm.ts';
 const day=z.string().refine(v=>!v||/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v,'Проверьте дату');
 const weekdays=z.array(z.number().int().min(1).max(7)).max(7);
 const monday=day.refine(value=>new Date(value+'T00:00:00Z').getUTCDay()===1,'Выберите понедельник начала цикла');
-export const routingRuleSchema=z.object({id:z.string().min(1).max(80),name:z.string().trim().min(1).max(120),enabled:z.boolean(),slot:z.number().int().min(1).max(4),from:day,to:day,departments:z.array(z.enum(['1','2','3','4','5'])).max(5),products:z.array(z.string().trim().min(1).max(255)).max(200),weekdays,cycleDays:z.tuple([weekdays,weekdays]).optional(),period:z.enum(['day','week','month','rule']),maxCount:z.number().int().min(1).max(1000000).nullable(),maxAmount:z.number().positive().max(1000000000).nullable()}).refine(r=>!r.from||!r.to||r.from<=r.to,'Окончание раньше начала');
-export const routingSchema=z.object({cycleStart:monday.optional(),enabled:z.boolean(),revision:z.string().max(80),rules:z.array(routingRuleSchema).max(100)}).refine(c=>new Set(c.rules.map(r=>r.id)).size===c.rules.length,'Повторяются правила');
+export const routingRuleSchema=z.object({id:z.string().min(1).max(80),name:z.string().trim().min(1).max(120),enabled:z.boolean(),slot:z.number().int().positive(),from:day,to:day,departments:z.array(z.enum(['1','2','3','4','5'])).max(5),products:z.array(z.string().trim().min(1).max(255)).max(200),weekdays,cycleDays:z.tuple([weekdays,weekdays]).optional(),period:z.enum(['day','week','month','rule']),maxCount:z.number().int().min(1).max(1000000).nullable(),maxAmount:z.number().positive().max(1000000000).nullable()}).refine(r=>!r.from||!r.to||r.from<=r.to,'Окончание раньше начала');
+export const routingSchema=z.object({departmentAWeek:z.array(z.number().int().positive()).length(7).optional(),cycleStart:monday.optional(),savedCycleStart:monday.optional(),cycleEnabled:z.boolean().optional(),cycleSlots:z.array(z.number().int().positive().nullable()).length(14).optional(),enabled:z.boolean(),revision:z.string().max(80),rules:z.array(routingRuleSchema).max(100)}).refine(c=>new Set(c.rules.map(r=>r.id)).size===c.rules.length,'Повторяются правила');
 export type RoutingConfig=z.infer<typeof routingSchema>;
 export type RoutingRule=z.infer<typeof routingRuleSchema>;
-export type RoutingAccount={slot:number;name:string;configured:boolean};
 export type RoutingUsage={slot:number;createdAt:string;state:string;amountCents:number};
 export type RoutingChoice={slot:number;reason:string;ruleId?:string;scheduleDate?:string;start?:string;end?:string;maxCount?:number|null;maxCents?:number|null};
 export const mainRoutingProduct=(items:Order['items'])=>items.reduce<(typeof items)[number]|undefined>((best,item)=>!best||item.price>best.price?item:best,undefined);
@@ -18,6 +19,45 @@ export function routingCycleIndex(start:string|undefined,today:string):0|1|null{
  if(!start||today<start)return null;
  const elapsed=Date.parse(today+'T00:00:00Z')-Date.parse(start+'T00:00:00Z');
  return Math.floor(elapsed/(7*86400000))%2===0?0:1;
+}
+
+export function cycleSettingsForEdit(config:RoutingConfig){
+ return {...config,cycleSlots:editableCycleSlots(config),cycleEnabled:config.cycleEnabled??config.enabled};
+}
+
+function matchesRoutingDay(rule:RoutingRule,week:0|1|null,weekday:number,date:string){
+ if(!rule.enabled||rule.from&&date<rule.from||rule.to&&date>rule.to)return false;
+ if(week!==null&&rule.cycleDays)return rule.cycleDays[week].includes(weekday);
+ return !rule.weekdays.length||rule.weekdays.includes(weekday);
+}
+
+// Seed the simple editor from previously saved rule-based schedules.
+export function editableCycleSlots(config:RoutingConfig){
+ return config.cycleSlots??Array.from({length:14},(_,index)=>{
+  const weekday=index%7+1,week=index<7?0:1;
+  const rule=config.rules.find(r=>r.enabled&&(r.cycleDays?r.cycleDays[week].includes(weekday):!r.weekdays.length||r.weekdays.includes(weekday)));
+  return rule?.slot??null;
+ });
+}
+
+// Without a particular order or quota usage, conditional rules are possible routes in priority order.
+export function previewRoutingDay(config:RoutingConfig,date:string){
+ const week=routingCycleIndex(config.cycleStart,date);
+ const weekday=(new Date(date+'T00:00:00Z').getUTCDay()+6)%7+1;
+ const enabled=week===null?config.enabled:(config.cycleEnabled??config.enabled);
+ if(enabled&&week!==null&&config.cycleSlots){
+  const slot=config.cycleSlots[week*7+weekday-1];
+  return {slots:slot?[slot]:[],conditional:false};
+ }
+ const slots=new Set<number>();
+ let conditional=false;
+ if(enabled)for(const rule of config.rules){
+  if(!matchesRoutingDay(rule,week,weekday,date))continue;
+  slots.add(rule.slot);
+  if(!rule.departments.length&&!rule.products.length&&rule.maxCount===null&&rule.maxAmount===null)break;
+  conditional=true;
+ }
+ return {slots:[...slots],conditional};
 }
 
 export function routingWindow(rule:RoutingRule,now:Date){
@@ -35,18 +75,25 @@ export function routingWindow(rule:RoutingRule,now:Date){
  return {start:new Date(start+'T00:00:00+03:00').toISOString(),end:new Date(end+'T00:00:00+03:00').toISOString()};
 }
 export function chooseRouting(config:RoutingConfig,accounts:RoutingAccount[],order:Pick<Order,'items'>,department:string,usage:RoutingUsage[],now=new Date()):RoutingChoice|null{
- if(department==='5'){
-  const candidates=accounts.filter(a=>a.configured&&/аскеров/i.test(a.name));
-  if(candidates.length!==1)throw Error('СДЭК: для A_ должен быть подключён один аккаунт ИП Аскеров');
-  return {slot:candidates[0].slot,reason:'Обязательное правило: A_ → ИП Аскеров'};
- }
- if(!config.enabled)return null;
  const today=dateString(new Date(now.getTime()+3*3600000)),weekday=(new Date(today+'T00:00:00Z').getUTCDay()+6)%7+1;
+ if(department==='5'){
+  const slot=(config.departmentAWeek??defaultDepartmentAWeek(accounts))[weekday-1];
+  const account=accounts.find(a=>a.slot===slot&&a.configured&&departmentAAccount(a));
+  if(!account)throw Error('СДЭК: выберите подключённый аккаунт для отдела А_ на этот день');
+  return {slot:account.slot,reason:'График отдела А_ · '+account.name,scheduleDate:today};
+ }
+ accounts=accounts.filter(a=>!departmentAAccount(a));
  const week=routingCycleIndex(config.cycleStart,today);
+ if(!(week===null?config.enabled:(config.cycleEnabled??config.enabled)))return null;
+ if(week!==null&&config.cycleSlots){
+  const slot=config.cycleSlots[week*7+weekday-1];
+  if(!slot)throw Error('СДЭК: на этот день цикла выгрузка не назначена');
+  if(!accounts.some(a=>a.configured&&a.slot===slot))throw Error('СДЭК: аккаунт этого дня цикла не подключён');
+  return {slot,reason:`График выгрузки · ${week+1}-я неделя`,scheduleDate:today};
+ }
  const main=mainRoutingProduct(order.items),amount=routingAmount(order);
  for(const r of config.rules){
-  const scheduled=week!==null&&r.cycleDays?r.cycleDays[week].includes(weekday):!r.weekdays.length||r.weekdays.includes(weekday);
-  if(!r.enabled||!scheduled||r.from&&today<r.from||r.to&&today>r.to||r.departments.length&&!r.departments.includes(department as '1')||r.products.length&&!r.products.some(p=>p.toLocaleLowerCase('ru')===main?.name.trim().toLocaleLowerCase('ru')))continue;
+  if(!matchesRoutingDay(r,week,weekday,today)||r.departments.length&&!r.departments.includes(department as '1')||r.products.length&&!r.products.some(p=>p.toLocaleLowerCase('ru')===main?.name.trim().toLocaleLowerCase('ru')))continue;
   if(!accounts.some(a=>a.slot===r.slot&&a.configured))throw Error(`СДЭК: аккаунт правила «${r.name}» не подключён`);
   const window=routingWindow(r,now),used=usage.filter(u=>u.slot===r.slot&&u.state!=='invalid'&&u.createdAt>=window.start&&u.createdAt<window.end);
   const maxCents=r.maxAmount===null?null:Math.round(r.maxAmount*100);
@@ -58,9 +105,10 @@ export function chooseRouting(config:RoutingConfig,accounts:RoutingAccount[],ord
 
 // Old shipments predate the frozen routing amount; use their order basket for those only.
 export const shipmentAmountSql="COALESCE(json_extract(s.data,'$.routingAmountCents'),(SELECT ROUND(SUM(json_extract(i.value,'$.price')*json_extract(i.value,'$.quantity'))*100) FROM orders o,json_each(o.data,'$.items') i WHERE o.id=substr(s.id,15)),0)";
-export function routingReservationGuard(route:{raw:string;managerRaw:string;amountCents:number;choice:RoutingChoice|null},order:Order){
+export function routingReservationGuard(route:{accountVersion?:string;raw:string;managerRaw:string;amountCents:number;choice:RoutingChoice|null},order:Order){
  let sql="COALESCE((SELECT data FROM settings WHERE id='cdek-routing'),'')=? AND COALESCE((SELECT data FROM employees WHERE id=?),'')=?";
  const values:(string|number)[]=[route.raw,order.manager,route.managerRaw];const c=route.choice;
+ if(route.accountVersion!==undefined){sql+=' AND '+accountVersionSql+'=?';values.push(route.accountVersion);}
  if(c?.scheduleDate){
   sql+=" AND date('now','+3 hours')=?";
   values.push(c.scheduleDate);

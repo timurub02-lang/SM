@@ -46,8 +46,11 @@ try{
  const projects=await call('/api/crmcalls?projects=1',cookies.admin);assert.equal(projects.status,200,projects.text);assert.equal(JSON.parse(projects.text).projects.length,5);
  assert.equal((await call('/api/crmcalls',cookies.admin,{action:'connect',apiKey:key,revision:'v1'})).status,200);
  assert.ok(!(await call('/api/crmcalls',cookies.admin)).text.includes(key));
+ const missingProject='99999999-9999-4999-8999-999999999999';
+ d.prepare('INSERT INTO settings VALUES(?,?)').run('crmcalls-project-'+missingProject,JSON.stringify({...schedule,projectId:missingProject,enabled:true,revision:'missing-v1',planning:'daily'}));
  const current=JSON.parse((await call('/api/crmcalls',cookies.admin)).text).schedules[0];
  assert.equal((await call('/api/crmcalls',cookies.admin,{action:'save',schedule:{...schedule,enabled:true},revision:current.revision})).status,200);
+ assert.equal(JSON.parse(d.prepare('SELECT data FROM settings WHERE id=?').get('crmcalls-project-'+missingProject).data).enabled,false,'Missing project no longer blocks the live project');
  const conflicting=initialBaseSettings();Object.assign(conflicting.M.sheets.find(s=>s.name==='П'),{automatic:true,projectId:'123'});
  const conflict=await call('/api/base',cookies.admin,{config:conflicting,revision:''});assert.equal(conflict.status,400,conflict.text);assert.match(conflict.text,/CRMCalls/);
  const enabled=JSON.parse((await call('/api/crmcalls',cookies.admin)).text).schedules[0];
@@ -93,6 +96,34 @@ try{
  assert.equal(JSON.parse(d.prepare('SELECT data FROM clients WHERE id=?').get(owned.id).data).owner,'operator');
  assert.equal((await call('/api/sk-orders',cookies.admin,{id:'cc:'+approveEvent.call.id,action:'approve'})).status,400);
  await submitConflict(approveEvent);assert.equal(d.prepare('SELECT COUNT(*) n FROM orders').get().n,3);
+ // A stale local AND provider mapping must not prevent saving another valid mapping.
+ const stored=JSON.parse(d.prepare("SELECT data FROM settings WHERE id='crmcalls-incoming-config'").get().data);
+ stored.operators.push({userId:'removed-provider',employeeId:'removed-employee'});
+ d.prepare("UPDATE settings SET data=? WHERE id='crmcalls-incoming-config'").run(JSON.stringify(stored));
+ const preserve=await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:stored,revision:stored.revision});
+ assert.equal(preserve.status,200,preserve.text);
+ const badLink=await call('/api/crmcalls',cookies.admin,{action:'saveIncoming',config:{...stored,operators:[...stored.operators,{userId:'new-invalid',employeeId:'operator'}]},revision:JSON.parse(preserve.text).revision});
+ assert.equal(badLink.status,400);
+ // Heads can edit only their own department's operator link, never global config.
+ const employeePath='/api/crmcalls-employee?employeeId=operator';
+ const linkRead=await call(employeePath,cookies.department_head);assert.equal(linkRead.status,200,linkRead.text);
+ const link=JSON.parse(linkRead.text);assert.equal(link.name,'Тест CRMCalls оператор');assert.ok(!('config' in link));assert.ok(!('operators' in link));assert.ok(!linkRead.text.includes('secretHash'));
+ for(const role of ['operator','chief_logistic','logistic','courier','redemption','purchasing'])assert.equal((await call(employeePath,cookies[role])).status,403);
+ const outsider={id:'outside-op',name:'Other department',role:'operator',department:'outside',version:1};
+ d.prepare('INSERT INTO employees(id,data) VALUES(?,?)').run(outsider.id,JSON.stringify(outsider));
+ for(const method of ['GET','POST']){
+  const denied=await call('/api/crmcalls-employee?employeeId=outside-op',cookies.department_head,method==='POST'?{employeeId:'outside-op',name:link.name,revision:link.revision}:undefined);
+  assert.equal(denied.status,403,denied.text);
+ }
+ const baseLink={employeeId:'operator',name:link.name,revision:link.revision};
+ assert.equal((await call('/api/crmcalls-employee',cookies.department_head,{...baseLink,enabled:false})).status,400);
+ assert.equal((await call('/api/crmcalls-employee?actorId=admin',cookies.department_head,baseLink)).status,403);
+ const linkSave=await call('/api/crmcalls-employee',cookies.department_head,baseLink);assert.equal(linkSave.status,200,linkSave.text);
+ assert.equal((await call('/api/crmcalls-employee',cookies.department_head,baseLink)).status,400,'Stale revision rejected');
+ const reloadLink=JSON.parse((await call(employeePath,cookies.department_head)).text);assert.equal(reloadLink.name,link.name);
+ const unlink=await call('/api/crmcalls-employee',cookies.department_head,{...baseLink,name:'',revision:reloadLink.revision});assert.equal(unlink.status,200,unlink.text);
+ const relink=await call('/api/crmcalls-employee',cookies.department_head,{...baseLink,revision:JSON.parse(unlink.text).revision});assert.equal(relink.status,200,relink.text);
+ assert.equal((await call('/api/crmcalls?incoming=1',cookies.department_head)).status,403);
  console.log('CRMCalls HTTP: all non-admin roles denied, identity/CSRF, protected sheets, secret masking, preview, CAS and disabled scheduling passed');
  if(process.env.CRMCALLS_UI_TEST==='1'){
   console.log('Synthetic UI available on '+origin+'; admin / '+password);

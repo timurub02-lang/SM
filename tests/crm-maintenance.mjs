@@ -20,11 +20,11 @@ try{
  const result=await runCrmMaintenance(d);assert.equal(result.ordersChanged,true);
  const read=async(table,id)=>JSON.parse((await d.prepare(`SELECT data FROM ${table} WHERE id=?`).bind(id).first()).data);
  assert.equal((await read('orders','expired')).status,'refused');assert.equal((await read('orders','active')).status,'draft');
- assert.equal((await read('clients','unpaid')).owner,'operator','unpaid premium must retain ownership');
+ assert.equal((await read('clients','unpaid')).owner,'','unpaid premium must not retain an expired assignment');
  assert.equal((await read('clients','active')).owner,'operator','active order must retain ownership');
  assert.equal((await read('clients','expired')).owner,'');
  assert.equal((await d.prepare("SELECT COUNT(*) AS n FROM reminders WHERE id LIKE 'draft:active:%'").first()).n,1);
  const events=(await d.prepare('SELECT COUNT(*) AS n FROM events').first()).n;
  const again=await runCrmMaintenance(d);assert.equal(again.ordersChanged,false);assert.equal(again.clientsChanged,false);assert.equal((await d.prepare('SELECT COUNT(*) AS n FROM events').first()).n,events);
- console.log('Maintenance: deadline cancellation, active/unpaid retention, reminders and idempotency passed');
+ console.log('Maintenance: deadline cancellation, active retention and unpaid release, reminders and idempotency passed');
 }finally{d.close();}

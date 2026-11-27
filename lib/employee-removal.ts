@@ -1,4 +1,4 @@
-import {clientSheet,sourceSheet,orderGroup,type Client,type Employee,type Order,type State} from './crm.ts';
+import {applyRetention,clientSheet,sourceSheet,orderGroup,type Client,type Employee,type Order,type State} from './crm.ts';
 // Frozen/returned payroll rows and their cash signers must survive until settlement.
 export const settledPayrollGuard="NOT EXISTS(SELECT 1 FROM settings s,json_each(s.data,'$.periods') p WHERE s.id='premium-ledger' AND json_extract(p.value,'$.status')<>'paid' AND (EXISTS(SELECT 1 FROM json_each(p.value,'$.rows') r WHERE json_extract(r.value,'$.employeeId')=?) OR EXISTS(SELECT 1 FROM json_each(p.value,'$.signers') h WHERE json_extract(h.value,'$.id')=?)))";
 export function releasedClient(c:Client,orders:Order[]):Client{
@@ -15,10 +15,12 @@ export function removalPlan(s:State,actor:Employee|undefined,id:string,version:n
  if(actor.role!=='admin'&&!(actor.role==='department_head'&&employee.role==='operator'&&actor.department&&actor.department===employee.department))throw Error('Можно удалять только операторов своего отдела');
  if(employee.version!==version)throw Error('Карточка сотрудника изменена. Обновите страницу');
  if(!['transfer','release'].includes(mode))throw Error('Выберите передачу или освобождение клиентов');
+ if(employee.dismissedAt)throw Error('Оператор уже уволен');
+ if(mode==='transfer'&&actor.role!=='admin')throw Error('Передавать клиентов при увольнении может только администратор');
  const target=mode==='transfer'?s.employees.find(e=>e.id===targetId):undefined;
- if(mode==='transfer'&&(!target||target.id===id||target.role!=='operator'||!employee.department||target.department!==employee.department))throw Error('Выберите другого оператора того же отдела');
+ if(mode==='transfer'&&(!target||target.dismissedAt||target.accessEnabled===false||target.id===id||target.role!=='operator'||!employee.department||target.department!==employee.department))throw Error('Выберите другого оператора того же отдела');
  const owned=new Set(s.clients.filter(c=>c.owner===id).map(c=>c.id));
- const clients=s.clients.filter(c=>owned.has(c.id)||c.orderRequest?.actorId===id||c.orderRequest?.manager===id).map(c=>owned.has(c.id)?target?{...c,owner:target.id,orderRequest:undefined}:releasedClient(c,s.orders):{...c,orderRequest:undefined});
- const orders=s.orders.filter(o=>owned.has(o.clientId)||o.manager===id||o.logistic===id).map(o=>({...o,...(owned.has(o.clientId)||o.manager===id?{manager:target?.id||''}:{}),...(o.logistic===id?{logistic:''}:{})}));
+ const clients=s.clients.filter(c=>owned.has(c.id)||c.orderRequest?.actorId===id||c.orderRequest?.manager===id).map(c=>owned.has(c.id)?target?{...c,owner:target.id,dismissedOwner:undefined,orderRequest:undefined}:employee.role==='operator'?applyRetention({...c,dismissedOwner:id,orderRequest:undefined},s.orders):releasedClient(c,s.orders):{...c,orderRequest:undefined});
+ const orders=s.orders.filter(o=>owned.has(o.clientId)||o.manager===id||o.logistic===id).map(o=>({...o,...(owned.has(o.clientId)||o.manager===id?employee.role==='operator'?{manager:target?.id||o.manager,premiumManager:o.premiumManager||o.manager}:{manager:target?.id||''}:{}),...(o.logistic===id?{logistic:''}:{})}));
  return {employee,target,clients,orders};
 }

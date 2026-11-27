@@ -23,7 +23,7 @@ const unknown=event({user:{id:'unknown',name:'Same name'},contact:{...first.cont
 await send(unknown);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,1);
 assert.match((await incomingDashboard(d)).transfers.find(t=>t.call_id===unknown.call.id).reason,/Сопоставьте/);
 const changed=await saveIncomingConfig(d,{...config,operators:[...config.operators,{userId:'unknown',employeeId:'op'}]},saved.revision);assert.equal(changed.secret,undefined);
-await runCRMCallsIncoming(d);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,1,'Business review is never retried automatically');
+await runCRMCallsIncoming(d);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,2,'Saving a new mapping retries its missing-operator receipts');
 await runCRMCallsIncoming(d,true);assert.equal((await d.prepare('SELECT COUNT(*) n FROM orders').first()).n,2);
 await assert.rejects(()=>saveIncomingConfig(d,config,saved.revision),/изменились/);
 // Different events for the same new phone must never create two orders.
@@ -61,7 +61,15 @@ assert.equal(JSON.parse((await d.prepare("SELECT data FROM clients WHERE id='own
 assert.equal((await d.prepare('SELECT state FROM sk_order_transfers WHERE id=?').bind('cc:'+owned.call.id).first()).state,'imported');
 await send(owned);await processCRMCallsIncoming(d,owned.call.id,undefined,{id:'admin',role:'admin'});
 assert.equal((await d.prepare("SELECT COUNT(*) n FROM orders WHERE client_id='owned'").first()).n,1);
-await saveIncomingConfig(d,{...config,enabled:false},both.revision);
+// An unchanged stale mapping cannot block another operator; new invalid mappings still fail.
+await d.prepare("DELETE FROM employees WHERE id='op'").run();
+await d.prepare('INSERT INTO employees(id,data) VALUES(?,?)').bind('new-op',JSON.stringify({...staff,id:'new-op'})).run();
+const withNew={...config,operators:[...config.operators,{userId:'new-user',employeeId:'new-op'}]};
+await assert.rejects(()=>saveIncomingConfig(d,{...withNew,operators:[...withNew.operators,{userId:'bad',employeeId:'absent'}]},both.revision),/действующего оператора/);
+const repaired=await saveIncomingConfig(d,withNew,both.revision);
+await send(event({contact:{id:crypto.randomUUID(),phone:'79990000900'}}));
+assert.match((await incomingDashboard(d)).transfers.find(t=>t.user_id===userId&&t.state==='review').reason,/Сопоставьте/);
+await saveIncomingConfig(d,{...withNew,enabled:false},repaired.revision);
 assert.equal((await send(event())).status,503);
 assert.equal((await send(event(),saved.secret,{'content-type':'text/plain'})).status,415);
 d.close();console.log('CRMCalls incoming cards: passed');

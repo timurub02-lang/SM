@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {chooseRouting,mainRoutingProduct,routingWindow,routingSchema,routingReservationGuard} from '../lib/cdek-routing.ts';
+import {cycleSettingsForEdit,editableCycleSlots,previewRoutingDay,chooseRouting,mainRoutingProduct,routingWindow,routingSchema,routingReservationGuard} from '../lib/cdek-routing.ts';
 const now=new Date('2026-10-05T08:00:00Z');
 const accounts=[{slot:1,name:'СМ',configured:true},{slot:2,name:'ИП Киселева',configured:true},{slot:4,name:'ИП Аскеров',configured:true}];
 const base={id:'r1',name:'Товар X',enabled:true,slot:1,from:'',to:'',departments:[],products:['X'],weekdays:[],period:'week',maxCount:null,maxAmount:null};
@@ -12,7 +12,7 @@ assert.equal(chooseRouting(config,accounts,{items:[{name:'X',price:1000,quantity
 assert.equal(chooseRouting(config,accounts,order,'5',[],now).slot,4);
 assert.equal(chooseRouting({...config,enabled:false},accounts,order,'5',[],now).slot,4);
 assert.equal(chooseRouting({...config,enabled:false},accounts,order,'1',[],now),null);
-assert.throws(()=>chooseRouting(config,accounts.filter(a=>a.slot!==4),order,'5',[],now),/Аскеров/);
+assert.throws(()=>chooseRouting(config,accounts.filter(a=>a.slot!==4),order,'5',[],now),/отдела А_/);
 assert.deepEqual(routingWindow(base,now),{start:'2026-10-04T21:00:00.000Z',end:'2026-10-11T21:00:00.000Z'});
 assert.deepEqual(routingWindow({...base,period:'month',from:'2026-10-05',to:'2026-10-10'},now),{start:'2026-10-04T21:00:00.000Z',end:'2026-10-10T21:00:00.000Z'});
 const general={...base,products:[],maxCount:1,maxAmount:6000,from:'2026-10-05',to:'2026-10-05',weekdays:[1],departments:['1']};
@@ -59,3 +59,42 @@ assert.equal(select('2026-12-30T21:00:00Z').slot,1);
 for(const start of ['2026-12-22','2026-11-31',''])assert.equal(routingSchema.safeParse({...cycle,cycleStart:start}).success,false);
 assert.equal(routingSchema.safeParse({...cycle,rules:[{...base,cycleDays:[[8],[]]}]}).success,false);
 assert.equal(chooseRouting({...cycle,rules:[{...base,products:[]}]},accounts,order,'1',[],now).slot,1);
+
+for(const [date,slots] of [['2026-12-24',[3]],['2026-12-31',[1]],['2027-01-07',[3]],['2026-12-26',[]]]){
+ assert.deepEqual(previewRoutingDay(cycle,date),{slots,conditional:false});
+}
+const rules=[{...general,slot:3},{...base,slot:2,products:[]},{...base,slot:1,products:[]}];
+assert.deepEqual(previewRoutingDay({...config,rules},'2026-10-05'),{slots:[3,2],conditional:true});
+assert.deepEqual(previewRoutingDay({...config,rules},'2026-10-12'),{slots:[2],conditional:false});
+
+const schedule=editableCycleSlots(cycle);
+assert.deepEqual(schedule,[2,1,2,3,2,null,null,2,1,2,1,2,null,null]);
+schedule[3]=2;
+const simple={...cycle,cycleSlots:schedule};
+for(const [date,slot] of [['2026-12-24',2],['2026-12-31',1]]){
+ assert.deepEqual(previewRoutingDay(simple,date).slots,[slot]);
+ assert.equal(chooseRouting(simple,cycleAccounts,order,'1',[],new Date(date)).slot,slot);
+}
+assert.throws(()=>chooseRouting(simple,cycleAccounts,order,'1',[],new Date('2026-12-26')),/не назначена/);
+assert.equal(chooseRouting(simple,cycleAccounts,order,'5',[],new Date('2026-12-26')).slot,4);
+assert.equal(routingSchema.safeParse({...simple,cycleSlots:[2,3]}).success,false);
+assert.equal(routingSchema.safeParse({...simple,cycleSlots:schedule.map(()=>[1,2])}).success,false);
+
+// Switching off a weekly rule, or all weekly routing, preserves the independent cycle.
+const opened=cycleSettingsForEdit(cycle);
+const weeklyOff={...opened,enabled:false,rules:opened.rules.map(r=>({...r,enabled:false}))};
+assert.equal(chooseRouting(weeklyOff,cycleAccounts,order,'1',[],new Date('2026-12-24')).slot,3);
+assert.deepEqual(previewRoutingDay(weeklyOff,'2026-12-24').slots,[3]);
+assert.equal(chooseRouting({...weeklyOff,cycleStart:undefined},cycleAccounts,order,'1',[],now),null);
+assert.equal(chooseRouting({...opened,cycleEnabled:false},cycleAccounts,order,'1',[],new Date('2026-12-24')),null);
+
+const added={slot:12,name:'Второй аккаунт',type:'departmentA',configured:true};
+const more=[...accounts,added];
+const weekly={...cycle,departmentAWeek:[4,12,4,12,4,4,12]};
+for(const [day,slot] of [['2026-11-23',4],['2026-11-24',12],['2026-11-29',12],['2026-12-01',12]]){
+ assert.equal(chooseRouting(weekly,more,order,'5',[],new Date(day+'T12:00:00Z')).slot,slot);
+}
+assert.equal(chooseRouting(weekly,more,order,'5',[],new Date('2026-11-23T21:01:00Z')).slot,12);
+assert.equal(chooseRouting(config,more,order,'5',[],now).slot,4);
+assert.throws(()=>chooseRouting({...config,rules:[{...general,slot:12}]},more,order,'1',[],now));
+assert.throws(()=>chooseRouting({...weekly,departmentAWeek:Array(7).fill(2)},more,order,'5',[],now));

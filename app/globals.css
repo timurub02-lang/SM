@@ -575,3 +575,5 @@ td>.order-tracking-link{display:block;width:fit-content;margin-top:4px;white-spa
 .review-detail audio { width:100%; min-width:0 }
 .review-detail button.primary { justify-self:start }
 @media(max-width:750px){.review-columns{grid-template-columns:1fr}.review-list{max-height:300px;overflow:auto}.review-detail{position:static}}
+
+.premium-dismissed-row { color: var(--muted-foreground, #64748b); background: rgba(128,128,128,.09); }

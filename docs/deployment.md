@@ -458,3 +458,49 @@ The separately enabled authenticated `/api/crmcalls-incoming` webhook creates em
 
 ## Delegated SK transfer approval
 Artem (employee E-74ee9a8f-99d while department_head) can review all pending SK transfers, including phone, ownership and active-order reasons, and approve or reject them. Decisions use the same guarded import and audit path as the administrator. Other heads and operators remain scoped and read-only with reasons and phones withheld. No general admin, finance or telephony permissions are added. No database migration or separate worker installation is required.
+
+### Administrator client merge
+
+The administrator can open «Найти дубль» from global/base search, select 2–10 cards, compare them, explicitly select the retained owner's card and main phone, and confirm. Search and preview never merge automatically. The chosen card keeps its original ownership dates; other phones become linked numbers. Order managers and financial records are unchanged. Existing call restrictions and paid-order archive rules continue to apply.
+
+`client_merge_audit` stores the original clients, orders and affected relational rows atomically before merging. Import snapshots remain immutable. The merge is version-bound and rolls back on concurrent changes, active calls, unfinished external uploads or conflicting relational keys. Unknown client-reference tables fail closed. The feature neither calls customers nor removes contacts from external dialler projects.
+
+When enabling a CRMCalls schedule, a conflicting schedule for a project absent from
+a complete provider project listing is disabled through the normal revision-guarded
+save path. Pending items are skipped; history and shared distribution dates remain.
+Provider errors, existing (including paused/finished) projects and unresolved imports
+do not release the sheet. No remote contacts are deleted or automatically submitted.
+
+## Department payroll rounding
+
+Finance settings expose an admin-only per-department switch for rounding positive
+payouts to the nearest 50 RUB. UDL (department 4) defaults to exact cents; other
+departments retain rounding. The additive `premium-ledger.rounding` policy and
+row `roundTo50` marker require no schema migration or new service. Policy saves
+use the ledger revision/CAS and invalidate the existing financial read model.
+Unsigned rows are recalculated when their rounding policy changes. Signed rows
+remain fixed until reopened, and paid snapshots are never recalculated. Operator
+next-period previews read the same department policy. Existing debt/negative
+results keep exact cents. Verify admin save, operator/head write rejection,
+stale revision, and signed/paid preservation before release.
+
+## Official payroll amounts from PDF
+
+Admins can upload salary-list PDFs from the payment calculation toolbar. Text-based salary lists are parsed locally in the CRM runtime using pinned PDF.js; no external document service is used. The parser requires a document date, consecutive numbered rows and a matching total. Scans/unsupported layouts are rejected. Uploads are limited to 10 files, 900 KB combined in the UI, and 500 rows. Preview is read-only. Exact unique name/alias matches are suggested; every unmatched row requires manual selection or explicit exclusion. Confirmation replaces only `official` in the selected current-period drafts, preserving other adjustments. Signed departments and paid/non-current periods are blocked. A single guarded transaction checks staff, drafts and ledger, records before/after import audit and prevents repeated document hashes in the same period. Source PDFs are not stored. Excluded rows remain in the audit. The explicit “outside CRM” choice is remembered by normalized full name in premium-official-outside-crm; future previews place those rows at the bottom in grey with a restore-matching action. Confirmation saves both exclusions and restored names under the same race guard. A one-time skip does not persist an exclusion. Synthetic tests cover extraction through the standalone runtime, role checks, totals, concurrent changes and protected periods; customer documents never belong in Git.
+
+## Operator dismissal with deferred client release
+
+Deleting an operator now archives the employee (`dismissedAt`, `dismissedBy`), disables
+the account and revokes sessions atomically. Cash balances and payroll records stay
+available for settlement. Heads can only release clients; same-department transfer
+is administrator-only. Clients with unfinished orders carry `dismissedOwner` and
+are released by normal retention reconciliation once all orders are paid, refused
+or returned. Existing PV/blacklist routing remains in force. No production employee
+is dismissed by deployment itself.
+
+Orders retain `premiumManager` on administrative transfer, so commission and the
+existing head/operator rate links continue using the original financial recipient.
+Paid/signed snapshots are not rewritten. Archived employees remain available to
+payroll and are shown in gray. The fields are additive; there is no schema migration.
+Older releases do not enforce this workflow: after the first dismissal, avoid rolling
+back to an older release without reviewing deferred releases and financial attribution.

@@ -1,26 +1,26 @@
 import {premiumRemittance,hasRemittanceConflict} from './cdek-remittance.ts';
 import type {Employee,Order} from './crm.ts';
-import {premiumCalculation,type PremiumAdjustment,type PremiumSaved} from './premium-calculation.ts';
+import {premiumCalculation,defaultPremiumRounding,roundsPremium,roundPremium,type PremiumRounding,type PremiumAdjustment,type PremiumSaved} from './premium-calculation.ts';
 import {premiumOrders} from './premium-orders.ts';
 import {premiumPeriods} from './premium-periods.ts';
 
-export type PayrollRow={id:string;employeeId?:string;login:string;name:string;department:string;role:'operator'|'department_head';rate:number;volume:number;commission:number;salary:number;input:PremiumAdjustment;result:number|null;payout:number|null;terms?:Employee['leaderPremium']};
+export type PayrollRow={dismissedAt?:string;roundTo50?:boolean;id:string;employeeId?:string;login:string;name:string;department:string;role:'operator'|'department_head';rate:number;volume:number;commission:number;salary:number;input:PremiumAdjustment;result:number|null;payout:number|null;terms?:Employee['leaderPremium']};
 export type PayrollOrder={id?:string;externalId:string;employeeId?:string;login:string;department:string;amount:number;amountUnknown?:boolean;historyOnly?:boolean};
 export type PayrollPeriod={status:'open'|'frozen'|'paid';source?:{name:string;sha256:string;importedAt:string};rows?:PayrollRow[];orders?:PayrollOrder[];frozenAt?:string;frozenBy?:string;paidAt?:string;paidBy?:string;signers?:{id:string;name:string;department:string}[];signatures:Record<string,{at:string;by:string;note?:string}>;knownReceipts?:string[];returns?:{at:string;by:string;rows:PayrollRow[];signatures:PayrollPeriod['signatures']}[]};
-export type PremiumLedger={revision:string;activePeriod:string;initialPeriod:string;periods:Record<string,PayrollPeriod>;historyReconciled?:boolean};
+export type PremiumLedger={rounding?:PremiumRounding;revision:string;activePeriod:string;initialPeriod:string;periods:Record<string,PayrollPeriod>;historyReconciled?:boolean};
 export const ledgerKey='premium-ledger';
 export const orderKey=(o:Order)=>o.legacyLv?.orderId||o.id.replace(/^LV-/, '');
 const admin={id:'premium-system',role:'admin'} as Employee;
 export function payrollVisible(actor:Employee,row:Pick<PayrollRow,'employeeId'|'department'>){return actor.role==='admin'||actor.role==='department_head'&&!!actor.department&&row.department===actor.department||actor.role==='operator'&&row.employeeId===actor.id;}
-export function rowFromCalculation(r:ReturnType<typeof premiumCalculation>['rows'][number]):PayrollRow{return {id:r.employee.id,employeeId:r.employee.id,login:r.employee.login,name:r.employee.name,department:r.employee.department||'',role:r.employee.role as PayrollRow['role'],rate:r.employee.bonus,volume:r.volume,commission:r.commission,salary:r.salary,input:r.input,result:r.result,payout:r.payout,terms:r.employee.leaderPremium};}
-export function recalculateRow(row:PayrollRow,input:PremiumAdjustment,rate:number,period:string):PayrollRow{
+export function rowFromCalculation(r:ReturnType<typeof premiumCalculation>['rows'][number]):PayrollRow{return {dismissedAt:r.employee.dismissedAt,roundTo50:r.roundTo50,id:r.employee.id,employeeId:r.employee.id,login:r.employee.login,name:r.employee.name,department:r.employee.department||'',role:r.employee.role as PayrollRow['role'],rate:r.employee.bonus,volume:r.volume,commission:r.commission,salary:r.salary,input:r.input,result:r.result,payout:r.payout,terms:r.employee.leaderPremium};}
+export function recalculateRow(row:PayrollRow,input:PremiumAdjustment,rate:number,period:string,roundTo50=row.roundTo50??true):PayrollRow{
  const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
  const commission=row.role==='operator'?round(row.volume*rate/100):row.commission;
  const terms=row.terms,second=period.endsWith('-2'),missing=terms?.model==='udl_guarantee'&&second&&input.firstHalfBonus===null;
  const salary=terms?.model==='udl_guarantee'?(second?Math.max(terms.monthlyGuarantee,commission+(input.firstHalfBonus||0))-terms.firstPeriod:terms.firstPeriod):input.salary;
  const raw=round((terms?.model==='udl_guarantee'?salary:salary+commission)+input.vacation-input.official-input.debt-input.penalty+input.extra);
- const result=missing?null:raw>0?Math.round(raw/50)*50:raw;
- return {...row,rate,commission,salary,input,result,payout:result===null?null:Math.max(0,result)};
+ const result=missing?null:roundPremium(raw,roundTo50);
+ return {...row,roundTo50,rate,commission,salary,input,result,payout:result===null?null:Math.max(0,result)};
 }
 export function periodOrders(ledger:PremiumLedger,periodId:string,orders:Order[],employees:Employee[]):PayrollOrder[]{
  const p=ledger.periods[periodId];if(!p)return [];
@@ -53,14 +53,15 @@ export function ledgerRows(ledger:PremiumLedger,period:string,orders:Order[],emp
  if(p.rows)return p.status!=='paid'?p.rows.map(r=>{
   if(departmentSigned(p,r.department))return r;
   const e=employees.find(e=>e.id===r.employeeId),saved=adjustments[r.employeeId||''];
-  const row=saved?recalculateRow(r,saved,e?.bonus??r.rate,period):r;
+  const roundTo50=roundsPremium(r.department,ledger.rounding);
+  const row=saved||(r.roundTo50??true)!==roundTo50?recalculateRow(r,saved??r.input,saved?e?.bonus??r.rate:r.rate,period,roundTo50):r;
   return {...row,input:{...row.input,sz:e?.sz??row.input.sz}};
  }):p.rows;
  const eligible=periodOrders(ledger,period,orders,employees),ids=new Set(eligible.map(o=>o.id));
  // Feed selected membership to the existing percentage calculation, including late receipts.
  const cutoff=premiumPeriods.find(p=>p.id===period)!.cutoff;
  const selected=orders.filter(o=>ids.has(o.id)).map(o=>({...o,cdekRemittances:o.cdekRemittances?.map(r=>({...r,paymentDate:cutoff,receivedAt:undefined})),paymentReceivedAt:o.paymentReceivedAt?cutoff+'T12:00:00Z':undefined}));
- return premiumCalculation(selected,admin,employees,period,adjustments).rows.map(rowFromCalculation);
+ return premiumCalculation(selected,admin,employees,period,adjustments,ledger.rounding??defaultPremiumRounding).rows.map(rowFromCalculation);
 }
 export function nextPremiumPreview(ledger:PremiumLedger|null,orders:Order[],employees:Employee[]){
  if(!ledger)return null;

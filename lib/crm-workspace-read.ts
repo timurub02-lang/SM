@@ -50,7 +50,7 @@ async function premiumStages(d:ActivityDb,state:State){
  const ledger:PremiumLedger|null=row?JSON.parse(row.data):null;
  // Membership uses external IDs across departments; keep the existing financial rule intact.
  // shortcut: global redeemed-order metadata remains until the premium read model replaces this calculation.
- const fields=['id','manager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery'];
+ const fields=['id','manager','premiumManager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery'];
  const premium:Order[]=ledger?(await d.prepare(`SELECT json_object(${fields.map(key=>`'${key}',json_extract(data,'$.${key}')`).join(',')}) AS data FROM orders WHERE json_extract(data,'$.status')='redeemed' ORDER BY id DESC`).all()).results.map((r:{data:string})=>JSON.parse(r.data)):state.orders;
  const preview=nextPremiumPreview(ledger,premium,state.employees);
  const stages=new Map(applyPremiumStages(ledger,[...premium,...state.orders.filter(o=>o.status!=='redeemed')],state.employees,await readPaidHistory(d)).map(o=>[o.id,o.premiumStage]));

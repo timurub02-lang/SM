@@ -8,7 +8,7 @@ const o={id:'o',clientId:'c',manager:'op',status:'redeemed',createdAt:'2026-10-1
 const original=JSON.stringify({c,o,config});
 assert.deepEqual(preview([c],[o],config,now),{c:{until:'2026-11-15T12:00:00.000Z'}});
 assert.equal(JSON.stringify({c,o,config}),original,'Preview must not mutate client, order or settings');
-assert.deepEqual(preview([c],[{...o,redeemedAt:'2026-10-01T00:00:00Z'}],config,now),{c:{expiresAfterPremium:true}});
+assert.deepEqual(preview([c],[{...o,redeemedAt:'2026-10-01T00:00:00Z'}],config,now),{c:{expired:true}});
 assert.deepEqual(preview([{...c,retentionExtensionUntil:'2026-11-20T00:00:00Z'}],[o],config,now),{c:{until:'2026-11-20T00:00:00.000Z'}});
 assert.deepEqual(preview([c],[o,{...o,id:'active',status:'shipping'}],config,now),{});
 assert.deepEqual(preview([c],[{...o,premiumStage:{status:'paid',periodId:'paid'}}],config,now),{});

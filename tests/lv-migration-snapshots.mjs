@@ -16,6 +16,6 @@ await assert.rejects(()=>d.prepare('INSERT INTO orders VALUES(?,?)').bind('nativ
 const staged=applyPremiumStages(null,[order],[])[0];
 assert.equal(staged.premiumStage,undefined);
 assert.equal(orderDisplayGroup(staged).id,'premium_paid');
-assert.equal(showOrderInList(staged,{owner:'new-owner'},'operator'),false);
-assert.equal(applyRetention({id:'c',name:'Иванов Иван Иванович',owner:'old-login',sheet:'К',baseType:'M'},[order],Date.now(),14,true,true).owner,'old-login');
-console.log('LV snapshots preserve catalog, original authors and unpaid retention');
+assert.equal(showOrderInList(staged,{owner:'new-owner'},'operator'),true);
+assert.equal(applyRetention({id:'c',name:'Иванов Иван Иванович',owner:'old-login',sheet:'К',baseType:'M'},[order],Date.now(),14,true).owner,'');
+console.log('LV snapshots preserve catalog, original authors and unpaid order visibility after release');

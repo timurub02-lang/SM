@@ -2,12 +2,12 @@ import {readPaidHistory} from './premium-paid-history.ts';
 import type {ActivityDb} from './activity-store.ts';
 import type {Employee,Order,State} from './crm.ts';
 import {ledgerKey,ledgerRows,periodOrders,payrollVisible,premiumStagesByKey,nextPremiumPreview,orderKey,rowFromCalculation,type PremiumLedger,type PayrollRow,type PayrollOrder} from './premium-ledger.ts';
-import {premiumCalculation,premiumStaff,type PremiumSaved} from './premium-calculation.ts';
+import {premiumCalculation,premiumStaff,defaultPremiumRounding,type PremiumRounding,type PremiumSaved} from './premium-calculation.ts';
 import {premiumPeriods} from './premium-periods.ts';
 import {premiumStatistics} from './premium-statistics.ts';
 
 type Lifecycle={status:'open'|'frozen'|'paid';revision:string;activePeriod:string;source?:{name:string;sha256:string;importedAt:string};signers:{id:string;name:string;department:string}[];signedIds:string[];administrativeIds:string[];allSigned:boolean;frozenAt?:string;paidAt?:string};
-export type FinancialPeriod={adjustments:Record<string,PremiumSaved>;payroll:PayrollRow[]|null;calculatedPayroll?:PayrollRow[];calculatedHeadRows?:Record<string,PayrollRow>;lifecycle:Lifecycle|null;missingOrders:PayrollOrder[]};
+export type FinancialPeriod={rounding?:PremiumRounding;adjustments:Record<string,PremiumSaved>;payroll:PayrollRow[]|null;calculatedPayroll?:PayrollRow[];calculatedHeadRows?:Record<string,PayrollRow>;lifecycle:Lifecycle|null;missingOrders:PayrollOrder[]};
 export type FinancialStages={activePeriod?:string;stages:Record<string,Order['premiumStage']>;nextPeriod?:string;nextOrderIds:string[]};
 export type FinancialOverview={activePeriod?:string;periods:string[];staff:Employee[];periodCounts:Record<string,{employeeId?:string;department:string;count:number}[]>};
 export type FinancialProjection=FinancialOverview&{byPeriod:Record<string,FinancialPeriod>;stageProjection:FinancialStages;overview:FinancialOverview};
@@ -23,7 +23,7 @@ export async function financialStageStatements(d:ActivityDb,projection:Financial
 
 // The worker supplies a consistent read transaction. This builder never signs, pays or writes source data.
 export async function buildFinancialProjection(d:ActivityDb,_now=Date.now()):Promise<FinancialProjection>{
- const fields=['id','manager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery','premiumStage'];
+ const fields=['id','manager','premiumManager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery','premiumStage'];
  const [staff,paid,drafts,stored]=await Promise.all([
   d.prepare('SELECT data,version FROM employees ORDER BY id').all(),
   d.prepare(`SELECT json_object(${fields.map(key=>`'${key}',json_extract(data,'$.${key}')`).join(',')}) AS data FROM orders WHERE json_extract(data,'$.status')='redeemed' ORDER BY id`).all(),
@@ -42,8 +42,8 @@ export async function buildFinancialProjection(d:ActivityDb,_now=Date.now()):Pro
   const required=p?.status==='open'?[...new Set(payroll!.map(r=>r.department))].flatMap(department=>employees.filter(e=>e.role==='department_head'&&e.department===department&&e.leaderPremium).map(e=>({id:e.id,name:e.name,department}))):p?.signers||[];
   const lifecycle:Lifecycle|null=p?{status:p.status,revision:ledger!.revision,activePeriod:ledger!.activePeriod,source:p.source,signers:required,signedIds:Object.keys(p.signatures),administrativeIds:Object.entries(p.signatures).filter(([id,signature])=>signature.by!==id).map(([id])=>id),allSigned:!!p.signers?.length&&p.signers.every(e=>!!p.signatures[e.id]),frozenAt:p.frozenAt,paidAt:p.paidAt}:null;
   // Before a ledger exists, the legacy head preview uses only orders visible to that head.
-  const calculatedHeadRows=!p?Object.fromEntries(employees.filter(e=>e.role==='department_head'&&e.leaderPremium).flatMap(e=>premiumCalculation(orders,e,employees,id,input).rows.filter(r=>r.employee.id===e.id).map(r=>[e.id,rowFromCalculation(r)]))):undefined;
-  byPeriod[id]={adjustments:input,payroll,...(!p?{calculatedPayroll:premiumCalculation(orders,admin,employees,id,input).rows.map(rowFromCalculation),calculatedHeadRows}:{}),lifecycle,missingOrders:(p?.orders||[]).filter(r=>!r.id)};
+  const calculatedHeadRows=!p?Object.fromEntries(employees.filter(e=>e.role==='department_head'&&e.leaderPremium).flatMap(e=>premiumCalculation(orders,e,employees,id,input,ledger?.rounding).rows.filter(r=>r.employee.id===e.id).map(r=>[e.id,rowFromCalculation(r)]))):undefined;
+  byPeriod[id]={rounding:ledger?.rounding??defaultPremiumRounding,adjustments:input,payroll,...(!p?{calculatedPayroll:premiumCalculation(orders,admin,employees,id,input,ledger?.rounding).rows.map(rowFromCalculation),calculatedHeadRows}:{}),lifecycle,missingOrders:(p?.orders||[]).filter(r=>!r.id)};
   if(p){
    const counts=new Map<string,{employeeId?:string;department:string;count:number}>();
    for(const row of periodOrders(ledger!,id,orders,employees).filter(r=>!r.historyOnly)){const key=JSON.stringify([row.employeeId,row.department]),value=counts.get(key)||{employeeId:row.employeeId,department:row.department,count:0};value.count++;counts.set(key,value);}
@@ -61,7 +61,7 @@ export function financialPeriodResponse(projection:FinancialOverview&{byPeriod:R
  const allowed=new Set(projection.staff.filter(e=>premiumStaff(actor,e)).map(e=>e.id));
  const calculated=p.calculatedPayroll?.filter(r=>payrollVisible(actor,r)).map(r=>actor.role==='department_head'&&r.employeeId===actor.id?p.calculatedHeadRows?.[actor.id]||r:r);
  const departmentCounts:Record<string,number>={};for(const r of projection.periodCounts[period]||[]){if(payrollVisible(actor,r))departmentCounts[r.department]=(departmentCounts[r.department]||0)+r.count;}
- return {departmentCounts,adjustments:Object.fromEntries(Object.entries(p.adjustments).filter(([id])=>allowed.has(id))),payroll:p.payroll?.filter(r=>payrollVisible(actor,r))??null,...(calculated?{calculatedPayroll:calculated}:{}),lifecycle:p.lifecycle?{...p.lifecycle,signers:p.lifecycle.signers.filter(e=>actor.role==='admin'||e.department===actor.department)}:null,periodCounts:Object.fromEntries(Object.entries(projection.periodCounts).map(([id,rows])=>[id,rows.filter(r=>payrollVisible(actor,r)).reduce((sum,r)=>sum+r.count,0)])),activePeriod:projection.activePeriod,periods:projection.periods,missingOrders:p.missingOrders.filter(r=>payrollVisible(actor,r))};
+ return {rounding:p.rounding??defaultPremiumRounding,departmentCounts,adjustments:Object.fromEntries(Object.entries(p.adjustments).filter(([id])=>allowed.has(id))),payroll:p.payroll?.filter(r=>payrollVisible(actor,r))??null,...(calculated?{calculatedPayroll:calculated}:{}),lifecycle:p.lifecycle?{...p.lifecycle,signers:p.lifecycle.signers.filter(e=>actor.role==='admin'||e.department===actor.department)}:null,periodCounts:Object.fromEntries(Object.entries(projection.periodCounts).map(([id,rows])=>[id,rows.filter(r=>payrollVisible(actor,r)).reduce((sum,r)=>sum+r.count,0)])),activePeriod:projection.activePeriod,periods:projection.periods,missingOrders:p.missingOrders.filter(r=>payrollVisible(actor,r))};
 }
 export function financialStatisticsResponse(projection:FinancialOverview&{byPeriod:Record<string,FinancialPeriod>},actor:Employee,month=''){
  if(!['admin','department_head'].includes(actor.role))throw Error('Недостаточно прав');
