@@ -13,7 +13,7 @@ export const GET=authenticated(async req=>{
  if(!e||!!clientId===!!orderId||!(incomingId?!!clientId&&await canReadIncomingClient(db(),e,incomingId,clientId):await phoneScope(db(),e,{clientId,orderId})))return Response.json({error:'История звонков недоступна'},{status:403});
  await initPhone(db());
  const before=Number(url.searchParams.get('before')||Number.MAX_SAFE_INTEGER);if(!Number.isSafeInteger(before)||before<1)return Response.json({error:'Неверная страница'},{status:400});
- const rows=(await db().prepare(`SELECT c.*,a.auto_kind,a.auto_reason,a.analyzed_at,a.manual_kind,a.manual_name,a.manual_at FROM phone_calls c LEFT JOIN phone_call_analysis a ON a.call_id=c.id WHERE ${orderId?'order_id':'client_id'}=? AND seq<? ORDER BY seq DESC LIMIT 51`).bind(orderId||clientId!,before).all()).results as (PhoneCall&{seq:number})[];
+ const rows=(await db().prepare(`SELECT c.*,EXISTS(SELECT 1 FROM sk_widget_calls w WHERE w.call_id=c.id) AS sk_widget,a.auto_kind,a.auto_reason,a.analyzed_at,a.manual_kind,a.manual_name,a.manual_at FROM phone_calls c LEFT JOIN phone_call_analysis a ON a.call_id=c.id WHERE ${orderId?'order_id':'client_id'}=? AND seq<? ORDER BY seq DESC LIMIT 51`).bind(orderId||clientId!,before).all()).results as (PhoneCall&{seq:number})[];
  const ids=rows.slice(0,50).map(c=>c.id);
  const comments=ids.length?(await db().prepare(`SELECT id,call_id,actor_name,text,at FROM phone_call_comments WHERE call_id IN (${ids.map(()=>'?').join(',')}) ORDER BY at,id`).bind(...ids).all()).results:[];
  const hide=['operator','department_head'].includes(e.role),mask=(text:string)=>hide?String(text||'').replace(/(?<!\d)(?:\+?7|8)(?:[\s().-]*\d){10}(?!\d)/g,'[телефон]'):text;
