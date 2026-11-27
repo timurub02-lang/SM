@@ -17,7 +17,7 @@ export async function searchBaseClients(d:Db,input:string,viewer?:Employee,exclu
  conditions.push("c.id IN (SELECT client_id FROM orders WHERE instr(lower(id),?)>0 OR instr(COALESCE(json_extract(data,'$.legacyLv.orderId'),''),?)>0)");params.push(text,text);
  conditions.push("EXISTS(SELECT 1 FROM json_each(COALESCE(json_extract(c.data,'$.legacyOrderHistory'),'[]')) h WHERE instr(lower('LV-'||json_extract(h.value,'$.externalId')),?)>0)");params.push(text);
  params.push(JSON.stringify(excludeIds));
- const rows=await d.prepare(`SELECT c.data,c.version,json_extract(e.data,'$.name') AS ownerName,json_extract(e.data,'$.role') AS ownerRole,json_extract(e.data,'$.department') AS ownerDepartment FROM clients c LEFT JOIN employees e ON e.id=json_extract(c.data,'$.owner') WHERE (${conditions.map(v=>'('+v+')').join(' OR ')}) AND c.id NOT IN (SELECT value FROM json_each(?)) ORDER BY json_extract(c.data,'$.name'),c.id LIMIT 31`).bind(...params).all();
+ const rows=await d.prepare(`SELECT c.data,c.version,COALESCE(NULLIF(TRIM(json_extract(e.data,'$.alias')),''),json_extract(e.data,'$.name')) AS ownerName,json_extract(e.data,'$.role') AS ownerRole,json_extract(e.data,'$.department') AS ownerDepartment FROM clients c LEFT JOIN employees e ON e.id=json_extract(c.data,'$.owner') WHERE (${conditions.map(v=>'('+v+')').join(' OR ')}) AND c.id NOT IN (SELECT value FROM json_each(?)) ORDER BY json_extract(c.data,'$.name'),c.id LIMIT 31`).bind(...params).all();
  return {matches:rows.results.slice(0,30).map((r:{data:string;version:number;ownerName:string|null;ownerRole:string|null;ownerDepartment:string|null})=>{
   const client:Client={...JSON.parse(r.data),version:r.version};
   const head=viewer?.role==='department_head';
