@@ -23,7 +23,7 @@ export async function financialStageStatements(d:ActivityDb,projection:Financial
 
 // The worker supplies a consistent read transaction. This builder never signs, pays or writes source data.
 export async function buildFinancialProjection(d:ActivityDb,_now=Date.now()):Promise<FinancialProjection>{
- const fields=['id','manager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery','premiumStage'];
+ const fields=['id','manager','premiumManager','status','testOnly','priorPremiumPaid','legacyLv','importedPayment','delivery','paymentReceivedAt','paymentReceipt','paymentReceivedAmount','cdekRemittances','cdekHistoryRecovery','premiumStage'];
  const [staff,paid,drafts,stored]=await Promise.all([
   d.prepare('SELECT data,version FROM employees ORDER BY id').all(),
   d.prepare(`SELECT json_object(${fields.map(key=>`'${key}',json_extract(data,'$.${key}')`).join(',')}) AS data FROM orders WHERE json_extract(data,'$.status')='redeemed' ORDER BY id`).all(),

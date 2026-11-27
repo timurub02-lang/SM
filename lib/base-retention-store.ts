@@ -72,7 +72,7 @@ export async function reconcileClients(d:Db,clients:Client[],orders:Order[],sale
    const event:Event={id:eid,clientId:c.id,orderId:"",at,actor:"Система",text:next.owner?"Правило К · закрепление обновлено":"Правило К · откреплён, возвращён в "+(next.baseType==='J'?'Ж':'М')+" / "+(clientSheet(next)||"исходный лист")+(next.releaseBaseReview?" · Требуется проверка ФИО для выбора базы М/Ж":"")};
    const guard=" AND (SELECT COUNT(*) FROM orders WHERE client_id=?)=?"+related.map(()=>" AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=?)").join("");
    const args=[c.id,related.length,...related.flatMap(o=>[o.id,o.version])];
-   const releaseReason=c.trialUntil&&!related.some(o=>o.manager===c.owner)?'Истёк срок первичного закрепления без заказа':related.some(o=>o.manager===c.owner&&o.status==='redeemed')?'Истёк срок закрепления после выкупа':'Нет действующих заказов и действующего срока закрепления';
+   const releaseReason=c.dismissedOwner===c.owner?'Увольнение оператора: все незавершённые заказы оплачены, отменены или возвращены':c.trialUntil&&!related.some(o=>o.manager===c.owner)?'Истёк срок первичного закрепления без заказа':related.some(o=>o.manager===c.owner&&o.status==='redeemed')?'Истёк срок закрепления после выкупа':'Нет действующих заказов и действующего срока закрепления';
    const releaseNotices=await releasedClientNotices(d,c,next,event,related,releaseReason);
    const result=await d.batch([
     d.prepare("INSERT INTO events(id,client_id,order_id,at,data) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM clients WHERE id=? AND version=?"+guard+")").bind(eid,c.id,"",at,json(event),c.id,c.version,...args),

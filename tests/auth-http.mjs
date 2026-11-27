@@ -255,23 +255,29 @@ try{
  assert.equal((await remove('head',transfer.e,'transfer','two')).status,400);
  assert.equal((await remove('head',transfer.e,'transfer','one',99)).status,400);
  assert.ok(db.prepare('SELECT id FROM employees WHERE id=?').get('transfer'));
- let deleted=await remove('head',transfer.e,'transfer','one');assert.equal(deleted.status,200,deleted.text);
+ assert.equal((await remove('head',transfer.e,'transfer','one')).status,400);
+ let deleted=await remove('admin',transfer.e,'transfer','one');assert.equal(deleted.status,200,deleted.text);
  assert.equal((await call('/api/auth/me',{cookie:transfer.cookie})).status,401);
  assert.equal((await login('transfer')).status,401);
- for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'transfer-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'one');assert.equal(o.status,o.id.replace('transfer-o-',''));assert.equal(o.comment,'Original comment');}
+ for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'transfer-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'one');assert.equal(o.premiumManager,'transfer');assert.equal(o.status,o.id.replace('transfer-o-',''));assert.equal(o.comment,'Original comment');}
  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM clients WHERE id LIKE 'transfer-c-%' AND json_extract(data,'$.owner')='one'").get().n,11); // Refused/returned-only clients were already freed by normal retention before deletion.
  assert.equal((await remove('head',transfer.e,'transfer','one')).status,400);
  const release=await fixture('release');records('release');
- deleted=await remove('admin',release.e,'release');assert.equal(deleted.status,200,deleted.text);
+ deleted=await remove('head',release.e,'release');assert.equal(deleted.status,200,deleted.text);
  const live=['draft','confirm','rework','check','extra','packing','phone','shipping','pickup'];
- for(const row of db.prepare("SELECT data FROM clients WHERE id LIKE 'release-c-%'").all()){const c=JSON.parse(row.data),status=c.id.replace('release-c-','');assert.equal(c.owner,'');assert.equal(c.sheet,live.includes(status)?'К':status==='redeemed'?'П':'Т3');}
- for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'release-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'');assert.equal(o.status,o.id.replace('release-o-',''));}
+ for(const row of db.prepare("SELECT data FROM clients WHERE id LIKE 'release-c-%'").all()){const c=JSON.parse(row.data),status=c.id.replace('release-c-','');assert.equal(c.owner,live.includes(status)?'release':'');if(live.includes(status))assert.equal(c.dismissedOwner,'release');}
+ for(const row of db.prepare("SELECT data FROM orders WHERE id LIKE 'release-o-%'").all()){const o=JSON.parse(row.data);assert.equal(o.manager,'release');assert.equal(o.premiumManager,'release');assert.equal(o.status,o.id.replace('release-o-',''));}
  assert.equal((await call('/api/auth/me',{cookie:release.cookie})).status,401);
+ const archivedEmployee=JSON.parse(db.prepare("SELECT data FROM employees WHERE id='release'").get().data);
+ assert.ok(archivedEmployee.dismissedAt);assert.equal(archivedEmployee.dismissedBy,'head');
+ assert.equal((await call('/api/crm',{cookie:cookies.admin,body:{action:'saveEmployee',id:'release',version:2,employee:{...archivedEmployee,accessEnabled:true}}})).status,400);
+ assert.equal((await call('/api/crm',{cookie:cookies.head,body:{action:'updateOrder',id:'release-o-draft',version:2,addressConfirmed:true,address:'Test address',items:[],comment:'Head continues the dismissed operator order'}})).status,200);
+ assert.ok(JSON.parse(db.prepare("SELECT data FROM employees WHERE id='release'").get().data).dismissedAt);
  assert.ok(db.prepare("SELECT data FROM settings WHERE id='deleted-employee-release'").get());
  assert.ok(db.prepare("SELECT data FROM events WHERE client_id='release-c-shipping'").get());
  // The guard must roll back all writes if any statement fails, including access revocation.
  const rollback=await fixture('rollback');records('rollback');
- db.exec("CREATE TRIGGER fail_delete BEFORE DELETE ON employees WHEN OLD.id='rollback' BEGIN SELECT RAISE(ABORT,'test rollback'); END");
+ db.exec("CREATE TRIGGER fail_delete BEFORE UPDATE ON employees WHEN OLD.id='rollback' BEGIN SELECT RAISE(ABORT,'test rollback'); END");
  assert.equal((await remove('admin',rollback.e,'release')).status,400);
  assert.ok(db.prepare("SELECT id FROM employees WHERE id='rollback'").get());
  assert.equal(db.prepare("SELECT json_extract(data,'$.owner') AS owner FROM clients WHERE id='rollback-c-shipping'").get().owner,'rollback');
