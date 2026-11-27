@@ -32,3 +32,5 @@ assert.equal(rowFromCalculation(calc.rows[0]).dismissedAt,'2026-11-27');
 const ledger={activePeriod:'2026-11-2',periods:{'2026-11-2':{status:'paid',rows:[{id:'op',payout:12345}],signatures:{}}}};
 assert.deepEqual(ledgerRows(ledger,'2026-11-2',[paid],staff,{}),ledger.periods['2026-11-2'].rows);
 console.log('Dismissal: ownership, delayed release, admin transfer, operator and head premium, paid history passed');
+
+for(const sheet of ['ПВ','ЧС'])assert.equal(applyRetention({...p.clients[0],sheet,manualSheet:{sheet,at:'2026-11-27'}},[{...order,status:'refused'}]).sheet,sheet);

@@ -182,7 +182,7 @@ function retentionResult(c:Client,orders:Order[],now=Date.now(),retentionDays=35
  if(!c.owner)return c;
  if(c.dismissedOwner===c.owner){
   if(orders.some(o=>o.clientId===c.id&&["new","accepted","sent"].includes(orderGroup(o.status).id)))return {...c,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined};
-  return {...c,owner:"",dismissedOwner:undefined,permanentOwner:undefined,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,importRetentionUntil:undefined,retentionExtensionUntil:undefined,orderRequest:undefined,releasedAt:new Date(now).toISOString(),sheet:c.returnSheet||clientSheet(c),returnSheet:undefined};
+  return {...c,owner:"",dismissedOwner:undefined,permanentOwner:undefined,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined,assignmentStartedAt:undefined,importRetentionUntil:undefined,retentionExtensionUntil:undefined,orderRequest:undefined,releasedAt:new Date(now).toISOString(),sheet:["ЧС","ПВ"].includes(clientSheet(c))?clientSheet(c):c.returnSheet||clientSheet(c),returnSheet:undefined};
  }
  if(c.permanentOwner===c.owner)return {...c,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined};
  if(orders.some(o=>o.clientId===c.id&&o.zvd))return {...c,assignedUntil:"",trialUntil:undefined,trialReturnSheet:undefined};
